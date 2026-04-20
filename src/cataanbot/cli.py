@@ -55,6 +55,98 @@ def cmd_play() -> int:
     return run()
 
 
+def _load_tracker(save_path: str):
+    """Load a tracker save file, print errors to stderr, return None on failure."""
+    from cataanbot.tracker import Tracker, TrackerError
+    try:
+        return Tracker.load(save_path)
+    except FileNotFoundError:
+        print(f"no save file at {save_path}", file=sys.stderr)
+        return None
+    except (TrackerError, ValueError) as e:
+        print(f"could not load {save_path}: {e}", file=sys.stderr)
+        return None
+
+
+def cmd_robberadvice(save_path: str, color: str, top: int) -> int:
+    """Run robber advisor against a saved tracker state."""
+    tracker = _load_tracker(save_path)
+    if tracker is None:
+        return 1
+    from cataanbot.advisor import score_robber_targets, format_robber_ranking
+    from cataanbot.tracker import TrackerError
+    try:
+        tracker._color(color)
+    except TrackerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    scores = score_robber_targets(tracker.game, color)
+    print(format_robber_ranking(scores, color, top=top))
+    return 0
+
+
+def cmd_tradeeval(save_path: str, color: str, n_out: int, res_out: str,
+                  n_in: int, res_in: str) -> int:
+    """Run trade evaluator against a saved tracker state."""
+    tracker = _load_tracker(save_path)
+    if tracker is None:
+        return 1
+    from cataanbot.advisor import evaluate_trade, format_trade_eval
+    from cataanbot.tracker import TrackerError
+    try:
+        tracker._color(color)
+    except TrackerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    try:
+        ev = evaluate_trade(tracker.game, color, n_out, res_out, n_in, res_in)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(format_trade_eval(ev))
+    return 0
+
+
+def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
+                     top: int) -> int:
+    """Run second-settlement advisor against a saved tracker state."""
+    tracker = _load_tracker(save_path)
+    if tracker is None:
+        return 1
+    from cataanbot.advisor import (
+        score_second_settlements, format_second_settlement_ranking,
+    )
+    from cataanbot.tracker import TrackerError
+    try:
+        c = tracker._color(color)
+    except TrackerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    if first_node is None:
+        own = [nid for nid, (bc, kind) in
+               tracker.game.state.board.buildings.items()
+               if bc == c and kind == "SETTLEMENT"]
+        if len(own) == 0:
+            print(f"{color.upper()} has no settlement in the save — "
+                  f"pass --first-node explicitly", file=sys.stderr)
+            return 1
+        if len(own) > 1:
+            print(f"{color.upper()} has {len(own)} settlements in the save; "
+                  f"pick one via --first-node (candidates: {sorted(own)})",
+                  file=sys.stderr)
+            return 1
+        first_node = own[0]
+
+    try:
+        scores = score_second_settlements(tracker.game, first_node, color)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(format_second_settlement_ranking(scores, first_node, top=top))
+    return 0
+
+
 def cmd_render(output: str, hex_size: int, ticks: int) -> int:
     """Render a fresh random board to a PNG, optionally after N simulated ticks
     so settlements/roads/cities show up on the output."""
@@ -108,6 +200,39 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("play", help="Launch the manual-tracker REPL.")
 
+    p_robber = sub.add_parser(
+        "robberadvice",
+        help="Best robber tiles against a saved tracker state.",
+    )
+    p_robber.add_argument("save", help="Path to a tracker JSON save file.")
+    p_robber.add_argument("color", help="Color to advise (RED/BLUE/WHITE/ORANGE).")
+    p_robber.add_argument("--top", type=int, default=8,
+                          help="How many tiles to show (default: 8).")
+
+    p_trade = sub.add_parser(
+        "tradeeval",
+        help="Evaluate a proposed trade against a saved tracker state.",
+    )
+    p_trade.add_argument("save", help="Path to a tracker JSON save file.")
+    p_trade.add_argument("color", help="Color whose perspective to evaluate.")
+    p_trade.add_argument("n_out", type=int, help="Count of resource given.")
+    p_trade.add_argument("res_out", help="Resource given (WOOD/BRICK/...).")
+    p_trade.add_argument("n_in", type=int, help="Count of resource received.")
+    p_trade.add_argument("res_in", help="Resource received.")
+
+    p_second = sub.add_parser(
+        "secondadvice",
+        help="Rank second-settlement spots against a saved tracker state.",
+    )
+    p_second.add_argument("save", help="Path to a tracker JSON save file.")
+    p_second.add_argument("color", help="Color to advise.")
+    p_second.add_argument("--first-node", type=int, default=None,
+                          help="Node id of the already-placed first settlement. "
+                               "If omitted, uses COLOR's single settlement from "
+                               "the save.")
+    p_second.add_argument("--top", type=int, default=10,
+                          help="How many spots to show (default: 10).")
+
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor()
@@ -117,6 +242,14 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_openings(args.top, args.render_to, args.hex_size)
     if args.cmd == "play":
         return cmd_play()
+    if args.cmd == "robberadvice":
+        return cmd_robberadvice(args.save, args.color, args.top)
+    if args.cmd == "tradeeval":
+        return cmd_tradeeval(args.save, args.color, args.n_out, args.res_out,
+                             args.n_in, args.res_in)
+    if args.cmd == "secondadvice":
+        return cmd_secondadvice(args.save, args.color, args.first_node,
+                                args.top)
     return 2
 
 
