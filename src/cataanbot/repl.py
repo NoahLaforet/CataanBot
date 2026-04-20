@@ -105,6 +105,40 @@ class TrackerRepl(cmd.Cmd):
                 lines.append(f"  {color}: {delta_str}")
             print("\n".join(lines))
 
+    def do_give(self, arg: str) -> None:
+        """give <COLOR> <N> <RESOURCE> — add resources to a color's hand.
+
+        Use for trade gains, monopoly targets, year-of-plenty, or anything
+        else that increases a player's hand outside of a dice roll."""
+        parts = shlex.split(arg)
+        if len(parts) != 3:
+            print("usage: give <COLOR> <N> <RESOURCE>")
+            return
+        color, n, resource = parts
+        try:
+            self.tracker.give(color, int(n), resource)
+        except (TrackerError, ValueError) as e:
+            print(f"error: {e}")
+            return
+        self._maybe_render()
+
+    def do_take(self, arg: str) -> None:
+        """take <COLOR> <N> <RESOURCE> — remove resources from a color's hand.
+
+        Use for build costs, trade losses, knight steals, monopoly victims,
+        or discards on a 7."""
+        parts = shlex.split(arg)
+        if len(parts) != 3:
+            print("usage: take <COLOR> <N> <RESOURCE>")
+            return
+        color, n, resource = parts
+        try:
+            self.tracker.take(color, int(n), resource)
+        except (TrackerError, ValueError) as e:
+            print(f"error: {e}")
+            return
+        self._maybe_render()
+
     def do_hand(self, arg: str) -> None:
         """hand <COLOR> — print the resource hand for one color."""
         parts = shlex.split(arg)
