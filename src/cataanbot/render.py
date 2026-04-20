@@ -236,13 +236,33 @@ def _draw_centered_text(draw, cx, cy, text, font, fill) -> None:
     draw.text((cx - tw / 2, cy - th / 2), text, font=font, fill=fill)
 
 
+_PIPS_BY_NUMBER = {2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
+                   8: 5, 9: 4, 10: 3, 11: 2, 12: 1}
+
+
 def _draw_number_token(draw, cx, cy, radius, number, font) -> None:
     draw.ellipse(
         (cx - radius, cy - radius, cx + radius, cy + radius),
         fill=TOKEN_FILL, outline=TOKEN_BORDER, width=2,
     )
     color = RED_NUMBER if number in (6, 8) else BLACK
-    _draw_centered_text(draw, cx, cy, str(number), font, color)
+    _draw_centered_text(draw, cx, cy - radius * 0.08, str(number), font, color)
+
+    pips = _PIPS_BY_NUMBER.get(number, 0)
+    if pips == 0:
+        return
+    # Row of dots under the number, color-matched (red for 6/8).
+    dot_r = max(1.5, radius * 0.09)
+    gap = dot_r * 2.4
+    total_w = gap * (pips - 1)
+    dy = radius * 0.55
+    for i in range(pips):
+        dx = -total_w / 2 + i * gap
+        draw.ellipse(
+            (cx + dx - dot_r, cy + dy - dot_r,
+             cx + dx + dot_r, cy + dy + dot_r),
+            fill=color,
+        )
 
 
 def _draw_road(draw, p1, p2, color_name: str, hex_size: float) -> None:
