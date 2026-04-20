@@ -33,6 +33,15 @@ ROBBER = (30, 22, 16)
 PORT_FILL = (245, 238, 215)
 PORT_LINE = (60, 40, 20)
 
+# Player piece colors — Catan-ish, tuned for readability on the tile palette.
+PLAYER_COLORS = {
+    "RED": (200, 45, 45),
+    "BLUE": (45, 90, 180),
+    "WHITE": (245, 245, 240),
+    "ORANGE": (230, 140, 40),
+}
+PIECE_OUTLINE = (20, 14, 10)
+
 # NodeRef order must match the _hex_corners angle order (pointy-top, starting
 # at NORTH, going clockwise).
 NODE_REF_ORDER = ("NORTH", "NORTHEAST", "SOUTHEAST", "SOUTH", "SOUTHWEST", "NORTHWEST")
@@ -179,6 +188,27 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path
         label = f"{resource[:3]} 2:1" if resource else "3:1"
         _draw_centered_text(draw, pmx, pmy, label, port_font, BLACK)
 
+    # Roads first so buildings draw on top at the endpoints.
+    drawn_edges: set[tuple[int, int]] = set()
+    for edge, color in board.roads.items():
+        key = tuple(sorted(edge))
+        if key in drawn_edges:
+            continue
+        drawn_edges.add(key)
+        a, b = edge
+        if a not in node_pos or b not in node_pos:
+            continue
+        _draw_road(draw, node_pos[a], node_pos[b], color.name, hex_size)
+
+    for node_id, (color, kind) in board.buildings.items():
+        if node_id not in node_pos:
+            continue
+        cx, cy = node_pos[node_id]
+        if kind == "SETTLEMENT":
+            _draw_settlement(draw, cx, cy, hex_size, color.name)
+        elif kind == "CITY":
+            _draw_city(draw, cx, cy, hex_size, color.name)
+
     img.save(out_path)
     return out_path
 
@@ -213,3 +243,50 @@ def _draw_number_token(draw, cx, cy, radius, number, font) -> None:
     )
     color = RED_NUMBER if number in (6, 8) else BLACK
     _draw_centered_text(draw, cx, cy, str(number), font, color)
+
+
+def _draw_road(draw, p1, p2, color_name: str, hex_size: float) -> None:
+    """Thick colored segment between two node pixels, with dark outline so it
+    reads on any tile color."""
+    fill = PLAYER_COLORS.get(color_name, (180, 180, 180))
+    outline_w = max(2, int(hex_size * 0.16))
+    inner_w = max(1, int(hex_size * 0.10))
+    draw.line([p1, p2], fill=PIECE_OUTLINE, width=outline_w)
+    draw.line([p1, p2], fill=fill, width=inner_w)
+
+
+def _draw_settlement(draw, cx: float, cy: float, hex_size: float,
+                     color_name: str) -> None:
+    """Small house at (cx, cy): square base + triangular roof."""
+    fill = PLAYER_COLORS.get(color_name, (180, 180, 180))
+    s = hex_size * 0.22  # half-width
+    roof = hex_size * 0.18
+    pts = [
+        (cx - s, cy + s),
+        (cx - s, cy - s * 0.2),
+        (cx, cy - s * 0.2 - roof),
+        (cx + s, cy - s * 0.2),
+        (cx + s, cy + s),
+    ]
+    draw.polygon(pts, fill=fill, outline=PIECE_OUTLINE)
+
+
+def _draw_city(draw, cx: float, cy: float, hex_size: float,
+               color_name: str) -> None:
+    """Wider L-shape to distinguish from a settlement: short tower on the left,
+    tall tower on the right, single baseline."""
+    fill = PLAYER_COLORS.get(color_name, (180, 180, 180))
+    w = hex_size * 0.34
+    h = hex_size * 0.26
+    tall = hex_size * 0.40
+    # L-profile polygon (points go clockwise from bottom-left).
+    pts = [
+        (cx - w, cy + h * 0.6),
+        (cx - w, cy - h * 0.1),
+        (cx - w * 0.1, cy - h * 0.1),
+        (cx - w * 0.1, cy - tall * 0.6),
+        (cx + w * 0.05, cy - tall),
+        (cx + w, cy - tall * 0.6),
+        (cx + w, cy + h * 0.6),
+    ]
+    draw.polygon(pts, fill=fill, outline=PIECE_OUTLINE)
