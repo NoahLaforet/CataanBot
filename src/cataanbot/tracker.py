@@ -321,6 +321,66 @@ class Tracker:
             }
         return out
 
+    # --- trades ----------------------------------------------------------
+    def trade(self, color_a: str, amt_a: int, res_a: str,
+              color_b: str, amt_b: int, res_b: str) -> None:
+        """Atomic player-to-player trade.
+
+        A gives `amt_a res_a` to B; B gives `amt_b res_b` to A. Validated
+        up front so a mid-trade failure can't leave hands half-moved."""
+        self._apply_trade(color_a, amt_a, res_a, color_b, amt_b, res_b)
+        self.history.append({
+            "op": "trade",
+            "args": [color_a.upper(), int(amt_a), res_a.upper(),
+                     color_b.upper(), int(amt_b), res_b.upper()],
+        })
+
+    def _apply_trade(self, color_a: str, amt_a: int, res_a: str,
+                     color_b: str, amt_b: int, res_b: str) -> None:
+        # Pre-check both hands so nothing moves if either side is short.
+        self._require_hand(color_a, amt_a, res_a)
+        self._require_hand(color_b, amt_b, res_b)
+        self._apply_adjust(color_a, amt_a, res_a, sign=-1)
+        self._apply_adjust(color_b, amt_b, res_b, sign=-1)
+        self._apply_adjust(color_a, amt_b, res_b, sign=+1)
+        self._apply_adjust(color_b, amt_a, res_a, sign=+1)
+
+    def mtrade(self, color: str, amt_out: int, res_out: str,
+               res_in: str) -> None:
+        """Maritime trade: spend `amt_out res_out` for 1 `res_in` from the bank.
+
+        The caller picks the rate (4/3/2) by passing whatever `amt_out` the
+        actual port/bank allows. Tracker doesn't enforce port eligibility —
+        it mirrors, doesn't referee."""
+        self._apply_mtrade(color, amt_out, res_out, res_in)
+        self.history.append({
+            "op": "mtrade",
+            "args": [color.upper(), int(amt_out),
+                     res_out.upper(), res_in.upper()],
+        })
+
+    def _apply_mtrade(self, color: str, amt_out: int, res_out: str,
+                      res_in: str) -> None:
+        self._require_hand(color, amt_out, res_out)
+        self._apply_adjust(color, amt_out, res_out, sign=-1)
+        self._apply_adjust(color, 1, res_in, sign=+1)
+
+    def _require_hand(self, color: str, amount: int, resource: str) -> None:
+        resource = resource.upper()
+        if resource not in _RESOURCE_NAMES:
+            raise TrackerError(
+                f"unknown resource {resource!r}; use one of "
+                f"{', '.join(_RESOURCE_NAMES)}"
+            )
+        if amount < 0:
+            raise TrackerError("amount must be non-negative")
+        have = self.hand(color).get(resource, 0)
+        if have < amount:
+            raise TrackerError(
+                f"{color.upper()} only has {have} {resource}; "
+                f"can't move {amount}"
+            )
+
     def hand(self, color: str) -> dict[str, int]:
         """Return the given color's current resource hand."""
         from catanatron.state import RESOURCES
@@ -369,6 +429,11 @@ class Tracker:
                 self._apply_devbuy(args[0], args[1])
             elif name == "devplay":
                 self._apply_devplay(args[0], args[1])
+            elif name == "trade":
+                self._apply_trade(args[0], args[1], args[2],
+                                  args[3], args[4], args[5])
+            elif name == "mtrade":
+                self._apply_mtrade(args[0], args[1], args[2], args[3])
             else:
                 raise TrackerError(f"unknown op {name!r} in history")
             new_history.append(op)

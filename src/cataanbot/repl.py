@@ -155,6 +155,44 @@ class TrackerRepl(cmd.Cmd):
                   or "(empty)"
         print(f"{parts[0].upper()} hand ({total} cards): {summary}")
 
+    def do_trade(self, arg: str) -> None:
+        """trade <A> <N> <RES_A> <B> <M> <RES_B> — atomic player-to-player trade.
+
+        A gives N of RES_A to B; B gives M of RES_B to A. Validates both
+        hands first, so nothing moves if either side is short.
+        Example: `trade RED 2 wheat BLUE 1 ore`."""
+        parts = shlex.split(arg)
+        if len(parts) != 6:
+            print("usage: trade <A> <N> <RES_A> <B> <M> <RES_B>")
+            return
+        a, n, ra, b, m, rb = parts
+        try:
+            self.tracker.trade(a, int(n), ra, b, int(m), rb)
+        except (TrackerError, ValueError) as e:
+            print(f"error: {e}")
+            return
+        print(f"{a.upper()} {n} {ra.lower()} <-> {b.upper()} {m} {rb.lower()}")
+        self._maybe_render()
+
+    def do_mtrade(self, arg: str) -> None:
+        """mtrade <COLOR> <N> <RES_OUT> <RES_IN> — maritime trade with the bank.
+
+        Spends N of RES_OUT for 1 RES_IN. Pass whatever rate (4/3/2) the
+        actual port/bank access allows.
+        Example: `mtrade RED 3 wheat ore` (3:1 wheat port)."""
+        parts = shlex.split(arg)
+        if len(parts) != 4:
+            print("usage: mtrade <COLOR> <N> <RES_OUT> <RES_IN>")
+            return
+        color, n, res_out, res_in = parts
+        try:
+            self.tracker.mtrade(color, int(n), res_out, res_in)
+        except (TrackerError, ValueError) as e:
+            print(f"error: {e}")
+            return
+        print(f"{color.upper()} -{n} {res_out.lower()}  +1 {res_in.lower()} (bank)")
+        self._maybe_render()
+
     def do_devbuy(self, arg: str) -> None:
         """devbuy <COLOR> <TYPE> — give a color a dev card.
 
