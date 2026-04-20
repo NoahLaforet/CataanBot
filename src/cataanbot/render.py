@@ -79,8 +79,13 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path:
-    """Render the board to a PNG. Returns the output path."""
+def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
+                 highlight_nodes: list[int] | None = None) -> Path:
+    """Render the board to a PNG. Returns the output path.
+
+    `highlight_nodes`, if given, is a ranked list of node_ids to mark with
+    numbered circles — use this to visualize advisor recommendations.
+    """
     out_path = Path(out_path)
     board = game.state.board
     land_tiles = board.map.land_tiles
@@ -208,6 +213,21 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path
             _draw_settlement(draw, cx, cy, hex_size, color.name)
         elif kind == "CITY":
             _draw_city(draw, cx, cy, hex_size, color.name)
+
+    if highlight_nodes:
+        highlight_font = _load_font(int(hex_size * 0.28))
+        for rank, nid in enumerate(highlight_nodes, start=1):
+            if nid not in node_pos:
+                continue
+            cx, cy = node_pos[nid]
+            r = hex_size * 0.22
+            # Gold-ish marker so it stands out on every tile color.
+            draw.ellipse(
+                (cx - r, cy - r, cx + r, cy + r),
+                fill=(250, 220, 90), outline=PIECE_OUTLINE, width=2,
+            )
+            _draw_centered_text(draw, cx, cy, str(rank),
+                                highlight_font, PIECE_OUTLINE)
 
     img.save(out_path)
     return out_path
