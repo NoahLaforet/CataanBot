@@ -29,3 +29,4 @@ htmlcov/
 logs/
 *.log
 data/
+board.png
