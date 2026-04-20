@@ -70,6 +70,13 @@ repo-local launcher instead:
 5. **Visual polish** (see `TODO_VISUAL.md`) — resource icons instead of
    text labels, port icons, piece shading. Noah explicitly asked for this
    to look like a real interface, not a debug printout.
+6. **In-game dice-roll stats / analytics** — Noah asked 2026-04-20:
+   while a game is running, show post-game-style stats (roll frequency
+   histogram vs. theoretical, per-tile production actually delivered,
+   resource totals distributed). Could be `stats` REPL command that
+   prints text + optionally writes a PNG histogram, and/or embed a
+   mini-histogram in `show`. The tracker already records every `roll`
+   op in history, so the data's already there — just needs a reader.
 
 ## Files
 - `src/cataanbot/cli.py` — `doctor`, `render`, `openings`, `play` subcommands.
