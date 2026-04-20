@@ -6,7 +6,10 @@
 - Pip dots under number tokens + `bin/cataanbot` launcher (commit `60f9f16`)
 - **Opening-settlement advisor** (commit `c55c32f`) — `cataanbot openings`
   prints the top-N pip-ranked nodes on a fresh map, with `--render` to
-  overlay numbered gold markers on the board PNG.
+  overlay numbered gold markers on the board PNG. Upgraded in `1a8c9b7`:
+  score is now `raw * diversity + port_bonus`, so a brick+wheat+sheep
+  spot beats a three-wheat spot at equal pips and coastal ports
+  break ties among otherwise-similar candidates.
 - **Manual-tracker REPL** (`cataanbot play`) — mirror a real game into
   a catanatron `Game` and render it live. Commits:
     - `3992adb` — MVP: settle/city/road/robber, auto-render
@@ -19,6 +22,17 @@
   auto-debit of build costs, no port eligibility checks. User drives,
   we record. That's the whole point — so weird edge cases (custom rules,
   someone miscounting, partial replays) don't block the tool.
+- **Advisors that read live tracker state** — REPL commands that consume
+  whatever the tracker currently has:
+    - `877d797` — `robberadvice COLOR` scores every land tile by
+      `opponent_pips_blocked - own_pips_blocked`, tiebreak on victim hand
+      size (steal EV).
+    - `e21f948` — `tradeeval COLOR N RES_OUT M RES_IN` computes marginal
+      resource values from the color's production and port access, says
+      favorable / even / unfavorable.
+    - `fdf9487` — robber advisor now VP-weights each victim so a 9-VP
+      leader's pips count ~3.4× a 3-VP trailing player's. Fixes the
+      common case where the pip king isn't the right block target.
 
 ## Running the tool
 The packaged `.venv/bin/cataanbot` entry point is unreliable on macOS
@@ -36,19 +50,19 @@ repo-local launcher instead:
 - Maybe send Karan an email.
 
 ## Natural next steps (pick any)
-1. **Advisors that read the tracker** — the whole point of the tracker
-   was to feed real state into advisors. First candidate: robber-move
-   recommendation (score each tile by `opponent_pips_blocked − own_pips_blocked`,
-   with a tiebreak on leader VP / largest hand). Second: trade-evaluator
-   ("is this trade good for me?") using marginal pip value per resource.
-2. **Better opening heuristic** — current score is raw pip sum. Add:
-    - Resource diversity bonus (a spot giving brick+wheat+sheep beats one
-      giving three wheats of equal pips — early-game flexibility).
-    - Port bonus weighted by the player's production of that resource.
-    - Blocking bonus (deny rivals the best adjacent spot).
-3. **Second-settlement advisor** — given the first settlement is placed,
-   rank the second (and opening road) considering longest-road potential
-   and resource complementarity.
+1. **Second-settlement advisor** — the opening advisor only ranks spots
+   in isolation. Given that settlement #1 is already placed, settlement
+   #2 should be scored for resource *complementarity* with #1 (fill in
+   missing commodities, shoot for 3:1 port if you'd already produce it)
+   and initial road placement for longest-road potential.
+2. **Blocking bonus in opening advisor** — current score is per-node.
+   A "best move" in opening is also "denying the rivals' best spot."
+   Extend by scoring the top N-1 *remaining* spots after your pick and
+   favoring picks that constrain opponents.
+3. **CLI exposure of tracker advisors** — today `robberadvice` and
+   `tradeeval` only run inside the REPL. Add `cataanbot robberadvice
+   --save path.json COLOR` so they work against a saved state without
+   a live REPL (useful for analysis after the game).
 4. **Tracker conveniences** (small) — `discard COLOR N1 RES1 N2 RES2...`
    wrapper for 7-rolls; `build COLOR settle|city|road ...` that auto-debits
    the cost; a turn pointer so `dev-per-turn` limits can be enforced.
@@ -61,12 +75,15 @@ repo-local launcher instead:
 - `src/cataanbot/cli.py` — `doctor`, `render`, `openings`, `play` subcommands.
 - `src/cataanbot/render.py` — Pillow board renderer, supports
   `highlight_nodes` for advisor overlays.
-- `src/cataanbot/advisor.py` — `score_opening_nodes`, `format_opening_ranking`.
+- `src/cataanbot/advisor.py` — `score_opening_nodes`,
+  `score_robber_targets`, `evaluate_trade`, plus `player_production`
+  and `player_ports` helpers. Each has a matching `format_*` printer.
 - `src/cataanbot/tracker.py` — `Tracker` class, the core mirror layer.
   Seed + op-history architecture: every mutation appends an op dict
   only on success, undo/save/load all go through `_replay`.
-- `src/cataanbot/repl.py` — `TrackerRepl(cmd.Cmd)` with all commands
-  (settle/city/road/robber/roll/give/take/devbuy/devplay/trade/mtrade/
-  undo/save/load/show/render/autorender/colors/quit).
+- `src/cataanbot/repl.py` — `TrackerRepl(cmd.Cmd)` with all commands:
+  mutation (settle/city/road/robber/roll/give/take/devbuy/devplay/
+  trade/mtrade), advisors (robberadvice/tradeeval), history
+  (undo/save/load), and meta (show/render/autorender/colors/quit).
 - `bin/cataanbot` — launcher that sidesteps the macOS `.pth` quirk.
 - `TODO_VISUAL.md` — visual-polish backlog.
