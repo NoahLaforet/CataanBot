@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 
 DEFAULT_COLORS = ("RED", "BLUE", "WHITE", "ORANGE")
+_RESOURCE_NAMES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 
 # Bump if the on-disk save format changes in a breaking way.
 SAVE_FORMAT_VERSION = 1
@@ -142,6 +143,59 @@ class Tracker:
             raise TrackerError(f"no land tile at {coord}")
         self.game.state.board.robber_coordinate = coord
 
+    # --- dice rolls ------------------------------------------------------
+    def roll(self, number: int) -> dict[str, dict[str, int]]:
+        """Record that `number` was rolled. Returns per-color payout dict.
+
+        Distributes resources via catanatron's `yield_resources` — which
+        already honors the robber — directly into the player_state hand
+        counters. Does NOT advance turn state or set HAS_ROLLED, since the
+        tracker deliberately ignores turn order."""
+        payout = self._apply_roll(number)
+        self.history.append({"op": "roll", "args": [number]})
+        return payout
+
+    def _apply_roll(self, number: int) -> dict[str, dict[str, int]]:
+        if not 2 <= number <= 12:
+            raise TrackerError(f"dice sum {number} is not in 2..12")
+        state = self.game.state
+        if number == 7:
+            # No distribution on 7. The robber move is a separate command.
+            return {}
+
+        from catanatron.state import yield_resources, RESOURCES
+        payout, _depleted = yield_resources(
+            state.board, state.resource_freqdeck, number
+        )
+
+        result: dict[str, dict[str, int]] = {}
+        for color, freqdeck in payout.items():
+            idx = state.color_to_index[color]
+            hand_delta: dict[str, int] = {}
+            for res_idx, resource in enumerate(RESOURCES):
+                amount = freqdeck[res_idx]
+                if amount == 0:
+                    continue
+                key = f"P{idx}_{resource}_IN_HAND"
+                state.player_state[key] = state.player_state.get(key, 0) + amount
+                hand_delta[resource] = amount
+                # Subtract from the bank so depletion stays accurate.
+                state.resource_freqdeck[res_idx] -= amount
+            if hand_delta:
+                result[color.name] = hand_delta
+        return result
+
+    def hand(self, color: str) -> dict[str, int]:
+        """Return the given color's current resource hand."""
+        from catanatron.state import RESOURCES
+        state = self.game.state
+        c = self._color(color)
+        idx = state.color_to_index[c]
+        return {
+            r: int(state.player_state.get(f"P{idx}_{r}_IN_HAND", 0))
+            for r in RESOURCES
+        }
+
     # --- history ops -----------------------------------------------------
     def undo(self) -> dict[str, Any] | None:
         """Drop the last successful op and replay everything before it.
@@ -169,6 +223,8 @@ class Tracker:
                 self._apply_road(args[0], args[1], args[2])
             elif name == "robber":
                 self._apply_robber(tuple(args))
+            elif name == "roll":
+                self._apply_roll(args[0])
             else:
                 raise TrackerError(f"unknown op {name!r} in history")
             new_history.append(op)
@@ -216,13 +272,19 @@ class Tracker:
 
         lines = [f"seed: {self.seed}   history ops: {len(self.history)}",
                  f"robber: {board.robber_coordinate}"]
-        header = f"{'color':<7} {'settle':>7} {'city':>5} {'road':>5}"
+        res_cols = "".join(f"{r[:3]:>4}" for r in _RESOURCE_NAMES)
+        header = (f"{'color':<7} {'settle':>6} {'city':>4} {'road':>4} "
+                  f"|{res_cols}  tot")
         lines.append(header)
         lines.append("-" * len(header))
         for color_name in DEFAULT_COLORS:
             stats = by_color.get(color_name, {"SETTLEMENT": 0, "CITY": 0})
+            hand = self.hand(color_name)
+            hand_cols = "".join(f"{hand[r]:>4}" for r in _RESOURCE_NAMES)
+            total = sum(hand.values())
             lines.append(
-                f"{color_name:<7} {stats['SETTLEMENT']:>7} "
-                f"{stats['CITY']:>5} {road_counts.get(color_name, 0):>5}"
+                f"{color_name:<7} {stats['SETTLEMENT']:>6} "
+                f"{stats['CITY']:>4} {road_counts.get(color_name, 0):>4} "
+                f"|{hand_cols}  {total:>3}"
             )
         return "\n".join(lines)
