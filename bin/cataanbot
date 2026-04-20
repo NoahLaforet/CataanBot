@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Repo-local launcher for the CataanBot CLI.
+#
+# Uses the venv's Python and sets PYTHONPATH to src/ so we don't depend on
+# the editable-install .pth file being processed — which, on some macOS
+# setups, gets silently skipped by site.py due to the UF_HIDDEN flag APFS
+# puts on compressed pip-written files.
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PY="$REPO_ROOT/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+    echo "cataanbot: no venv at $REPO_ROOT/.venv" >&2
+    echo "create one with: python3 -m venv .venv && .venv/bin/pip install -e ." >&2
+    exit 1
+fi
+exec env PYTHONPATH="$REPO_ROOT/src" "$PY" -m cataanbot.cli "$@"
