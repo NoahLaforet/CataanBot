@@ -276,6 +276,136 @@ def format_robber_ranking(scores: list[RobberScore], my_color: str,
     return "\n".join(lines)
 
 
+# --- second-settlement advisor ------------------------------------------
+# How many distinct resources the (F, N) pair covers → small flat bonus.
+# Covering 4+ resources opens up the most build options; 5 is jackpot.
+_COMBINED_DIVERSITY_BONUS = {0: 0.0, 1: 0.0, 2: 0.0,
+                             3: 0.05, 4: 0.15, 5: 0.25}
+
+
+@dataclass
+class SecondSettleScore:
+    node_id: int
+    raw_production: float                       # N's total per-roll yield
+    resources: dict[str, float]                 # N's per-roll yield, by resource
+    complement_value: float                     # Σ N.yield(r) × marginal_at_F(r)
+    combined_distinct: int                      # distinct resources in F ∪ N
+    diversity_bonus: float
+    port: str | None
+    port_bonus: float
+    tiles: list[tuple[str, int | None]]
+    score: float
+
+
+def score_second_settlements(
+    game: "Game", first_node_id: int, color: str = "RED",
+) -> list[SecondSettleScore]:
+    """Rank legal second-settlement nodes given first settlement at `first_node_id`.
+
+    The main term is *complement value*: each candidate's per-resource yield
+    weighted by its marginal value to F (rarer-at-F resources are worth more).
+    This way a candidate giving ORE+BRICK next to a WHEAT-heavy F outranks
+    a candidate with slightly higher raw pips that mostly stacks wheat.
+
+    Adds small bonuses for combined resource diversity (F ∪ N covering 4–5
+    distinct resources) and port access — ports are most valuable when the
+    combined F+N production of the ported resource is high, since excess is
+    what feeds maritime trades.
+
+    Only nodes legal under the distance rule are returned."""
+    from catanatron import Color
+    from catanatron.state import RESOURCES
+
+    b = game.state.board
+    m = b.map
+    if first_node_id not in m.land_nodes:
+        raise ValueError(f"node {first_node_id} is not a land node")
+
+    c = Color[color.upper()]
+    legal = set(b.buildable_node_ids(c, initial_build_phase=True))
+    node_to_port = _build_node_port_labels(m)
+
+    F_prod = {r: float(m.node_production.get(first_node_id, {}).get(r, 0.0))
+              for r in RESOURCES}
+    marginal_at_F = {r: 1.0 / (0.5 + F_prod[r]) for r in RESOURCES}
+
+    results: list[SecondSettleScore] = []
+    for node_id in m.land_nodes:
+        if node_id not in legal or node_id == first_node_id:
+            continue
+        N_prod = {r: float(m.node_production.get(node_id, {}).get(r, 0.0))
+                  for r in RESOURCES}
+        raw = sum(N_prod.values())
+        complement = sum(N_prod[r] * marginal_at_F[r] for r in RESOURCES)
+
+        combined = {r: F_prod[r] + N_prod[r] for r in RESOURCES}
+        combined_distinct = sum(1 for v in combined.values() if v > 0)
+        diversity_bonus = _COMBINED_DIVERSITY_BONUS.get(combined_distinct, 0.25)
+
+        port_label = node_to_port.get(node_id)
+        if port_label is None:
+            port_bonus = 0.0
+        elif port_label == "3:1":
+            port_bonus = 0.03
+        else:
+            port_resource = port_label.split(" ", 1)[0]
+            combined_r = combined.get(port_resource, 0.0)
+            # Port is most valuable when you already produce that resource;
+            # a 2:1 port on a resource you don't touch is near-useless.
+            port_bonus = 0.03 + combined_r * 0.3
+
+        tiles = []
+        for tile in m.adjacent_tiles.get(node_id, []):
+            label = tile.resource if tile.resource else "DESERT"
+            tiles.append((label, tile.number))
+
+        results.append(SecondSettleScore(
+            node_id=node_id,
+            raw_production=raw,
+            resources=N_prod,
+            complement_value=complement,
+            combined_distinct=combined_distinct,
+            diversity_bonus=diversity_bonus,
+            port=port_label,
+            port_bonus=port_bonus,
+            tiles=tiles,
+            score=complement + diversity_bonus + port_bonus,
+        ))
+
+    results.sort(key=lambda r: -r.score)
+    return results
+
+
+def format_second_settlement_ranking(
+    scores: list[SecondSettleScore], first_node_id: int, top: int = 10,
+) -> str:
+    header = (f"{'rank':>4}  {'node':>4}  {'score':>5}  {'comp':>5}  "
+              f"{'raw':>5}  {'#res':>4}  {'tiles':<28}port")
+    lines = [
+        f"Top {min(top, len(scores))} second-settlement picks "
+        f"given first at node {first_node_id} "
+        f"(score = complement + diversity + port):",
+        "",
+        header,
+        "-" * len(header),
+    ]
+    if not scores:
+        lines.append("  (no legal nodes — check the first placement is on the board)")
+        return "\n".join(lines)
+    for i, s in enumerate(scores[:top], start=1):
+        tiles_str = ", ".join(
+            f"{res[:3]}{'' if num is None else num}"
+            for res, num in s.tiles
+        )
+        port_str = s.port or ""
+        lines.append(
+            f"{i:>4}  {s.node_id:>4}  {s.score:>5.2f}  "
+            f"{s.complement_value:>5.2f}  {s.raw_production:>5.2f}  "
+            f"{s.combined_distinct:>4}  {tiles_str:<28}{port_str}"
+        )
+    return "\n".join(lines)
+
+
 # --- trade evaluator -----------------------------------------------------
 @dataclass
 class TradeEval:
