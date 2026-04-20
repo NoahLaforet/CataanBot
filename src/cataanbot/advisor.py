@@ -208,6 +208,151 @@ def format_robber_ranking(scores: list[RobberScore], my_color: str,
     return "\n".join(lines)
 
 
+# --- trade evaluator -----------------------------------------------------
+@dataclass
+class TradeEval:
+    color: str
+    give: tuple[int, str]            # (amount, resource) you give up
+    get: tuple[int, str]             # (amount, resource) you receive
+    production: dict[str, float]     # expected yield per roll, per resource
+    ports: set[str]                  # resources with a 2:1 port, plus "GENERIC" for 3:1
+    marginal_values: dict[str, float]
+    give_value: float
+    get_value: float
+    delta: float                     # get_value - give_value; positive = favorable
+
+
+def player_production(game: "Game", color: str) -> dict[str, float]:
+    """Expected per-roll yield for a color, weighted by settlement=1 / city=2."""
+    from catanatron import Color
+    from catanatron.state import RESOURCES
+    c = Color[color.upper()]
+    board = game.state.board
+    m = board.map
+    prod = {r: 0.0 for r in RESOURCES}
+    for node_id, (bc, kind) in board.buildings.items():
+        if bc != c:
+            continue
+        weight = 2 if kind == "CITY" else 1
+        for resource, yield_ in m.node_production.get(node_id, {}).items():
+            if resource in prod:
+                prod[resource] += weight * float(yield_)
+    return prod
+
+
+def player_ports(game: "Game", color: str) -> set[str]:
+    """Return the set of resources this color has a 2:1 port on.
+
+    A generic 3:1 port contributes the sentinel string "GENERIC". Returns
+    an empty set if the color has no coastal buildings yet."""
+    from catanatron import Color
+    from catanatron.models.map import EdgeRef
+    c = Color[color.upper()]
+    board = game.state.board
+    m = board.map
+    port_nodes = m.port_nodes
+    owned: set[str] = set()
+    for port in m.ports_by_id.values():
+        resource = port.resource
+        candidates = set(port.nodes.values())
+        terminals = [n for n in candidates
+                     if n in port_nodes.get(resource, set())]
+        if len(terminals) != 2:
+            try:
+                edge_ref = EdgeRef[port.direction.name]
+                edge = port.edges.get(edge_ref)
+                terminals = list(edge) if edge else []
+            except (KeyError, AttributeError):
+                terminals = []
+        if any(board.buildings.get(n, (None,))[0] == c for n in terminals):
+            owned.add(resource if resource is not None else "GENERIC")
+    return owned
+
+
+def _marginal_value(resource: str, prod: dict[str, float],
+                    ports: set[str]) -> float:
+    """Value of one more card of `resource` to this player, on the margin.
+
+    Scarcer resources are worth more (1 / (floor + production)). Port
+    ownership on the resource counts as extra effective production, since
+    excess can be converted at a good rate."""
+    p = prod.get(resource, 0.0)
+    if resource in ports:       # 2:1 on this resource
+        p += 1.0
+    elif "GENERIC" in ports:    # 3:1 any
+        p += 0.5
+    return 1.0 / (0.5 + p)
+
+
+def evaluate_trade(game: "Game", color: str,
+                   give_amount: int, give_resource: str,
+                   get_amount: int, get_resource: str) -> TradeEval:
+    """Evaluate a trade from `color`'s perspective."""
+    from catanatron.state import RESOURCES
+    give_resource = give_resource.upper()
+    get_resource = get_resource.upper()
+    for r in (give_resource, get_resource):
+        if r not in RESOURCES:
+            raise ValueError(f"unknown resource {r!r}; use one of "
+                             f"{', '.join(RESOURCES)}")
+
+    prod = player_production(game, color)
+    ports = player_ports(game, color)
+    marginal = {r: _marginal_value(r, prod, ports) for r in RESOURCES}
+
+    give_value = marginal[give_resource] * give_amount
+    get_value = marginal[get_resource] * get_amount
+
+    return TradeEval(
+        color=color.upper(),
+        give=(give_amount, give_resource),
+        get=(get_amount, get_resource),
+        production=prod,
+        ports=ports,
+        marginal_values=marginal,
+        give_value=give_value,
+        get_value=get_value,
+        delta=get_value - give_value,
+    )
+
+
+def format_trade_eval(e: TradeEval) -> str:
+    verdict = (
+        "favorable" if e.delta > 0.05 else
+        "unfavorable" if e.delta < -0.05 else
+        "roughly even"
+    )
+    give_n, give_r = e.give
+    get_n, get_r = e.get
+    port_note = ""
+    if e.ports:
+        labels = []
+        for p in sorted(e.ports):
+            labels.append("3:1 any" if p == "GENERIC" else f"{p} 2:1")
+        port_note = f"  (ports: {', '.join(labels)})"
+    lines = [
+        f"Trade eval for {e.color}: give {give_n} {give_r.lower()} "
+        f"→ get {get_n} {get_r.lower()}",
+        f"  production snapshot{port_note}:",
+    ]
+    prod_cells = "   ".join(
+        f"{r.lower()}={e.production[r]:.2f}" for r in e.production
+    )
+    lines.append(f"    {prod_cells}")
+    lines.append(
+        f"  your {give_r.lower()} marginal value: "
+        f"{e.marginal_values[give_r]:.2f}  × {give_n}  = "
+        f"{e.give_value:.2f}"
+    )
+    lines.append(
+        f"  your {get_r.lower()} marginal value:  "
+        f"{e.marginal_values[get_r]:.2f}  × {get_n}  = "
+        f"{e.get_value:.2f}"
+    )
+    lines.append(f"  delta: {e.delta:+.2f}  ({verdict} for {e.color})")
+    return "\n".join(lines)
+
+
 def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
     """Human-readable ranked list for the CLI."""
     header = f"{'rank':>4}  {'node':>4}  {'prod':>5}  {'tiles':<28}port"

@@ -252,6 +252,38 @@ class TrackerRepl(cmd.Cmd):
             return
         self._maybe_render()
 
+    def do_tradeeval(self, arg: str) -> None:
+        """tradeeval <COLOR> <N> <RES_OUT> <M> <RES_IN> — is this trade good for COLOR?
+
+        Values each resource inversely to the color's production rate
+        (rarer = worth more), with a port-ownership bonus since ports
+        let you offload excess. Delta > 0 means the trade helps COLOR.
+        Example: `tradeeval RED 2 wheat 1 ore`."""
+        parts = shlex.split(arg)
+        if len(parts) != 5:
+            print("usage: tradeeval <COLOR> <N> <RES_OUT> <M> <RES_IN>")
+            return
+        color, n_out, res_out, n_in, res_in = parts
+        try:
+            self.tracker._color(color)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        try:
+            give_n = int(n_out)
+            get_n = int(n_in)
+        except ValueError as e:
+            print(f"error: amounts must be integers ({e})")
+            return
+        from cataanbot.advisor import evaluate_trade, format_trade_eval
+        try:
+            ev = evaluate_trade(self.tracker.game, color,
+                                give_n, res_out, get_n, res_in)
+        except ValueError as e:
+            print(f"error: {e}")
+            return
+        print(format_trade_eval(ev))
+
     def do_robberadvice(self, arg: str) -> None:
         """robberadvice <COLOR> [top] — best tiles to park the robber on.
 
