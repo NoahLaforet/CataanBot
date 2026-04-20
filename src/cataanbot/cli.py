@@ -45,6 +45,16 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int) -> int:
     return 0
 
 
+def cmd_play() -> int:
+    """Launch the manual-tracker REPL."""
+    try:
+        from cataanbot.repl import run
+    except ImportError as e:
+        print(f"tracker deps missing: {e}", file=sys.stderr)
+        return 1
+    return run()
+
+
 def cmd_render(output: str, hex_size: int, ticks: int) -> int:
     """Render a fresh random board to a PNG, optionally after N simulated ticks
     so settlements/roads/cities show up on the output."""
@@ -96,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
     p_openings.add_argument("--hex-size", type=int, default=60,
                             help="Hex radius in pixels when --render is used.")
 
+    sub.add_parser("play", help="Launch the manual-tracker REPL.")
+
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor()
@@ -103,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_render(args.output, args.hex_size, args.ticks)
     if args.cmd == "openings":
         return cmd_openings(args.top, args.render_to, args.hex_size)
+    if args.cmd == "play":
+        return cmd_play()
     return 2
 
 
