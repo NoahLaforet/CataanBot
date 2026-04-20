@@ -284,6 +284,16 @@ _COMBINED_DIVERSITY_BONUS = {0: 0.0, 1: 0.0, 2: 0.0,
 
 
 @dataclass
+class OpeningRoad:
+    """A recommended direction for the settlement-paired opening road."""
+    edge: tuple[int, int]       # (second_settlement_node, adjacent_node)
+    far_node: int               # the road's non-settlement endpoint
+    landing_node: int | None    # best prospective 3rd-settlement spot beyond
+    landing_score: float        # production value of that prospective spot
+    landing_tiles: list[tuple[str, int | None]]
+
+
+@dataclass
 class SecondSettleScore:
     node_id: int
     raw_production: float                       # N's total per-roll yield
@@ -295,6 +305,68 @@ class SecondSettleScore:
     port_bonus: float
     tiles: list[tuple[str, int | None]]
     score: float
+    best_road: OpeningRoad | None               # best direction for the free road
+
+
+def _build_node_neighbors(m) -> dict[int, set[int]]:
+    """Undirected node graph, built from every tile's hex-edge cycle.
+
+    Two land nodes are neighbors iff they share an edge on some tile.
+    Walking across ocean tiles is fine for the graph — catanatron's tile
+    edges are shared between adjacent hexes so the result is connected."""
+    neighbors: dict[int, set[int]] = {}
+    for tile in m.tiles.values():
+        for edge in tile.edges.values():
+            a, b = edge
+            neighbors.setdefault(a, set()).add(b)
+            neighbors.setdefault(b, set()).add(a)
+    return neighbors
+
+
+def _best_opening_road(
+    m, first_node: int, second_node: int,
+    neighbors: dict[int, set[int]],
+    land_nodes: set[int],
+) -> OpeningRoad | None:
+    """For each edge outward from `second_node`, pick the best landing spot.
+
+    The "landing" is a neighbor of the road's far end — a prospective 3rd
+    settlement spot. We score it by raw_production and also require it
+    satisfies the distance rule against both F and N (i.e. not adjacent
+    to either)."""
+    out_edges = []
+    for far in neighbors.get(second_node, ()):
+        if far == first_node:
+            continue  # road to F is legal but pointless for expansion
+        out_edges.append((second_node, far))
+
+    fn_neighbors = neighbors.get(first_node, set()) | {first_node}
+    sn_neighbors = neighbors.get(second_node, set()) | {second_node}
+
+    best: OpeningRoad | None = None
+    for edge in out_edges:
+        far = edge[1]
+        candidates = []
+        for landing in neighbors.get(far, ()):
+            if landing == second_node or landing in fn_neighbors \
+                    or landing in sn_neighbors or landing not in land_nodes:
+                continue
+            prod = float(sum(m.node_production.get(landing, {}).values()))
+            tiles = []
+            for tile in m.adjacent_tiles.get(landing, []):
+                label = tile.resource if tile.resource else "DESERT"
+                tiles.append((label, tile.number))
+            candidates.append((prod, landing, tiles))
+        if candidates:
+            candidates.sort(key=lambda c: -c[0])
+            prod, landing, tiles = candidates[0]
+        else:
+            prod, landing, tiles = 0.0, None, []
+        road = OpeningRoad(edge=edge, far_node=far, landing_node=landing,
+                           landing_score=prod, landing_tiles=tiles)
+        if best is None or road.landing_score > best.landing_score:
+            best = road
+    return best
 
 
 def score_second_settlements(
@@ -324,6 +396,8 @@ def score_second_settlements(
     c = Color[color.upper()]
     legal = set(b.buildable_node_ids(c, initial_build_phase=True))
     node_to_port = _build_node_port_labels(m)
+    neighbors = _build_node_neighbors(m)
+    land_nodes = set(m.land_nodes)
 
     F_prod = {r: float(m.node_production.get(first_node_id, {}).get(r, 0.0))
               for r in RESOURCES}
@@ -359,6 +433,9 @@ def score_second_settlements(
             label = tile.resource if tile.resource else "DESERT"
             tiles.append((label, tile.number))
 
+        best_road = _best_opening_road(m, first_node_id, node_id,
+                                       neighbors, land_nodes)
+
         results.append(SecondSettleScore(
             node_id=node_id,
             raw_production=raw,
@@ -370,6 +447,7 @@ def score_second_settlements(
             port_bonus=port_bonus,
             tiles=tiles,
             score=complement + diversity_bonus + port_bonus,
+            best_road=best_road,
         ))
 
     results.sort(key=lambda r: -r.score)
@@ -380,7 +458,7 @@ def format_second_settlement_ranking(
     scores: list[SecondSettleScore], first_node_id: int, top: int = 10,
 ) -> str:
     header = (f"{'rank':>4}  {'node':>4}  {'score':>5}  {'comp':>5}  "
-              f"{'raw':>5}  {'#res':>4}  {'tiles':<28}port")
+              f"{'raw':>5}  {'#res':>4}  {'tiles':<28}{'port':<12}road → landing")
     lines = [
         f"Top {min(top, len(scores))} second-settlement picks "
         f"given first at node {first_node_id} "
@@ -398,10 +476,22 @@ def format_second_settlement_ranking(
             for res, num in s.tiles
         )
         port_str = s.port or ""
+        if s.best_road and s.best_road.landing_node is not None:
+            landing_tiles = ", ".join(
+                f"{res[:3]}{'' if num is None else num}"
+                for res, num in s.best_road.landing_tiles
+            )
+            road_str = (f"{s.node_id}-{s.best_road.far_node} → "
+                        f"{s.best_road.landing_node} "
+                        f"({s.best_road.landing_score:.2f}: {landing_tiles})")
+        elif s.best_road:
+            road_str = f"{s.node_id}-{s.best_road.far_node} (no landing spot)"
+        else:
+            road_str = "(no outgoing edges)"
         lines.append(
             f"{i:>4}  {s.node_id:>4}  {s.score:>5.2f}  "
             f"{s.complement_value:>5.2f}  {s.raw_production:>5.2f}  "
-            f"{s.combined_distinct:>4}  {tiles_str:<28}{port_str}"
+            f"{s.combined_distinct:>4}  {tiles_str:<28}{port_str:<12}{road_str}"
         )
     return "\n".join(lines)
 
