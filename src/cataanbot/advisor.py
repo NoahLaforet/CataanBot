@@ -102,10 +102,21 @@ class RobberScore:
     number: int | None
     pip_dots: int
     own_blocked: int           # pip dots belonging to my buildings
-    opponent_blocked: int      # pip dots belonging to every other color
+    opponent_blocked: int      # raw pip dots belonging to every other color
     victims: dict[str, int]    # opponent color → pip dots blocked on them
+    victim_vp: dict[str, int]  # opponent color → current public VP
     opponent_hand_size: dict[str, int]  # opponent color → total cards in hand
-    score: int                 # opponent_blocked - own_blocked
+    weighted_opponent_blocked: float  # opponent_blocked with VP weighting
+    score: float               # weighted_opponent_blocked - own_blocked
+
+
+def _vp_weight(vp: int) -> float:
+    """Scale blocking value by how close the victim is to winning.
+
+    3 VP → 1.0 (baseline early game), 6 → 2.2, 9 → 3.4. Linear above 3
+    is simple and matches the intuition that each extra VP past the
+    opening phase makes the player more urgent to stop."""
+    return 1.0 + 0.4 * max(0, vp - 3)
 
 
 def score_robber_targets(game: "Game", my_color: str) -> list[RobberScore]:
@@ -124,13 +135,18 @@ def score_robber_targets(game: "Game", my_color: str) -> list[RobberScore]:
     my_color_enum = Color[my_color.upper()]
     current_robber = board.robber_coordinate
 
-    # Precompute every opponent's hand size from player_state.
+    # Precompute every opponent's hand size + public VP from player_state.
     state = game.state
     hand_sizes: dict[str, int] = {}
+    vp_by_color: dict[str, int] = {}
     for color, idx in state.color_to_index.items():
-        total = sum(int(state.player_state.get(f"P{idx}_{r}_IN_HAND", 0))
-                    for r in RESOURCES)
-        hand_sizes[color.name] = total
+        hand_sizes[color.name] = sum(
+            int(state.player_state.get(f"P{idx}_{r}_IN_HAND", 0))
+            for r in RESOURCES
+        )
+        vp_by_color[color.name] = int(
+            state.player_state.get(f"P{idx}_VICTORY_POINTS", 0)
+        )
 
     results: list[RobberScore] = []
     for coord, tile in m.land_tiles.items():
@@ -151,6 +167,10 @@ def score_robber_targets(game: "Game", my_color: str) -> list[RobberScore]:
             else:
                 victims[color.name] = victims.get(color.name, 0) + contribution
         opponent_blocked = sum(victims.values())
+        weighted = sum(
+            pips * _vp_weight(vp_by_color.get(c, 0))
+            for c, pips in victims.items()
+        )
         results.append(RobberScore(
             coord=coord,
             resource=tile.resource,
@@ -159,12 +179,14 @@ def score_robber_targets(game: "Game", my_color: str) -> list[RobberScore]:
             own_blocked=own_blocked,
             opponent_blocked=opponent_blocked,
             victims=victims,
+            victim_vp={c: vp_by_color.get(c, 0) for c in victims},
             opponent_hand_size={c: hand_sizes.get(c, 0) for c in victims},
-            score=opponent_blocked - own_blocked,
+            weighted_opponent_blocked=weighted,
+            score=weighted - own_blocked,
         ))
 
     # Sort: higher score first; tiebreak by largest single-victim hand size
-    # (more cards → better steal EV), then by highest opponent_blocked.
+    # (more cards → better steal EV), then by raw (unweighted) opponent pips.
     results.sort(key=lambda r: (
         -r.score,
         -max(r.opponent_hand_size.values(), default=0),
@@ -177,10 +199,10 @@ def format_robber_ranking(scores: list[RobberScore], my_color: str,
                           top: int = 8) -> str:
     my_color = my_color.upper()
     header = (f"{'rank':>4}  {'coord':<12} {'tile':<10} {'pips':>4}  "
-              f"{'score':>5}  victims (pips blocked / cards in hand)")
+              f"{'score':>6}  victims (pips / VP / hand)")
     lines = [
         f"Best robber moves for {my_color} "
-        f"(score = opponent pips blocked - your own):",
+        f"(score = VP-weighted opponent pips blocked - your own):",
         "",
         header,
         "-" * len(header),
@@ -196,14 +218,15 @@ def format_robber_ranking(scores: list[RobberScore], my_color: str,
             tile_str = f"{r.resource[:3]}{'' if r.number is None else r.number}"
         if r.victims:
             victim_str = ", ".join(
-                f"{c} {r.victims[c]}p/{r.opponent_hand_size.get(c, 0)}c"
+                f"{c} {r.victims[c]}p/{r.victim_vp.get(c, 0)}vp/"
+                f"{r.opponent_hand_size.get(c, 0)}c"
                 for c in sorted(r.victims, key=lambda c: -r.victims[c])
             )
         else:
             victim_str = "(no opponents adjacent)"
         lines.append(
             f"{i:>4}  {coord_str:<12} {tile_str:<10} {r.pip_dots:>4}  "
-            f"{r.score:>5}  {victim_str}"
+            f"{r.score:>6.1f}  {victim_str}"
         )
     return "\n".join(lines)
 
