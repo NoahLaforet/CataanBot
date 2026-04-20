@@ -24,7 +24,9 @@ class NodeScore:
     raw_production: float            # sum of per-roll yields across tiles
     diversity_factor: float          # multiplier based on distinct resources
     port_bonus: float                # additive bonus for port access
-    score: float                     # raw_production * diversity + port_bonus
+    base_score: float                # raw_production * diversity + port_bonus
+    denial_bonus: float              # for blocking adjacent high-value spots
+    score: float                     # base_score + denial_bonus
     resources: dict[str, float]      # resource name → per-roll yield
     tiles: list[tuple[str, int | None]]  # (resource_or_"DESERT", number)
     port: str | None                 # "3:1", "WHEAT 2:1", etc., or None
@@ -58,20 +60,38 @@ def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
     return 0.02
 
 
+# Per-adjacent-node weight for the denial bonus. Kept small so denial is a
+# tiebreaker among comparable spots, not a primary driver. At w=0.04, a
+# cluster-center spot that locks out two ~0.45-scoring neighbors picks up
+# ~0.036, enough to float past isolated peers but not to flip the top tier.
+_DENIAL_WEIGHT = 0.04
+
+
 def score_opening_nodes(game: "Game") -> list[NodeScore]:
     """Return every land node scored for opening placement, best first.
 
-    Score = raw_production * diversity_factor + port_bonus.
+    Score = base_score + denial_bonus, where:
+        base_score  = raw_production × diversity_factor + port_bonus
+        denial_bonus = _DENIAL_WEIGHT × Σ base_score(neighbor)
+
+    Denial reflects the distance-rule consequence: taking node N locks out
+    every node one edge away. A spot surrounded by other high-value spots
+    is strictly more valuable than an equally-scoring isolated spot because
+    claiming it denies opponents the cluster.
+
     Diversity rewards nodes that touch 3 distinct resources over ones that
     stack on a single resource even at equal pip sum — early-game you want
     access to building materials, not volume of one commodity. Port bonus
     is small; it breaks ties among otherwise similar spots."""
     m = game.state.board.map
-    scores: list[NodeScore] = []
-
     node_to_port = _build_node_port_labels(m)
+    neighbors = _build_node_neighbors(m)
+    land_nodes = set(m.land_nodes)
 
-    for node_id in m.land_nodes:
+    # Pass 1: compute base_score per node.
+    base_by_node: dict[int, float] = {}
+    scratch: dict[int, dict] = {}
+    for node_id in land_nodes:
         counter = m.node_production.get(node_id, {})
         raw = float(sum(counter.values()))
         resources = {r: float(v) for r, v in counter.items()}
@@ -80,21 +100,39 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
         diversity = _DIVERSITY_BY_COUNT.get(distinct, 1.15)
         port_label = node_to_port.get(node_id)
         port_bonus = _port_bonus(port_label, resources)
+        base = raw * diversity + port_bonus
+        base_by_node[node_id] = base
 
         tiles = []
         for tile in m.adjacent_tiles.get(node_id, []):
             label = tile.resource if tile.resource else "DESERT"
             tiles.append((label, tile.number))
 
+        scratch[node_id] = dict(
+            raw=raw, diversity=diversity, port_bonus=port_bonus,
+            resources=resources, tiles=tiles, port_label=port_label,
+        )
+
+    # Pass 2: add denial, assemble final NodeScores.
+    scores: list[NodeScore] = []
+    for node_id, fields in scratch.items():
+        denial = _DENIAL_WEIGHT * sum(
+            base_by_node[n]
+            for n in neighbors.get(node_id, ())
+            if n in base_by_node
+        )
+        base = base_by_node[node_id]
         scores.append(NodeScore(
             node_id=node_id,
-            raw_production=raw,
-            diversity_factor=diversity,
-            port_bonus=port_bonus,
-            score=raw * diversity + port_bonus,
-            resources=resources,
-            tiles=tiles,
-            port=port_label,
+            raw_production=fields["raw"],
+            diversity_factor=fields["diversity"],
+            port_bonus=fields["port_bonus"],
+            base_score=base,
+            denial_bonus=denial,
+            score=base + denial,
+            resources=fields["resources"],
+            tiles=fields["tiles"],
+            port=fields["port_label"],
         ))
 
     scores.sort(key=lambda s: s.score, reverse=True)
@@ -643,11 +681,11 @@ def format_trade_eval(e: TradeEval) -> str:
 
 def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
     """Human-readable ranked list for the CLI."""
-    header = (f"{'rank':>4}  {'node':>4}  {'score':>5}  {'raw':>5}  "
-              f"{'div':>4}  {'tiles':<28}port")
+    header = (f"{'rank':>4}  {'node':>4}  {'score':>5}  {'base':>5}  "
+              f"{'deny':>5}  {'raw':>5}  {'tiles':<28}port")
     lines = [
         f"Top {min(top, len(scores))} opening settlement spots "
-        f"(score = raw × diversity + port):",
+        f"(score = base + denial):",
         "",
         header,
         "-" * len(header),
@@ -660,7 +698,7 @@ def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
         port_str = s.port or ""
         lines.append(
             f"{i:>4}  {s.node_id:>4}  {s.score:>5.2f}  "
-            f"{s.raw_production:>5.2f}  {s.diversity_factor:>4.2f}  "
-            f"{tiles_str:<28}{port_str}"
+            f"{s.base_score:>5.2f}  {s.denial_bonus:>5.2f}  "
+            f"{s.raw_production:>5.2f}  {tiles_str:<28}{port_str}"
         )
     return "\n".join(lines)
