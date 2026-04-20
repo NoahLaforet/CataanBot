@@ -1,46 +1,51 @@
 # Where we left off (2026-04-20)
 
-## Done this session
-- **Port rendering** — commit `5760fd0`, pushed. Dock lines + circle markers
-  around the coast labeled "WOO 2:1", "ORE 2:1", "3:1", etc.
-- **Settlement / city / road rendering** — code written, not yet committed.
-  Pieces draw in player colors (RED/BLUE/WHITE/ORANGE). Roads are outlined
-  thick colored segments; settlements are small houses; cities are L-profile
-  towers (distinct from settlements).
-- **`--ticks N` option** on `cataanbot render` so we can preview a non-empty
-  board (otherwise a fresh Game has no buildings).
-- **Visual polish backlog** — `TODO_VISUAL.md` captures Noah's ask to make
-  this look like a real interface later (icons instead of text, textures,
-  shadows, etc.). Tackle after core advisor features.
+## Shipped so far
+- Ports around the coast (commit `5760fd0`)
+- Settlements / cities / roads in player colors (commit `fca86d2`)
+- Pip dots under number tokens + `bin/cataanbot` launcher (commit `60f9f16`)
+- **Opening-settlement advisor** (commit `c55c32f`) — `cataanbot openings`
+  prints the top-N pip-ranked nodes on a fresh map, with `--render` to
+  overlay numbered gold markers on the board PNG.
 
-## Known issue to fix next session
-- `.venv/bin/cataanbot` entry point is broken because all `.pth` files in
-  `.venv/lib/python3.12/site-packages/` have the macOS `UF_HIDDEN` flag set,
-  so site.py skips them. Running `chflags nohidden` + `xattr -c` didn't
-  clear it — something (likely Apple's provenance/quarantine system) keeps
-  re-flagging them, and a real fix may need a fresh venv outside of
-  `~/Desktop/` or `sudo chflags`.
-- **Workaround used this session**: `PYTHONPATH=./src .venv/bin/python -m
-  cataanbot.cli render -o board.png --ticks 60` — this works.
+## Running the tool
+The packaged `.venv/bin/cataanbot` entry point is unreliable on macOS
+(`UF_HIDDEN` keeps getting re-applied to pip-written .pth files). Use the
+repo-local launcher instead:
 
-## Next tasks (in order)
-1. Resolve the `UF_HIDDEN` venv issue (or recreate venv elsewhere, or ship
-   a wrapper script that sets PYTHONPATH).
-2. Commit settlements/cities/roads + `--ticks` flag + `TODO_VISUAL.md`.
-3. Task #3 from the original list: **pip dots under number tokens** (classic
-   Catan visual — 2 and 12 get one dot, 3/11 two, up to 6/8 five dots).
-4. First real advisor feature: **score legal initial settlement spots** by
-   summing pip value of adjacent tiles, deduplicating port access. Print the
-   top 5 with node IDs.
+```
+./bin/cataanbot doctor
+./bin/cataanbot render -o board.png --ticks 60
+./bin/cataanbot openings --top 10 --render board_openings.png
+```
 
-## Sample renders from this session
-- `board_initial.png` — post-initial-placement (`--ticks 60`) — 8 settlements,
-  8 roads, all 4 player colors visible.
-- `board_midgame.png` — deeper into a random game (`--ticks 400`) — robber
-  has moved off desert, but random players don't upgrade to cities often.
+## Side notes (not blocking)
+- Update the contributor script.
+- Maybe send Karan an email.
 
-## Files touched (uncommitted)
-- `src/cataanbot/render.py` — added `PLAYER_COLORS`, `_draw_road`,
-  `_draw_settlement`, `_draw_city`, and the building/road draw loop.
-- `src/cataanbot/cli.py` — added `--ticks` option to `render`.
-- `TODO_VISUAL.md` — new.
+## Natural next steps (pick any)
+1. **Track all players** (core roadmap phase 3) — manual state input so the
+   tool can score the actual board in front of Noah, not just a random sim.
+   Could be a tiny REPL that takes "settle RED @ 10", "road BLUE @ 8-27",
+   "roll 8", etc., and updates a real `Game` via catanatron's action API.
+2. **Better opening heuristic** — current score is raw pip sum. Add:
+    - Resource diversity bonus (a spot giving brick+wheat+sheep beats one
+      giving three wheats of equal pips — early-game flexibility).
+    - Port bonus weighted by the player's production of that resource.
+    - Blocking bonus (deny rivals the best adjacent spot).
+3. **Advisor for the second settlement** — given the first settlement is
+   placed, rank the second (and opening road) considering longest-road
+   potential and resource complementarity.
+4. **Robber recommendation** — when a 7 is rolled or a knight played,
+   which tile should we block?
+5. **Visual polish** (see `TODO_VISUAL.md`) — resource icons instead of
+   text labels, port icons, piece shading. Noah explicitly asked for this
+   to look like a real interface, not a debug printout.
+
+## Files
+- `src/cataanbot/cli.py` — `doctor`, `render`, `openings` subcommands.
+- `src/cataanbot/render.py` — Pillow board renderer, supports
+  `highlight_nodes` for advisor overlays.
+- `src/cataanbot/advisor.py` — `score_opening_nodes`, `format_opening_ranking`.
+- `bin/cataanbot` — launcher that sidesteps the macOS `.pth` quirk.
+- `TODO_VISUAL.md` — visual-polish backlog.
