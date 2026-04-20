@@ -29,8 +29,42 @@ if TYPE_CHECKING:
 DEFAULT_COLORS = ("RED", "BLUE", "WHITE", "ORANGE")
 _RESOURCE_NAMES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 
+# Canonical dev card types matching catanatron's player_state keys.
+_DEV_CARD_TYPES = (
+    "KNIGHT",
+    "MONOPOLY",
+    "YEAR_OF_PLENTY",
+    "ROAD_BUILDING",
+    "VICTORY_POINT",
+)
+
+# Short aliases accepted in REPL commands.
+_DEV_CARD_ALIASES = {
+    "KNIGHT": "KNIGHT",
+    "K": "KNIGHT",
+    "MONO": "MONOPOLY",
+    "MONOPOLY": "MONOPOLY",
+    "YOP": "YEAR_OF_PLENTY",
+    "YEAR_OF_PLENTY": "YEAR_OF_PLENTY",
+    "ROAD": "ROAD_BUILDING",
+    "ROAD_BUILDING": "ROAD_BUILDING",
+    "VP": "VICTORY_POINT",
+    "VICTORY_POINT": "VICTORY_POINT",
+}
+
 # Bump if the on-disk save format changes in a breaking way.
 SAVE_FORMAT_VERSION = 1
+
+
+def _resolve_dev_type(raw: str) -> str:
+    """Accept a short alias or full name; return the canonical type."""
+    key = raw.upper().replace("-", "_")
+    if key not in _DEV_CARD_ALIASES:
+        allowed = ", ".join(sorted(set(_DEV_CARD_ALIASES)))
+        raise TrackerError(
+            f"unknown dev-card type {raw!r}; try one of: {allowed}"
+        )
+    return _DEV_CARD_ALIASES[key]
 
 
 class TrackerError(ValueError):
@@ -227,6 +261,66 @@ class Tracker:
         res_idx = _RESOURCE_NAMES.index(resource)
         state.resource_freqdeck[res_idx] -= sign * amount
 
+    # --- dev cards -------------------------------------------------------
+    def devbuy(self, color: str, dev_type: str) -> str:
+        """Give a color one dev card of `dev_type`. Returns the canonical type.
+
+        Does NOT auto-debit the wheat/sheep/ore cost — pair with `take` if
+        you want hand totals to stay honest."""
+        canonical = _resolve_dev_type(dev_type)
+        self._apply_devbuy(color, canonical)
+        self.history.append({"op": "devbuy", "args": [color.upper(), canonical]})
+        return canonical
+
+    def _apply_devbuy(self, color: str, dev_type: str) -> None:
+        state = self.game.state
+        idx = state.color_to_index[self._color(color)]
+        key = f"P{idx}_{dev_type}_IN_HAND"
+        state.player_state[key] = int(state.player_state.get(key, 0)) + 1
+        # Remove one matching card from the remaining deck if any are left,
+        # so renderings / future advisors know what's been drawn.
+        deck = state.development_listdeck
+        for i, card in enumerate(deck):
+            if card == dev_type:
+                deck.pop(i)
+                return
+        # Deck is out of that type; not a hard error since the user might
+        # be reconstructing a game or running an unusual variant.
+
+    def devplay(self, color: str, dev_type: str) -> str:
+        """Move a dev card from a color's hand to their "played" column."""
+        canonical = _resolve_dev_type(dev_type)
+        self._apply_devplay(color, canonical)
+        self.history.append({"op": "devplay", "args": [color.upper(), canonical]})
+        return canonical
+
+    def _apply_devplay(self, color: str, dev_type: str) -> None:
+        state = self.game.state
+        idx = state.color_to_index[self._color(color)]
+        in_hand_key = f"P{idx}_{dev_type}_IN_HAND"
+        played_key = f"P{idx}_PLAYED_{dev_type}"
+        current = int(state.player_state.get(in_hand_key, 0))
+        if current <= 0:
+            raise TrackerError(
+                f"{color.upper()} has no {dev_type} card in hand to play"
+            )
+        state.player_state[in_hand_key] = current - 1
+        state.player_state[played_key] = (
+            int(state.player_state.get(played_key, 0)) + 1
+        )
+
+    def dev_counts(self, color: str) -> dict[str, dict[str, int]]:
+        """Return {type: {'hand': n, 'played': n}} for one color."""
+        state = self.game.state
+        idx = state.color_to_index[self._color(color)]
+        out: dict[str, dict[str, int]] = {}
+        for t in _DEV_CARD_TYPES:
+            out[t] = {
+                "hand": int(state.player_state.get(f"P{idx}_{t}_IN_HAND", 0)),
+                "played": int(state.player_state.get(f"P{idx}_PLAYED_{t}", 0)),
+            }
+        return out
+
     def hand(self, color: str) -> dict[str, int]:
         """Return the given color's current resource hand."""
         from catanatron.state import RESOURCES
@@ -271,6 +365,10 @@ class Tracker:
                 self._apply_adjust(args[0], args[1], args[2], sign=+1)
             elif name == "take":
                 self._apply_adjust(args[0], args[1], args[2], sign=-1)
+            elif name == "devbuy":
+                self._apply_devbuy(args[0], args[1])
+            elif name == "devplay":
+                self._apply_devplay(args[0], args[1])
             else:
                 raise TrackerError(f"unknown op {name!r} in history")
             new_history.append(op)
@@ -333,4 +431,34 @@ class Tracker:
                 f"{stats['CITY']:>4} {road_counts.get(color_name, 0):>4} "
                 f"|{hand_cols}  {total:>3}"
             )
+
+        # Dev-card table: only show colors that have any dev-card activity.
+        dev_header_labels = {
+            "KNIGHT": "knt", "MONOPOLY": "mno", "YEAR_OF_PLENTY": "yop",
+            "ROAD_BUILDING": "rb", "VICTORY_POINT": "vp",
+        }
+        any_dev_activity = False
+        dev_rows = []
+        for color_name in DEFAULT_COLORS:
+            counts = self.dev_counts(color_name)
+            if any(v["hand"] or v["played"] for v in counts.values()):
+                any_dev_activity = True
+            cells = []
+            for t in _DEV_CARD_TYPES:
+                c = counts[t]
+                cells.append(f"{c['hand']}/{c['played']}")
+            dev_rows.append((color_name, cells))
+        if any_dev_activity:
+            lines.append("")
+            dev_header = (
+                f"{'color':<7} "
+                + " ".join(f"{dev_header_labels[t]:>5}" for t in _DEV_CARD_TYPES)
+                + "   (hand/played)"
+            )
+            lines.append(dev_header)
+            lines.append("-" * len(dev_header))
+            for name, cells in dev_rows:
+                lines.append(
+                    f"{name:<7} " + " ".join(f"{c:>5}" for c in cells)
+                )
         return "\n".join(lines)

@@ -155,6 +155,47 @@ class TrackerRepl(cmd.Cmd):
                   or "(empty)"
         print(f"{parts[0].upper()} hand ({total} cards): {summary}")
 
+    def do_devbuy(self, arg: str) -> None:
+        """devbuy <COLOR> <TYPE> — give a color a dev card.
+
+        TYPE accepts short aliases: k/knight, mono/monopoly, yop/year_of_plenty,
+        road/road_building, vp/victory_point. Does NOT auto-debit the wheat/
+        sheep/ore cost — pair with `take` commands if you want the hand to
+        stay honest."""
+        parts = shlex.split(arg)
+        if len(parts) != 2:
+            print("usage: devbuy <COLOR> <TYPE>  "
+                  "(k | mono | yop | road | vp — or the full names)")
+            return
+        color, dev_type = parts
+        try:
+            canonical = self.tracker.devbuy(color, dev_type)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        print(f"{color.upper()} bought a {canonical}.")
+        self._maybe_render()
+
+    def do_devplay(self, arg: str) -> None:
+        """devplay <COLOR> <TYPE> — play a dev card from a color's hand.
+
+        Knight steals / monopoly pulls / year-of-plenty picks / road-building
+        placements are manual: use `give`/`take`/`road`/`robber` commands to
+        reflect the actual effects on the board."""
+        parts = shlex.split(arg)
+        if len(parts) != 2:
+            print("usage: devplay <COLOR> <TYPE>  "
+                  "(k | mono | yop | road | vp — or the full names)")
+            return
+        color, dev_type = parts
+        try:
+            canonical = self.tracker.devplay(color, dev_type)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        print(f"{color.upper()} played {canonical}.")
+        self._maybe_render()
+
     def do_robber(self, arg: str) -> None:
         """robber <x> <y> <z> — move the robber to a tile coordinate."""
         parts = shlex.split(arg)
