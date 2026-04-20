@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cataanbot"
+version = "0.0.1"
+description = "A personal Settlers of Catan advisor with a visual board and all-player tracking."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Noah Laforet" }]
+dependencies = [
+    "catanatron>=3.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+cataanbot = "cataanbot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
