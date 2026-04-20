@@ -129,6 +129,7 @@ class Tracker:
             )
         except ValueError as e:
             raise TrackerError(str(e)) from e
+        self._recompute_vp()
 
     def city(self, color: str, node_id: int) -> None:
         self._apply_city(color, node_id)
@@ -153,6 +154,7 @@ class Tracker:
             board.build_city(c, node_id)
         except ValueError as e:
             raise TrackerError(str(e)) from e
+        self._recompute_vp()
 
     def road(self, color: str, node_a: int, node_b: int) -> None:
         self._apply_road(color, node_a, node_b)
@@ -167,6 +169,33 @@ class Tracker:
                                              (node_a, node_b))
         except ValueError as e:
             raise TrackerError(str(e)) from e
+
+    def _recompute_vp(self) -> None:
+        """Recompute VICTORY_POINTS keys from current board state.
+
+        catanatron only refreshes `P{i}_VICTORY_POINTS` inside its
+        tick-based play loop, which the tracker bypasses entirely. Without
+        this, VP stays at 0 after every direct `build_settlement`/`build_city`
+        call, which breaks both the legend strip and the robber advisor's
+        VP weighting. We recompute from visible sources only: buildings plus
+        HAS_ROAD / HAS_ARMY. Hidden VP cards are intentionally excluded
+        since opponents shouldn't see them."""
+        state = self.game.state
+        board = state.board
+        s_count: dict[Any, int] = {}
+        c_count: dict[Any, int] = {}
+        for _nid, (color, kind) in board.buildings.items():
+            if kind == "CITY":
+                c_count[color] = c_count.get(color, 0) + 1
+            else:
+                s_count[color] = s_count.get(color, 0) + 1
+        for color, idx in state.color_to_index.items():
+            vp = s_count.get(color, 0) + 2 * c_count.get(color, 0)
+            if bool(state.player_state.get(f"P{idx}_HAS_ROAD", False)):
+                vp += 2
+            if bool(state.player_state.get(f"P{idx}_HAS_ARMY", False)):
+                vp += 2
+            state.player_state[f"P{idx}_VICTORY_POINTS"] = vp
 
     def move_robber(self, coord: tuple[int, int, int]) -> None:
         self._apply_robber(coord)
