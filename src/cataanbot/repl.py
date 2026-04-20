@@ -362,6 +362,24 @@ class TrackerRepl(cmd.Cmd):
         scores = score_robber_targets(self.tracker.game, color)
         print(format_robber_ranking(scores, color, top=top))
 
+    def do_stats(self, arg: str) -> None:
+        """stats [path.png] — dice-roll histogram + delivered-resources summary.
+
+        Replays history to tally roll frequencies, per-color resources
+        actually delivered by dice, and per-tile production counts. If
+        an argument is given, also writes a PNG histogram to that path."""
+        path = arg.strip()
+        from cataanbot.stats import compute_stats, format_stats, render_histogram
+        stats = compute_stats(self.tracker)
+        print(format_stats(stats))
+        if path:
+            try:
+                out = render_histogram(stats, path)
+            except Exception as e:
+                print(f"(histogram write failed: {e})")
+                return
+            print(f"\nwrote {out}")
+
     def do_undo(self, _arg: str) -> None:
         """undo — drop the most recent op and replay everything before it."""
         try:

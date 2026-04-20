@@ -107,6 +107,20 @@ def cmd_tradeeval(save_path: str, color: str, n_out: int, res_out: str,
     return 0
 
 
+def cmd_stats(save_path: str, histogram_path: str | None) -> int:
+    """Dice-roll stats against a saved tracker state."""
+    tracker = _load_tracker(save_path)
+    if tracker is None:
+        return 1
+    from cataanbot.stats import compute_stats, format_stats, render_histogram
+    stats = compute_stats(tracker)
+    print(format_stats(stats))
+    if histogram_path:
+        out = render_histogram(stats, histogram_path)
+        print(f"\nwrote {out}")
+    return 0
+
+
 def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
                      top: int) -> int:
     """Run second-settlement advisor against a saved tracker state."""
@@ -220,6 +234,14 @@ def main(argv: list[str] | None = None) -> int:
     p_trade.add_argument("n_in", type=int, help="Count of resource received.")
     p_trade.add_argument("res_in", help="Resource received.")
 
+    p_stats = sub.add_parser(
+        "stats",
+        help="Dice-roll stats from a saved tracker state.",
+    )
+    p_stats.add_argument("save", help="Path to a tracker JSON save file.")
+    p_stats.add_argument("--histogram", dest="histogram_path", default=None,
+                         help="Also write a PNG roll histogram to this path.")
+
     p_second = sub.add_parser(
         "secondadvice",
         help="Rank second-settlement spots against a saved tracker state.",
@@ -250,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "secondadvice":
         return cmd_secondadvice(args.save, args.color, args.first_node,
                                 args.top)
+    if args.cmd == "stats":
+        return cmd_stats(args.save, args.histogram_path)
     return 2
 
 
