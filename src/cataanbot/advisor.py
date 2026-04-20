@@ -21,14 +21,51 @@ if TYPE_CHECKING:
 @dataclass
 class NodeScore:
     node_id: int
-    production: float
-    resources: dict[str, float]  # resource name → per-roll yield
+    raw_production: float            # sum of per-roll yields across tiles
+    diversity_factor: float          # multiplier based on distinct resources
+    port_bonus: float                # additive bonus for port access
+    score: float                     # raw_production * diversity + port_bonus
+    resources: dict[str, float]      # resource name → per-roll yield
     tiles: list[tuple[str, int | None]]  # (resource_or_"DESERT", number)
-    port: str | None  # "3:1", "WHEAT 2:1", etc., or None
+    port: str | None                 # "3:1", "WHEAT 2:1", etc., or None
+
+    # Kept for backwards compat with callers inspecting `production`.
+    @property
+    def production(self) -> float:
+        return self.raw_production
+
+
+# Diversity multiplier: 1 resource = 1.0 (no bonus), 2 = 1.05, 3 = 1.15.
+# Encourages spots that give you flexibility, not just volume.
+_DIVERSITY_BY_COUNT = {0: 1.0, 1: 1.0, 2: 1.05, 3: 1.15}
+
+
+def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
+    """Small additive bonus for port access.
+
+    2:1 on a resource the node itself produces is worth the most — you can
+    immediately offload your excess. 2:1 on an unrelated resource and 3:1
+    generic ports are both mild bonuses since they require cards you don't
+    yet have."""
+    if not port_label:
+        return 0.0
+    if port_label == "3:1":
+        return 0.02
+    # "WHEAT 2:1", "ORE 2:1", etc.
+    port_resource = port_label.split(" ", 1)[0]
+    if resources.get(port_resource, 0.0) > 0:
+        return 0.06
+    return 0.02
 
 
 def score_opening_nodes(game: "Game") -> list[NodeScore]:
-    """Return every land node scored by total expected production, best first."""
+    """Return every land node scored for opening placement, best first.
+
+    Score = raw_production * diversity_factor + port_bonus.
+    Diversity rewards nodes that touch 3 distinct resources over ones that
+    stack on a single resource even at equal pip sum — early-game you want
+    access to building materials, not volume of one commodity. Port bonus
+    is small; it breaks ties among otherwise similar spots."""
     m = game.state.board.map
     scores: list[NodeScore] = []
 
@@ -36,8 +73,13 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
 
     for node_id in m.land_nodes:
         counter = m.node_production.get(node_id, {})
-        production = float(sum(counter.values()))
+        raw = float(sum(counter.values()))
         resources = {r: float(v) for r, v in counter.items()}
+
+        distinct = sum(1 for v in resources.values() if v > 0)
+        diversity = _DIVERSITY_BY_COUNT.get(distinct, 1.15)
+        port_label = node_to_port.get(node_id)
+        port_bonus = _port_bonus(port_label, resources)
 
         tiles = []
         for tile in m.adjacent_tiles.get(node_id, []):
@@ -46,13 +88,16 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
 
         scores.append(NodeScore(
             node_id=node_id,
-            production=production,
+            raw_production=raw,
+            diversity_factor=diversity,
+            port_bonus=port_bonus,
+            score=raw * diversity + port_bonus,
             resources=resources,
             tiles=tiles,
-            port=node_to_port.get(node_id),
+            port=port_label,
         ))
 
-    scores.sort(key=lambda s: s.production, reverse=True)
+    scores.sort(key=lambda s: s.score, reverse=True)
     return scores
 
 
@@ -378,10 +423,11 @@ def format_trade_eval(e: TradeEval) -> str:
 
 def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
     """Human-readable ranked list for the CLI."""
-    header = f"{'rank':>4}  {'node':>4}  {'prod':>5}  {'tiles':<28}port"
+    header = (f"{'rank':>4}  {'node':>4}  {'score':>5}  {'raw':>5}  "
+              f"{'div':>4}  {'tiles':<28}port")
     lines = [
-        f"Top {min(top, len(scores))} opening settlement spots (by expected "
-        f"production per roll):",
+        f"Top {min(top, len(scores))} opening settlement spots "
+        f"(score = raw × diversity + port):",
         "",
         header,
         "-" * len(header),
@@ -393,7 +439,8 @@ def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
         )
         port_str = s.port or ""
         lines.append(
-            f"{i:>4}  {s.node_id:>4}  {s.production:>5.2f}  "
+            f"{i:>4}  {s.node_id:>4}  {s.score:>5.2f}  "
+            f"{s.raw_production:>5.2f}  {s.diversity_factor:>4.2f}  "
             f"{tiles_str:<28}{port_str}"
         )
     return "\n".join(lines)
