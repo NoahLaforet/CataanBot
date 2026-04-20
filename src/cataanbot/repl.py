@@ -97,6 +97,48 @@ class TrackerRepl(cmd.Cmd):
             return
         self._maybe_render()
 
+    def do_undo(self, _arg: str) -> None:
+        """undo — drop the most recent op and replay everything before it."""
+        try:
+            dropped = self.tracker.undo()
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        if dropped is None:
+            print("nothing to undo.")
+            return
+        args = " ".join(str(x) for x in dropped["args"])
+        print(f"undid: {dropped['op']} {args}")
+        self._maybe_render()
+
+    def do_save(self, arg: str) -> None:
+        """save <path> — write tracked state to a JSON file."""
+        path = arg.strip()
+        if not path:
+            print("usage: save <path>")
+            return
+        try:
+            out = self.tracker.save(path)
+        except Exception as e:
+            print(f"error: {e}")
+            return
+        print(f"wrote {out}")
+
+    def do_load(self, arg: str) -> None:
+        """load <path> — replace current state with a JSON save file."""
+        path = arg.strip()
+        if not path:
+            print("usage: load <path>")
+            return
+        try:
+            self.tracker = Tracker.load(path)
+        except (TrackerError, FileNotFoundError, ValueError) as e:
+            print(f"error: {e}")
+            return
+        print(f"loaded {path} ({len(self.tracker.history)} ops, "
+              f"seed={self.tracker.seed})")
+        self._maybe_render()
+
     def do_show(self, _arg: str) -> None:
         """show — print a text summary of tracked state."""
         print(self.tracker.summary())
