@@ -79,6 +79,48 @@ class TrackerRepl(cmd.Cmd):
             return
         self._maybe_render()
 
+    def do_roll(self, arg: str) -> None:
+        """roll <n> — record a dice roll; distributes resources via catanatron."""
+        parts = shlex.split(arg)
+        if len(parts) != 1:
+            print("usage: roll <n>  (n is 2..12, the dice SUM)")
+            return
+        try:
+            number = int(parts[0])
+        except ValueError as e:
+            print(f"error: {e}")
+            return
+        try:
+            payout = self.tracker.roll(number)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        if not payout:
+            print(f"rolled {number}: no resources produced "
+                  f"(robber blocking, or nobody adjacent).")
+        else:
+            lines = [f"rolled {number}:"]
+            for color, delta in payout.items():
+                delta_str = ", ".join(f"+{v} {k}" for k, v in delta.items())
+                lines.append(f"  {color}: {delta_str}")
+            print("\n".join(lines))
+
+    def do_hand(self, arg: str) -> None:
+        """hand <COLOR> — print the resource hand for one color."""
+        parts = shlex.split(arg)
+        if len(parts) != 1:
+            print("usage: hand <COLOR>")
+            return
+        try:
+            hand = self.tracker.hand(parts[0])
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        total = sum(hand.values())
+        summary = ", ".join(f"{v} {k}" for k, v in hand.items() if v > 0) \
+                  or "(empty)"
+        print(f"{parts[0].upper()} hand ({total} cards): {summary}")
+
     def do_robber(self, arg: str) -> None:
         """robber <x> <y> <z> — move the robber to a tile coordinate."""
         parts = shlex.split(arg)
