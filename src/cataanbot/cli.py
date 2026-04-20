@@ -12,8 +12,7 @@ import sys
 def cmd_doctor() -> int:
     """Verify catanatron imports and a fresh Game can be constructed."""
     try:
-        from catanatron import Game, RandomPlayer
-        from catanatron.models.enums import Color
+        from catanatron import Color, Game, RandomPlayer
     except ImportError as e:
         print(f"catanatron not installed or import failed: {e}", file=sys.stderr)
         print("run: pip install -e .", file=sys.stderr)
