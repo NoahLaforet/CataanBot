@@ -185,6 +185,48 @@ class Tracker:
                 result[color.name] = hand_delta
         return result
 
+    # --- manual resource adjustments ------------------------------------
+    def give(self, color: str, amount: int, resource: str) -> None:
+        """Add `amount` of `resource` to a color's hand (e.g. from a trade)."""
+        self._apply_adjust(color, amount, resource, sign=+1)
+        self.history.append({
+            "op": "give", "args": [color.upper(), int(amount), resource.upper()]
+        })
+
+    def take(self, color: str, amount: int, resource: str) -> None:
+        """Remove `amount` of `resource` from a color's hand (build cost,
+        trade, knight steal, discard, etc.)."""
+        self._apply_adjust(color, amount, resource, sign=-1)
+        self.history.append({
+            "op": "take", "args": [color.upper(), int(amount), resource.upper()]
+        })
+
+    def _apply_adjust(self, color: str, amount: int, resource: str,
+                      sign: int) -> None:
+        if amount < 0:
+            raise TrackerError("amount must be non-negative; "
+                               "use `take` to remove and `give` to add")
+        resource = resource.upper()
+        if resource not in _RESOURCE_NAMES:
+            raise TrackerError(
+                f"unknown resource {resource!r}; use one of "
+                f"{', '.join(_RESOURCE_NAMES)}"
+            )
+        state = self.game.state
+        idx = state.color_to_index[self._color(color)]
+        key = f"P{idx}_{resource}_IN_HAND"
+        current = int(state.player_state.get(key, 0))
+        new_val = current + sign * amount
+        if new_val < 0:
+            raise TrackerError(
+                f"{color.upper()} only has {current} {resource}; "
+                f"can't take {amount}"
+            )
+        state.player_state[key] = new_val
+        # Keep the bank's freqdeck consistent with player totals.
+        res_idx = _RESOURCE_NAMES.index(resource)
+        state.resource_freqdeck[res_idx] -= sign * amount
+
     def hand(self, color: str) -> dict[str, int]:
         """Return the given color's current resource hand."""
         from catanatron.state import RESOURCES
@@ -225,6 +267,10 @@ class Tracker:
                 self._apply_robber(tuple(args))
             elif name == "roll":
                 self._apply_roll(args[0])
+            elif name == "give":
+                self._apply_adjust(args[0], args[1], args[2], sign=+1)
+            elif name == "take":
+                self._apply_adjust(args[0], args[1], args[2], sign=-1)
             else:
                 raise TrackerError(f"unknown op {name!r} in history")
             new_history.append(op)
