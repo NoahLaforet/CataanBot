@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from catanatron import Game
 
 
-# Resource → fill color.
 TILE_COLORS = {
     "WHEAT": (240, 199, 94),
     "WOOD": (90, 125, 58),
@@ -31,6 +30,12 @@ TOKEN_BORDER = (60, 40, 20)
 RED_NUMBER = (180, 40, 40)
 BLACK = (30, 22, 16)
 ROBBER = (30, 22, 16)
+PORT_FILL = (245, 238, 215)
+PORT_LINE = (60, 40, 20)
+
+# NodeRef order must match the _hex_corners angle order (pointy-top, starting
+# at NORTH, going clockwise).
+NODE_REF_ORDER = ("NORTH", "NORTHEAST", "SOUTHEAST", "SOUTH", "SOUTHWEST", "NORTHWEST")
 
 
 def _axial_to_pixel(x: int, z: int, size: float) -> tuple[float, float]:
@@ -41,16 +46,18 @@ def _axial_to_pixel(x: int, z: int, size: float) -> tuple[float, float]:
 
 
 def _hex_corners(cx: float, cy: float, size: float) -> list[tuple[float, float]]:
-    """Six corners of a pointy-top hex centered at (cx, cy)."""
+    """Six corners of a pointy-top hex centered at (cx, cy), ordered
+    N, NE, SE, S, SW, NW to match catanatron's NodeRef enum."""
     pts = []
     for i in range(6):
-        angle = math.radians(60 * i - 30)  # pointy-top: first corner at top
+        # i=0 at NORTH (270°), then clockwise: NE (330°), SE (30°), S (90°),
+        # SW (150°), NW (210°).
+        angle = math.radians(270 + 60 * i)
         pts.append((cx + size * math.cos(angle), cy + size * math.sin(angle)))
     return pts
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Best-available system font; falls back to Pillow default."""
     for path in (
         "/System/Library/Fonts/Helvetica.ttc",
         "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -75,7 +82,7 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path
         px, py = _axial_to_pixel(x, z, hex_size)
         xs.append(px)
         ys.append(py)
-    pad = hex_size * 2
+    pad = hex_size * 2.8  # extra room for ports
     minx, maxx = min(xs) - pad, max(xs) + pad
     miny, maxy = min(ys) - pad, max(ys) + pad
     w = int(maxx - minx)
@@ -84,14 +91,32 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path
     img = Image.new("RGB", (w, h), OCEAN)
     draw = ImageDraw.Draw(img)
 
-    # Offset so the board sits centered in the canvas.
     ox = -minx
     oy = -miny
+    board_cx = (maxx + minx) / 2 + ox - ox  # board center in canvas coords
+    board_cy = (maxy + miny) / 2 + oy - oy
+    # Equivalent: board center at canvas midpoint.
+    board_cx = w / 2
+    board_cy = h / 2
 
     number_font = _load_font(int(hex_size * 0.42))
     resource_font = _load_font(int(hex_size * 0.22))
+    port_font = _load_font(int(hex_size * 0.22))
     robber_coord = board.robber_coordinate
 
+    # Build a global node_id → pixel position map so ports and (later) buildings
+    # can locate themselves.
+    node_pos: dict[int, tuple[float, float]] = {}
+    for coord, tile in land_tiles.items():
+        x, _y, z = coord
+        px, py = _axial_to_pixel(x, z, hex_size)
+        cx, cy = px + ox, py + oy
+        corners = _hex_corners(cx, cy, hex_size)
+        for i, ref in enumerate(NODE_REF_ORDER):
+            nid = tile.nodes[_node_ref(ref)]
+            node_pos[nid] = corners[i]
+
+    # Draw tiles.
     for coord, tile in land_tiles.items():
         x, _y, z = coord
         px, py = _axial_to_pixel(x, z, hex_size)
@@ -102,18 +127,14 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path
         corners = _hex_corners(cx, cy, hex_size)
         draw.polygon(corners, fill=fill, outline=BLACK, width=2)
 
-        # Resource label (small, top of tile).
         label = resource if resource else "DESERT"
         _draw_centered_text(draw, cx, cy - hex_size * 0.55, label,
                             resource_font, BLACK)
 
-        # Number token (center of tile).
-        number = tile.number
-        if number is not None:
-            _draw_number_token(draw, cx, cy, hex_size * 0.32, number,
+        if tile.number is not None:
+            _draw_number_token(draw, cx, cy, hex_size * 0.32, tile.number,
                                number_font)
 
-        # Robber marker.
         if coord == robber_coord:
             r = hex_size * 0.18
             draw.ellipse(
@@ -122,8 +143,60 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60) -> Path
                 fill=ROBBER, outline=TOKEN_FILL, width=2,
             )
 
+    # Draw ports. Each port has 2 coastal node terminals — find them via the
+    # intersection of the port's 6 hex nodes with map.port_nodes[resource].
+    port_nodes_map = board.map.port_nodes
+    for port in board.map.ports_by_id.values():
+        resource = port.resource
+        port_node_ids = port_nodes_map.get(resource, set())
+        terminals = [nid for nid in port.nodes.values()
+                     if nid in port_node_ids and nid in node_pos]
+        # For 3:1 (None resource), port_nodes[None] contains 8 nodes for all
+        # 4 3:1 ports — we need to pick just the 2 that belong to THIS port.
+        # The port's "direction" edge is the ocean-facing edge; its 2 nodes
+        # are the terminals. Use port.edges + port.direction for precision.
+        if len(terminals) != 2:
+            terminals = _port_terminals_via_direction(port)
+            terminals = [nid for nid in terminals if nid in node_pos]
+        if len(terminals) != 2:
+            continue  # skip if we can't locate it
+        n1 = node_pos[terminals[0]]
+        n2 = node_pos[terminals[1]]
+        mx, my = (n1[0] + n2[0]) / 2, (n1[1] + n2[1]) / 2
+        # Push the port marker outward from the board center.
+        dx, dy = mx - board_cx, my - board_cy
+        mag = math.hypot(dx, dy) or 1.0
+        push = hex_size * 0.9
+        pmx = mx + dx / mag * push
+        pmy = my + dy / mag * push
+        # Dock lines from each terminal to the marker.
+        draw.line([n1, (pmx, pmy)], fill=PORT_LINE, width=2)
+        draw.line([n2, (pmx, pmy)], fill=PORT_LINE, width=2)
+        # Marker circle.
+        r = hex_size * 0.30
+        draw.ellipse((pmx - r, pmy - r, pmx + r, pmy + r),
+                     fill=PORT_FILL, outline=PORT_LINE, width=2)
+        label = f"{resource[:3]} 2:1" if resource else "3:1"
+        _draw_centered_text(draw, pmx, pmy, label, port_font, BLACK)
+
     img.save(out_path)
     return out_path
+
+
+def _node_ref(name: str):
+    from catanatron.models.map import NodeRef
+    return NodeRef[name]
+
+
+def _port_terminals_via_direction(port) -> list[int]:
+    """Return the 2 node IDs on the port's ocean-facing edge."""
+    from catanatron.models.map import EdgeRef
+    try:
+        edge_ref = EdgeRef[port.direction.name]
+    except KeyError:
+        return []
+    edge = port.edges.get(edge_ref)
+    return list(edge) if edge else []
 
 
 def _draw_centered_text(draw, cx, cy, text, font, fill) -> None:
