@@ -80,11 +80,16 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
-                 highlight_nodes: list[int] | None = None) -> Path:
+                 highlight_nodes: list[int] | None = None,
+                 show_legend: bool = True) -> Path:
     """Render the board to a PNG. Returns the output path.
 
     `highlight_nodes`, if given, is a ranked list of node_ids to mark with
     numbered circles — use this to visualize advisor recommendations.
+
+    `show_legend` (default True) adds a bottom strip showing per-player
+    VP, buildings, roads, and longest-road / largest-army badges so the
+    render is self-contained — no need to cross-reference a summary.
     """
     out_path = Path(out_path)
     board = game.state.board
@@ -100,7 +105,9 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
     minx, maxx = min(xs) - pad, max(xs) + pad
     miny, maxy = min(ys) - pad, max(ys) + pad
     w = int(maxx - minx)
-    h = int(maxy - miny)
+    board_h = int(maxy - miny)
+    legend_h = int(hex_size * 1.5) if show_legend else 0
+    h = board_h + legend_h
 
     img = Image.new("RGB", (w, h), OCEAN)
     draw = ImageDraw.Draw(img)
@@ -109,9 +116,10 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
     oy = -miny
     board_cx = (maxx + minx) / 2 + ox - ox  # board center in canvas coords
     board_cy = (maxy + miny) / 2 + oy - oy
-    # Equivalent: board center at canvas midpoint.
+    # Board occupies the top portion of the canvas; legend (if any) sits
+    # below. Keep the board vertically centered within its own region.
     board_cx = w / 2
-    board_cy = h / 2
+    board_cy = board_h / 2
 
     number_font = _load_font(int(hex_size * 0.42))
     resource_font = _load_font(int(hex_size * 0.22))
@@ -229,6 +237,9 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
             _draw_centered_text(draw, cx, cy, str(rank),
                                 highlight_font, PIECE_OUTLINE)
 
+    if show_legend:
+        _draw_legend(draw, game, w, board_h, legend_h, hex_size)
+
     img.save(out_path)
     return out_path
 
@@ -283,6 +294,131 @@ def _draw_number_token(draw, cx, cy, radius, number, font) -> None:
              cx + dx + dot_r, cy + dy + dot_r),
             fill=color,
         )
+
+
+LEGEND_BG = (38, 82, 112)       # slightly darker than ocean so it reads as a panel
+LEGEND_DIVIDER = (20, 40, 60)
+LEGEND_TEXT = (245, 245, 240)
+LEGEND_ACCENT = (250, 220, 90)  # for longest-road / largest-army badges
+LEGEND_COLOR_ORDER = ("RED", "BLUE", "WHITE", "ORANGE")
+
+
+def _draw_legend(draw, game, w: int, board_h: int, legend_h: int,
+                 hex_size: float) -> None:
+    """Per-color summary strip along the bottom of the render.
+
+    Shows a color swatch, current public VP, settlement/city/road counts,
+    and small pill badges for longest road and largest army. Skips colors
+    that aren't seated in the game (shouldn't happen in our 4-player setup
+    but stays robust).
+    """
+    state = game.state
+    board = state.board
+
+    # Count settlements/cities per color from the buildings dict.
+    s_count = {c: 0 for c in LEGEND_COLOR_ORDER}
+    c_count = {c: 0 for c in LEGEND_COLOR_ORDER}
+    for _nid, (color, kind) in board.buildings.items():
+        if color.name not in s_count:
+            continue
+        if kind == "CITY":
+            c_count[color.name] += 1
+        else:
+            s_count[color.name] += 1
+    # Roads: each edge appears twice in `board.roads` (both orderings).
+    r_count = {c: 0 for c in LEGEND_COLOR_ORDER}
+    for _edge, color in board.roads.items():
+        if color.name in r_count:
+            r_count[color.name] += 1
+    for c in r_count:
+        r_count[c] //= 2
+
+    # Panel background.
+    draw.rectangle((0, board_h, w, board_h + legend_h), fill=LEGEND_BG)
+    draw.line([(0, board_h), (w, board_h)], fill=LEGEND_DIVIDER, width=2)
+
+    colors_seated = [c for c in LEGEND_COLOR_ORDER
+                     if _find_player_index(state, c) is not None]
+    if not colors_seated:
+        return
+
+    col_w = w / len(colors_seated)
+    name_font = _load_font(int(hex_size * 0.28))
+    line_font = _load_font(int(hex_size * 0.22))
+    badge_font = _load_font(int(hex_size * 0.18))
+
+    for i, cname in enumerate(colors_seated):
+        col_x = i * col_w
+        idx = _find_player_index(state, cname)
+        vp = int(state.player_state.get(f"P{idx}_VICTORY_POINTS", 0))
+        has_road = bool(state.player_state.get(f"P{idx}_HAS_ROAD", False))
+        has_army = bool(state.player_state.get(f"P{idx}_HAS_ARMY", False))
+
+        # Color swatch on the left of the column.
+        swatch_x = col_x + hex_size * 0.30
+        swatch_y = board_h + legend_h * 0.18
+        swatch_size = legend_h * 0.32
+        draw.rectangle(
+            (swatch_x, swatch_y, swatch_x + swatch_size, swatch_y + swatch_size),
+            fill=PLAYER_COLORS.get(cname, (180, 180, 180)),
+            outline=PIECE_OUTLINE, width=2,
+        )
+
+        # Name + VP on the first line.
+        text_x = swatch_x + swatch_size + hex_size * 0.18
+        line1_y = board_h + legend_h * 0.12
+        draw.text((text_x, line1_y),
+                  f"{cname}  {vp} VP", font=name_font, fill=LEGEND_TEXT)
+
+        # Building counts line.
+        line2_y = board_h + legend_h * 0.48
+        counts = f"{s_count[cname]}s  {c_count[cname]}c  {r_count[cname]}r"
+        draw.text((text_x, line2_y), counts, font=line_font, fill=LEGEND_TEXT)
+
+        # Badges row, only if earned.
+        badge_y = board_h + legend_h * 0.74
+        badge_x = text_x
+        if has_road:
+            badge_x = _draw_badge(draw, badge_x, badge_y, "LR",
+                                  badge_font, hex_size)
+        if has_army:
+            badge_x = _draw_badge(draw, badge_x, badge_y, "LA",
+                                  badge_font, hex_size)
+
+        # Divider between columns (skip after last).
+        if i < len(colors_seated) - 1:
+            dx = col_x + col_w
+            draw.line(
+                [(dx, board_h + legend_h * 0.15),
+                 (dx, board_h + legend_h * 0.85)],
+                fill=LEGEND_DIVIDER, width=1,
+            )
+
+
+def _find_player_index(state, color_name: str) -> int | None:
+    from catanatron import Color
+    try:
+        c = Color[color_name]
+    except KeyError:
+        return None
+    return state.color_to_index.get(c)
+
+
+def _draw_badge(draw, x: float, y: float, label: str,
+                font, hex_size: float) -> float:
+    """Small pill-shaped badge. Returns the x-offset where the next badge
+    should start (so callers can chain them)."""
+    bbox = draw.textbbox((0, 0), label, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    pad_x = hex_size * 0.12
+    pad_y = hex_size * 0.06
+    x2 = x + tw + 2 * pad_x
+    y2 = y + th + 2 * pad_y
+    draw.rounded_rectangle((x, y, x2, y2), radius=int(pad_y * 1.2),
+                           fill=LEGEND_ACCENT, outline=PIECE_OUTLINE, width=1)
+    draw.text((x + pad_x, y + pad_y), label, font=font, fill=PIECE_OUTLINE)
+    return x2 + hex_size * 0.12
 
 
 def _draw_road(draw, p1, p2, color_name: str, hex_size: float) -> None:
