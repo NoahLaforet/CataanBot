@@ -252,6 +252,32 @@ class TrackerRepl(cmd.Cmd):
             return
         self._maybe_render()
 
+    def do_robberadvice(self, arg: str) -> None:
+        """robberadvice <COLOR> [top] — best tiles to park the robber on.
+
+        Scores every land tile by (opponent pips blocked − your pips
+        blocked), with tiebreakers on victim hand size. Reads live
+        tracker state — so settle/city/roll/give/take first, then ask."""
+        parts = shlex.split(arg)
+        if not parts or len(parts) > 2:
+            print("usage: robberadvice <COLOR> [top]")
+            return
+        color = parts[0]
+        try:
+            top = int(parts[1]) if len(parts) == 2 else 8
+        except ValueError:
+            print(f"error: top must be an integer, got {parts[1]!r}")
+            return
+        try:
+            # Validate color early for a nice error message.
+            self.tracker._color(color)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        from cataanbot.advisor import score_robber_targets, format_robber_ranking
+        scores = score_robber_targets(self.tracker.game, color)
+        print(format_robber_ranking(scores, color, top=top))
+
     def do_undo(self, _arg: str) -> None:
         """undo — drop the most recent op and replay everything before it."""
         try:
