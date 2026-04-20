@@ -252,6 +252,58 @@ class TrackerRepl(cmd.Cmd):
             return
         self._maybe_render()
 
+    def do_secondadvice(self, arg: str) -> None:
+        """secondadvice <COLOR> [first_node] — rank legal second-settlement picks.
+
+        If first_node is omitted, uses COLOR's single existing settlement
+        (errors if they have 0 or 2+). Scoring favors nodes that fill in
+        resources the first settlement lacks — complement value dominates
+        raw pip count, which is usually the right instinct in the opening."""
+        parts = shlex.split(arg)
+        if not parts or len(parts) > 2:
+            print("usage: secondadvice <COLOR> [first_node]")
+            return
+        color = parts[0]
+        try:
+            c = self.tracker._color(color)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+
+        first_node: int | None = None
+        if len(parts) == 2:
+            try:
+                first_node = int(parts[1])
+            except ValueError:
+                print(f"error: first_node must be an integer, got {parts[1]!r}")
+                return
+        else:
+            # Find the color's single settlement.
+            own = [nid for nid, (bc, kind) in
+                   self.tracker.game.state.board.buildings.items()
+                   if bc == c and kind == "SETTLEMENT"]
+            if len(own) == 0:
+                print(f"error: {color.upper()} has no settlement yet — "
+                      f"place one first or pass the node id explicitly")
+                return
+            if len(own) > 1:
+                print(f"error: {color.upper()} has {len(own)} settlements; "
+                      f"pass the intended first node explicitly "
+                      f"(candidates: {sorted(own)})")
+                return
+            first_node = own[0]
+
+        from cataanbot.advisor import (
+            score_second_settlements, format_second_settlement_ranking,
+        )
+        try:
+            scores = score_second_settlements(self.tracker.game,
+                                              first_node, color)
+        except ValueError as e:
+            print(f"error: {e}")
+            return
+        print(format_second_settlement_ranking(scores, first_node, top=10))
+
     def do_tradeeval(self, arg: str) -> None:
         """tradeeval <COLOR> <N> <RES_OUT> <M> <RES_IN> — is this trade good for COLOR?
 
