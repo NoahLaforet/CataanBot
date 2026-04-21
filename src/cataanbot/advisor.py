@@ -382,6 +382,25 @@ class SecondSettleScore:
     best_road: OpeningRoad | None               # best direction for the free road
 
 
+def legal_nodes_after_picks(game: "Game",
+                            picks: list[int]) -> set[int]:
+    """Return the land-node set that remains legal after pretending `picks`
+    are all placed (each pick removes itself + its distance-rule neighbors).
+
+    This is a *hypothetical* tool — it doesn't touch the game state, just
+    does the math so callers can re-score with `score_opening_nodes(game,
+    legal_nodes=...)` and see how the top-N shifts."""
+    m = game.state.board.map
+    neighbors = _build_node_neighbors(m)
+    legal = set(m.land_nodes)
+    for pick in picks:
+        if pick in legal:
+            legal.discard(pick)
+        for nb in neighbors.get(pick, ()):
+            legal.discard(nb)
+    return legal
+
+
 def _build_node_neighbors(m) -> dict[int, set[int]]:
     """Undirected node graph, built from every tile's hex-edge cycle.
 
