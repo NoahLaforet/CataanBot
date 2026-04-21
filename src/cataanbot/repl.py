@@ -53,7 +53,11 @@ class TrackerRepl(cmd.Cmd):
         self._maybe_render()
 
     def do_settle(self, arg: str) -> None:
-        """settle <COLOR> <node> — place a settlement at node id."""
+        """settle <COLOR> <node> — place a settlement at node id.
+
+        If this is the color's FIRST settlement on the board, automatically
+        offers a short second-settlement recommendation right after so the
+        user doesn't have to re-invoke the advisor manually during draft."""
         parts = shlex.split(arg)
         if len(parts) != 2:
             print("usage: settle <COLOR> <node>")
@@ -65,6 +69,36 @@ class TrackerRepl(cmd.Cmd):
             print(f"error: {e}")
             return
         self._maybe_render()
+        self._maybe_offer_secondadvice(color.upper(), int(node))
+
+    def _maybe_offer_secondadvice(self, color_name: str, first_node: int) -> None:
+        """When `color_name` has placed exactly one settlement, surface a
+        short top-5 second-settlement ranking. Silent otherwise and
+        silently swallows any advisor failure — this is a convenience
+        layer, not a checkpoint."""
+        try:
+            c = self.tracker._color(color_name)
+        except TrackerError:
+            return
+        own_settlements = [
+            nid for nid, (bc, kind)
+            in self.tracker.game.state.board.buildings.items()
+            if bc == c and kind == "SETTLEMENT"
+        ]
+        if len(own_settlements) != 1:
+            return
+        try:
+            from cataanbot.advisor import (
+                score_second_settlements, format_second_settlement_ranking,
+            )
+            scores = score_second_settlements(
+                self.tracker.game, first_node, color_name
+            )
+        except Exception:
+            return
+        print()
+        print(f"-- auto: top 5 second-settlement picks for {color_name} --")
+        print(format_second_settlement_ranking(scores, first_node, top=5))
 
     def do_city(self, arg: str) -> None:
         """city <COLOR> <node> — upgrade (or place) to a city at node id."""
