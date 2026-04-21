@@ -217,8 +217,15 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
         r = hex_size * 0.30
         draw.ellipse((pmx - r, pmy - r, pmx + r, pmy + r),
                      fill=PORT_FILL, outline=PORT_LINE, width=2)
-        label = f"{resource[:3]} 2:1" if resource else "3:1"
-        _draw_centered_text(draw, pmx, pmy, label, port_font, BLACK)
+        # Port contents: 2:1 ports get the resource icon + a small "2:1" ratio
+        # tag below; 3:1 ports show just "3:1" centered.
+        if resource:
+            _draw_resource_icon(draw, pmx, pmy - r * 0.2, r * 0.6, resource)
+            ratio_font = _load_font(max(10, int(hex_size * 0.17)))
+            _draw_centered_text(draw, pmx, pmy + r * 0.55, "2:1",
+                                ratio_font, BLACK)
+        else:
+            _draw_centered_text(draw, pmx, pmy, "3:1", port_font, BLACK)
 
     # Roads first so buildings draw on top at the endpoints.
     drawn_edges: set[tuple[int, int]] = set()
