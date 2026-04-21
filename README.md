@@ -149,6 +149,11 @@ dispatcher — useful for auditing past games without booting colonist.
 # per player, over time. Shows who had the economic lead and when
 # the dice shifted it.
 ./bin/cataanbot replay game.jsonl --production-chart prod.png
+
+# Render the dice-fairness bar chart — actual vs. expected roll counts
+# per value 2-12. Ghost outlines show the 2d6 expectation; filled bars
+# are actual; signed delta labels above each bar.
+./bin/cataanbot replay game.jsonl --dice-chart dice.png
 ```
 
 Events that need board topology (settlement / city / road placements and
