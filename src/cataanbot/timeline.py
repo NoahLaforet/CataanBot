@@ -1,30 +1,32 @@
-"""Per-event VP timeline extraction and PNG chart rendering.
+"""Per-event timeline extraction and PNG step-chart rendering.
 
-Given the event stream and per-event timestamps captured during replay,
-`build_vp_timeline` walks the stream and emits a sample every time any
-player's *publicly-visible* VP changes — from settlement / city builds
-(via `BuildEvent.vp_delta`) and largest-army / longest-road flips (via
-`VPEvent`, which handles the previous-holder debit).
+Two timelines are built from the replay event stream:
 
-`render_vp_chart` rasterises the resulting samples into a PNG step chart
-with one colored line per seated player, a dashed 10-VP win line, a
-minute-axis when timestamps are present, and a right-hand legend
-showing each player's final VP.
+* `build_vp_timeline` tracks *publicly-visible* VP — settlement / city
+  builds (via `BuildEvent.vp_delta`) and largest-army / longest-road
+  flips (via `VPEvent`, which handles the previous-holder debit).
+  Hidden dev-card VP stays off this chart; those cards stay face-down
+  until the winner is declared, so the line the chart draws is "what
+  the table could see," which is the more useful narrative anyway.
 
-Hidden dev-card VP is *not* reconstructed here — those stay face-down
-until the game ends, so the line the chart draws is "what the table
-could see," which is the more useful narrative anyway. The winner will
-typically appear to end at 8-10 visible VP and the tracker-side
-final_vp covers the reveal separately.
+* `build_production_timeline` tracks cumulative resource cards each
+  player has collected from rolls (`ProduceEvent`). It's the economic
+  counterpart to the VP timeline — who had the income lead and when
+  the dice shifted the economy.
+
+Both feed `_render_step_chart`, which handles canvas sizing, axis
+rendering, step-plotted lines, and the right-hand legend. The two
+public renderers (`render_vp_chart`, `render_production_chart`) are
+thin adapters that package up their series data and chart config.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
-from cataanbot.events import BuildEvent, Event, VPEvent
+from cataanbot.events import BuildEvent, Event, ProduceEvent, VPEvent
 from cataanbot.live import ColorMap
 
 if TYPE_CHECKING:
@@ -48,6 +50,34 @@ class VpSample:
     event_index: int        # position in the input `events` list
 
 
+@dataclass
+class ProductionSample:
+    """One point on the cumulative-production timeline.
+
+    Same time semantics as `VpSample`. `cards` is total resource cards
+    received from rolls (sum across WOOD/BRICK/SHEEP/WHEAT/ORE) — dev
+    cards, trades, and monopoly/year-of-plenty grants are NOT counted
+    here, since this chart is specifically about dice luck and placement
+    quality, not overall card throughput.
+    """
+    t: float | None
+    cards: dict[str, int]   # color → cumulative cards from rolls
+    event_index: int
+
+
+def _first_ts(timestamps: list[float | None]) -> float | None:
+    for ts in timestamps:
+        if ts is not None:
+            return ts
+    return None
+
+
+def _rel_t(ts: float | None, first: float | None) -> float | None:
+    if ts is None or first is None:
+        return None
+    return ts - first
+
+
 def build_vp_timeline(
     events: list[Event],
     timestamps: list[float | None] | None,
@@ -61,11 +91,7 @@ def build_vp_timeline(
     """
     if timestamps is None:
         timestamps = [None] * len(events)
-    first_ts: float | None = None
-    for ts in timestamps:
-        if ts is not None:
-            first_ts = ts
-            break
+    first_ts = _first_ts(timestamps)
 
     vp: dict[str, int] = {c: 0 for c in color_map.as_dict().values()}
     samples: list[VpSample] = [
@@ -92,29 +118,69 @@ def build_vp_timeline(
             changed = True
         if not changed:
             continue
-        t_rel: float | None
-        if ts is not None and first_ts is not None:
-            t_rel = ts - first_ts
-        else:
-            t_rel = None
-        samples.append(VpSample(t=t_rel, vp=dict(vp), event_index=i))
+        samples.append(VpSample(
+            t=_rel_t(ts, first_ts), vp=dict(vp), event_index=i,
+        ))
     return samples
 
 
-def _samples_xy(
+def build_production_timeline(
+    events: list[Event],
+    timestamps: list[float | None] | None,
+    color_map: ColorMap,
+) -> list[ProductionSample]:
+    """Walk the event stream and emit a sample each time a player
+    collects cards from a roll (`ProduceEvent`).
+
+    The returned list always starts with a baseline at 0 cards so the
+    chart grounds cleanly; values are cumulative across the game.
+    """
+    if timestamps is None:
+        timestamps = [None] * len(events)
+    first_ts = _first_ts(timestamps)
+
+    cards: dict[str, int] = {c: 0 for c in color_map.as_dict().values()}
+    samples: list[ProductionSample] = [
+        ProductionSample(
+            t=0.0 if first_ts is not None else None,
+            cards=dict(cards), event_index=-1,
+        ),
+    ]
+
+    for i, event in enumerate(events):
+        if not isinstance(event, ProduceEvent):
+            continue
+        color = color_map.get(event.player)
+        cards.setdefault(color, 0)
+        gained = sum(event.resources.values())
+        if gained == 0:
+            continue
+        cards[color] += gained
+        ts = timestamps[i] if i < len(timestamps) else None
+        samples.append(ProductionSample(
+            t=_rel_t(ts, first_ts), cards=dict(cards), event_index=i,
+        ))
+    return samples
+
+
+def _sample_x(t: float | None, event_index: int) -> float:
+    """x-coord for a sample: minutes when timestamped, else event index."""
+    return t / 60.0 if t is not None else float(max(event_index, 0))
+
+
+def _vp_series(
     samples: list[VpSample], color: str,
 ) -> tuple[list[float], list[int]]:
-    """Return parallel (x, vp) arrays for one color.
+    xs = [_sample_x(s.t, s.event_index) for s in samples]
+    ys = [s.vp.get(color, 0) for s in samples]
+    return xs, ys
 
-    x is minutes when timestamps are present, event_index otherwise.
-    Colors missing from a sample's dict read as 0 (pre-seat).
-    """
-    xs: list[float] = []
-    ys: list[int] = []
-    for s in samples:
-        x = s.t / 60.0 if s.t is not None else float(max(s.event_index, 0))
-        xs.append(x)
-        ys.append(s.vp.get(color, 0))
+
+def _production_series(
+    samples: list[ProductionSample], color: str,
+) -> tuple[list[float], list[int]]:
+    xs = [_sample_x(s.t, s.event_index) for s in samples]
+    ys = [s.cards.get(color, 0) for s in samples]
     return xs, ys
 
 
@@ -131,41 +197,137 @@ def render_vp_chart(
     sample has a real timestamp the x-axis is minutes; otherwise it's
     event index.
     """
-    from PIL import Image, ImageDraw
-    from cataanbot.render import (
-        PIECE_OUTLINE, PLAYER_COLORS, _load_font,
-    )
-
-    out_path = Path(out_path)
-
     users_by_color = {c: u for u, c in color_map.as_dict().items()}
     seated = [c for c in _SEAT_ORDER if c in users_by_color]
     if not seated:
         raise ValueError("no seated players in color_map — nothing to chart")
 
     has_time = any(s.t is not None for s in samples)
+    series = {c: _vp_series(samples, c) for c in seated}
+    final_sample = samples[-1] if samples else None
 
+    final_vp = {
+        c: (final_sample.vp.get(c, 0) if final_sample else 0)
+        for c in seated
+    }
+    final_max = max(final_vp.values(), default=0)
+    max_y = float(max(11, final_max + 1))
+
+    return _render_step_chart(
+        seated=seated,
+        users_by_color=users_by_color,
+        series=series,
+        has_time=has_time,
+        max_y=max_y,
+        y_tick_step=2,
+        threshold=(10.0, "10 VP (win)", (180, 40, 40)),
+        legend_heading="Final VP",
+        legend_value=lambda c: str(final_vp[c]),
+        title=title or "VP over time",
+        footer=(
+            "Public VP only — hidden dev-card VP stays off this chart "
+            "until a winner is declared."
+        ),
+        out_path=out_path,
+    )
+
+
+def render_production_chart(
+    samples: list[ProductionSample],
+    color_map: ColorMap,
+    out_path: str | Path,
+    title: str | None = None,
+) -> Path:
+    """Draw a PNG step chart of cumulative cards received from rolls.
+
+    Tracks gross cards from `ProduceEvent` only — trades, monopolies,
+    year-of-plenty, and dev-card buys are NOT counted. This makes it
+    a reasonably clean read on dice-luck + placement quality.
+    """
+    users_by_color = {c: u for u, c in color_map.as_dict().items()}
+    seated = [c for c in _SEAT_ORDER if c in users_by_color]
+    if not seated:
+        raise ValueError("no seated players in color_map — nothing to chart")
+
+    has_time = any(s.t is not None for s in samples)
+    series = {c: _production_series(samples, c) for c in seated}
+    final_sample = samples[-1] if samples else None
+
+    final_cards = {
+        c: (final_sample.cards.get(c, 0) if final_sample else 0)
+        for c in seated
+    }
+    final_max = max(final_cards.values(), default=0)
+    # Round max_y up to the next multiple of 10 for a cleaner grid.
+    max_y = float(max(10, ((final_max + 9) // 10) * 10))
+    y_tick_step = max(5, int(max_y // 8))
+    y_tick_step = int(round(y_tick_step / 5) * 5) or 5
+
+    return _render_step_chart(
+        seated=seated,
+        users_by_color=users_by_color,
+        series=series,
+        has_time=has_time,
+        max_y=max_y,
+        y_tick_step=y_tick_step,
+        threshold=None,
+        legend_heading="Cards from rolls",
+        legend_value=lambda c: str(final_cards[c]),
+        title=title or "Cards received from rolls",
+        footer=(
+            "Roll production only — trades, monopolies, year-of-plenty, "
+            "and dev-card buys are excluded."
+        ),
+        out_path=out_path,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared step-chart renderer
+# ---------------------------------------------------------------------------
+
+def _render_step_chart(
+    *,
+    seated: list[str],
+    users_by_color: dict[str, str],
+    series: dict[str, tuple[list[float], list[int]]],
+    has_time: bool,
+    max_y: float,
+    y_tick_step: int,
+    threshold: tuple[float, str, tuple[int, int, int]] | None,
+    legend_heading: str,
+    legend_value: Callable[[str], str],
+    title: str,
+    footer: str,
+    out_path: str | Path,
+) -> Path:
+    from PIL import Image, ImageDraw
+    from cataanbot.render import (
+        PIECE_OUTLINE, PLAYER_COLORS, _load_font,
+    )
+
+    out_path = Path(out_path)
     title_font = _load_font(18)
     label_font = _load_font(13)
     legend_font = _load_font(14)
 
-    # Legend sizing — measure the actual pixel width of every legend
-    # row with PIL rather than guess at char widths (em-dash + final
-    # VP at the end of a long username will otherwise clip off the
-    # right edge of the canvas). Grow the canvas, not the margin,
-    # so margin_r widening actually gains us room instead of just
-    # shrinking the plot.
-    final_sample = samples[-1] if samples else None
+    # Measure every legend row so the canvas grows to fit the longest
+    # label. Previously we hand-sized margin_r and clipped long names
+    # when the label ran past the image's right edge.
     _measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     max_label_w = 0
+    legend_labels: dict[str, str] = {}
     for color in seated:
         username = users_by_color[color]
-        final = final_sample.vp.get(color, 0) if final_sample else 0
-        w = _measure.textlength(
-            f"{username} ({color}) — {final}", font=legend_font,
+        val = legend_value(color)
+        label = (
+            f"{username} ({color}) — {val}" if val
+            else f"{username} ({color})"
         )
+        legend_labels[color] = label
+        w = int(_measure.textlength(label, font=legend_font))
         if w > max_label_w:
-            max_label_w = int(w)
+            max_label_w = w
     # 22px swatch-plus-gap on the left, 16px breathing room on the right.
     legend_px = 22 + max_label_w + 16
     margin_l, margin_r = 64, max(200, legend_px)
@@ -177,27 +339,16 @@ def render_vp_chart(
 
     img = Image.new("RGB", (W, H), (245, 245, 240))
     draw = ImageDraw.Draw(img)
-
-    if title is None:
-        title = "VP over time"
     draw.text((margin_l, 16), title, font=title_font, fill=PIECE_OUTLINE)
 
     # --- axis ranges ------------------------------------------------------
-    max_x = max(
-        (s.t / 60.0 if s.t is not None else float(max(s.event_index, 0))
-         for s in samples),
-        default=1.0,
-    )
-    if max_x <= 0:
-        max_x = 1.0
-    # Pad x so the last point isn't glued to the legend.
+    max_x = 1.0
+    for xs, _ in series.values():
+        for x in xs:
+            if x > max_x:
+                max_x = x
+    # Pad x so the last sample isn't glued to the legend.
     max_x *= 1.02
-
-    final_max_vp = max(
-        (max(s.vp.values()) if s.vp else 0 for s in samples),
-        default=0,
-    )
-    max_y = max(11, final_max_vp + 1)
 
     def xpx(x: float) -> float:
         return margin_l + (x / max_x) * plot_w
@@ -206,11 +357,11 @@ def render_vp_chart(
         return margin_t + plot_h - (y / max_y) * plot_h
 
     # --- gridlines + y labels --------------------------------------------
-    for y in range(0, int(max_y) + 1, 2):
+    for y in range(0, int(max_y) + 1, y_tick_step):
         gy = ypx(y)
         draw.line([(margin_l, gy), (margin_l + plot_w, gy)],
                   fill=(215, 215, 210), width=1)
-        draw.text((margin_l - 28, gy - 8), f"{y:>2}",
+        draw.text((margin_l - 32, gy - 8), f"{y:>3}",
                   font=label_font, fill=PIECE_OUTLINE)
 
     # --- x-axis ticks -----------------------------------------------------
@@ -226,7 +377,6 @@ def render_vp_chart(
                       font=label_font, fill=PIECE_OUTLINE)
             t += tick_step
     else:
-        # No timestamps — label every 20 events or so.
         step = max(1, int(math.ceil(max_x / 8)))
         x = 0
         while x <= max_x + 1e-6:
@@ -243,49 +393,40 @@ def render_vp_chart(
         outline=PIECE_OUTLINE, width=2,
     )
 
-    # --- 10-VP win line (dashed) -----------------------------------------
-    # Label the line inside the plot area to leave the right margin
-    # clean for the legend.
-    win_y = ypx(10)
-    _dashed_hline(
-        draw,
-        margin_l, margin_l + plot_w,
-        win_y,
-        color=(180, 40, 40), width=2, dash=8, gap=6,
-    )
-    draw.text(
-        (margin_l + 6, win_y - 16), "10 VP (win)",
-        font=label_font, fill=(180, 40, 40),
-    )
+    # --- optional threshold line ----------------------------------------
+    if threshold is not None:
+        thr_y_val, thr_label, thr_color = threshold
+        # Only draw if the threshold is actually on-plot; otherwise skip
+        # to avoid a dashed line sitting on the top/bottom edge.
+        if 0 <= thr_y_val <= max_y:
+            thr_y = ypx(thr_y_val)
+            _dashed_hline(
+                draw, margin_l, margin_l + plot_w, thr_y,
+                color=thr_color, width=2, dash=8, gap=6,
+            )
+            draw.text(
+                (margin_l + 6, thr_y - 16), thr_label,
+                font=label_font, fill=thr_color,
+            )
 
     # --- per-color step lines --------------------------------------------
-    # Draw in a stable order so overlapping lines are deterministic.
     for color in seated:
-        xs, ys = _samples_xy(samples, color)
+        xs, ys = series[color]
         rgb = PLAYER_COLORS.get(color, (120, 120, 120))
-        outline = (
-            (40, 40, 40) if color == "WHITE" else PIECE_OUTLINE
-        )
-        # Step plot — horizontal segment then a vertical jump at each
-        # sample i > 0.
+        outline = (40, 40, 40) if color == "WHITE" else PIECE_OUTLINE
         pts: list[tuple[float, float]] = []
         for i, (x, y) in enumerate(zip(xs, ys)):
             if i == 0:
                 pts.append((xpx(x), ypx(y)))
                 continue
-            # Move horizontally to new x at previous y.
             prev_y = ys[i - 1]
             pts.append((xpx(x), ypx(prev_y)))
-            # Then vertical jump to new y.
             pts.append((xpx(x), ypx(y)))
-        # Extend the final value out to the right edge so the line doesn't
-        # appear to end early.
-        pts.append((xpx(max_x), ypx(ys[-1])))
-        # Outline pass for WHITE visibility.
+        if ys:
+            pts.append((xpx(max_x), ypx(ys[-1])))
         if color == "WHITE":
             _polyline(draw, pts, fill=outline, width=4)
         _polyline(draw, pts, fill=rgb, width=3)
-        # Markers at each sample.
         for x, y in zip(xs[1:], ys[1:]):
             cx, cy = xpx(x), ypx(y)
             draw.ellipse(
@@ -296,28 +437,21 @@ def render_vp_chart(
     # --- legend ----------------------------------------------------------
     legend_x = margin_l + plot_w + 16
     legend_y = margin_t
-    draw.text((legend_x, legend_y - 4), "Final VP",
+    draw.text((legend_x, legend_y - 4), legend_heading,
               font=legend_font, fill=PIECE_OUTLINE)
     row_y = legend_y + 18
     for color in seated:
-        username = users_by_color[color]
-        final = final_sample.vp.get(color, 0) if final_sample else 0
         rgb = PLAYER_COLORS.get(color, (120, 120, 120))
         outline = (40, 40, 40) if color == "WHITE" else PIECE_OUTLINE
         draw.rectangle(
             [legend_x, row_y + 3, legend_x + 16, row_y + 14],
             fill=rgb, outline=outline, width=1,
         )
-        label = f"{username} ({color}) — {final}"
-        draw.text((legend_x + 22, row_y), label,
+        draw.text((legend_x + 22, row_y), legend_labels[color],
                   font=legend_font, fill=PIECE_OUTLINE)
         row_y += 22
 
     # --- footnote --------------------------------------------------------
-    footer = (
-        "Public VP only — hidden dev-card VP stays off this chart "
-        "until a winner is declared."
-    )
     draw.text((margin_l, H - 22), footer,
               font=label_font, fill=(120, 118, 112))
 
