@@ -233,6 +233,97 @@ def test_format_histogram_hides_luck_column_for_short_games():
     assert "exp" not in out
 
 
+def test_trade_ledger_aggregates_resources_and_partners():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE", "Carol": "WHITE"})
+    events = [
+        TradeCommitEvent(
+            giver="Alice", receiver="Bob",
+            gave={"WOOD": 2}, got={"WHEAT": 1},
+        ),
+        TradeCommitEvent(
+            giver="Alice", receiver="Carol",
+            gave={"SHEEP": 1}, got={"ORE": 1},
+        ),
+        TradeCommitEvent(
+            giver="Bob", receiver="Alice",
+            gave={"BRICK": 1}, got={"WOOD": 1},
+        ),
+    ]
+    rep = build_report(events, [_result(e) for e in events], cm,
+                       final_vp={"RED": 0, "BLUE": 0, "WHITE": 0})
+    alice = rep.players["RED"]
+    assert alice.trades_player == 3
+    # Trades 1+2 give; trade 3 she's on the receive side and sends WOOD back.
+    assert alice.trade_gave == {"WOOD": 3, "SHEEP": 1}
+    assert alice.trade_got == {"WHEAT": 1, "ORE": 1, "BRICK": 1}
+    assert alice.trade_partners["BLUE"] == 2
+    assert alice.trade_partners["WHITE"] == 1
+
+
+def test_trade_ledger_tracks_bank_trade_shapes():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"WOOD": 4}, got={"WHEAT": 1},
+        ),
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"WOOD": 4}, got={"WHEAT": 1},
+        ),
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"BRICK": 3}, got={"ORE": 1},
+        ),
+    ]
+    rep = build_report(events, [_result(e) for e in events], cm,
+                       final_vp={"RED": 0})
+    alice = rep.players["RED"]
+    assert alice.trades_bank == 3
+    assert len(alice.bank_trades) == 3
+    # Bank trades should NOT feed into player-trade gave/got totals.
+    assert alice.trade_gave == {}
+    assert alice.trade_got == {}
+
+
+def test_format_report_renders_trade_ledger():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        TradeCommitEvent(
+            giver="Alice", receiver="Bob",
+            gave={"WOOD": 2}, got={"WHEAT": 1},
+        ),
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"SHEEP": 4}, got={"ORE": 1},
+        ),
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"SHEEP": 4}, got={"ORE": 1},
+        ),
+    ]
+    rep = build_report(events, [_result(e) for e in events], cm,
+                       final_vp={"RED": 0, "BLUE": 0})
+    out = format_report(rep)
+    assert "Trade ledger" in out
+    # Partner line: Alice traded once with Bob (BLUE).
+    assert "BLUE×1" in out
+    # Duplicate bank-trade shape should coalesce with a ×2 suffix.
+    assert "4xSHEEP→1xORE ×2" in out
+    # Net flow: Alice gave 2xWOOD, got 1xWHEAT.
+    assert "-2xWOOD" in out
+    assert "+1xWHEAT" in out
+
+
+def test_format_report_ledger_empty_when_no_trades():
+    cm = ColorMap({"Alice": "RED"})
+    events = [RollEvent(player="Alice", d1=3, d2=4)]
+    rep = build_report(events, [_result(events[0])], cm,
+                       final_vp={"RED": 0})
+    out = format_report(rep)
+    assert "(no trades in log)" in out
+
+
 def test_build_report_registers_winner_color():
     # Even if the winner never produced/rolled, GameOverEvent should
     # make sure they land in players/ so the scoreboard isn't blank.

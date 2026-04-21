@@ -49,6 +49,12 @@ class PlayerStats:
     steals_as_victim: int = 0
     trades_player: int = 0
     trades_bank: int = 0
+    trade_gave: dict[str, int] = field(default_factory=dict)
+    trade_got: dict[str, int] = field(default_factory=dict)
+    trade_partners: Counter = field(default_factory=Counter)
+    bank_trades: list[tuple[dict[str, int], dict[str, int]]] = field(
+        default_factory=list,
+    )
     vp_awards: list[str] = field(default_factory=list)
 
     @property
@@ -131,12 +137,31 @@ def build_report(
             giver_stats = _stats_for(stats_by_color, color_map, event.giver)
             if event.receiver == "BANK":
                 giver_stats.trades_bank += 1
+                giver_stats.bank_trades.append(
+                    (dict(event.gave), dict(event.got)),
+                )
             else:
                 giver_stats.trades_player += 1
                 recv_stats = _stats_for(
                     stats_by_color, color_map, event.receiver,
                 )
                 recv_stats.trades_player += 1
+                giver_stats.trade_partners[recv_stats.color] += 1
+                recv_stats.trade_partners[giver_stats.color] += 1
+                for res, n in event.gave.items():
+                    giver_stats.trade_gave[res] = (
+                        giver_stats.trade_gave.get(res, 0) + n
+                    )
+                    recv_stats.trade_got[res] = (
+                        recv_stats.trade_got.get(res, 0) + n
+                    )
+                for res, n in event.got.items():
+                    giver_stats.trade_got[res] = (
+                        giver_stats.trade_got.get(res, 0) + n
+                    )
+                    recv_stats.trade_gave[res] = (
+                        recv_stats.trade_gave.get(res, 0) + n
+                    )
         elif isinstance(event, VPEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.vp_awards.append(event.reason)
@@ -192,6 +217,8 @@ def format_report(report: ReplayReport) -> str:
     lines.extend(_format_histogram(report.roll_histogram))
     lines.append("")
     lines.extend(_format_per_player(report))
+    lines.append("")
+    lines.extend(_format_trade_ledger(report))
     lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
@@ -310,6 +337,88 @@ def _format_per_player(report: ReplayReport) -> list[str]:
                 f"{s.trades_player}, bank {s.trades_bank}"
             )
     return lines
+
+
+def _format_trade_ledger(report: ReplayReport) -> list[str]:
+    """Who traded what with whom. The ledger answers "is Felix dumping
+    wheat on BrickdDaddy" at a glance — strategic signal that nothing
+    else in the report surfaces."""
+    lines = ["Trade ledger:"]
+    players = _players_in_color_order(report.players)
+    any_activity = any(
+        s.trades_player or s.trades_bank for _, s in players
+    )
+    if not any_activity:
+        lines.append("  (no trades in log)")
+        return lines
+    for color, s in players:
+        if not (s.trades_player or s.trades_bank):
+            continue
+        lines.append(f"  {s.username} ({color}):")
+        if s.trades_player:
+            partners = ", ".join(
+                f"{c}×{n}" for c, n in s.trade_partners.most_common()
+            )
+            lines.append(
+                f"    partners      {s.trades_player} trades — {partners}"
+            )
+            lines.append(
+                f"    gave          {_fmt_res_counter(s.trade_gave)}"
+            )
+            lines.append(
+                f"    received      {_fmt_res_counter(s.trade_got)}"
+            )
+            net = _net_flow(s.trade_got, s.trade_gave)
+            lines.append(
+                f"    net           {_fmt_signed_counter(net)}"
+            )
+        if s.bank_trades:
+            lines.append(
+                f"    bank/port     {len(s.bank_trades)} trades — "
+                f"{_fmt_bank_trades(s.bank_trades)}"
+            )
+    return lines
+
+
+def _net_flow(
+    got: dict[str, int], gave: dict[str, int],
+) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for r in _RESOURCES:
+        delta = got.get(r, 0) - gave.get(r, 0)
+        if delta:
+            out[r] = delta
+    return out
+
+
+def _fmt_signed_counter(res: dict[str, int]) -> str:
+    parts = []
+    for r in _RESOURCES:
+        n = res.get(r, 0)
+        if n:
+            parts.append(f"{n:+d}x{r}")
+    return " ".join(parts) if parts else "even"
+
+
+def _fmt_bank_trades(
+    trades: list[tuple[dict[str, int], dict[str, int]]],
+) -> str:
+    # Group identical gave→got shapes so "4xWOOD→1xWHEAT ×3" reads
+    # cleaner than listing three identical entries.
+    shape_counts: Counter = Counter()
+    for gave, got in trades:
+        key = (
+            tuple(sorted(gave.items())),
+            tuple(sorted(got.items())),
+        )
+        shape_counts[key] += 1
+    parts = []
+    for (gave_items, got_items), n in shape_counts.most_common():
+        gave_str = " ".join(f"{v}x{k}" for k, v in gave_items)
+        got_str = " ".join(f"{v}x{k}" for k, v in got_items)
+        suffix = f" ×{n}" if n > 1 else ""
+        parts.append(f"{gave_str}→{got_str}{suffix}")
+    return ", ".join(parts)
 
 
 def _format_dispatch_quality(report: ReplayReport) -> list[str]:
