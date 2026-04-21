@@ -1,5 +1,7 @@
 # CataanBot
 
+[![tests](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml/badge.svg)](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml)
+
 A personal Settlers of Catan advisor. Renders a live board, tracks all players
 as the game progresses, and suggests strong moves backed by expected-value
 reasoning over dice probabilities and catanatron's simulation engine.
