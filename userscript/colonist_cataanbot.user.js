@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.4.2
+// @version      0.4.3
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -37,14 +37,19 @@
     //  2. Per-DOM-node dataset marker — skips a node we already processed
     //     this run. Handles MutationObserver + polling racing on the same
     //     element.
-    //  3. Short-TTL content cache — skips the same payload if we posted it
-    //     within RECENT_TTL_MS. Backstop for the rare case a recycled node
-    //     slips past the at-bottom check.
-    // TTL is short enough that two genuinely-repeated events (robber move
-    // to the same tile two turns later) are still posted — turns take
-    // much longer than RECENT_TTL_MS between identical-content rounds.
+    //  3. Content cache — skips the same payload if we posted it within
+    //     RECENT_TTL_MS. Backstop for recycled nodes that slip past the
+    //     at-bottom check and lose their per-node dataset marker when
+    //     colonist's virtualizer destroys + re-creates them on scroll.
+    // TTL needs to be long enough to cover a full setup phase (~45s of
+    // back-to-back "placed a Settlement / Road" events that share the
+    // same content key per player). Legitimate same-content repeats at
+    // this distance are rare: a whole turn cycle takes ~20-30s in a
+    // 4-player game, so 60s is comfortably below the "two of the same
+    // roll outcome actually repeat" floor. game5 had ~90 duplicated
+    // keys at the 5s setting because setup spans longer than 5s.
     const NODE_KEY_ATTR = 'cataanbotKey';
-    const RECENT_TTL_MS = 5000;
+    const RECENT_TTL_MS = 60000;
     const AT_BOTTOM_PX = 50;
     const recentSeen = new Map();
 
