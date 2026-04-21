@@ -253,7 +253,8 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                report: bool = False,
                report_out: str | None = None,
                vp_chart: str | None = None,
-               production_chart: str | None = None) -> int:
+               production_chart: str | None = None,
+               dice_chart: str | None = None) -> int:
     """Replay a bridge JSONL file through the Event→Tracker dispatcher.
 
     Each line is parsed with `parse_event` and applied to a fresh
@@ -306,7 +307,8 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             event = parse_event(payload)
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
-            if report or report_out or vp_chart or production_chart:
+            if (report or report_out or vp_chart or production_chart
+                    or dice_chart):
                 events_for_report.append(event)
                 results_for_report.append(result)
                 ts = payload.get("ts") if isinstance(payload, dict) else None
@@ -384,6 +386,19 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             title=f"Cards received from rolls — {jsonl_path}",
         )
         print(f"wrote production timeline to {path}")
+    if dice_chart:
+        from collections import Counter
+        from cataanbot.dice_chart import render_dice_histogram
+        from cataanbot.events import RollEvent
+        hist: Counter = Counter()
+        for e in events_for_report:
+            if isinstance(e, RollEvent):
+                hist[e.d1 + e.d2] += 1
+        path = render_dice_histogram(
+            hist, dice_chart,
+            title=f"Dice rolls — actual vs. expected — {jsonl_path}",
+        )
+        print(f"wrote dice histogram to {path}")
     return 0
 
 
@@ -604,6 +619,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Render a PNG line chart of cumulative resource cards "
              "received from rolls (dice luck + placement quality).",
     )
+    p_replay.add_argument(
+        "--dice-chart", dest="dice_chart", default=None,
+        metavar="PATH",
+        help="Render a PNG bar chart of actual vs. expected roll "
+             "counts per value (the 2d6 fairness graphic).",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
@@ -634,7 +655,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_replay(args.jsonl, args.player, args.verbose,
                           args.save_to, args.render_to, args.hex_size,
                           args.report, args.report_out, args.vp_chart,
-                          args.production_chart)
+                          args.production_chart, args.dice_chart)
     return 2
 
 
