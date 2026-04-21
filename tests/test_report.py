@@ -324,6 +324,81 @@ def test_format_report_ledger_empty_when_no_trades():
     assert "(no trades in log)" in out
 
 
+def test_known_flow_sources_and_sinks():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 3, "BRICK": 2}),
+        TradeCommitEvent(
+            giver="Alice", receiver="Bob",
+            gave={"WOOD": 1}, got={"WHEAT": 1},
+        ),
+        DiscardEvent(player="Alice", resources={"BRICK": 1}),
+        # A settlement costs WOOD+BRICK+SHEEP+WHEAT; should subtract from sinks.
+        BuildEvent(player="Alice", piece="settlement"),
+        DevCardBuyEvent(player="Alice"),  # SHEEP+WHEAT+ORE
+        DevCardPlayEvent(
+            player="Alice", card="year_of_plenty",
+            resources={"ORE": 2},
+        ),
+        MonopolyStealEvent(player="Alice", resource="SHEEP", count=4),
+        StealEvent(thief="Alice", victim="Bob", resource="BRICK"),
+        StealEvent(thief="Bob", victim="Alice", resource="WHEAT"),
+    ]
+    rep = build_report(events, [_result(e) for e in events], cm,
+                       final_vp={"RED": 0, "BLUE": 0})
+    # Pull the private helper via the module to assert the math.
+    from cataanbot.report import _known_flow
+    alice = rep.players["RED"]
+    sources, sinks, net = _known_flow(alice)
+    # Sources: WOOD 3 from produce, BRICK 2 from produce + 1 from steal,
+    #          WHEAT 1 from trade, SHEEP 4 from monopoly, ORE 2 from YoP.
+    assert sources == {
+        "WOOD": 3, "BRICK": 3, "SHEEP": 4, "WHEAT": 1, "ORE": 2,
+    }
+    # Sinks: WOOD 1 trade + 1 settle = 2; BRICK 1 discard + 1 settle = 2;
+    #        SHEEP 1 settle + 1 dev = 2; WHEAT 1 settle + 1 dev + 1 steal = 3;
+    #        ORE 1 dev.
+    assert sinks == {
+        "WOOD": 2, "BRICK": 2, "SHEEP": 2, "WHEAT": 3, "ORE": 1,
+    }
+    assert net == {
+        "WOOD": 1, "BRICK": 1, "SHEEP": 2, "WHEAT": -2, "ORE": 1,
+    }
+
+
+def test_known_flow_unknown_steals_do_not_register():
+    # Resource=None steals shouldn't touch steal_gained/lost — keeps us
+    # honest about what's actually observable from the log.
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        StealEvent(thief="Alice", victim="Bob", resource=None),
+    ]
+    rep = build_report(events, [_result(events[0])], cm,
+                       final_vp={"RED": 0, "BLUE": 0})
+    assert rep.players["RED"].steal_gained == {}
+    assert rep.players["BLUE"].steal_lost == {}
+    # Count-level counters still bump.
+    assert rep.players["RED"].steals_as_thief == 1
+    assert rep.players["BLUE"].steals_as_victim == 1
+
+
+def test_format_report_renders_known_flow():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 5}),
+        BuildEvent(player="Alice", piece="road"),
+    ]
+    rep = build_report(events, [_result(e) for e in events], cm,
+                       final_vp={"RED": 0})
+    out = format_report(rep)
+    assert "Known resource flow" in out
+    # Alice: +5 WOOD produced, -1 WOOD road cost, -1 BRICK road cost.
+    # The row should show "+4" under WOOD and "-1" under BRI.
+    # Just check the line's shape is present.
+    assert "Alice" in out
+    assert "+4" in out and "-1" in out
+
+
 def test_build_report_registers_winner_color():
     # Even if the winner never produced/rolled, GameOverEvent should
     # make sure they land in players/ so the scoreboard isn't blank.

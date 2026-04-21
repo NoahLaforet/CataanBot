@@ -25,6 +25,15 @@ from cataanbot.live import ColorMap, DispatchResult
 
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 
+# Build costs by piece — used to estimate resource outflow even when the
+# BuildEvent itself lands as "unhandled" (no board topology yet).
+_BUILD_COSTS = {
+    "settlement": {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1},
+    "city":       {"WHEAT": 2, "ORE": 3},
+    "road":       {"WOOD": 1, "BRICK": 1},
+}
+_DEV_BUY_COST = {"SHEEP": 1, "WHEAT": 1, "ORE": 1}
+
 # 2d6 probabilities — how often each sum "should" appear.
 _DICE_PROBABILITY = {
     2: 1 / 36, 3: 2 / 36, 4: 3 / 36, 5: 4 / 36, 6: 5 / 36,
@@ -56,6 +65,14 @@ class PlayerStats:
         default_factory=list,
     )
     vp_awards: list[str] = field(default_factory=list)
+    yop_gained: dict[str, int] = field(default_factory=dict)
+    mono_gained: dict[str, int] = field(default_factory=dict)
+    # Only populated when the resource is revealed in the log — in
+    # colonist.io that happens when the current user is either side
+    # of the steal. Third-party steals stay invisible here, which is
+    # the whole reason hand-inference is a downstream problem.
+    steal_gained: dict[str, int] = field(default_factory=dict)
+    steal_lost: dict[str, int] = field(default_factory=dict)
 
     @property
     def produced_total(self) -> int:
@@ -125,14 +142,27 @@ def build_report(
         elif isinstance(event, DevCardPlayEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.dev_plays[event.card] += 1
+            if event.card == "year_of_plenty":
+                for res, n in event.resources.items():
+                    stats.yop_gained[res] = stats.yop_gained.get(res, 0) + n
         elif isinstance(event, MonopolyStealEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.monopolies.append((event.resource, event.count))
+            stats.mono_gained[event.resource] = (
+                stats.mono_gained.get(event.resource, 0) + event.count
+            )
         elif isinstance(event, StealEvent):
             thief_stats = _stats_for(stats_by_color, color_map, event.thief)
             victim_stats = _stats_for(stats_by_color, color_map, event.victim)
             thief_stats.steals_as_thief += 1
             victim_stats.steals_as_victim += 1
+            if event.resource:
+                thief_stats.steal_gained[event.resource] = (
+                    thief_stats.steal_gained.get(event.resource, 0) + 1
+                )
+                victim_stats.steal_lost[event.resource] = (
+                    victim_stats.steal_lost.get(event.resource, 0) + 1
+                )
         elif isinstance(event, TradeCommitEvent):
             giver_stats = _stats_for(stats_by_color, color_map, event.giver)
             if event.receiver == "BANK":
@@ -219,6 +249,8 @@ def format_report(report: ReplayReport) -> str:
     lines.extend(_format_per_player(report))
     lines.append("")
     lines.extend(_format_trade_ledger(report))
+    lines.append("")
+    lines.extend(_format_known_flow(report))
     lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
@@ -419,6 +451,82 @@ def _fmt_bank_trades(
         suffix = f" ×{n}" if n > 1 else ""
         parts.append(f"{gave_str}→{got_str}{suffix}")
     return ", ".join(parts)
+
+
+def _known_flow(s: PlayerStats) -> tuple[
+    dict[str, int], dict[str, int], dict[str, int],
+]:
+    """Return (sources, sinks, net) per resource.
+
+    "Known" means we saw the resource explicitly in the log — so
+    third-party steals and monopoly-victim losses don't appear here.
+    Net can still be deceiving (hidden steals won't net out), but the
+    sign tells you whether the player's visible activity had them
+    generating or spending."""
+    sources: dict[str, int] = {}
+    sinks: dict[str, int] = {}
+
+    def _add(bucket: dict[str, int], res: str, n: int) -> None:
+        if n:
+            bucket[res] = bucket.get(res, 0) + n
+
+    for src in (s.produced, s.trade_got, s.yop_gained,
+                s.mono_gained, s.steal_gained):
+        for r, n in src.items():
+            _add(sources, r, n)
+    for snk in (s.discarded, s.trade_gave, s.steal_lost):
+        for r, n in snk.items():
+            _add(sinks, r, n)
+
+    for piece, count in s.builds.items():
+        cost = _BUILD_COSTS.get(piece)
+        if not cost:
+            continue
+        for r, n in cost.items():
+            _add(sinks, r, n * count)
+    if s.dev_buys:
+        for r, n in _DEV_BUY_COST.items():
+            _add(sinks, r, n * s.dev_buys)
+
+    net = {}
+    for r in _RESOURCES:
+        delta = sources.get(r, 0) - sinks.get(r, 0)
+        if delta:
+            net[r] = delta
+    return sources, sinks, net
+
+
+def _format_known_flow(report: ReplayReport) -> list[str]:
+    """Show per-player net visible resource flow.
+
+    Sources include dice production, trades received, monopoly hauls,
+    YoP gains, and steals where the resource was revealed. Sinks
+    include discards, trades given, inferred build/dev-buy costs, and
+    steals lost with revealed resource."""
+    lines = [
+        "Known resource flow "
+        "(sources - sinks; hidden steals / monopoly victims excluded):",
+    ]
+    players = _players_in_color_order(report.players)
+    if not players:
+        lines.append("  (no players)")
+        return lines
+    name_width = max(
+        (len(s.username) for _, s in players), default=8,
+    )
+    name_width = max(name_width, 8)
+    header = "  " + " " * name_width + "".join(
+        f"{r[:3]:>5}" for r in _RESOURCES
+    )
+    lines.append(header)
+    for _color, s in players:
+        _sources, _sinks, net = _known_flow(s)
+        cells = []
+        for r in _RESOURCES:
+            v = net.get(r, 0)
+            cells.append(f"{v:>+5d}" if v else f"{'.':>5}")
+        lines.append(f"  {s.username:<{name_width}}" + "".join(cells))
+    return lines
 
 
 def _format_dispatch_quality(report: ReplayReport) -> list[str]:
