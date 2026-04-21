@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
-    Event, GameOverEvent, MonopolyStealEvent, ProduceEvent, RollEvent,
-    StealEvent, TradeCommitEvent, VPEvent,
+    Event, GameOverEvent, MonopolyStealEvent, NoStealEvent, ProduceEvent,
+    RobberMoveEvent, RollEvent, StealEvent, TradeCommitEvent, VPEvent,
 )
 from cataanbot.live import ColorMap, DispatchResult
 
@@ -88,6 +88,32 @@ class PlayerStats:
 
 
 @dataclass
+class SevenImpact:
+    """One 7-roll and the damage it did.
+
+    `roller` is the username who rolled. `discards` is a dict of
+    username → total cards lost to the forced discard (summed across
+    any resources). `robber_tile` is the colonist tile label (e.g.
+    'ore tile') the robber moved to; may be None if the log didn't
+    include a RobberMoveEvent before the next roll. `steal_victim`
+    and `steal_resource` capture the post-robber steal, both optional
+    (resource stays None on third-party steals).
+    """
+    event_index: int
+    roller: str
+    discards: dict[str, int] = field(default_factory=dict)
+    discard_details: dict[str, dict[str, int]] = field(default_factory=dict)
+    robber_tile: str | None = None
+    robber_prob: int | None = None
+    steal_victim: str | None = None
+    steal_resource: str | None = None
+
+    @property
+    def total_discards(self) -> int:
+        return sum(self.discards.values())
+
+
+@dataclass
 class HandDynamics:
     """Time-series hand stats per color, derived from the hand_tracker walk.
 
@@ -122,6 +148,7 @@ class ReplayReport:
     reconstructed_hands: dict | None = None
     color_map: ColorMap | None = None
     hand_dynamics: dict[str, HandDynamics] | None = None
+    sevens: list[SevenImpact] = field(default_factory=list)
 
 
 def build_report(
@@ -140,14 +167,26 @@ def build_report(
     stats_by_color = _init_stats(color_map)
     histogram: Counter = Counter()
     winner_username: str | None = None
+    sevens: list[SevenImpact] = []
+    # When the current roll is a 7, this points at the SevenImpact being
+    # filled in. A new RollEvent closes the window (discards/robber/steal
+    # attributed to that 7 must appear before the next roll).
+    current_seven: SevenImpact | None = None
 
-    for event in events:
+    for i, event in enumerate(events):
         if isinstance(event, RollEvent):
             histogram[event.total] += 1
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.rolls += 1
+            # New roll closes any in-flight 7 window.
+            if current_seven is not None:
+                sevens.append(current_seven)
+                current_seven = None
             if event.total == 7:
                 stats.sevens += 1
+                current_seven = SevenImpact(
+                    event_index=i, roller=event.player,
+                )
         elif isinstance(event, ProduceEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             for res, n in event.resources.items():
@@ -156,6 +195,16 @@ def build_report(
             stats = _stats_for(stats_by_color, color_map, event.player)
             for res, n in event.resources.items():
                 stats.discarded[res] = stats.discarded.get(res, 0) + n
+            if current_seven is not None:
+                total = sum(event.resources.values())
+                current_seven.discards[event.player] = (
+                    current_seven.discards.get(event.player, 0) + total
+                )
+                details = current_seven.discard_details.setdefault(
+                    event.player, {},
+                )
+                for res, n in event.resources.items():
+                    details[res] = details.get(res, 0) + n
         elif isinstance(event, BuildEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.builds[event.piece] += 1
@@ -186,6 +235,24 @@ def build_report(
                 victim_stats.steal_lost[event.resource] = (
                     victim_stats.steal_lost.get(event.resource, 0) + 1
                 )
+            # A robber-triggered steal attaches to the in-flight 7. Only
+            # the first one; a Knight-dev-card steal that happens to land
+            # mid-7-window is rare but would otherwise overwrite this.
+            if (current_seven is not None
+                    and current_seven.steal_victim is None):
+                current_seven.steal_victim = event.victim
+                current_seven.steal_resource = event.resource
+        elif isinstance(event, RobberMoveEvent):
+            if current_seven is not None and current_seven.robber_tile is None:
+                current_seven.robber_tile = event.tile_label
+                current_seven.robber_prob = event.prob
+        elif isinstance(event, NoStealEvent):
+            # Mark the seven as "robber moved but nobody stole" so the
+            # formatter can say so explicitly instead of leaving the
+            # victim field blank-and-ambiguous.
+            if (current_seven is not None
+                    and current_seven.steal_victim is None):
+                current_seven.steal_victim = ""
         elif isinstance(event, TradeCommitEvent):
             giver_stats = _stats_for(stats_by_color, color_map, event.giver)
             if event.receiver == "BANK":
@@ -222,6 +289,10 @@ def build_report(
             winner_username = event.winner
             _stats_for(stats_by_color, color_map, event.winner)
 
+    # Close the last in-flight 7 window (no RollEvent follows to flush it).
+    if current_seven is not None:
+        sevens.append(current_seven)
+
     dispatch_counts = {"applied": 0, "skipped": 0, "unhandled": 0, "error": 0}
     for r in dispatch_results:
         dispatch_counts[r.status] = dispatch_counts.get(r.status, 0) + 1
@@ -250,6 +321,7 @@ def build_report(
         reconstructed_hands=hands,
         color_map=color_map,
         hand_dynamics=dynamics,
+        sevens=sevens,
     )
 
 
@@ -320,6 +392,8 @@ def format_report(report: ReplayReport) -> str:
     lines.append("")
     lines.extend(_format_hand_dynamics(report))
     lines.append("")
+    lines.extend(_format_seven_impacts(report))
+    lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
 
@@ -329,6 +403,60 @@ def _format_reconstructed_hands(report: ReplayReport) -> list[str]:
         return []
     from cataanbot.hand_tracker import format_hands_table
     return format_hands_table(report.reconstructed_hands, report.color_map)
+
+
+def _format_seven_impacts(report: ReplayReport) -> list[str]:
+    """Per-7-roll damage summary: roller, discards, robber tile, steal.
+
+    Shows the most costly 7s first (by total cards discarded + 1 for a
+    successful steal). Caps at 10 rows so a discard-heavy game doesn't
+    blow up the report — the full list lives in `report.sevens` for
+    downstream consumers who want it.
+    """
+    lines = ["7-roll impacts:"]
+    if not report.sevens:
+        lines.append("  (no 7s in log)")
+        return lines
+
+    def _cost(s: SevenImpact) -> int:
+        return s.total_discards + (1 if s.steal_victim else 0)
+
+    ranked = sorted(report.sevens, key=_cost, reverse=True)
+    shown = ranked[:10]
+    header = (
+        f"  {'#':>3}  {'event':>6}  {'roller':<14}  {'discards':<28}  "
+        f"{'tile':<15}  steal"
+    )
+    lines.append(header)
+    lines.append("  " + "-" * (len(header) - 2))
+    for idx, s in enumerate(shown, start=1):
+        if s.discards:
+            parts = [
+                f"{user} {n}"
+                for user, n in sorted(
+                    s.discards.items(), key=lambda kv: -kv[1],
+                )
+            ]
+            discard_str = ", ".join(parts)
+        else:
+            discard_str = "—"
+        tile = s.robber_tile or "?"
+        if s.robber_prob is not None:
+            tile = f"{tile} ({s.robber_prob})"
+        if s.steal_victim == "":
+            steal_str = "(no target)"
+        elif s.steal_victim:
+            res = s.steal_resource or "?"
+            steal_str = f"from {s.steal_victim} ({res})"
+        else:
+            steal_str = "—"
+        lines.append(
+            f"  {idx:>3}  #{s.event_index:>5}  {s.roller:<14}  "
+            f"{discard_str:<28}  {tile:<15}  {steal_str}"
+        )
+    if len(ranked) > len(shown):
+        lines.append(f"  (+ {len(ranked) - len(shown)} more 7s not shown)")
+    return lines
 
 
 def _format_hand_dynamics(report: ReplayReport) -> list[str]:

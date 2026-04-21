@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
-    GameOverEvent, MonopolyStealEvent, ProduceEvent, RollEvent,
-    StealEvent, TradeCommitEvent, VPEvent,
+    GameOverEvent, MonopolyStealEvent, NoStealEvent, ProduceEvent,
+    RobberMoveEvent, RollEvent, StealEvent, TradeCommitEvent, VPEvent,
 )
 from cataanbot.live import ColorMap, DispatchResult
 from cataanbot.report import build_report, format_report
@@ -445,6 +445,89 @@ def test_hand_dynamics_reports_drift_on_overdraft():
     assert d.final_drift == 2
     assert d.vulnerable_events == 0
     assert d.peak_size == 0
+
+
+def test_seven_impact_captures_roller_discards_robber_steal():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        RollEvent(player="Alice", d1=3, d2=4),  # 7
+        DiscardEvent(player="Bob", resources={"WOOD": 3, "WHEAT": 1}),
+        RobberMoveEvent(player="Alice", tile_label="ore tile", prob=8),
+        StealEvent(thief="Alice", victim="Bob", resource="ORE"),
+        RollEvent(player="Bob", d1=1, d2=1),  # 2 — closes the 7 window
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 0, "BLUE": 0},
+    )
+    assert len(rep.sevens) == 1
+    s = rep.sevens[0]
+    assert s.roller == "Alice"
+    assert s.discards == {"Bob": 4}
+    assert s.total_discards == 4
+    assert s.robber_tile == "ore tile"
+    assert s.robber_prob == 8
+    assert s.steal_victim == "Bob"
+    assert s.steal_resource == "ORE"
+
+
+def test_seven_impact_no_steal_marks_victim_blank():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        RollEvent(player="Alice", d1=3, d2=4),
+        RobberMoveEvent(player="Alice", tile_label="Desert", prob=None),
+        NoStealEvent(),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    s = rep.sevens[0]
+    assert s.steal_victim == ""
+    assert s.steal_resource is None
+    assert s.robber_prob is None
+
+
+def test_seven_impact_closes_on_next_roll():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    # Two 7s back to back. Discards for the second 7 must NOT bleed into
+    # the first's record.
+    events = [
+        RollEvent(player="Alice", d1=3, d2=4),
+        DiscardEvent(player="Bob", resources={"WOOD": 2}),
+        RollEvent(player="Bob", d1=3, d2=4),
+        DiscardEvent(player="Alice", resources={"ORE": 5}),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 0, "BLUE": 0},
+    )
+    assert len(rep.sevens) == 2
+    assert rep.sevens[0].discards == {"Bob": 2}
+    assert rep.sevens[1].discards == {"Alice": 5}
+
+
+def test_format_report_includes_seven_impacts_section():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        RollEvent(player="Alice", d1=3, d2=4),
+        DiscardEvent(player="Bob", resources={"WOOD": 3}),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 0, "BLUE": 0},
+    )
+    out = format_report(rep)
+    assert "7-roll impacts" in out
+    # The row should name Bob with his discard count.
+    assert "Bob 3" in out
+
+
+def test_format_report_handles_no_sevens_gracefully():
+    cm = ColorMap({"Alice": "RED"})
+    rep = build_report([], [], cm, final_vp={"RED": 0})
+    out = format_report(rep)
+    assert "7-roll impacts" in out
+    assert "no 7s in log" in out
 
 
 def test_format_report_includes_hand_dynamics_section():
