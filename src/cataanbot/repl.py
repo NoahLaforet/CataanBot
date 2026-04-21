@@ -16,6 +16,19 @@ from cataanbot.tracker import DEFAULT_COLORS, Tracker, TrackerError
 
 AUTO_RENDER_PATH = "tracked_board.png"
 
+_TURN_ORDER = ("RED", "BLUE", "WHITE", "ORANGE")
+
+# Standard Catan build costs. Tracker stays mirror-not-referee, so these
+# only fire via the convenience `build` / `devbuy!` commands — direct
+# `settle` / `city` / `road` / `devbuy` remain free, matching the rest of
+# the commands' "if the user says it, we record it" stance.
+_BUILD_COSTS = {
+    "settle":   {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1},
+    "city":     {"WHEAT": 2, "ORE": 3},
+    "road":     {"WOOD": 1, "BRICK": 1},
+    "dev":      {"SHEEP": 1, "WHEAT": 1, "ORE": 1},
+}
+
 
 class TrackerRepl(cmd.Cmd):
     intro = (
@@ -29,6 +42,8 @@ class TrackerRepl(cmd.Cmd):
         self.tracker = Tracker()
         self.auto_render = True
         self.render_path = AUTO_RENDER_PATH
+        self.turn_idx: int = 0  # index into _TURN_ORDER; shown in the prompt
+        self._refresh_prompt()
 
     # --- command handlers -------------------------------------------------
     def do_new(self, _arg: str) -> None:
@@ -192,6 +207,150 @@ class TrackerRepl(cmd.Cmd):
             return
         print(f"{color.upper()} -{n} {res_out.lower()}  +1 {res_in.lower()} (bank)")
         self._maybe_render()
+
+    def do_discard(self, arg: str) -> None:
+        """discard <COLOR> <N1> <RES1> [<N2> <RES2> ...] — 7-roll discard wrapper.
+
+        Verifies the whole stack up front, then debits atomically. Under
+        the hood this is just sequenced `take` ops so undo/save/replay
+        handle it naturally.
+        Example: `discard RED 2 wheat 1 ore` discards 2 wheat + 1 ore."""
+        parts = shlex.split(arg)
+        if len(parts) < 3 or (len(parts) - 1) % 2 != 0:
+            print("usage: discard <COLOR> <N1> <RES1> [<N2> <RES2> ...]")
+            return
+        color = parts[0]
+        pairs: list[tuple[int, str]] = []
+        try:
+            for i in range(1, len(parts), 2):
+                pairs.append((int(parts[i]), parts[i + 1]))
+        except ValueError as e:
+            print(f"error: {e}")
+            return
+        try:
+            self.tracker._color(color)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        # Atomicity: pre-validate every resource before touching the hand.
+        # Handles duplicates too (discarding 2 wheat + 1 wheat must check 3).
+        need: dict[str, int] = {}
+        for n, r in pairs:
+            if n < 0:
+                print("error: amounts must be non-negative")
+                return
+            need[r.upper()] = need.get(r.upper(), 0) + n
+        try:
+            for r, total in need.items():
+                self.tracker._require_hand(color, total, r)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        for n, r in pairs:
+            if n == 0:
+                continue
+            self.tracker.take(color, n, r)
+        summary = ", ".join(f"-{n} {r.lower()}" for n, r in pairs if n)
+        print(f"{color.upper()} discarded {summary}.")
+        self._maybe_render()
+
+    def do_build(self, arg: str) -> None:
+        """build <COLOR> settle|city|road|dev <ARGS> — place and auto-debit cost.
+
+        Mirror-not-referee still applies: costs come out of the color's
+        hand, but no turn check and no bank-depletion rules. Shortcuts
+        for when you don't want to `take` the cost manually.
+          build RED settle 17
+          build RED city   17
+          build RED road   16 17
+          build RED dev             (draws a random dev-deck card)
+        For ambiguous cases (e.g. you want to buy a specific dev type
+        without the cost), keep using the primitive `settle/city/road/
+        devbuy` commands."""
+        parts = shlex.split(arg)
+        if len(parts) < 2:
+            print("usage: build <COLOR> settle|city|road|dev <ARGS>")
+            return
+        color, kind, *rest = parts
+        kind = kind.lower()
+        if kind not in _BUILD_COSTS:
+            print(f"error: unknown build kind {kind!r}; "
+                  f"use one of {', '.join(_BUILD_COSTS)}")
+            return
+        try:
+            self.tracker._color(color)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+        cost = _BUILD_COSTS[kind]
+        try:
+            for r, n in cost.items():
+                self.tracker._require_hand(color, n, r)
+        except TrackerError as e:
+            print(f"error: {e}")
+            return
+
+        try:
+            if kind == "settle":
+                if len(rest) != 1:
+                    print("usage: build <COLOR> settle <node>")
+                    return
+                self.tracker.settle(color, int(rest[0]))
+            elif kind == "city":
+                if len(rest) != 1:
+                    print("usage: build <COLOR> city <node>")
+                    return
+                self.tracker.city(color, int(rest[0]))
+            elif kind == "road":
+                if len(rest) != 2:
+                    print("usage: build <COLOR> road <node_a> <node_b>")
+                    return
+                self.tracker.road(color, int(rest[0]), int(rest[1]))
+            elif kind == "dev":
+                if rest:
+                    # User can still name the specific type if known.
+                    self.tracker.devbuy(color, rest[0])
+                else:
+                    deck = self.tracker.game.state.development_listdeck
+                    if not deck:
+                        print("error: dev-card deck is empty")
+                        return
+                    self.tracker.devbuy(color, deck[0])
+        except (TrackerError, ValueError) as e:
+            print(f"error: {e}  (nothing debited)")
+            return
+
+        # Build succeeded; now debit the cost.
+        for r, n in cost.items():
+            self.tracker.take(color, n, r)
+        cost_str = " + ".join(f"{n} {r.lower()}" for r, n in cost.items())
+        print(f"{color.upper()} built {kind} (-{cost_str}).")
+        self._maybe_render()
+
+    def do_turn(self, arg: str) -> None:
+        """turn [next|COLOR] — show or advance the turn pointer.
+
+        This is purely informational — nothing in the tracker enforces
+        turns. The pointer just appears in the prompt so you can glance
+        down and know whose action you're about to record.
+          turn            — print current turn
+          turn next       — advance to the next color in RED→BLUE→WHITE→ORANGE
+          turn RED        — jump to a specific color"""
+        arg = arg.strip()
+        if not arg:
+            print(f"turn: {_TURN_ORDER[self.turn_idx]}")
+            return
+        if arg.lower() == "next":
+            self.turn_idx = (self.turn_idx + 1) % len(_TURN_ORDER)
+        else:
+            try:
+                self.turn_idx = _TURN_ORDER.index(arg.upper())
+            except ValueError:
+                print(f"error: unknown color {arg!r}; use next or "
+                      f"{', '.join(_TURN_ORDER)}")
+                return
+        self._refresh_prompt()
+        print(f"turn: {_TURN_ORDER[self.turn_idx]}")
 
     def do_devbuy(self, arg: str) -> None:
         """devbuy <COLOR> <TYPE> — give a color a dev card.
@@ -471,6 +630,10 @@ class TrackerRepl(cmd.Cmd):
             self.tracker.render(self.render_path)
         except Exception as e:
             print(f"(auto-render failed: {e})")
+
+    def _refresh_prompt(self) -> None:
+        """Embed the current turn color in the prompt for at-a-glance state."""
+        self.prompt = f"catan [{_TURN_ORDER[self.turn_idx]}]> "
 
     def emptyline(self) -> None:
         # don't repeat the last command on empty input.
