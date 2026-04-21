@@ -156,7 +156,8 @@ def cmd_stats(save_path: str, histogram_path: str | None) -> int:
 
 
 def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
-                     top: int) -> int:
+                     top: int, render_to: str | None = None,
+                     hex_size: int = 60) -> int:
     """Run second-settlement advisor against a saved tracker state."""
     tracker = _load_tracker(save_path)
     if tracker is None:
@@ -192,6 +193,12 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
         print(f"error: {e}", file=sys.stderr)
         return 1
     print(format_second_settlement_ranking(scores, first_node, top=top))
+    if render_to:
+        from cataanbot.render import render_board
+        top_nodes = [s.node_id for s in scores[:top]]
+        path = render_board(tracker.game, render_to, hex_size=hex_size,
+                            highlight_nodes=top_nodes)
+        print(f"\nboard rendered to {path} (top {top} marked with gold dots)")
     return 0
 
 
@@ -299,6 +306,11 @@ def main(argv: list[str] | None = None) -> int:
                                "the save.")
     p_second.add_argument("--top", type=int, default=10,
                           help="How many spots to show (default: 10).")
+    p_second.add_argument("--render", dest="render_to", default=None,
+                          help="Also render the tracker's board to this PNG "
+                               "with the top-N spots marked.")
+    p_second.add_argument("--hex-size", type=int, default=60,
+                          help="Hex radius in pixels when --render is used.")
 
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
@@ -317,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
                              args.n_in, args.res_in)
     if args.cmd == "secondadvice":
         return cmd_secondadvice(args.save, args.color, args.first_node,
-                                args.top)
+                                args.top, args.render_to, args.hex_size)
     if args.cmd == "stats":
         return cmd_stats(args.save, args.histogram_path)
     return 2
