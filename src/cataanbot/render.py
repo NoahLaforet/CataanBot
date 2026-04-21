@@ -376,10 +376,23 @@ def _draw_legend(draw, game, w: int, board_h: int, legend_h: int,
     if not colors_seated:
         return
 
+    # Winner / near-winner callout overlaid across the top of the strip when
+    # someone is close enough that the game could end soon. Silent for early
+    # game (everyone under 8 VP). Returns the vertical offset the per-color
+    # columns must shift down so they don't overlap the banner.
+    banner_h = _draw_vp_callout(draw, state, colors_seated, w, board_h,
+                                legend_h, hex_size)
+
     col_w = w / len(colors_seated)
     name_font = _load_font(int(hex_size * 0.28))
     line_font = _load_font(int(hex_size * 0.22))
     badge_font = _load_font(int(hex_size * 0.18))
+
+    # Per-color columns start below the banner (if any) and use the remaining
+    # legend area. All relative offsets are taken from `content_top` and
+    # scaled by `content_h` so the layout stays consistent at any banner height.
+    content_top = board_h + banner_h
+    content_h = legend_h - banner_h
 
     for i, cname in enumerate(colors_seated):
         col_x = i * col_w
@@ -390,8 +403,8 @@ def _draw_legend(draw, game, w: int, board_h: int, legend_h: int,
 
         # Color swatch on the left of the column.
         swatch_x = col_x + hex_size * 0.30
-        swatch_y = board_h + legend_h * 0.18
-        swatch_size = legend_h * 0.32
+        swatch_y = content_top + content_h * 0.18
+        swatch_size = content_h * 0.32
         draw.rectangle(
             (swatch_x, swatch_y, swatch_x + swatch_size, swatch_y + swatch_size),
             fill=PLAYER_COLORS.get(cname, (180, 180, 180)),
@@ -400,17 +413,17 @@ def _draw_legend(draw, game, w: int, board_h: int, legend_h: int,
 
         # Name + VP on the first line.
         text_x = swatch_x + swatch_size + hex_size * 0.18
-        line1_y = board_h + legend_h * 0.12
+        line1_y = content_top + content_h * 0.12
         draw.text((text_x, line1_y),
                   f"{cname}  {vp} VP", font=name_font, fill=LEGEND_TEXT)
 
         # Building counts line.
-        line2_y = board_h + legend_h * 0.48
+        line2_y = content_top + content_h * 0.48
         counts = f"{s_count[cname]}s  {c_count[cname]}c  {r_count[cname]}r"
         draw.text((text_x, line2_y), counts, font=line_font, fill=LEGEND_TEXT)
 
         # Badges row, only if earned.
-        badge_y = board_h + legend_h * 0.74
+        badge_y = content_top + content_h * 0.74
         badge_x = text_x
         if has_road:
             badge_x = _draw_badge(draw, badge_x, badge_y, "LR",
@@ -423,8 +436,8 @@ def _draw_legend(draw, game, w: int, board_h: int, legend_h: int,
         if i < len(colors_seated) - 1:
             dx = col_x + col_w
             draw.line(
-                [(dx, board_h + legend_h * 0.15),
-                 (dx, board_h + legend_h * 0.85)],
+                [(dx, content_top + content_h * 0.15),
+                 (dx, content_top + content_h * 0.85)],
                 fill=LEGEND_DIVIDER, width=1,
             )
 
@@ -453,6 +466,48 @@ def _draw_badge(draw, x: float, y: float, label: str,
                            fill=LEGEND_ACCENT, outline=PIECE_OUTLINE, width=1)
     draw.text((x + pad_x, y + pad_y), label, font=font, fill=PIECE_OUTLINE)
     return x2 + hex_size * 0.12
+
+
+CALLOUT_WINNER_BG = (210, 70, 60)      # alarming red for game-over
+CALLOUT_ONE_AWAY_BG = (230, 150, 40)   # amber — next-turn threat
+CALLOUT_TWO_AWAY_BG = (90, 130, 200)   # muted blue — heads-up
+CALLOUT_TEXT = (250, 245, 230)
+
+
+def _draw_vp_callout(draw, state, colors_seated, w: int, board_h: int,
+                     legend_h: int, hex_size: float) -> int:
+    """Render a single-line banner across the top of the legend strip when
+    some player is at 8+ VP. Returns the banner height in pixels (0 when
+    silent, so the caller can shift per-color columns down accordingly)."""
+    per_color: dict[str, int] = {}
+    for cname in colors_seated:
+        idx = _find_player_index(state, cname)
+        if idx is None:
+            continue
+        per_color[cname] = int(state.player_state.get(f"P{idx}_VICTORY_POINTS", 0))
+    if not per_color:
+        return 0
+    top = max(per_color.values())
+    if top < 8:
+        return 0
+    leaders = "/".join(c for c, v in per_color.items() if v == top)
+    if top >= 10:
+        bg = CALLOUT_WINNER_BG
+        text = f"*  {leaders} WINS at {top} VP  *"
+    elif top >= 9:
+        bg = CALLOUT_ONE_AWAY_BG
+        text = f"!  {leaders} at {top} VP — one turn from winning  !"
+    else:
+        bg = CALLOUT_TWO_AWAY_BG
+        text = f"{leaders} at {top} VP — two from winning"
+
+    # Thin banner pinned to the top edge of the legend strip.
+    banner_h = int(legend_h * 0.32)
+    draw.rectangle((0, board_h, w, board_h + banner_h), fill=bg)
+    font = _load_font(max(12, int(hex_size * 0.22)))
+    _draw_centered_text(draw, w / 2, board_h + banner_h / 2, text,
+                        font, CALLOUT_TEXT)
+    return banner_h
 
 
 def _draw_road(draw, p1, p2, color_name: str, hex_size: float) -> None:
