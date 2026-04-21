@@ -254,7 +254,8 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                report_out: str | None = None,
                vp_chart: str | None = None,
                production_chart: str | None = None,
-               dice_chart: str | None = None) -> int:
+               dice_chart: str | None = None,
+               postmortem: str | None = None) -> int:
     """Replay a bridge JSONL file through the Event→Tracker dispatcher.
 
     Each line is parsed with `parse_event` and applied to a fresh
@@ -308,7 +309,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
             if (report or report_out or vp_chart or production_chart
-                    or dice_chart):
+                    or dice_chart or postmortem):
                 events_for_report.append(event)
                 results_for_report.append(result)
                 ts = payload.get("ts") if isinstance(payload, dict) else None
@@ -399,6 +400,19 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             title=f"Dice rolls — actual vs. expected — {jsonl_path}",
         )
         print(f"wrote dice histogram to {path}")
+    if postmortem:
+        from cataanbot.postmortem import render_postmortem_html
+        final_vp = tracker.vp_status()["per_color"]
+        path = render_postmortem_html(
+            events=events_for_report,
+            dispatch_results=results_for_report,
+            timestamps=timestamps_for_report,
+            color_map=color_map,
+            final_vp=final_vp,
+            out_path=postmortem,
+            jsonl_path=jsonl_path,
+        )
+        print(f"wrote postmortem HTML to {path}")
     return 0
 
 
@@ -625,6 +639,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Render a PNG bar chart of actual vs. expected roll "
              "counts per value (the 2d6 fairness graphic).",
     )
+    p_replay.add_argument(
+        "--postmortem", dest="postmortem", default=None,
+        metavar="PATH",
+        help="Write a single self-contained HTML postmortem to PATH, "
+             "with the full text report and all three charts inline.",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
@@ -655,7 +675,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_replay(args.jsonl, args.player, args.verbose,
                           args.save_to, args.render_to, args.hex_size,
                           args.report, args.report_out, args.vp_chart,
-                          args.production_chart, args.dice_chart)
+                          args.production_chart, args.dice_chart,
+                          args.postmortem)
     return 2
 
 

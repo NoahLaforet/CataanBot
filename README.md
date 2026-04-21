@@ -154,6 +154,10 @@ dispatcher — useful for auditing past games without booting colonist.
 # per value 2-12. Ghost outlines show the 2d6 expectation; filled bars
 # are actual; signed delta labels above each bar.
 ./bin/cataanbot replay game.jsonl --dice-chart dice.png
+
+# One-shot postmortem: single self-contained HTML file with the
+# full text report and all three charts embedded as base64 PNGs.
+./bin/cataanbot replay game.jsonl --postmortem game5.html
 ```
 
 Events that need board topology (settlement / city / road placements and
