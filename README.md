@@ -57,7 +57,45 @@ cd CataanBot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-cataanbot --help
+./bin/cataanbot --help
+```
+
+On macOS the packaged `.venv/bin/cataanbot` entry point can flake out when the
+editable-install `.pth` file picks up an `UF_HIDDEN` flag from APFS. The
+repo-local `./bin/cataanbot` launcher sidesteps that by setting
+`PYTHONPATH=src/` explicitly — use it instead of the packaged entry point.
+
+## Usage
+
+```bash
+# Render a fresh random board (with optional --seed N for reproducibility)
+./bin/cataanbot render -o board.png
+
+# Rank opening settlement spots on a fresh board
+./bin/cataanbot openings --top 10 --render openings.png
+
+# Manual-tracker REPL for mirroring a live game
+./bin/cataanbot play
+# inside the REPL: settle / city / road / roll / give / take / trade /
+# mtrade / devbuy / devplay / robber / discard / build / undo / save / load
+# advisors: openings-after, secondadvice, robberadvice, tradeeval, hands, stats
+
+# Advisors over a saved game (produced by `save path.json` in the REPL)
+./bin/cataanbot openings  --save game.json --color WHITE
+./bin/cataanbot secondadvice game.json RED --render second.png
+./bin/cataanbot robberadvice game.json RED
+./bin/cataanbot tradeeval   game.json RED give 2 WOOD get 1 WHEAT
+./bin/cataanbot hands       game.json
+./bin/cataanbot stats       game.json --histogram hist.png
+```
+
+## Development
+
+Tests are plain pytest; the `tests/conftest.py` shim puts `src/` on the path so
+they run without an editable install.
+
+```bash
+.venv/bin/python -m pytest
 ```
 
 ## License
