@@ -3,9 +3,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cataanbot.events import BuildEvent, RollEvent, VPEvent
+from cataanbot.events import BuildEvent, ProduceEvent, RollEvent, VPEvent
 from cataanbot.live import ColorMap
-from cataanbot.timeline import build_vp_timeline, render_vp_chart
+from cataanbot.timeline import (
+    build_production_timeline,
+    build_vp_timeline,
+    render_production_chart,
+    render_vp_chart,
+)
 
 
 def test_build_vp_timeline_has_zero_baseline():
@@ -113,3 +118,65 @@ def test_build_vp_timeline_ignores_non_vp_events():
     # Only the baseline survives.
     assert len(samples) == 1
     assert samples[0].event_index == -1
+
+
+# ---------------------------------------------------------------------------
+# Production timeline
+# ---------------------------------------------------------------------------
+
+def test_build_production_timeline_has_zero_baseline():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    samples = build_production_timeline([], None, cm)
+    assert len(samples) == 1
+    assert samples[0].cards == {"RED": 0, "BLUE": 0}
+
+
+def test_build_production_timeline_sums_resources_cumulatively():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 2, "BRICK": 1}),
+        ProduceEvent(player="Bob",   resources={"WHEAT": 1}),
+        ProduceEvent(player="Alice", resources={"ORE": 2}),
+    ]
+    samples = build_production_timeline(events, None, cm)
+    assert len(samples) == 4  # baseline + 3
+    assert samples[1].cards == {"RED": 3, "BLUE": 0}
+    assert samples[2].cards == {"RED": 3, "BLUE": 1}
+    assert samples[-1].cards == {"RED": 5, "BLUE": 1}
+
+
+def test_build_production_timeline_skips_empty_produces():
+    # A ProduceEvent with no resources shouldn't emit a sample — it
+    # would just duplicate the previous row and pollute the chart.
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={}),
+        ProduceEvent(player="Alice", resources={"WOOD": 1}),
+    ]
+    samples = build_production_timeline(events, None, cm)
+    assert len(samples) == 2  # baseline + one real produce
+    assert samples[-1].cards == {"RED": 1}
+
+
+def test_build_production_timeline_ignores_non_produce_events():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        BuildEvent(player="Alice", piece="settlement", vp_delta=1),
+        RollEvent(player="Alice", d1=3, d2=4),
+    ]
+    samples = build_production_timeline(events, None, cm)
+    assert len(samples) == 1
+
+
+def test_render_production_chart_writes_png(tmp_path: Path):
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 2}),
+        ProduceEvent(player="Bob",   resources={"WHEAT": 3}),
+        ProduceEvent(player="Alice", resources={"ORE": 1}),
+    ]
+    samples = build_production_timeline(events, [1000.0, 1100.0, 1250.0], cm)
+    out = render_production_chart(samples, cm, tmp_path / "prod.png")
+    assert out.exists()
+    assert out.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert out.stat().st_size > 500

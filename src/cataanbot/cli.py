@@ -252,7 +252,8 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                render_to: str | None, hex_size: int,
                report: bool = False,
                report_out: str | None = None,
-               vp_chart: str | None = None) -> int:
+               vp_chart: str | None = None,
+               production_chart: str | None = None) -> int:
     """Replay a bridge JSONL file through the Event→Tracker dispatcher.
 
     Each line is parsed with `parse_event` and applied to a fresh
@@ -305,7 +306,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             event = parse_event(payload)
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
-            if report or report_out or vp_chart:
+            if report or report_out or vp_chart or production_chart:
                 events_for_report.append(event)
                 results_for_report.append(result)
                 ts = payload.get("ts") if isinstance(payload, dict) else None
@@ -371,6 +372,18 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             title=f"VP over time — {jsonl_path}",
         )
         print(f"wrote VP timeline to {path}")
+    if production_chart:
+        from cataanbot.timeline import (
+            build_production_timeline, render_production_chart,
+        )
+        prod_samples = build_production_timeline(
+            events_for_report, timestamps_for_report, color_map,
+        )
+        path = render_production_chart(
+            prod_samples, color_map, production_chart,
+            title=f"Cards received from rolls — {jsonl_path}",
+        )
+        print(f"wrote production timeline to {path}")
     return 0
 
 
@@ -585,6 +598,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Render a PNG line chart of public VP over time to PATH. "
              "Uses per-event timestamps from the JSONL when present.",
     )
+    p_replay.add_argument(
+        "--production-chart", dest="production_chart", default=None,
+        metavar="PATH",
+        help="Render a PNG line chart of cumulative resource cards "
+             "received from rolls (dice luck + placement quality).",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
@@ -614,7 +633,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "replay":
         return cmd_replay(args.jsonl, args.player, args.verbose,
                           args.save_to, args.render_to, args.hex_size,
-                          args.report, args.report_out, args.vp_chart)
+                          args.report, args.report_out, args.vp_chart,
+                          args.production_chart)
     return 2
 
 

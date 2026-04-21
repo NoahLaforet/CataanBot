@@ -144,6 +144,11 @@ dispatcher — useful for auditing past games without booting colonist.
 # Render a per-event VP timeline PNG (step chart, one line per seat,
 # dashed 10-VP win line, minute x-axis when the JSONL has timestamps).
 ./bin/cataanbot replay game.jsonl --vp-chart vp.png
+
+# Render a cumulative-production PNG — total cards received from rolls
+# per player, over time. Shows who had the economic lead and when
+# the dice shifted it.
+./bin/cataanbot replay game.jsonl --production-chart prod.png
 ```
 
 Events that need board topology (settlement / city / road placements and
