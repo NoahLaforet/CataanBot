@@ -279,9 +279,14 @@ def _format_winner_block(report: ReplayReport) -> list[str]:
             f"({report.winner_color}) at "
             f"{report.final_vp.get(report.winner_color, 0)} VP",
         ]
+    total_rolls = sum(report.roll_histogram.values())
     if report.first_ts is not None and report.last_ts is not None:
         minutes = (report.last_ts - report.first_ts) / 60.0
-        out.append(f"Duration: ~{minutes:.1f} minutes")
+        out.append(
+            f"Duration: ~{minutes:.1f} minutes over {total_rolls} rolls"
+        )
+    elif total_rolls:
+        out.append(f"Total rolls: {total_rolls}")
     return out
 
 
