@@ -161,7 +161,8 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
     return 0
 
 
-def cmd_render(output: str, hex_size: int, ticks: int) -> int:
+def cmd_render(output: str, hex_size: int, ticks: int,
+               label_style: str = "icon") -> int:
     """Render a fresh random board to a PNG, optionally after N simulated ticks
     so settlements/roads/cities show up on the output."""
     try:
@@ -179,7 +180,8 @@ def cmd_render(output: str, hex_size: int, ticks: int) -> int:
         except Exception as e:
             print(f"sim stopped early at tick: {e}", file=sys.stderr)
             break
-    path = render_board(game, output, hex_size=hex_size)
+    path = render_board(game, output, hex_size=hex_size,
+                        label_style=label_style)
     print(f"wrote {path}")
     return 0
 
@@ -200,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
     p_render.add_argument("--ticks", type=int, default=0,
                           help="Simulate this many game ticks before rendering "
                                "so settlements/roads show up (default: 0).")
+    p_render.add_argument("--labels", choices=("icon", "text"), default="icon",
+                          help="Tile labels: geometric 'icon' (default) or "
+                               "the older 'text' (WHEAT/WOOD/...) for debugging.")
 
     p_openings = sub.add_parser(
         "openings",
@@ -259,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "doctor":
         return cmd_doctor()
     if args.cmd == "render":
-        return cmd_render(args.output, args.hex_size, args.ticks)
+        return cmd_render(args.output, args.hex_size, args.ticks, args.labels)
     if args.cmd == "openings":
         return cmd_openings(args.top, args.render_to, args.hex_size)
     if args.cmd == "play":

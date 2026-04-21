@@ -87,7 +87,8 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
                  highlight_nodes: list[int] | None = None,
-                 show_legend: bool = True) -> Path:
+                 show_legend: bool = True,
+                 label_style: str = "icon") -> Path:
     """Render the board to a PNG. Returns the output path.
 
     `highlight_nodes`, if given, is a ranked list of node_ids to mark with
@@ -96,6 +97,9 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
     `show_legend` (default True) adds a bottom strip showing per-player
     VP, buildings, roads, and longest-road / largest-army badges so the
     render is self-contained — no need to cross-reference a summary.
+
+    `label_style` is "icon" (default) for a small geometric resource icon,
+    or "text" for the older "WHEAT"/"WOOD" string — useful for debugging.
     """
     out_path = Path(out_path)
     board = game.state.board
@@ -160,9 +164,13 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
         corners = _hex_corners(cx, cy, hex_size)
         draw.polygon(corners, fill=fill, outline=BLACK, width=2)
 
-        label = resource if resource else "DESERT"
-        _draw_centered_text(draw, cx, cy - hex_size * 0.55, label,
-                            resource_font, BLACK)
+        icon_y = cy - hex_size * 0.55
+        if label_style == "text":
+            label = resource if resource else "DESERT"
+            _draw_centered_text(draw, cx, icon_y, label,
+                                resource_font, BLACK)
+        else:
+            _draw_resource_icon(draw, cx, icon_y, hex_size * 0.22, resource)
 
         if tile.number is not None:
             _draw_number_token(draw, cx, cy, hex_size * 0.32, tile.number,
@@ -536,6 +544,182 @@ def _lighten(rgb: tuple[int, int, int], amount: float) -> tuple[int, int, int]:
         int(g + (255 - g) * amount),
         int(b + (255 - b) * amount),
     )
+
+
+# Darker accent variants of each tile color, used for the geometric icons so
+# the icon reads clearly against its own tile instead of blending in.
+_ICON_STALK = (80, 50, 14)         # wheat stalk and grain — dark brown
+_ICON_WHEAT_GRAIN = (120, 80, 20)  # slightly lighter brown for grain tips
+_ICON_TREE = (34, 68, 32)          # pine body — darker green than the tile
+_ICON_TREE_SHADE = (22, 48, 20)
+_ICON_TRUNK = (80, 50, 24)
+_ICON_SHEEP_BODY = (250, 248, 238) # off-white wool
+_ICON_SHEEP_HEAD = (48, 40, 32)    # dark head/face
+_ICON_BRICK_FILL = (130, 52, 28)   # dark red brick on the tile's lighter red
+_ICON_BRICK_MORTAR = (50, 20, 10)
+_ICON_ORE_FILL = (200, 205, 215)   # pale blue-gray crystal on gray tile
+_ICON_ORE_SHADE = (100, 110, 125)
+_ICON_DESERT = (196, 162, 96)      # warm sand dot
+
+
+def _draw_resource_icon(draw, cx: float, cy: float, size: float,
+                        resource: str | None) -> None:
+    """Draw a small geometric icon for the resource at (cx, cy).
+
+    `size` is the icon half-width — icons are drawn roughly within
+    [cx-size, cx+size] × [cy-size, cy+size]. Picked to match the old text
+    label's position near the top of the hex."""
+    if resource == "WHEAT":
+        _draw_wheat_icon(draw, cx, cy, size)
+    elif resource == "WOOD":
+        _draw_wood_icon(draw, cx, cy, size)
+    elif resource == "SHEEP":
+        _draw_sheep_icon(draw, cx, cy, size)
+    elif resource == "BRICK":
+        _draw_brick_icon(draw, cx, cy, size)
+    elif resource == "ORE":
+        _draw_ore_icon(draw, cx, cy, size)
+    else:
+        _draw_desert_icon(draw, cx, cy, size)
+
+
+def _draw_wheat_icon(draw, cx: float, cy: float, size: float) -> None:
+    """A single wheat stalk — central stem plus three paired grain kernels
+    branching up and outward."""
+    stem_w = max(1, int(size * 0.12))
+    draw.line([(cx, cy + size * 0.85), (cx, cy - size * 0.35)],
+              fill=_ICON_STALK, width=stem_w)
+    # Three pairs of oblique grain marks, highest pair at the top.
+    for i, t in enumerate((0.0, 0.35, 0.7)):
+        offset = size * (0.25 + t * 0.35)
+        base_y = cy - size * 0.35 + size * t * 0.9
+        # Left grain
+        lg = [
+            (cx - stem_w, base_y + size * 0.08),
+            (cx - offset, base_y - size * 0.05),
+            (cx - offset, base_y - size * 0.22),
+            (cx - stem_w, base_y - size * 0.08),
+        ]
+        # Right grain mirrored
+        rg = [(cx + (cx - x), y) for x, y in lg]
+        draw.polygon(lg, fill=_ICON_WHEAT_GRAIN, outline=_ICON_STALK)
+        draw.polygon(rg, fill=_ICON_WHEAT_GRAIN, outline=_ICON_STALK)
+    # Crown grain at the very top.
+    crown = [
+        (cx, cy - size * 0.9),
+        (cx - size * 0.18, cy - size * 0.55),
+        (cx + size * 0.18, cy - size * 0.55),
+    ]
+    draw.polygon(crown, fill=_ICON_WHEAT_GRAIN, outline=_ICON_STALK)
+
+
+def _draw_wood_icon(draw, cx: float, cy: float, size: float) -> None:
+    """Stylized pine: brown trunk + two-tier dark-green triangular canopy."""
+    trunk = [
+        (cx - size * 0.12, cy + size * 0.95),
+        (cx - size * 0.12, cy + size * 0.55),
+        (cx + size * 0.12, cy + size * 0.55),
+        (cx + size * 0.12, cy + size * 0.95),
+    ]
+    draw.polygon(trunk, fill=_ICON_TRUNK, outline=PIECE_OUTLINE)
+    # Lower (wider) canopy tier
+    lower = [
+        (cx, cy - size * 0.05),
+        (cx - size * 0.75, cy + size * 0.55),
+        (cx + size * 0.75, cy + size * 0.55),
+    ]
+    draw.polygon(lower, fill=_ICON_TREE, outline=_ICON_TREE_SHADE)
+    # Upper (narrower) canopy tier
+    upper = [
+        (cx, cy - size * 0.85),
+        (cx - size * 0.55, cy - size * 0.05),
+        (cx + size * 0.55, cy - size * 0.05),
+    ]
+    draw.polygon(upper, fill=_ICON_TREE, outline=_ICON_TREE_SHADE)
+
+
+def _draw_sheep_icon(draw, cx: float, cy: float, size: float) -> None:
+    """Woolly body as three overlapping off-white circles, with a small dark
+    head on the right and two tiny legs."""
+    r = size * 0.42
+    # Body: three overlapping circles form the fluffy back.
+    for dx, dy, rr in ((-size * 0.35, size * 0.05, r),
+                        (0,            -size * 0.05, r * 1.05),
+                        (size * 0.3,  size * 0.05, r)):
+        draw.ellipse(
+            (cx + dx - rr, cy + dy - rr, cx + dx + rr, cy + dy + rr),
+            fill=_ICON_SHEEP_BODY, outline=PIECE_OUTLINE,
+        )
+    # Head on the right — small dark oval overlapping the rightmost wool bump.
+    hx = cx + size * 0.6
+    hy = cy + size * 0.1
+    hr = size * 0.22
+    draw.ellipse((hx - hr, hy - hr, hx + hr, hy + hr),
+                 fill=_ICON_SHEEP_HEAD, outline=PIECE_OUTLINE)
+    # Legs.
+    for lx in (cx - size * 0.3, cx + size * 0.2):
+        draw.line([(lx, cy + size * 0.45), (lx, cy + size * 0.9)],
+                  fill=PIECE_OUTLINE, width=max(1, int(size * 0.1)))
+
+
+def _draw_brick_icon(draw, cx: float, cy: float, size: float) -> None:
+    """Three bricks in a staggered 2-over-1 pattern."""
+    bw = size * 0.45
+    bh = size * 0.32
+    # Bottom row: two bricks side by side.
+    bricks = [
+        (cx - bw - size * 0.03, cy + size * 0.2, cx - size * 0.03, cy + size * 0.2 + bh),
+        (cx + size * 0.03, cy + size * 0.2, cx + size * 0.03 + bw, cy + size * 0.2 + bh),
+        # Top brick: centered, slightly offset so it bridges the two below.
+        (cx - bw * 0.8, cy + size * 0.2 - bh - size * 0.04,
+         cx + bw * 0.8, cy + size * 0.2 - size * 0.04),
+    ]
+    for x0, y0, x1, y1 in bricks:
+        draw.rectangle((x0, y0, x1, y1),
+                       fill=_ICON_BRICK_FILL, outline=_ICON_BRICK_MORTAR, width=2)
+
+
+def _draw_ore_icon(draw, cx: float, cy: float, size: float) -> None:
+    """Angular crystal: kite-shaped polygon with an internal facet line for
+    a simple faceted look."""
+    pts = [
+        (cx, cy - size * 0.95),
+        (cx + size * 0.7, cy - size * 0.1),
+        (cx + size * 0.35, cy + size * 0.85),
+        (cx - size * 0.35, cy + size * 0.85),
+        (cx - size * 0.7, cy - size * 0.1),
+    ]
+    draw.polygon(pts, fill=_ICON_ORE_FILL, outline=PIECE_OUTLINE)
+    # Highlight facet — polygon down the upper-left side.
+    facet = [
+        (cx, cy - size * 0.95),
+        (cx - size * 0.7, cy - size * 0.1),
+        (cx - size * 0.1, cy - size * 0.2),
+    ]
+    draw.polygon(facet, fill=_lighten(_ICON_ORE_FILL, 0.25),
+                 outline=_ICON_ORE_SHADE)
+    # Inner shade facet on the lower right so the crystal reads 3D.
+    shade = [
+        (cx + size * 0.7, cy - size * 0.1),
+        (cx + size * 0.35, cy + size * 0.85),
+        (cx + size * 0.05, cy + size * 0.1),
+    ]
+    draw.polygon(shade, fill=_ICON_ORE_SHADE, outline=PIECE_OUTLINE)
+
+
+def _draw_desert_icon(draw, cx: float, cy: float, size: float) -> None:
+    """Small sun dot — an earthy cue without the "DESERT" text."""
+    r = size * 0.45
+    draw.ellipse((cx - r, cy - r, cx + r, cy + r),
+                 fill=_ICON_DESERT, outline=PIECE_OUTLINE, width=2)
+    # Radial tick marks to suggest a sun.
+    for ang_deg in range(0, 360, 45):
+        a = math.radians(ang_deg)
+        x1 = cx + math.cos(a) * r * 1.15
+        y1 = cy + math.sin(a) * r * 1.15
+        x2 = cx + math.cos(a) * r * 1.55
+        y2 = cy + math.sin(a) * r * 1.55
+        draw.line([(x1, y1), (x2, y2)], fill=_ICON_DESERT, width=2)
 
 
 def _paint_vertical_gradient(img, x0: int, y0: int, x1: int, y1: int,
