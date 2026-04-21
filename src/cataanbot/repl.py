@@ -539,6 +539,16 @@ class TrackerRepl(cmd.Cmd):
                 return
             print(f"\nwrote {out}")
 
+    def do_hands(self, _arg: str) -> None:
+        """hands — per-color resource accounting.
+
+        Shows current hand counts (authoritative for the tracker), plus
+        totals for dice-produced, observed spends, and observed receives.
+        Useful for quickly eyeballing who's sitting on a big hand vs who
+        just spent everything."""
+        from cataanbot.hands import estimate_hands, format_hands
+        print(format_hands(estimate_hands(self.tracker)))
+
     def do_undo(self, _arg: str) -> None:
         """undo — drop the most recent op and replay everything before it."""
         try:
