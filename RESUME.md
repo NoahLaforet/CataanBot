@@ -53,6 +53,17 @@
   --color WHITE` filters the candidate pool to nodes WHITE can legally
   place on right now. Blocking + denial recalculated against that
   restricted pool.
+- **Second-settlement render overlay** (`415d573`) — `secondadvice
+  --render path.png` gold-markers the top-N picks on the tracker's
+  board, matching the `openings --render` pattern.
+- **Openings alternatives view** (`4ec06ec`) — `openings --after N1 N2 …`
+  prints the baseline top-N plus a second ranking assuming those nodes
+  are already claimed (each removes itself + its neighbors). Makes
+  denial/blocking math visible as a before/after.
+- **Icon polish v2** (`20e3372`) — sheep rebuilt as a fluffy oval body
+  with wool bumps, dark head, and legs (no more caterpillar look);
+  brick icon now has visible mortar gaps so the 2-over-1 wall pattern
+  reads cleanly instead of merging into a mound.
 
 ## Running the tool
 The packaged `.venv/bin/cataanbot` entry point is unreliable on macOS
@@ -65,6 +76,8 @@ repo-local launcher instead:
 ./bin/cataanbot render -o board.png --labels text    # old text labels
 ./bin/cataanbot openings --top 10 --render board_openings.png
 ./bin/cataanbot openings --save game.json --color WHITE --top 5
+./bin/cataanbot openings --top 5 --after 6 12       # alt view
+./bin/cataanbot secondadvice game.json RED --render second.png
 ./bin/cataanbot stats game.json --histogram roll_hist.png
 ```
 
@@ -78,21 +91,19 @@ repo-local launcher instead:
    mixins would make the file browsable. Pure refactor with real
    breakage risk; best done when you can smoke-test each command in
    the REPL yourself, not in an autonomous run.
-2. **Second-phase tile-icon polish** — sheep "three-bump" shape reads
-   a little like a caterpillar at small sizes; brick pile could use
-   more separation between the two bottom bricks. Works as-is, but
-   these would tighten up the visual.
-3. **Opening advisor "alternatives" view** — after picking spot 1,
-   show how the top-5 shifts. Right now `openings --save` gives the
-   new top after placement, but a side-by-side view of before/after
-   would make the denial + blocking math visible.
-4. **Second-settlement icon overlay** — `secondadvice` currently only
-   prints to the terminal. Adding `--render path.png` that overlays
-   gold markers on the tracker's board (same way `openings --render`
-   does) would keep parity with the first-settlement advisor.
-5. **Dev-card state watcher** — play-through shows dev cards in the
-   summary, but there's no advisor for "should I buy a dev card".
-   Probably lowest-value since dev cards are inherently low-info.
+2. **Deterministic fresh-board seed flag** — `openings --after N`
+   generates a *different* random board each run, so you can't do
+   "show baseline, now show after" across two CLI calls. A `--seed`
+   flag on `render` and `openings` would make that work and also
+   help reproduce interesting boards.
+3. **Dev-card advisor** — `should-i-buy-dev` for the current color:
+   trivial "is 14+ cards left and you're short on VP push" heuristic,
+   but would round out the advisor set. Low value — dev cards are
+   inherently low-info.
+4. **Opening render: show the first pick too** — once `--after N` is
+   called, the rendered PNG could mark the claimed node with a
+   distinct badge (X or gray circle) so the board still makes sense
+   standalone. Right now only the ranked picks get markers.
 
 ## Files
 - `src/cataanbot/cli.py` — `doctor`, `render`, `openings`, `play`,
