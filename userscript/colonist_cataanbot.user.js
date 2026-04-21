@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.3.1
+// @version      0.4.0
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -26,7 +26,13 @@
         text:     'span.messagePart-XeUsOgLX',
     };
 
-    const seenKeys = new Set();
+    // Dedup lives on each DOM node via a dataset marker. Earlier versions
+    // used a global Set keyed by text+icons+names, which silently dropped
+    // repeat events (e.g. two robber moves to the same tile over a long
+    // game). Per-node dedup processes each unique DOM element exactly once
+    // and still re-emits when a virtualized node gets recycled to display
+    // new content.
+    const NODE_KEY_ATTR = 'cataanbotKey';
 
     // Walk the whole scrollItemContainer in document order, emitting
     // ordered parts. We can't just walk messagePart because some events
@@ -150,8 +156,8 @@
         if (!el.matches(SEL.entry)) return;
         const payload = serializeEntry(el);
         if (!payload.text && payload.icons.length === 0) return;
-        if (seenKeys.has(payload.key)) return;
-        seenKeys.add(payload.key);
+        if (el.dataset[NODE_KEY_ATTR] === payload.key) return;
+        el.dataset[NODE_KEY_ATTR] = payload.key;
         post(payload);
         console.log(LOG_PREFIX, '->', payload.text || '(icons)',
                     payload.icons.map(i => i.alt).filter(Boolean).join(','));
@@ -174,6 +180,14 @@
             }
         });
         observer.observe(scroller, { childList: true, subtree: true });
+
+        // Safety net: poll every 500ms for any entries the observer missed.
+        // MutationObservers can batch rapid insertions (common on colonist's
+        // virtualized list) and occasionally skip nodes; the per-node dedup
+        // above means re-scanning is cheap and idempotent.
+        setInterval(() => {
+            scroller.querySelectorAll(SEL.entry).forEach(processEntry);
+        }, 500);
     }
 
     function waitForScroller() {
