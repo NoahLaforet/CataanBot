@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.4.0
+// @version      0.4.1
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -26,13 +26,20 @@
         text:     'span.messagePart-XeUsOgLX',
     };
 
-    // Dedup lives on each DOM node via a dataset marker. Earlier versions
-    // used a global Set keyed by text+icons+names, which silently dropped
-    // repeat events (e.g. two robber moves to the same tile over a long
-    // game). Per-node dedup processes each unique DOM element exactly once
-    // and still re-emits when a virtualized node gets recycled to display
-    // new content.
+    // Dedup is two-layered:
+    //  1. Per-DOM-node dataset marker — skips a node we already processed
+    //     this run. Handles MutationObserver + polling racing on the same
+    //     element.
+    //  2. Short-TTL content cache — skips the same payload if we posted it
+    //     within RECENT_TTL_MS. Handles colonist's virtualized scroller
+    //     destroying and re-creating nodes as you scroll: fresh DOM node
+    //     (no dataset marker) but identical content from seconds ago.
+    // TTL is short enough that two genuinely-repeated events (robber move
+    // to the same tile two turns later) are still posted — turns take
+    // much longer than RECENT_TTL_MS between identical-content rounds.
     const NODE_KEY_ATTR = 'cataanbotKey';
+    const RECENT_TTL_MS = 5000;
+    const recentSeen = new Map();
 
     // Walk the whole scrollItemContainer in document order, emitting
     // ordered parts. We can't just walk messagePart because some events
@@ -158,6 +165,17 @@
         if (!payload.text && payload.icons.length === 0) return;
         if (el.dataset[NODE_KEY_ATTR] === payload.key) return;
         el.dataset[NODE_KEY_ATTR] = payload.key;
+
+        const now = Date.now();
+        const expiresAt = recentSeen.get(payload.key);
+        if (expiresAt && expiresAt > now) return;
+        recentSeen.set(payload.key, now + RECENT_TTL_MS);
+        if (recentSeen.size > 400) {
+            for (const [k, t] of recentSeen) {
+                if (t <= now) recentSeen.delete(k);
+            }
+        }
+
         post(payload);
         console.log(LOG_PREFIX, '->', payload.text || '(icons)',
                     payload.icons.map(i => i.alt).filter(Boolean).join(','));
