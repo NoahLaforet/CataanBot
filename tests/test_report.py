@@ -212,6 +212,27 @@ def test_format_report_empty_log():
     assert "(no rolls)" in out
 
 
+def test_format_histogram_shows_expected_and_delta_once_enough_rolls():
+    cm = ColorMap({"Alice": "RED"})
+    # 24 rolls total — above the 12-roll threshold that gates the luck column.
+    events = [RollEvent(player="Alice", d1=1, d2=1) for _ in range(24)]
+    rep = build_report(events, [_result(e) for e in events], cm,
+                       final_vp={"RED": 0})
+    out = format_report(rep)
+    # 2 has expectation 24/36 ≈ 0.67; we rolled 24 of them, delta +23.3.
+    assert "exp  0.7" in out
+    assert "+23.3" in out
+
+
+def test_format_histogram_hides_luck_column_for_short_games():
+    cm = ColorMap({"Alice": "RED"})
+    events = [RollEvent(player="Alice", d1=3, d2=4)]  # only 1 roll
+    rep = build_report(events, [_result(events[0])], cm,
+                       final_vp={"RED": 0})
+    out = format_report(rep)
+    assert "exp" not in out
+
+
 def test_build_report_registers_winner_color():
     # Even if the winner never produced/rolled, GameOverEvent should
     # make sure they land in players/ so the scoreboard isn't blank.
