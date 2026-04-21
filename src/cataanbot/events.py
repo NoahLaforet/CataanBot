@@ -57,6 +57,11 @@ class BuildEvent:
     # roads placed by the Road Building dev card ("X placed a ..."). The
     # hand tracker skips the cost debit when paid=False; VP still counts.
     paid: bool = True
+    # Catanatron topology — filled when parsed from a WS diff (not the
+    # DOM log, which doesn't carry coords). When set, the dispatcher can
+    # resolve the placement directly; otherwise it stays 'unhandled'.
+    node_id: int | None = None
+    edge_nodes: tuple[int, int] | None = None
 
 
 @dataclass
@@ -71,6 +76,10 @@ class RobberMoveEvent:
     player: str
     tile_label: str       # e.g. 'lumber tile', 'Desert', 'ore tile'
     prob: int | None      # red number on the tile; None for desert
+    # Catanatron cube coord for the tile — set by the WS layer when the
+    # topology mapping resolves colonist's tileIndex. Absent for DOM
+    # parses, which only get a human label.
+    coord: tuple[int, int, int] | None = None
 
 
 @dataclass

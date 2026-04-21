@@ -222,22 +222,10 @@ def _dispatch(
         return _apply_vp(tracker, color_map, event)
 
     if isinstance(event, BuildEvent):
-        # Register the player so the color map is stable across replays
-        # even while the full action stays unhandled.
-        color_map.get(event.player)
-        return DispatchResult(
-            event, "unhandled",
-            f"{event.player} built {event.piece} "
-            f"— needs board topology to pick a node/edge",
-        )
+        return _apply_build(tracker, color_map, event)
 
     if isinstance(event, RobberMoveEvent):
-        color_map.get(event.player)
-        return DispatchResult(
-            event, "unhandled",
-            f"{event.player} moved robber → {event.tile_label} "
-            f"— needs topology to resolve hex coord",
-        )
+        return _apply_robber_move(tracker, color_map, event)
 
     if isinstance(
         event,
@@ -350,6 +338,58 @@ def _apply_monopoly(
         msg += (f" (event reported {event.count}; "
                 f"tracker short {remaining})")
     return DispatchResult(event, "applied", msg)
+
+
+def _apply_build(
+    tracker: Tracker, color_map: ColorMap, event: BuildEvent,
+) -> DispatchResult:
+    # Register the player either way so the color map is stable.
+    color = color_map.get(event.player)
+
+    if event.piece == "settlement" and event.node_id is not None:
+        tracker.settle(color, event.node_id)
+        return DispatchResult(
+            event, "applied",
+            f"{color} settled node {event.node_id}",
+        )
+    if event.piece == "city" and event.node_id is not None:
+        tracker.city(color, event.node_id)
+        return DispatchResult(
+            event, "applied",
+            f"{color} upgraded to city at node {event.node_id}",
+        )
+    if event.piece == "road" and event.edge_nodes is not None:
+        a, b = event.edge_nodes
+        tracker.road(color, a, b)
+        return DispatchResult(
+            event, "applied",
+            f"{color} road {a}-{b}",
+        )
+    return DispatchResult(
+        event, "unhandled",
+        f"{event.player} built {event.piece} "
+        f"— needs board topology to pick a node/edge",
+    )
+
+
+def _apply_robber_move(
+    tracker: Tracker, color_map: ColorMap, event: RobberMoveEvent,
+) -> DispatchResult:
+    if event.player:
+        color_map.get(event.player)
+    if event.coord is not None:
+        tracker.move_robber(event.coord)
+        who = color_map.reverse(color_map.get(event.player)) if event.player \
+            else "?"
+        return DispatchResult(
+            event, "applied",
+            f"{who or event.player} moved robber → {event.coord}",
+        )
+    return DispatchResult(
+        event, "unhandled",
+        f"{event.player} moved robber → {event.tile_label} "
+        f"— needs topology to resolve hex coord",
+    )
 
 
 def _apply_vp(
