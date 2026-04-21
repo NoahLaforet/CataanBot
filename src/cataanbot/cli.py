@@ -28,7 +28,8 @@ def cmd_doctor() -> int:
 
 def cmd_openings(top: int, render_to: str | None, hex_size: int,
                  save_path: str | None = None,
-                 color: str | None = None) -> int:
+                 color: str | None = None,
+                 after: list[int] | None = None) -> int:
     """Rank opening settlement spots.
 
     Default: fresh random board, scores every land node.
@@ -36,9 +37,17 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
     With `--save PATH --color C`: load a live tracker state and filter the
     candidate pool to nodes C can legally place on right now (distance
     rule honored, taken spots excluded). Useful in the middle of the
-    opening draft when turns have already been played."""
+    opening draft when turns have already been played.
+
+    With `--after N [N ...]`: show a baseline ranking first, then a
+    second ranking assuming each given node is already claimed (both
+    the node itself and its distance-rule neighbors get removed). Makes
+    the denial/blocking math visible as a side-by-side."""
     try:
-        from cataanbot.advisor import score_opening_nodes, format_opening_ranking
+        from cataanbot.advisor import (
+            score_opening_nodes, format_opening_ranking,
+            legal_nodes_after_picks,
+        )
     except ImportError as e:
         print(f"advisor deps missing: {e}", file=sys.stderr)
         return 1
@@ -70,6 +79,19 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
 
     scores = score_opening_nodes(game, legal_nodes=legal_nodes)
     print(format_opening_ranking(scores, top=top))
+
+    if after:
+        after_legal = legal_nodes_after_picks(game, after)
+        if legal_nodes is not None:
+            after_legal &= legal_nodes
+        if not after_legal:
+            print(f"\n(no legal spots remain after picks {after})")
+        else:
+            picks_str = ", ".join(str(n) for n in after)
+            print(f"\nAssuming {picks_str} already claimed:")
+            after_scores = score_opening_nodes(game, legal_nodes=after_legal)
+            print(format_opening_ranking(after_scores, top=top))
+
     if render_to:
         from cataanbot.render import render_board
         top_nodes = [s.node_id for s in scores[:top]]
@@ -263,6 +285,12 @@ def main(argv: list[str] | None = None) -> int:
     p_openings.add_argument("--color", default=None,
                             help="Whose legal placements to filter to when "
                                  "--save is given.")
+    p_openings.add_argument("--after", type=int, nargs="+", default=None,
+                            metavar="NODE",
+                            help="Show a follow-up ranking assuming these "
+                                 "node IDs are already claimed. Each pick "
+                                 "removes itself + its neighbors from the "
+                                 "candidate pool.")
 
     sub.add_parser("play", help="Launch the manual-tracker REPL.")
 
@@ -319,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_render(args.output, args.hex_size, args.ticks, args.labels)
     if args.cmd == "openings":
         return cmd_openings(args.top, args.render_to, args.hex_size,
-                            args.save_path, args.color)
+                            args.save_path, args.color, args.after)
     if args.cmd == "play":
         return cmd_play()
     if args.cmd == "robberadvice":
