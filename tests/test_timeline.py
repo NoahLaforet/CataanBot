@@ -3,11 +3,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cataanbot.events import BuildEvent, ProduceEvent, RollEvent, VPEvent
+from cataanbot.events import (
+    BuildEvent, DevCardBuyEvent, ProduceEvent, RollEvent, StealEvent, VPEvent,
+)
 from cataanbot.live import ColorMap
 from cataanbot.timeline import (
+    build_hand_timeline,
     build_production_timeline,
     build_vp_timeline,
+    render_hand_chart,
     render_production_chart,
     render_vp_chart,
 )
@@ -180,3 +184,87 @@ def test_render_production_chart_writes_png(tmp_path: Path):
     assert out.exists()
     assert out.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert out.stat().st_size > 500
+
+
+# ---------------------------------------------------------------------------
+# Hand-size timeline
+# ---------------------------------------------------------------------------
+
+def test_build_hand_timeline_has_zero_baseline():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    samples = build_hand_timeline([], None, cm)
+    assert len(samples) == 1
+    assert samples[0].size == {"RED": 0, "BLUE": 0}
+    assert samples[0].event_index == -1
+
+
+def test_build_hand_timeline_emits_sample_per_size_change():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 2}),
+        ProduceEvent(player="Bob",   resources={"WHEAT": 1, "ORE": 1}),
+        ProduceEvent(player="Alice", resources={"SHEEP": 1}),
+    ]
+    samples = build_hand_timeline(events, None, cm)
+    assert len(samples) == 4  # baseline + 3
+    assert samples[1].size == {"RED": 2, "BLUE": 0}
+    assert samples[2].size == {"RED": 2, "BLUE": 2}
+    assert samples[-1].size == {"RED": 3, "BLUE": 2}
+
+
+def test_build_hand_timeline_skips_zero_delta_events():
+    # DevCardPlayEvent for a knight doesn't move hand size — no sample.
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 1}),
+        RollEvent(player="Alice", d1=3, d2=4),  # non-hand event
+    ]
+    samples = build_hand_timeline(events, None, cm)
+    assert len(samples) == 2  # baseline + produce only
+
+
+def test_build_hand_timeline_reflects_spend():
+    # Buying a dev card should drop hand size by 3 (SHEEP+WHEAT+ORE).
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={"SHEEP": 1, "WHEAT": 1, "ORE": 1}),
+        DevCardBuyEvent(player="Alice"),
+    ]
+    samples = build_hand_timeline(events, None, cm)
+    assert samples[1].size == {"RED": 3}
+    assert samples[-1].size == {"RED": 0}
+
+
+def test_build_hand_timeline_tracks_steal_transfer():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Bob", resources={"WHEAT": 2}),
+        StealEvent(thief="Alice", victim="Bob", resource="WHEAT"),
+    ]
+    samples = build_hand_timeline(events, None, cm)
+    assert samples[-1].size == {"RED": 1, "BLUE": 1}
+
+
+def test_render_hand_chart_writes_png(tmp_path: Path):
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 3, "BRICK": 2}),
+        ProduceEvent(player="Bob",   resources={"WHEAT": 2}),
+        ProduceEvent(player="Alice", resources={"ORE": 1}),
+    ]
+    samples = build_hand_timeline(events, [1000.0, 1120.0, 1300.0], cm)
+    out = render_hand_chart(samples, cm, tmp_path / "hand.png")
+    assert out.exists()
+    assert out.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert out.stat().st_size > 500
+
+
+def test_render_hand_chart_rejects_empty_color_map(tmp_path: Path):
+    cm = ColorMap({})
+    samples = build_hand_timeline([], None, cm)
+    try:
+        render_hand_chart(samples, cm, tmp_path / "hand.png")
+    except ValueError as exc:
+        assert "no seated players" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for empty color_map")

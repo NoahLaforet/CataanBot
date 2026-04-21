@@ -1,6 +1,7 @@
-"""Single-file HTML postmortem stitching the text report and the three
-PNG charts (VP timeline, production timeline, dice histogram) into one
-shareable document with the images embedded as base64 data URIs.
+"""Single-file HTML postmortem stitching the text report and the four
+PNG charts (VP timeline, production timeline, dice histogram, hand-size
+timeline) into one shareable document with the images embedded as
+base64 data URIs.
 
 The charts are rendered in-memory (no temp files) and the report text
 goes into a `<pre>` block; no JavaScript, no external assets — open
@@ -45,6 +46,7 @@ def render_postmortem_html(
     vp_png = _vp_png_bytes(events, timestamps, color_map)
     prod_png = _production_png_bytes(events, timestamps, color_map)
     dice_png = _dice_png_bytes(events)
+    hand_png = _hand_png_bytes(events, timestamps, color_map)
 
     title = "CataanBot postmortem"
     if jsonl_path:
@@ -57,6 +59,7 @@ def render_postmortem_html(
         vp_src=_data_uri(vp_png),
         prod_src=_data_uri(prod_png),
         dice_src=_data_uri(dice_png),
+        hand_src=_data_uri(hand_png),
     )
     out_path.write_text(html)
     return out_path
@@ -102,6 +105,20 @@ def _production_png_bytes(
     samples = build_production_timeline(events, timestamps, color_map)
     with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
         render_production_chart(samples, color_map, tmp.name)
+        return Path(tmp.name).read_bytes()
+
+
+def _hand_png_bytes(
+    events: list[Event],
+    timestamps: list[float | None],
+    color_map: ColorMap,
+) -> bytes:
+    import tempfile
+    from cataanbot.timeline import build_hand_timeline, render_hand_chart
+
+    samples = build_hand_timeline(events, timestamps, color_map)
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
+        render_hand_chart(samples, color_map, tmp.name)
         return Path(tmp.name).read_bytes()
 
 
@@ -202,6 +219,10 @@ _HTML_TEMPLATE = """<!doctype html>
 <figure>
   <img src="{dice_src}" alt="Dice fairness">
   <figcaption>Actual vs. expected roll counts per value; ghost outlines show the 2d6 expectation.</figcaption>
+</figure>
+<figure>
+  <img src="{hand_src}" alt="Hand size over time">
+  <figcaption>Reconstructed hand size per player; dashed line marks the 7-card discard threshold.</figcaption>
 </figure>
 
 <h2>Report</h2>

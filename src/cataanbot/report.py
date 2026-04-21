@@ -99,6 +99,11 @@ class ReplayReport:
     dispatch_counts: dict[str, int]       # applied/skipped/unhandled/error
     first_ts: float | None
     last_ts: float | None
+    # Populated lazily by build_report when hand tracking is requested;
+    # left as None for callers that don't need it to keep existing
+    # tests of the report structure stable.
+    reconstructed_hands: dict | None = None
+    color_map: ColorMap | None = None
 
 
 def build_report(
@@ -213,6 +218,8 @@ def build_report(
     winner_color = (
         color_map.get(winner_username) if winner_username else None
     )
+    from cataanbot.hand_tracker import reconstruct_hands
+    hands = reconstruct_hands(events, color_map)
     return ReplayReport(
         jsonl_path=jsonl_path,
         winner_username=winner_username,
@@ -223,6 +230,8 @@ def build_report(
         dispatch_counts=dispatch_counts,
         first_ts=first_ts,
         last_ts=last_ts,
+        reconstructed_hands=hands,
+        color_map=color_map,
     )
 
 
@@ -252,8 +261,17 @@ def format_report(report: ReplayReport) -> str:
     lines.append("")
     lines.extend(_format_known_flow(report))
     lines.append("")
+    lines.extend(_format_reconstructed_hands(report))
+    lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
+
+
+def _format_reconstructed_hands(report: ReplayReport) -> list[str]:
+    if report.reconstructed_hands is None or report.color_map is None:
+        return []
+    from cataanbot.hand_tracker import format_hands_table
+    return format_hands_table(report.reconstructed_hands, report.color_map)
 
 
 # ---------------------------------------------------------------------------
