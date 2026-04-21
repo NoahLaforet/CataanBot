@@ -25,8 +25,10 @@ class NodeScore:
     diversity_factor: float          # multiplier based on distinct resources
     port_bonus: float                # additive bonus for port access
     base_score: float                # raw_production * diversity + port_bonus
-    denial_bonus: float              # for blocking adjacent high-value spots
-    score: float                     # base_score + denial_bonus
+    denial_bonus: float              # bonus for being adjacent to high-value nodes
+    blocking_bonus: float            # lookahead: how much the pick degrades
+                                     # opponents' top-K remaining options
+    score: float                     # base + denial + blocking
     resources: dict[str, float]      # resource name → per-roll yield
     tiles: list[tuple[str, int | None]]  # (resource_or_"DESERT", number)
     port: str | None                 # "3:1", "WHEAT 2:1", etc., or None
@@ -65,6 +67,14 @@ def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
 # cluster-center spot that locks out two ~0.45-scoring neighbors picks up
 # ~0.036, enough to float past isolated peers but not to flip the top tier.
 _DENIAL_WEIGHT = 0.04
+
+# Blocking-bonus tuning. Blocking asks a sharper question than denial: if
+# I take this node (and its neighbors become illegal by distance rule),
+# how much worse is the opponent's best remaining option? Measured as the
+# drop in the top-K base-score sum caused by removing my pick + its
+# neighbors from the candidate pool.
+_BLOCKING_TOP_K = 3
+_BLOCKING_WEIGHT = 0.05
 
 
 def score_opening_nodes(game: "Game") -> list[NodeScore]:
@@ -113,7 +123,11 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
             resources=resources, tiles=tiles, port_label=port_label,
         )
 
-    # Pass 2: add denial, assemble final NodeScores.
+    # Baseline top-K base scores across the whole board, for blocking.
+    baseline_sorted = sorted(base_by_node.values(), reverse=True)
+    baseline_top_k = sum(baseline_sorted[:_BLOCKING_TOP_K])
+
+    # Pass 2: add denial + blocking, assemble final NodeScores.
     scores: list[NodeScore] = []
     for node_id, fields in scratch.items():
         denial = _DENIAL_WEIGHT * sum(
@@ -121,6 +135,16 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
             for n in neighbors.get(node_id, ())
             if n in base_by_node
         )
+        # Blocking: simulate the pick by removing node_id + its neighbors
+        # (distance rule) and see how much the top-K remaining drops.
+        excluded = {node_id} | neighbors.get(node_id, set())
+        remaining_sorted = sorted(
+            (v for n, v in base_by_node.items() if n not in excluded),
+            reverse=True,
+        )
+        remaining_top_k = sum(remaining_sorted[:_BLOCKING_TOP_K])
+        blocking = _BLOCKING_WEIGHT * max(0.0, baseline_top_k - remaining_top_k)
+
         base = base_by_node[node_id]
         scores.append(NodeScore(
             node_id=node_id,
@@ -129,7 +153,8 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
             port_bonus=fields["port_bonus"],
             base_score=base,
             denial_bonus=denial,
-            score=base + denial,
+            blocking_bonus=blocking,
+            score=base + denial + blocking,
             resources=fields["resources"],
             tiles=fields["tiles"],
             port=fields["port_label"],
@@ -682,10 +707,10 @@ def format_trade_eval(e: TradeEval) -> str:
 def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
     """Human-readable ranked list for the CLI."""
     header = (f"{'rank':>4}  {'node':>4}  {'score':>5}  {'base':>5}  "
-              f"{'deny':>5}  {'raw':>5}  {'tiles':<28}port")
+              f"{'deny':>5}  {'block':>5}  {'raw':>5}  {'tiles':<28}port")
     lines = [
         f"Top {min(top, len(scores))} opening settlement spots "
-        f"(score = base + denial):",
+        f"(score = base + denial + blocking):",
         "",
         header,
         "-" * len(header),
@@ -699,6 +724,7 @@ def format_opening_ranking(scores: list[NodeScore], top: int = 10) -> str:
         lines.append(
             f"{i:>4}  {s.node_id:>4}  {s.score:>5.2f}  "
             f"{s.base_score:>5.2f}  {s.denial_bonus:>5.2f}  "
-            f"{s.raw_production:>5.2f}  {tiles_str:<28}{port_str}"
+            f"{s.blocking_bonus:>5.2f}  {s.raw_production:>5.2f}  "
+            f"{tiles_str:<28}{port_str}"
         )
     return "\n".join(lines)
