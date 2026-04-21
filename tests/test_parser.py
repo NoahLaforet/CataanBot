@@ -1,0 +1,241 @@
+"""Parser tests driven by real log payloads from a colonist.io bot game."""
+from __future__ import annotations
+
+from cataanbot.events import (
+    BuildEvent,
+    DiscardEvent,
+    DisconnectEvent,
+    InfoEvent,
+    NoStealEvent,
+    ProduceEvent,
+    RobberMoveEvent,
+    RollEvent,
+    StealEvent,
+    TradeCommitEvent,
+    TradeOfferEvent,
+)
+from cataanbot.parser import parse_event
+
+
+def _make(parts):
+    """Build a minimal payload around a parts array."""
+    return {"ts": 0, "text": "", "parts": parts, "names": [], "icons": []}
+
+
+def _name(n):
+    return {"kind": "name", "name": n, "color": ""}
+
+
+def _text(t):
+    return {"kind": "text", "text": t}
+
+
+def _icon(alt):
+    return {"kind": "icon", "alt": alt, "src_tail": ""}
+
+
+# ---------------------------------------------------------------------------
+# Rolls
+# ---------------------------------------------------------------------------
+
+def test_roll_parses_both_dice():
+    ev = parse_event(_make([
+        _name("Hans"), _text("rolled"), _icon("dice_3"), _icon("dice_4"),
+    ]))
+    assert isinstance(ev, RollEvent)
+    assert ev.player == "Hans"
+    assert (ev.d1, ev.d2) == (3, 4)
+    assert ev.total == 7
+
+
+def test_roll_snake_eyes():
+    ev = parse_event(_make([
+        _name("Hans"), _text("rolled"), _icon("dice_1"), _icon("dice_1"),
+    ]))
+    assert isinstance(ev, RollEvent)
+    assert ev.total == 2
+
+
+# ---------------------------------------------------------------------------
+# Production
+# ---------------------------------------------------------------------------
+
+def test_production_single_resource():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("got"), _icon("Lumber"),
+    ]))
+    assert isinstance(ev, ProduceEvent)
+    assert ev.player == "BrickdDaddy"
+    assert ev.resources == {"WOOD": 1}
+
+
+def test_production_multiple_resources():
+    ev = parse_event(_make([
+        _name("Hans"), _text("got"),
+        _icon("Ore"), _icon("Ore"), _icon("Wool"),
+    ]))
+    assert isinstance(ev, ProduceEvent)
+    assert ev.resources == {"ORE": 2, "SHEEP": 1}
+
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
+def test_build_city_awards_vp():
+    ev = parse_event(_make([
+        _name("Hans"), _text("built a City"), _text("(+1 VP)"), _icon("city"),
+    ]))
+    assert isinstance(ev, BuildEvent)
+    assert ev.piece == "city"
+    assert ev.vp_delta == 1
+
+
+def test_build_road_no_vp():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("built a Road"), _icon("road"),
+    ]))
+    assert isinstance(ev, BuildEvent)
+    assert ev.piece == "road"
+    assert ev.vp_delta == 0
+
+
+def test_build_settlement_awards_vp():
+    ev = parse_event(_make([
+        _name("Nona"), _text("built a Settlement"), _text("(+1 VP)"),
+        _icon("settlement"),
+    ]))
+    assert isinstance(ev, BuildEvent)
+    assert ev.piece == "settlement"
+    assert ev.vp_delta == 1
+
+
+# ---------------------------------------------------------------------------
+# Discard
+# ---------------------------------------------------------------------------
+
+def test_discard_counts_icons():
+    ev = parse_event(_make([
+        _name("Hans"), _text("discarded"),
+        _icon("Wool"), _icon("Grain"), _icon("Grain"), _icon("Wool"),
+    ]))
+    assert isinstance(ev, DiscardEvent)
+    assert ev.resources == {"SHEEP": 2, "WHEAT": 2}
+
+
+# ---------------------------------------------------------------------------
+# Robber move + steal
+# ---------------------------------------------------------------------------
+
+def test_robber_move_to_numbered_tile():
+    ev = parse_event(_make([
+        _name("Grega"), _text("moved Robber  to"),
+        _icon("robber"), _icon("prob_9"), _icon("ore tile"),
+    ]))
+    assert isinstance(ev, RobberMoveEvent)
+    assert ev.tile_label == "ore tile"
+    assert ev.prob == 9
+
+
+def test_robber_move_to_desert():
+    ev = parse_event(_make([
+        _name("Hans"), _text("moved Robber  to Desert"), _icon("robber"),
+    ]))
+    assert isinstance(ev, RobberMoveEvent)
+    assert ev.tile_label == "Desert"
+    assert ev.prob is None
+
+
+def test_steal_names_both_players():
+    ev = parse_event(_make([
+        _name("Grega"), _text("stole  from"), _name("Hans"),
+        _icon("Resource Card"),
+    ]))
+    assert isinstance(ev, StealEvent)
+    assert ev.thief == "Grega"
+    assert ev.victim == "Hans"
+
+
+def test_no_player_to_steal():
+    ev = parse_event(_make([_text("No player to steal from")]))
+    assert isinstance(ev, NoStealEvent)
+
+
+# ---------------------------------------------------------------------------
+# Trades
+# ---------------------------------------------------------------------------
+
+def test_bank_trade_splits_give_and_take():
+    ev = parse_event(_make([
+        _name("Hans"), _text("gave bank"),
+        _icon("Lumber"), _icon("Lumber"), _icon("Lumber"), _icon("Lumber"),
+        _text("and took"), _icon("Ore"),
+    ]))
+    assert isinstance(ev, TradeCommitEvent)
+    assert ev.giver == "Hans"
+    assert ev.receiver == "BANK"
+    assert ev.gave == {"WOOD": 4}
+    assert ev.got == {"ORE": 1}
+
+
+def test_player_trade_splits_both_sides():
+    # "Hans gave [Grain Wool] and got [Ore Ore] from Grega"
+    ev = parse_event(_make([
+        _name("Hans"), _text("gave"),
+        _icon("Grain"), _icon("Wool"),
+        _text("and got"),
+        _icon("Ore"), _icon("Ore"),
+        _text("from"), _name("Grega"),
+    ]))
+    assert isinstance(ev, TradeCommitEvent)
+    assert ev.giver == "Hans"
+    assert ev.receiver == "Grega"
+    assert ev.gave == {"WHEAT": 1, "SHEEP": 1}
+    assert ev.got == {"ORE": 2}
+
+
+def test_trade_offer_captures_both_sides():
+    # "Hans wants to give [Wool Wool Ore] for [Grain]"
+    ev = parse_event(_make([
+        _name("Hans"), _text("wants to give"),
+        _icon("Wool"), _icon("Wool"), _icon("Ore"),
+        _text("for"), _icon("Grain"),
+    ]))
+    assert isinstance(ev, TradeOfferEvent)
+    assert ev.player == "Hans"
+    assert ev.give == {"SHEEP": 2, "ORE": 1}
+    assert ev.want == {"WHEAT": 1}
+
+
+# ---------------------------------------------------------------------------
+# Info / disconnect
+# ---------------------------------------------------------------------------
+
+def test_friendly_robber_is_info():
+    ev = parse_event(_make([
+        _text("Friendly Robber is active, tiles available to block are limited"),
+        _icon("robber"),
+    ]))
+    assert isinstance(ev, InfoEvent)
+
+
+def test_bot_selecting_discard_is_info():
+    ev = parse_event(_make([
+        _text("Bot is selecting cards to discard for"), _name("Hans"),
+    ]))
+    assert isinstance(ev, InfoEvent)
+
+
+def test_disconnect_and_reconnect():
+    d = parse_event(_make([
+        _name("BrickdDaddy"),
+        _text("has disconnected. A bot will take over next turn"),
+    ]))
+    assert isinstance(d, DisconnectEvent)
+    assert d.reconnected is False
+
+    r = parse_event(_make([
+        _name("BrickdDaddy"), _text("has reconnected"),
+    ]))
+    assert isinstance(r, DisconnectEvent)
+    assert r.reconnected is True

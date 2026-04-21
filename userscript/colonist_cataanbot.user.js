@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.1.0
+// @version      0.2.0
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -24,42 +24,86 @@
         scroller: 'div.virtualScroller-lSkdkGJi',
         entry:    'div.scrollItemContainer-WXX2rkzf',
         text:     'span.messagePart-XeUsOgLX',
-        icon:     'img.lobby-chat-text-icon',
     };
 
     const seenKeys = new Set();
 
+    // Walk messagePart in document order, emitting ordered parts so
+    // the parser can split "give X for Y" correctly. Avatars (alt="")
+    // that sit outside messagePart are dropped.
     function serializeEntry(el) {
         const textSpan = el.querySelector(SEL.text);
-        const text = (textSpan?.innerText || el.innerText || '').trim();
+        const root = textSpan || el;
 
-        // Player name pills: inline colored spans nested inside messagePart.
-        const names = Array.from(
-            (textSpan || el).querySelectorAll('span[style*="color:"]')
-        ).map(s => ({
-            name: (s.innerText || '').trim(),
-            color: (s.style.color || '').trim(),
-        })).filter(n => n.name);
+        const parts = [];
 
-        // Icons (resources, dice, pieces, tiles). Alt text is the key.
-        const icons = Array.from(el.querySelectorAll('img')).map(img => ({
-            alt: img.alt || '',
-            src_tail: (img.getAttribute('src') || '').split('/').pop(),
-        })).filter(i => i.alt || i.src_tail);
+        const walk = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const t = (node.textContent || '').replace(/\s+/g, ' ').trim();
+                if (t) parts.push({ kind: 'text', text: t });
+                return;
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            const el = node;
+            if (el.tagName === 'IMG') {
+                const alt = el.alt || '';
+                if (!alt) return; // drop avatar
+                parts.push({
+                    kind: 'icon',
+                    alt,
+                    src_tail: (el.getAttribute('src') || '').split('/').pop(),
+                });
+                return;
+            }
+            // Player name pill: inline colored span. If we match one,
+            // don't recurse — emit as a single token.
+            const style = el.getAttribute?.('style') || '';
+            if (el.tagName === 'SPAN' && /color\s*:/i.test(style)) {
+                const name = (el.innerText || '').trim();
+                if (name) {
+                    parts.push({
+                        kind: 'name',
+                        name,
+                        color: el.style.color || '',
+                    });
+                }
+                return;
+            }
+            // VP callout: <span class="vp-text">+1 VP</span>
+            if (el.classList?.contains('vp-text')) {
+                parts.push({ kind: 'vp', text: (el.innerText || '').trim() });
+                return;
+            }
+            // Recurse into generic containers.
+            for (const child of el.childNodes) walk(child);
+        };
+
+        for (const child of root.childNodes) walk(child);
+
+        const text = parts
+            .filter(p => p.kind === 'text' || p.kind === 'name' || p.kind === 'vp')
+            .map(p => p.kind === 'name' ? p.name : p.text)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // Flat views kept for back-compat + easy debugging.
+        const names = parts.filter(p => p.kind === 'name')
+            .map(p => ({ name: p.name, color: p.color }));
+        const icons = parts.filter(p => p.kind === 'icon')
+            .map(p => ({ alt: p.alt, src_tail: p.src_tail }));
 
         return {
             ts: Date.now() / 1000,
             text,
+            parts,
             names,
             icons,
-            // A compact key for dedup — virtualized list can re-render.
             key: `${text}|${icons.map(i => i.alt).join(',')}|${names.map(n => n.name).join(',')}`,
         };
     }
 
     function post(payload) {
-        // GM_xmlhttpRequest dodges CORS; fetch would also work since the
-        // bridge enables CORS, but this path is more robust across hosts.
         if (typeof GM_xmlhttpRequest === 'function') {
             GM_xmlhttpRequest({
                 method: 'POST',
@@ -92,7 +136,6 @@
 
     function attach(scroller) {
         console.log(LOG_PREFIX, 'attached to log scroller');
-        // Seed with whatever's already in view.
         scroller.querySelectorAll(SEL.entry).forEach(processEntry);
 
         const observer = new MutationObserver((mutations) => {
@@ -112,7 +155,7 @@
 
     function waitForScroller() {
         let tries = 0;
-        const maxTries = 600;           // ≈5 minutes at 500ms
+        const maxTries = 600;
         const iv = setInterval(() => {
             tries += 1;
             const scroller = document.querySelector(SEL.scroller);
