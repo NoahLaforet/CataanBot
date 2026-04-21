@@ -1,4 +1,4 @@
-# Where we left off (2026-04-20)
+# Where we left off (2026-04-20, late-day pass)
 
 ## Shipped so far
 - Ports around the coast (commit `5760fd0`)
@@ -70,6 +70,26 @@
 - **Claimed-node X markers** (`1a227bb`) — `openings --after … --render`
   draws gray X badges on the claimed nodes and shifts the gold ranked
   markers to the post-pick top-N so the PNG stands alone.
+- **Hand-estimation replay** (`25fb339`) — new `cataanbot hands <save>`
+  CLI + `hands` REPL command. Replays tracker history through
+  `yield_resources` to produce per-color produced/spent/received
+  buckets alongside the authoritative current hand, so you can spot
+  "red's been rolling 6s all game and hasn't built anything" at a
+  glance.
+- **Auto-offer secondadvice after first settle** (`01fc76a`) — placing
+  a color's first settlement in the REPL now prints the top-5
+  second-settlement ranking automatically, so you don't have to run
+  the advisor manually during the opening draft.
+- **Test coverage** (`18536eb`, `2d6d264`, `2bb037d`) — 59 pytest cases
+  covering tracker board ops + save/load/undo, advisor scoring,
+  hands replay buckets, stats histogram, every CLI subcommand, VP
+  callout tiers across thresholds, and the openings --after flow.
+  `tests/conftest.py` injects src/ onto sys.path so tests run without
+  the macOS-flaky .pth file.
+- **CLI polish** (`07592b4`, `e92fa15`, `980b311`) — `--version` flag
+  via importlib.metadata, gitignore now blocks root-level `*.png`
+  outputs cleanly, README documents the full command surface + the
+  launcher caveat.
 
 ## Running the tool
 The packaged `.venv/bin/cataanbot` entry point is unreliable on macOS
@@ -92,27 +112,29 @@ repo-local launcher instead:
 - Maybe send Karan an email.
 
 ## Natural next steps (pick any)
-1. **Structural cleanup** — `repl.py` is now ~650 lines with ~30 `do_*`
+1. **Smoke-test with a real game** — we've pushed as close to a "final
+   product" as autonomous work can reach without a live session. Sit
+   down for a full game, drive the REPL, and file whatever the real
+   use reveals.
+2. **Structural cleanup** — `repl.py` is now ~650 lines with ~30 `do_*`
    commands. Splitting mutations / advisors / history / meta into
    mixins would make the file browsable. Pure refactor with real
    breakage risk; best done when you can smoke-test each command in
    the REPL yourself, not in an autonomous run.
-2. **Dev-card advisor** — `should-i-buy-dev` for the current color:
+3. **Dev-card advisor** — `should-i-buy-dev` for the current color:
    trivial "is 14+ cards left and you're short on VP push" heuristic,
    but would round out the advisor set. Low value — dev cards are
    inherently low-info.
-3. **Opponent-hand heuristic** — tracker records per-color resources
-   when you give/take, but it can't know what opponents actually have
-   from dice rolls. A heuristic hand tracker (expected yield from
-   their settlements minus seen trades) would make `robberadvice` and
-   `tradeeval` more accurate. Moderate scope.
-4. **Integrate secondadvice into the REPL flow** — right now you call
-   `secondadvice` explicitly; it could auto-offer after the first
-   settlement is placed in `play`.
+4. **Opponent-hand heuristic beyond hands.py** — hands.py now gives
+   per-color produced/spent/received buckets but nothing consumes that
+   in the advisor layer yet. Wiring it into `robberadvice` (steal-EV
+   weighted by produced total) and `tradeeval` (opponent scarcity
+   guess) is the next step once live play validates the hands numbers.
 
 ## Files
 - `src/cataanbot/cli.py` — `doctor`, `render`, `openings`, `play`,
-  `robberadvice`, `tradeeval`, `secondadvice`, `stats` subcommands.
+  `robberadvice`, `tradeeval`, `secondadvice`, `stats`, `hands`
+  subcommands, plus `--version`.
 - `src/cataanbot/render.py` — Pillow board renderer: board + legend
   strip, drop shadows, ocean gradient, `highlight_nodes` overlay for
   advisor recommendations.
@@ -127,5 +149,8 @@ repo-local launcher instead:
   `_recompute_longest_road`, `_recompute_largest_army` keep derived
   state honest across direct builds.
 - `src/cataanbot/repl.py` — `TrackerRepl(cmd.Cmd)` with all commands.
+- `src/cataanbot/hands.py` — history-replay per-color hand accounting.
 - `bin/cataanbot` — launcher that sidesteps the macOS `.pth` quirk.
+- `tests/` — conftest + test_tracker + test_advisor + test_hands +
+  test_stats + test_cli + test_cli_integration (59 cases, <0.5s).
 - `TODO_VISUAL.md` — visual-polish backlog.
