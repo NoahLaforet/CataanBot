@@ -169,6 +169,16 @@ Events that need board topology (settlement / city / road placements and
 robber moves) are currently reported as `unhandled` — once the
 DOM-to-catanatron-node mapping lands, they'll flow through too.
 
+### Capturing the board layout (topology prep)
+
+`userscript/board_probe.js` is a one-shot probe you paste into the
+Chrome devtools Console while in an active colonist game. It walks the
+board DOM, serializes every SVG/polygon/circle/image + positioned div,
+and prompts a download of `cataanbot-board-probe.json`. Drop that file
+in the repo root and it'll be used to build the DOM → catanatron node
+mapping (so BuildEvent and RobberMoveEvent can resolve to real board
+positions). The probe is read-only and does not talk to the bridge.
+
 ## Development
 
 Tests are plain pytest; the `tests/conftest.py` shim puts `src/` on the path so
