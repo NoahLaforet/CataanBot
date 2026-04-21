@@ -64,6 +64,12 @@
   with wool bumps, dark head, and legs (no more caterpillar look);
   brick icon now has visible mortar gaps so the 2-over-1 wall pattern
   reads cleanly instead of merging into a mound.
+- **Deterministic seed flag** (`adf8c1f`) — `render --seed N` and
+  `openings --seed N` pin the fresh-game map so `--after` can compare
+  against the same board across runs.
+- **Claimed-node X markers** (`1a227bb`) — `openings --after … --render`
+  draws gray X badges on the claimed nodes and shifts the gold ranked
+  markers to the post-pick top-N so the PNG stands alone.
 
 ## Running the tool
 The packaged `.venv/bin/cataanbot` entry point is unreliable on macOS
@@ -76,7 +82,7 @@ repo-local launcher instead:
 ./bin/cataanbot render -o board.png --labels text    # old text labels
 ./bin/cataanbot openings --top 10 --render board_openings.png
 ./bin/cataanbot openings --save game.json --color WHITE --top 5
-./bin/cataanbot openings --top 5 --after 6 12       # alt view
+./bin/cataanbot openings --seed 777 --top 5 --after 6 --render after.png
 ./bin/cataanbot secondadvice game.json RED --render second.png
 ./bin/cataanbot stats game.json --histogram roll_hist.png
 ```
@@ -91,19 +97,18 @@ repo-local launcher instead:
    mixins would make the file browsable. Pure refactor with real
    breakage risk; best done when you can smoke-test each command in
    the REPL yourself, not in an autonomous run.
-2. **Deterministic fresh-board seed flag** — `openings --after N`
-   generates a *different* random board each run, so you can't do
-   "show baseline, now show after" across two CLI calls. A `--seed`
-   flag on `render` and `openings` would make that work and also
-   help reproduce interesting boards.
-3. **Dev-card advisor** — `should-i-buy-dev` for the current color:
+2. **Dev-card advisor** — `should-i-buy-dev` for the current color:
    trivial "is 14+ cards left and you're short on VP push" heuristic,
    but would round out the advisor set. Low value — dev cards are
    inherently low-info.
-4. **Opening render: show the first pick too** — once `--after N` is
-   called, the rendered PNG could mark the claimed node with a
-   distinct badge (X or gray circle) so the board still makes sense
-   standalone. Right now only the ranked picks get markers.
+3. **Opponent-hand heuristic** — tracker records per-color resources
+   when you give/take, but it can't know what opponents actually have
+   from dice rolls. A heuristic hand tracker (expected yield from
+   their settlements minus seen trades) would make `robberadvice` and
+   `tradeeval` more accurate. Moderate scope.
+4. **Integrate secondadvice into the REPL flow** — right now you call
+   `secondadvice` explicitly; it could auto-offer after the first
+   settlement is placed in `play`.
 
 ## Files
 - `src/cataanbot/cli.py` — `doctor`, `render`, `openings`, `play`,
