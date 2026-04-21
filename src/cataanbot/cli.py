@@ -240,6 +240,16 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
     return 0
 
 
+def cmd_hands(save_path: str) -> int:
+    """Per-color hand accounting against a saved tracker state."""
+    tracker = _load_tracker(save_path)
+    if tracker is None:
+        return 1
+    from cataanbot.hands import estimate_hands, format_hands
+    print(format_hands(estimate_hands(tracker)))
+    return 0
+
+
 def cmd_render(output: str, hex_size: int, ticks: int,
                label_style: str = "icon",
                seed: int | None = None) -> int:
@@ -338,6 +348,12 @@ def main(argv: list[str] | None = None) -> int:
     p_trade.add_argument("n_in", type=int, help="Count of resource received.")
     p_trade.add_argument("res_in", help="Resource received.")
 
+    p_hands = sub.add_parser(
+        "hands",
+        help="Per-color hand accounting against a saved tracker state.",
+    )
+    p_hands.add_argument("save", help="Path to a tracker JSON save file.")
+
     p_stats = sub.add_parser(
         "stats",
         help="Dice-roll stats from a saved tracker state.",
@@ -385,6 +401,8 @@ def main(argv: list[str] | None = None) -> int:
                                 args.top, args.render_to, args.hex_size)
     if args.cmd == "stats":
         return cmd_stats(args.save, args.histogram_path)
+    if args.cmd == "hands":
+        return cmd_hands(args.save)
     return 2
 
 
