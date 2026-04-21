@@ -291,10 +291,24 @@ def parse_event(payload: dict[str, Any]) -> Event:
     # --- VP standalone callouts ----------------------------------------------
     if "longest road" in text or "largest army" in text:
         reason = "longest_road" if "longest road" in text else "largest_army"
-        others = [n for n in _names(parts) if n != player]
-        previous = others[0] if others else None
+        names_in_order = _names(parts)
+        # Two transfer phrasings show up live:
+        #   "X took Longest Road from Y"            — first name = new holder
+        #   "Longest Road passed from X to Y"       — second name = new holder
+        # Plus the first-time award: "X has Largest Army" / "X received ...".
+        if "passed from" in text and len(names_in_order) >= 2:
+            new_holder = names_in_order[1]
+            previous = names_in_order[0]
+        else:
+            new_holder = names_in_order[0] if names_in_order else player
+            previous = names_in_order[1] if len(names_in_order) >= 2 else None
+        if new_holder is None:
+            return UnknownEvent(
+                text=_text_join(parts), icons=_icons(parts),
+                names=names_in_order,
+            )
         return VPEvent(
-            player=player, reason=reason, vp_delta=2,
+            player=new_holder, reason=reason, vp_delta=2,
             previous_holder=previous,
         )
 

@@ -310,6 +310,20 @@ def test_longest_road_with_transfer_names_previous_holder():
     assert ev.vp_delta == 2
 
 
+def test_longest_road_passed_from_names_new_holder_second():
+    # Colonist's "passed from X to Y" rendering — Y is the new holder.
+    ev = parse_event(_make([
+        _text("Longest Road"), _icon("longest road"), _text("passed from"),
+        _name("Burck"), _text("to"), _name("BrickdDaddy"),
+        _text("("), _text("+2 VPs"), _text(")"),
+    ]))
+    assert isinstance(ev, VPEvent)
+    assert ev.player == "BrickdDaddy"
+    assert ev.previous_holder == "Burck"
+    assert ev.reason == "longest_road"
+    assert ev.vp_delta == 2
+
+
 def test_largest_army_first_time_has_no_previous():
     ev = parse_event(_make([
         _name("BrickdDaddy"), _text("has Largest Army"),
