@@ -5,9 +5,15 @@ import argparse
 import sys
 
 
-def _new_game():
+def _new_game(seed: int | None = None):
+    """Fresh 4-player Game. Passing a seed makes the map reproducible
+    across CLI invocations — useful for `openings --after` comparisons."""
     from catanatron import Color, Game, RandomPlayer
-    return Game([RandomPlayer(c) for c in (Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)])
+    players = [RandomPlayer(c) for c in
+               (Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)]
+    if seed is not None:
+        return Game(players, seed=seed)
+    return Game(players)
 
 
 def cmd_doctor() -> int:
@@ -29,7 +35,8 @@ def cmd_doctor() -> int:
 def cmd_openings(top: int, render_to: str | None, hex_size: int,
                  save_path: str | None = None,
                  color: str | None = None,
-                 after: list[int] | None = None) -> int:
+                 after: list[int] | None = None,
+                 seed: int | None = None) -> int:
     """Rank opening settlement spots.
 
     Default: fresh random board, scores every land node.
@@ -75,7 +82,7 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
             print(f"no legal opening spots left for {color}", file=sys.stderr)
             return 1
     else:
-        game = _new_game()
+        game = _new_game(seed=seed)
 
     scores = score_opening_nodes(game, legal_nodes=legal_nodes)
     print(format_opening_ranking(scores, top=top))
@@ -225,7 +232,8 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
 
 
 def cmd_render(output: str, hex_size: int, ticks: int,
-               label_style: str = "icon") -> int:
+               label_style: str = "icon",
+               seed: int | None = None) -> int:
     """Render a fresh random board to a PNG, optionally after N simulated ticks
     so settlements/roads/cities show up on the output."""
     try:
@@ -234,7 +242,7 @@ def cmd_render(output: str, hex_size: int, ticks: int,
         print(f"render deps missing: {e}", file=sys.stderr)
         print("run: pip install -e .", file=sys.stderr)
         return 1
-    game = _new_game()
+    game = _new_game(seed=seed)
     for _ in range(ticks):
         if not game.state.current_prompt:
             break
@@ -268,6 +276,9 @@ def main(argv: list[str] | None = None) -> int:
     p_render.add_argument("--labels", choices=("icon", "text"), default="icon",
                           help="Tile labels: geometric 'icon' (default) or "
                                "the older 'text' (WHEAT/WOOD/...) for debugging.")
+    p_render.add_argument("--seed", type=int, default=None,
+                          help="Seed the fresh game so the map is reproducible "
+                               "across runs.")
 
     p_openings = sub.add_parser(
         "openings",
@@ -291,6 +302,10 @@ def main(argv: list[str] | None = None) -> int:
                                  "node IDs are already claimed. Each pick "
                                  "removes itself + its neighbors from the "
                                  "candidate pool.")
+    p_openings.add_argument("--seed", type=int, default=None,
+                            help="Seed the fresh game so the map is "
+                                 "reproducible — lets --after comparisons "
+                                 "work across runs. Ignored with --save.")
 
     sub.add_parser("play", help="Launch the manual-tracker REPL.")
 
@@ -344,10 +359,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "doctor":
         return cmd_doctor()
     if args.cmd == "render":
-        return cmd_render(args.output, args.hex_size, args.ticks, args.labels)
+        return cmd_render(args.output, args.hex_size, args.ticks, args.labels,
+                          args.seed)
     if args.cmd == "openings":
         return cmd_openings(args.top, args.render_to, args.hex_size,
-                            args.save_path, args.color, args.after)
+                            args.save_path, args.color, args.after, args.seed)
     if args.cmd == "play":
         return cmd_play()
     if args.cmd == "robberadvice":
