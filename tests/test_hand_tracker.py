@@ -192,6 +192,43 @@ def test_overdraft_increments_drift_and_clamps():
     assert hands["RED"].drift == 2
 
 
+def test_free_placement_does_not_debit_resources():
+    # Setup-phase settlement / Road Building dev card emit paid=False —
+    # the hand tracker must skip the cost debit (cards are placed for free).
+    cm = ColorMap({"Alice": "RED"})
+    hands = init_hands(cm)
+    apply_event(hands, BuildEvent(
+        player="Alice", piece="settlement", vp_delta=1, paid=False,
+    ), cm)
+    # No drift, no debits — nothing was spent.
+    assert hands["RED"].total == 0
+    assert hands["RED"].drift == 0
+
+
+def test_free_road_placement_does_not_debit():
+    cm = ColorMap({"Alice": "RED"})
+    hands = init_hands(cm)
+    apply_event(hands, BuildEvent(
+        player="Alice", piece="road", vp_delta=0, paid=False,
+    ), cm)
+    assert hands["RED"].total == 0
+    assert hands["RED"].drift == 0
+
+
+def test_paid_build_still_debits_after_free_flag_addition():
+    # Guardrail against regressing the default: if someone forgets to
+    # pass paid=True explicitly, a normal BuildEvent still charges.
+    cm = ColorMap({"Alice": "RED"})
+    hands = init_hands(cm)
+    apply_event(hands, ProduceEvent(
+        player="Alice", resources={"WOOD": 1, "BRICK": 1},
+    ), cm)
+    apply_event(hands, BuildEvent(
+        player="Alice", piece="road", vp_delta=0,  # paid defaults to True
+    ), cm)
+    assert hands["RED"].total == 0
+
+
 def test_reconstruct_hands_full_stream():
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [
