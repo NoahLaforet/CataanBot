@@ -89,6 +89,34 @@ repo-local `./bin/cataanbot` launcher sidesteps that by setting
 ./bin/cataanbot stats       game.json --histogram hist.png
 ```
 
+## colonist.io bridge (Phase 6, Day 1)
+
+Stream colonist.io's in-game log to a local FastAPI bridge so the advisor
+can eventually consume live play. Day 1 just proves the pipe — the bridge
+prints each event to stdout.
+
+```bash
+# Install bridge deps (fastapi + uvicorn)
+pip install -e '.[bridge]'
+
+# Start the bridge
+./bin/cataanbot bridge                         # 127.0.0.1:8765
+./bin/cataanbot bridge --jsonl ~/cataan.jsonl  # also mirror to disk
+```
+
+Install the userscript once in Tampermonkey (or Violentmonkey):
+
+1. Install the Tampermonkey browser extension.
+2. Open `userscript/colonist_cataanbot.user.js` in the repo, copy the
+   contents, and paste into a new Tampermonkey script. Save.
+3. Confirm it's enabled on `colonist.io/*`.
+4. Start a game. The bridge terminal should print events as they happen.
+
+The userscript watches `div.virtualScroller-lSkdkGJi` (the log panel's
+virtualized list) via a MutationObserver and POSTs each new entry to
+`http://127.0.0.1:8765/log` as structured JSON — text, colored name
+pills, and icon `alt` values. See `COLONIST_RECON.md` for the DOM spec.
+
 ## Development
 
 Tests are plain pytest; the `tests/conftest.py` shim puts `src/` on the path so
