@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.2.0
+// @version      0.3.0
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -28,12 +28,13 @@
 
     const seenKeys = new Set();
 
-    // Walk messagePart in document order, emitting ordered parts so
-    // the parser can split "give X for Y" correctly. Avatars (alt="")
-    // that sit outside messagePart are dropped.
+    // Walk the whole scrollItemContainer in document order, emitting
+    // ordered parts. We can't just walk messagePart because some events
+    // (dev-card play "X used [Knight]") render the card icon as a
+    // sibling of messagePart, not a child. Avatars have alt="" and are
+    // dropped by the icon rule below.
     function serializeEntry(el) {
-        const textSpan = el.querySelector(SEL.text);
-        const root = textSpan || el;
+        const root = el;
 
         const parts = [];
 
@@ -95,12 +96,36 @@
 
         return {
             ts: Date.now() / 1000,
+            self: detectSelf(),
             text,
             parts,
             names,
             icons,
             key: `${text}|${icons.map(i => i.alt).join(',')}|${names.map(n => n.name).join(',')}`,
         };
+    }
+
+    // Detect the active user's username by scanning for a "(You)" marker
+    // in the lobby/profile DOM. Cached after first hit so we don't rescan
+    // on every message. Returns null if not yet resolvable.
+    let cachedSelf = null;
+    function detectSelf() {
+        if (cachedSelf) return cachedSelf;
+        // colonist.io tags the current user's row with " (You)" in the
+        // players panel. Walk a compact subtree; searching the whole
+        // document is pointlessly expensive.
+        const candidates = document.querySelectorAll(
+            'div[class*="player"], div[class*="Player"], div[class*="user"], span'
+        );
+        for (const el of candidates) {
+            const t = el.innerText || '';
+            const m = t.match(/^(\S[^\n]{0,30}?)\s*\(You\)\s*$/m);
+            if (m) {
+                cachedSelf = m[1].trim();
+                return cachedSelf;
+            }
+        }
+        return null;
     }
 
     function post(payload) {
