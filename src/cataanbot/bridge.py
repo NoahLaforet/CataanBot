@@ -73,24 +73,79 @@ def _build_app(jsonl_path: Path | None = None):
 
 
 def _print_event(payload: dict[str, Any], n: int) -> None:
-    """Human-readable stdout echo so you can tail the bridge live."""
-    text = (payload.get("text") or "").strip()
-    icons = payload.get("icons") or []
-    names = payload.get("names") or []
-    icon_str = " ".join(f"[{i.get('alt','?')}]" for i in icons)
-    name_str = " ".join(
-        f"{n.get('name','?')}({n.get('color','')})" for n in names
-    )
+    """Human-readable stdout echo so you can tail the bridge live.
+
+    Shows the structured parse on the first line and (for anything
+    we can't classify yet) the raw payload on a second line so we can
+    add rules for the misses.
+    """
+    from cataanbot.events import UnknownEvent
+    from cataanbot.parser import parse_event
+
     ts = payload.get("ts")
     if ts is None:
         ts = time.time()
     ts_str = time.strftime("%H:%M:%S", time.localtime(ts))
-    line = f"[{ts_str} #{n:04d}] {text}"
-    if icon_str:
-        line += f"  {icon_str}"
-    if name_str:
-        line += f"   ({name_str})"
-    print(line, flush=True)
+
+    event = parse_event(payload)
+    cls = type(event).__name__
+    print(f"[{ts_str} #{n:04d}] {cls}: {_event_oneliner(event)}", flush=True)
+    if isinstance(event, UnknownEvent):
+        text = (payload.get("text") or "").strip()
+        icons = [i.get("alt", "") for i in payload.get("icons") or []]
+        print(f"           raw: {text}  icons={icons}", flush=True)
+
+
+def _event_oneliner(event: Any) -> str:
+    """Compact human-readable summary of a parsed Event."""
+    from cataanbot.events import (
+        BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
+        DisconnectEvent, InfoEvent, NoStealEvent, ProduceEvent,
+        RobberMoveEvent, RollEvent, StealEvent, TradeCommitEvent,
+        TradeOfferEvent, UnknownEvent, VPEvent,
+    )
+
+    if isinstance(event, RollEvent):
+        return f"{event.player} rolled {event.total} ({event.d1}+{event.d2})"
+    if isinstance(event, ProduceEvent):
+        return f"{event.player} got {_fmt_res(event.resources)}"
+    if isinstance(event, BuildEvent):
+        vp = f" +{event.vp_delta} VP" if event.vp_delta else ""
+        return f"{event.player} built {event.piece}{vp}"
+    if isinstance(event, DiscardEvent):
+        return f"{event.player} discarded {_fmt_res(event.resources)}"
+    if isinstance(event, RobberMoveEvent):
+        prob = f" (prob {event.prob})" if event.prob is not None else ""
+        return f"{event.player} moved robber → {event.tile_label}{prob}"
+    if isinstance(event, StealEvent):
+        return f"{event.thief} stole from {event.victim}"
+    if isinstance(event, NoStealEvent):
+        return "no one to steal from"
+    if isinstance(event, TradeOfferEvent):
+        return (f"{event.player} offers {_fmt_res(event.give)} for "
+                f"{_fmt_res(event.want) or '?'}")
+    if isinstance(event, TradeCommitEvent):
+        return (f"{event.giver} gave {_fmt_res(event.gave)} and got "
+                f"{_fmt_res(event.got)} from {event.receiver}")
+    if isinstance(event, DevCardBuyEvent):
+        return f"{event.player} bought dev card"
+    if isinstance(event, DevCardPlayEvent):
+        return f"{event.player} played {event.card}"
+    if isinstance(event, VPEvent):
+        return f"{event.player} +{event.vp_delta} VP ({event.reason})"
+    if isinstance(event, InfoEvent):
+        return f"info: {event.text}"
+    if isinstance(event, DisconnectEvent):
+        return f"{event.player} {'reconnected' if event.reconnected else 'disconnected'}"
+    if isinstance(event, UnknownEvent):
+        return "?"
+    return str(event)
+
+
+def _fmt_res(resources: dict[str, int]) -> str:
+    if not resources:
+        return ""
+    return " ".join(f"{count}x{name}" for name, count in resources.items())
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765,
