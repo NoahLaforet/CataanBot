@@ -196,3 +196,45 @@ def test_vp_callout_silent_in_early_game(tracker):
     assert status["top"] == 1
     assert status["callout"] is None
     assert tracker.vp_callout_line() is None
+
+
+def test_vp_callout_winner_at_ten(tracker):
+    """Forcing RED's VP to 10 should produce a winner callout."""
+    idx = tracker.game.state.color_to_index[tracker._color("RED")]
+    tracker.game.state.player_state[f"P{idx}_VICTORY_POINTS"] = 10
+    status = tracker.vp_status()
+    assert status["callout"] == "winner"
+    line = tracker.vp_callout_line()
+    assert line is not None
+    assert "RED" in line
+
+
+def test_vp_callout_tiers():
+    """Each tier threshold (6, 8, 9, 10) maps to the right label."""
+    for vp, expected in [(5, None), (6, "leader"), (8, "two_away"),
+                         (9, "one_away"), (10, "winner")]:
+        t = Tracker(seed=1)
+        idx = t.game.state.color_to_index[t._color("RED")]
+        t.game.state.player_state[f"P{idx}_VICTORY_POINTS"] = vp
+        assert t.vp_status()["callout"] == expected, \
+            f"vp={vp} should map to {expected}"
+
+
+def test_load_rejects_unknown_format(tmp_path):
+    import json
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps({"format": 999, "seed": 0, "history": []}))
+    with pytest.raises(TrackerError):
+        Tracker.load(path)
+
+
+def test_undo_reapplies_prior_history(tracker):
+    """Undo should leave everything before the dropped op intact."""
+    node = _any_legal_node(tracker, "RED")
+    tracker.settle("RED", node)
+    tracker.give("RED", 3, "WOOD")
+    tracker.give("BLUE", 1, "WHEAT")
+    tracker.undo()  # drops the BLUE give
+    assert tracker.hand("BLUE")["WHEAT"] == 0
+    assert tracker.hand("RED")["WOOD"] == 3
+    assert node in tracker.game.state.board.buildings

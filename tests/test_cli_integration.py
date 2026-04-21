@@ -141,3 +141,24 @@ def test_stats_runs(save_path, capsys, tmp_path):
 def test_missing_save_file_errors(tmp_path, capsys):
     rc = cmd_hands(str(tmp_path / "does_not_exist.json"))
     assert rc != 0
+
+
+def test_openings_with_after_compares_before_and_after(capsys, tmp_path):
+    """--after should print the baseline ranking plus a second one."""
+    png = tmp_path / "after.png"
+    rc = cmd_openings(top=3, render_to=str(png), hex_size=40,
+                      seed=1, after=[0])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # Baseline header appears once; second-ranking header appears once.
+    assert "Top 3 opening settlement spots" in out
+    assert "already claimed" in out
+    assert png.exists()
+
+
+def test_secondadvice_renders_png(save_path, tmp_path, capsys):
+    png = tmp_path / "second.png"
+    rc = cmd_secondadvice(save_path, color="RED", first_node=None,
+                          top=3, render_to=str(png), hex_size=40)
+    assert rc == 0
+    assert png.exists()
