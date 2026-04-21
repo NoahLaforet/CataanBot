@@ -145,6 +145,10 @@ class MapMapping:
     tile_types: dict[int, int] = field(default_factory=dict)
     tile_dice:  dict[int, int] = field(default_factory=dict)
     port_types: dict[int, int] = field(default_factory=dict)
+    # colonist tile id → set of colonist corner ids on that tile's 6
+    # vertices. Built during build_mapping so yield computation on a
+    # roll doesn't have to re-scan corner signatures.
+    tile_corners: dict[int, set[int]] = field(default_factory=dict)
 
 
 class MapMappingError(RuntimeError):
@@ -204,6 +208,8 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
         m.tile_dice[tid_i]  = int(t.get("diceNumber", 0))
 
     # --- Corners -----------------------------------------------------------
+    axial_to_tile_id = {(t["x"], t["y"]): int(tid)
+                        for tid, t in hex_states.items()}
     for cid, c in corner_states.items():
         sig = corner_tile_signature(c["x"], c["y"], c["z"])
         nid = node_by_signature.get(sig)
@@ -211,7 +217,12 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
             raise MapMappingError(
                 f"corner {cid} at {c} has no matching catanatron node "
                 f"(signature {sorted(sig)})")
-        m.node_id[int(cid)] = nid
+        cid_i = int(cid)
+        m.node_id[cid_i] = nid
+        for ax, ay in sig:
+            tid = axial_to_tile_id.get((ax, ay))
+            if tid is not None:
+                m.tile_corners.setdefault(tid, set()).add(cid_i)
 
     if len(set(m.node_id.values())) != 54:
         raise MapMappingError("corner mapping is not bijective")

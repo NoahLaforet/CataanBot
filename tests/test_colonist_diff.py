@@ -8,10 +8,12 @@ import pytest
 
 from cataanbot.colonist_diff import (
     LiveSession, LiveSessionError,
-    events_from_diff, events_from_frame_payload,
+    events_from_diff, events_from_frame_payload, produce_events_for_roll,
 )
 from cataanbot.colonist_proto import load_capture
-from cataanbot.events import BuildEvent, RobberMoveEvent
+from cataanbot.events import (
+    BuildEvent, ProduceEvent, RobberMoveEvent, RollEvent,
+)
 from cataanbot.live import ColorMap, apply_event
 from cataanbot.tracker import Tracker
 
@@ -128,10 +130,79 @@ def test_diff_robber_becomes_move_event_with_coord():
     assert ev.coord == sess.mapping.tile_coord[any_tid]
 
 
+def test_diff_dice_roll_emits_roll_event():
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    events = events_from_diff(sess, {
+        "diceState": {"dice1": 3, "dice2": 4, "diceThrown": True},
+        "currentState": {"currentTurnPlayerColor": 5},
+    })
+    assert any(isinstance(e, RollEvent) for e in events)
+    roll = next(e for e in events if isinstance(e, RollEvent))
+    assert (roll.d1, roll.d2) == (3, 4)
+    assert roll.player == "BrickdDaddy"
+
+
+def test_diff_without_fresh_dice_emits_no_roll():
+    """diceThrown: False alone (roll-consumed frame) isn't a new roll."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    events = events_from_diff(sess, {
+        "diceState": {"diceThrown": False}})
+    assert not any(isinstance(e, RollEvent) for e in events)
+
+
+def test_produce_events_for_roll_skips_robber_tile():
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    # Put a settlement on the first corner of some tile that rolls on 6.
+    six_tid = next(tid for tid, d in sess.mapping.tile_dice.items()
+                   if d == 6)
+    any_cid = next(iter(sess.mapping.tile_corners[six_tid]))
+    sess.known_corners[any_cid] = 1
+    sess.corner_owners[any_cid] = 5
+
+    got = produce_events_for_roll(sess, 6)
+    assert got and got[0].player == "BrickdDaddy"
+
+    sess.robber_tile_id = six_tid
+    # With the robber on the only 6-tile that corner touches, yields may
+    # still appear from *other* 6-tiles if the corner is at a junction,
+    # but the robbed tile itself never contributes — so the count drops.
+    without_robber = sum(v for ev in produce_events_for_roll(sess, 6)
+                         for v in ev.resources.values())
+    assert without_robber < sum(v for ev in got for v in ev.resources.values())
+
+
+def test_produce_events_for_roll_handles_seven():
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    assert produce_events_for_roll(sess, 7) == []
+
+
+def test_events_from_frame_payload_emits_roll_plus_produce():
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    six_tid = next(tid for tid, d in sess.mapping.tile_dice.items() if d == 6)
+    any_cid = next(iter(sess.mapping.tile_corners[six_tid]))
+    sess.known_corners[any_cid] = 1
+    sess.corner_owners[any_cid] = 1  # Elissa
+
+    events = events_from_frame_payload(sess, {
+        "type": 91,
+        "payload": {"diff": {
+            "diceState": {"dice1": 3, "dice2": 3, "diceThrown": True},
+            "currentState": {"currentTurnPlayerColor": 1},
+        }},
+        "sequence": 1,
+    })
+    assert any(isinstance(e, RollEvent) for e in events)
+    assert any(isinstance(e, ProduceEvent) and e.player == "Elissa"
+               for e in events)
+
+
 def test_empty_or_unrelated_diff_emits_nothing():
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
     assert events_from_diff(sess, {}) == []
-    assert events_from_diff(sess, {"diceState": {"dice1": 3, "dice2": 4}}) == []
+    # A roll-consumed frame carries only diceThrown=False, not a fresh
+    # pair of dice values — no new RollEvent.
+    assert events_from_diff(
+        sess, {"diceState": {"diceThrown": False}}) == []
 
 
 def test_events_from_frame_payload_filters_non_diff_frames():

@@ -32,8 +32,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cataanbot.colonist_map import MapMapping, build_mapping
-from cataanbot.events import BuildEvent, Event, RobberMoveEvent
+from cataanbot.colonist_map import (
+    MapMapping, build_mapping, corner_tile_signature, tile_resource,
+)
+from cataanbot.events import (
+    BuildEvent, Event, ProduceEvent, RobberMoveEvent, RollEvent,
+)
 
 
 class LiveSessionError(RuntimeError):
@@ -50,9 +54,16 @@ class LiveSession:
     # Lets us distinguish a fresh settlement from a city upgrade on the
     # same corner, since the diff carries only the new state.
     known_corners: dict[int, int] = field(default_factory=dict)
+    # cid → last-seen owner color id. Needed for per-player yield
+    # computation on a roll, since the tracker's catanatron board has a
+    # random resource layout that doesn't match colonist's.
+    corner_owners: dict[int, int] = field(default_factory=dict)
     # eid → last-seen owner (0 = empty). Suppresses re-dispatch of roads
     # that haven't actually changed between snapshots.
     known_edges: dict[int, int] = field(default_factory=dict)
+    # Colonist tile id of the robber's current location. None until a
+    # mechanicRobberState diff lands.
+    robber_tile_id: int | None = None
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -88,12 +99,20 @@ class LiveSession:
         # placement (the setup-phase corners and roads).
         for cid_str, c in map_state.get("tileCornerStates", {}).items():
             bt = int(c.get("buildingType") or 0)
+            owner = c.get("owner")
             if bt:
                 sess.known_corners[int(cid_str)] = bt
+            if owner:
+                sess.corner_owners[int(cid_str)] = int(owner)
         for eid_str, e in map_state.get("tileEdgeStates", {}).items():
             owner = e.get("owner")
             if owner:
                 sess.known_edges[int(eid_str)] = int(owner)
+
+        # Seed initial robber position if set (pre-game defaults to desert).
+        robber = game_state.get("mechanicRobberState") or {}
+        if isinstance(robber, dict) and "locationTileIndex" in robber:
+            sess.robber_tile_id = int(robber["locationTileIndex"])
 
         return sess
 
@@ -144,6 +163,7 @@ def events_from_diff(
             node_id=node_id,
         ))
         sess.known_corners[cid] = int(bt)
+        sess.corner_owners[cid] = int(owner)
 
     for eid_str, e in edge_diff.items():
         try:
@@ -177,6 +197,7 @@ def events_from_diff(
         if tid is not None:
             coord = sess.mapping.tile_coord.get(tid)
             if coord is not None:
+                sess.robber_tile_id = tid
                 out.append(RobberMoveEvent(
                     player="",         # diff doesn't name the mover
                     tile_label="",
@@ -184,7 +205,61 @@ def events_from_diff(
                     coord=coord,
                 ))
 
+    dice = diff.get("diceState") or {}
+    # A fresh roll always carries both dice1 and dice2 in the diff. A
+    # "diceThrown: False" frame on its own only signals the roll has
+    # been consumed — no new roll, no new event.
+    if isinstance(dice, dict) and "dice1" in dice and "dice2" in dice:
+        total = int(dice["dice1"]) + int(dice["dice2"])
+        # Attribute the roll to whoever currentState says is on move. The
+        # currentState.currentTurnPlayerColor key shows up in the same
+        # frame before the roll lands.
+        cs = diff.get("currentState") or {}
+        roller_color = cs.get("currentTurnPlayerColor")
+        player = sess.player_for(
+            int(roller_color) if roller_color is not None else None)
+        out.append(RollEvent(player=player, d1=int(dice["dice1"]),
+                             d2=int(dice["dice2"])))
+
     return out
+
+
+def produce_events_for_roll(
+    sess: LiveSession, dice_total: int,
+) -> list[ProduceEvent]:
+    """Compute per-player yields for a dice total using colonist's
+    actual resource layout and the session's tracked corner ownership.
+
+    Emits one ``ProduceEvent`` per player with a non-empty yield. The
+    tile under the robber is skipped (zero yield), matching real play.
+    Call separately from ``events_from_diff`` — the diff emits the
+    ``RollEvent`` (informational for the tracker) and this fills in the
+    distribution catanatron would otherwise compute off the wrong map.
+    """
+    if dice_total == 7:
+        return []
+    per_player: dict[str, dict[str, int]] = {}
+    for tid, dice in sess.mapping.tile_dice.items():
+        if dice != dice_total:
+            continue
+        if tid == sess.robber_tile_id:
+            continue
+        res = tile_resource(sess.mapping.tile_types.get(tid, 0))
+        if res is None:
+            continue
+        for cid in sess.mapping.tile_corners.get(tid, ()):
+            owner = sess.corner_owners.get(cid)
+            if owner is None:
+                continue
+            bt = sess.known_corners.get(cid, 0)
+            if bt not in (1, 2):
+                continue
+            amount = 2 if bt == 2 else 1
+            name = sess.player_for(int(owner))
+            bag = per_player.setdefault(name, {})
+            bag[res] = bag.get(res, 0) + amount
+    return [ProduceEvent(player=p, resources=bag)
+            for p, bag in per_player.items() if bag]
 
 
 def events_from_frame_payload(
@@ -204,4 +279,12 @@ def events_from_frame_payload(
     diff = body.get("diff") if isinstance(body, dict) else None
     if not isinstance(diff, dict):
         return []
-    return events_from_diff(sess, diff)
+    events = events_from_diff(sess, diff)
+    # A RollEvent emitted by events_from_diff signals we're on the roll
+    # frame itself; append the derived per-player ProduceEvents so the
+    # whole distribution lands in one dispatch batch.
+    for ev in list(events):
+        if isinstance(ev, RollEvent):
+            events.extend(produce_events_for_roll(sess, ev.total))
+            break
+    return events
