@@ -47,6 +47,47 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# Colonist tile.type int → catanatron resource name. Type 0 is desert
+# (no resource). Types 1..5 align with catanatron's canonical resource
+# order (WOOD, BRICK, SHEEP, WHEAT, ORE) — verified empirically: the
+# fort4092 tile-count histogram is {1: 4, 2: 3, 3: 4, 4: 4, 5: 3}, which
+# matches base Catan's resource distribution under this ordering.
+COLONIST_TILE_RESOURCE = {
+    0: None,        # desert
+    1: "WOOD",
+    2: "BRICK",
+    3: "SHEEP",
+    4: "WHEAT",
+    5: "ORE",
+}
+
+# Port type int → resource name. Type 1 is the generic 3:1 port (no
+# resource lock); types 2..6 are the resource-specific 2:1 ports,
+# offset-by-one against tiles (2:1 wood = port type 2 etc.).
+COLONIST_PORT_RESOURCE = {
+    1: None,        # generic 3:1
+    2: "WOOD",
+    3: "BRICK",
+    4: "SHEEP",
+    5: "WHEAT",
+    6: "ORE",
+}
+
+
+def tile_resource(type_int: int) -> str | None:
+    """Catanatron resource name for a colonist tile type int (None = desert)."""
+    if type_int not in COLONIST_TILE_RESOURCE:
+        raise ValueError(f"unknown colonist tile type {type_int!r}")
+    return COLONIST_TILE_RESOURCE[type_int]
+
+
+def port_resource(type_int: int) -> str | None:
+    """Catanatron resource name for a colonist port type int (None = 3:1 generic)."""
+    if type_int not in COLONIST_PORT_RESOURCE:
+        raise ValueError(f"unknown colonist port type {type_int!r}")
+    return COLONIST_PORT_RESOURCE[type_int]
+
+
 # ---- Colonist geometry -----------------------------------------------------
 
 def corner_tile_signature(cx: int, cy: int, cz: int) -> frozenset[tuple[int, int]]:
