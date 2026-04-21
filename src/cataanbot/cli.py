@@ -240,6 +240,13 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
     return 0
 
 
+def cmd_bridge(host: str, port: int, jsonl: str | None) -> int:
+    """Run the FastAPI bridge that receives colonist.io log events
+    from the Tampermonkey userscript."""
+    from cataanbot.bridge import serve
+    return serve(host=host, port=port, jsonl=jsonl)
+
+
 def cmd_hands(save_path: str) -> int:
     """Per-color hand accounting against a saved tracker state."""
     tracker = _load_tracker(save_path)
@@ -392,6 +399,19 @@ def main(argv: list[str] | None = None) -> int:
     p_second.add_argument("--hex-size", type=int, default=60,
                           help="Hex radius in pixels when --render is used.")
 
+    p_bridge = sub.add_parser(
+        "bridge",
+        help="Run the FastAPI bridge that ingests colonist.io log events "
+             "from the Tampermonkey userscript.",
+    )
+    p_bridge.add_argument("--host", default="127.0.0.1",
+                          help="Bind host (default: 127.0.0.1).")
+    p_bridge.add_argument("--port", type=int, default=8765,
+                          help="Bind port (default: 8765).")
+    p_bridge.add_argument("--jsonl", default=None,
+                          help="Also mirror every event to this .jsonl file "
+                               "(one JSON object per line).")
+
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor()
@@ -415,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_stats(args.save, args.histogram_path)
     if args.cmd == "hands":
         return cmd_hands(args.save)
+    if args.cmd == "bridge":
+        return cmd_bridge(args.host, args.port, args.jsonl)
     return 2
 
 

@@ -19,6 +19,10 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+bridge = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
 
 [project.scripts]
 cataanbot = "cataanbot.cli:main"
