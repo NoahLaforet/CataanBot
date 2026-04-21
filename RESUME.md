@@ -39,6 +39,20 @@
 - **Visual polish v1** (`fe6d533`) — drop shadows on pieces and number
   tokens, rounded road end caps + shadow segment, vertical ocean
   gradient. No new dependencies — all pure PIL.
+- **Tile resource icons** (`7a8d8bc`) — replaced "WHEAT" / "WOOD" text
+  with small geometric icons per resource (wheat stalk, two-tier pine,
+  wool body + dark head, staggered brick pile, faceted crystal, sand
+  sun for desert). `render --labels text` keeps the old debug mode.
+- **Port resource icons** (`4292d7e`) — 2:1 port markers now contain
+  the resource icon + a compact "2:1" ratio instead of a text label.
+- **Winner / near-winner callout** (`c1a0b47`) — tracker summary prints
+  a status line at 8+ VP ("RED WINS at 10 VP" / "one turn from
+  winning" / "two from winning") and the rendered legend strip shows
+  a color-coded banner along the top. Silent below 8 VP.
+- **Live-board opening advisor** (`f2eddf5`) — `openings --save game.json
+  --color WHITE` filters the candidate pool to nodes WHITE can legally
+  place on right now. Blocking + denial recalculated against that
+  restricted pool.
 
 ## Running the tool
 The packaged `.venv/bin/cataanbot` entry point is unreliable on macOS
@@ -48,7 +62,9 @@ repo-local launcher instead:
 ```
 ./bin/cataanbot doctor
 ./bin/cataanbot render -o board.png --ticks 60
+./bin/cataanbot render -o board.png --labels text    # old text labels
 ./bin/cataanbot openings --top 10 --render board_openings.png
+./bin/cataanbot openings --save game.json --color WHITE --top 5
 ./bin/cataanbot stats game.json --histogram roll_hist.png
 ```
 
@@ -57,20 +73,26 @@ repo-local launcher instead:
 - Maybe send Karan an email.
 
 ## Natural next steps (pick any)
-1. **Tile resource icons** (TODO_VISUAL) — swap the "WHEAT" / "WOOD"
-   text label for a small geometric icon on each hex. Keep text behind
-   a flag for debugging. Biggest remaining visual-polish win.
-2. **Port resource icons** — same idea for the little port circles.
-3. **Winner / near-winner callout** — `show` could loudly announce
-   "RED at 10 VP — game over" or "BLUE at 9 — one turn from winning".
-   Data is already there.
-4. **Opening-advisor on live boards** — right now `openings` only works
-   on fresh random games. A CLI variant that loads a tracker save and
-   respects pieces already placed (filtering candidates by distance
-   rule and removing taken spots) would make it useful during draft.
-5. **Structural cleanup** — `repl.py` is getting long (~650 lines);
-   moving command groups (mutations / advisors / history / meta) into
-   mixins would make the file browsable again.
+1. **Structural cleanup** — `repl.py` is now ~650 lines with ~30 `do_*`
+   commands. Splitting mutations / advisors / history / meta into
+   mixins would make the file browsable. Pure refactor with real
+   breakage risk; best done when you can smoke-test each command in
+   the REPL yourself, not in an autonomous run.
+2. **Second-phase tile-icon polish** — sheep "three-bump" shape reads
+   a little like a caterpillar at small sizes; brick pile could use
+   more separation between the two bottom bricks. Works as-is, but
+   these would tighten up the visual.
+3. **Opening advisor "alternatives" view** — after picking spot 1,
+   show how the top-5 shifts. Right now `openings --save` gives the
+   new top after placement, but a side-by-side view of before/after
+   would make the denial + blocking math visible.
+4. **Second-settlement icon overlay** — `secondadvice` currently only
+   prints to the terminal. Adding `--render path.png` that overlays
+   gold markers on the tracker's board (same way `openings --render`
+   does) would keep parity with the first-settlement advisor.
+5. **Dev-card state watcher** — play-through shows dev cards in the
+   summary, but there's no advisor for "should I buy a dev card".
+   Probably lowest-value since dev cards are inherently low-info.
 
 ## Files
 - `src/cataanbot/cli.py` — `doctor`, `render`, `openings`, `play`,
