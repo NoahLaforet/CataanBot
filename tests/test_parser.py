@@ -339,3 +339,50 @@ def test_disconnect_and_reconnect():
     ]))
     assert isinstance(r, DisconnectEvent)
     assert r.reconnected is True
+
+
+def test_disconnect_with_trailing_unless_clause():
+    # Real-game text: name rendered as plain text, not a colored span.
+    d = parse_event(_make([
+        _text("BrickdDaddy has disconnected. A bot will take over next "
+              "turn unless BrickdDaddy reconnects."),
+    ]))
+    assert isinstance(d, DisconnectEvent)
+    assert d.player == "BrickdDaddy"
+    assert d.reconnected is False
+
+
+def test_setup_placement_counts_as_build():
+    ev = parse_event(_make([
+        _name("Kitti"), _text("placed a Settlement"), _icon("settlement"),
+    ]))
+    assert isinstance(ev, BuildEvent)
+    assert ev.piece == "settlement"
+    assert ev.vp_delta == 1
+
+
+def test_dev_card_placed_road():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("placed a Road"), _icon("road"),
+    ]))
+    assert isinstance(ev, BuildEvent)
+    assert ev.piece == "road"
+    assert ev.vp_delta == 0
+
+
+def test_starting_resources_are_production():
+    ev = parse_event(_make([
+        _name("Marja"), _text("received starting resources"),
+        _icon("Brick"), _icon("Wool"), _icon("Lumber"),
+    ]))
+    assert isinstance(ev, ProduceEvent)
+    assert ev.player == "Marja"
+    assert ev.resources == {"BRICK": 1, "SHEEP": 1, "WOOD": 1}
+
+
+def test_happy_settling_is_info():
+    ev = parse_event(_make([
+        _text("Happy settling! Learn how to play in the rulebook ."
+              " List of commands: /help"),
+    ]))
+    assert isinstance(ev, InfoEvent)
