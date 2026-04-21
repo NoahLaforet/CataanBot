@@ -24,6 +24,7 @@ flowing while we add rules for it.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from cataanbot.events import (
@@ -117,8 +118,18 @@ def parse_event(payload: dict[str, Any]) -> Event:
         return InfoEvent(text=_text_join(parts))
     if text.startswith("bot is selecting"):
         return InfoEvent(text=_text_join(parts))
+    if text.startswith("happy settling") or "list of commands" in text:
+        return InfoEvent(text=_text_join(parts))
     if text.startswith("no player to steal from"):
         return NoStealEvent()
+
+    # --- Disconnect / reconnect (may render as plain text without a name span)
+    disc = _DISCONNECT_RE.search(_text_join(parts))
+    if disc:
+        return DisconnectEvent(
+            player=disc.group(1),
+            reconnected=disc.group(2).lower() == "re",
+        )
 
     # --- Game over ----------------------------------------------------------
     # "Hans won the game!" + trophy icons
@@ -148,12 +159,6 @@ def parse_event(payload: dict[str, Any]) -> Event:
             resource=COLONIST_TO_CATAN_RESOURCE.get(res_alt) if res_alt else None,
         )
 
-    # --- Disconnect / reconnect ----------------------------------------------
-    if player and "has disconnected" in text:
-        return DisconnectEvent(player=player, reconnected=False)
-    if player and "has reconnected" in text:
-        return DisconnectEvent(player=player, reconnected=True)
-
     if player is None:
         return UnknownEvent(
             text=_text_join(parts),
@@ -178,6 +183,11 @@ def parse_event(payload: dict[str, Any]) -> Event:
         res = _count_resources(_icons(parts))
         if res:
             return ProduceEvent(player=player, resources=res)
+    # Setup-phase starter resources: "Hans received starting resources [..]"
+    if "received starting resources" in text:
+        res = _count_resources(_icons(parts))
+        if res:
+            return ProduceEvent(player=player, resources=res)
 
     # --- Discard -------------------------------------------------------------
     if "discarded" in text:
@@ -187,7 +197,8 @@ def parse_event(payload: dict[str, Any]) -> Event:
 
     # --- Build ---------------------------------------------------------------
     # "Hans built a Settlement  (+1 VP)" / "BrickdDaddy built a Road"
-    if "built a" in text:
+    # Setup phase and dev-card placements use "placed a" instead of "built a".
+    if "built a" in text or "placed a" in text:
         piece = _build_piece(parts)
         if piece is not None:
             vp = 1 if piece in ("settlement", "city") else 0
@@ -358,6 +369,14 @@ def _first_resource_alt(parts: list[dict]) -> str | None:
         if a in COLONIST_TO_CATAN_RESOURCE:
             return a
     return None
+
+
+# Disconnect/reconnect lines often render without a colored name span
+# — colonist wraps the name in plain text inside a different DOM class.
+# Match the raw text so we don't depend on `_first_name`.
+_DISCONNECT_RE = re.compile(
+    r"(\S+)\s+has\s+(dis|re)connected", re.IGNORECASE,
+)
 
 
 def _dev_card_kind(text: str) -> str:
