@@ -25,6 +25,8 @@ TILE_COLORS = {
 }
 
 OCEAN = (62, 121, 159)
+OCEAN_TOP = (48, 96, 136)        # slightly darker at the top
+OCEAN_BOTTOM = (78, 142, 180)    # lighter at the bottom for a vertical gradient
 TOKEN_FILL = (250, 244, 224)
 TOKEN_BORDER = (60, 40, 20)
 RED_NUMBER = (180, 40, 40)
@@ -32,6 +34,10 @@ BLACK = (30, 22, 16)
 ROBBER = (30, 22, 16)
 PORT_FILL = (245, 238, 215)
 PORT_LINE = (60, 40, 20)
+# Solid dark gray for piece/token drop shadows. Full opacity keeps the
+# renderer in RGB-only space (no alpha-compositing dance); the eye reads
+# a solid ~2-3px dark shape under a colored piece as a shadow just fine.
+SHADOW_COLOR = (32, 24, 18)
 
 # Player piece colors — Catan-ish, tuned for readability on the tile palette.
 PLAYER_COLORS = {
@@ -110,6 +116,11 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
     h = board_h + legend_h
 
     img = Image.new("RGB", (w, h), OCEAN)
+    # Paint a vertical ocean gradient on the board region so the water
+    # doesn't read as one flat slab. Each row linearly interpolates
+    # between OCEAN_TOP and OCEAN_BOTTOM.
+    _paint_vertical_gradient(img, 0, 0, w, board_h if show_legend else h,
+                             OCEAN_TOP, OCEAN_BOTTOM)
     draw = ImageDraw.Draw(img)
 
     ox = -minx
@@ -272,6 +283,14 @@ _PIPS_BY_NUMBER = {2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
 
 
 def _draw_number_token(draw, cx, cy, radius, number, font) -> None:
+    # Soft drop shadow: slightly larger, offset, solid dark. Sits below the
+    # token so it reads as the token floating just above the hex.
+    sx, sy = 2, 3
+    draw.ellipse(
+        (cx - radius + sx, cy - radius + sy,
+         cx + radius + sx, cy + radius + sy),
+        fill=SHADOW_COLOR,
+    )
     draw.ellipse(
         (cx - radius, cy - radius, cx + radius, cy + radius),
         fill=TOKEN_FILL, outline=TOKEN_BORDER, width=2,
@@ -422,20 +441,38 @@ def _draw_badge(draw, x: float, y: float, label: str,
 
 
 def _draw_road(draw, p1, p2, color_name: str, hex_size: float) -> None:
-    """Thick colored segment between two node pixels, with dark outline so it
-    reads on any tile color."""
+    """Thick colored segment between two node pixels, with dark outline and
+    rounded end caps so the road doesn't butt into buildings with a harsh
+    square edge."""
     fill = PLAYER_COLORS.get(color_name, (180, 180, 180))
     outline_w = max(2, int(hex_size * 0.16))
     inner_w = max(1, int(hex_size * 0.10))
+    # Drop-shadow segment underneath.
+    sx, sy = 2, 3
+    draw.line([(p1[0] + sx, p1[1] + sy), (p2[0] + sx, p2[1] + sy)],
+              fill=SHADOW_COLOR, width=outline_w)
+    # Outline + inner fill.
     draw.line([p1, p2], fill=PIECE_OUTLINE, width=outline_w)
     draw.line([p1, p2], fill=fill, width=inner_w)
+    # Rounded end caps — two filled circles, outlined then filled.
+    r_out = outline_w / 2
+    r_in = inner_w / 2
+    for p in (p1, p2):
+        draw.ellipse((p[0] - r_out, p[1] - r_out,
+                      p[0] + r_out, p[1] + r_out),
+                     fill=PIECE_OUTLINE)
+        draw.ellipse((p[0] - r_in, p[1] - r_in,
+                      p[0] + r_in, p[1] + r_in),
+                     fill=fill)
 
 
 def _draw_settlement(draw, cx: float, cy: float, hex_size: float,
                      color_name: str) -> None:
-    """Small house at (cx, cy): square base + triangular roof."""
+    """Small house at (cx, cy): square base + triangular roof, with drop
+    shadow offset so it lifts off the hex."""
     fill = PLAYER_COLORS.get(color_name, (180, 180, 180))
-    s = hex_size * 0.22  # half-width
+    highlight = _lighten(fill, 0.18)
+    s = hex_size * 0.22
     roof = hex_size * 0.18
     pts = [
         (cx - s, cy + s),
@@ -444,18 +481,30 @@ def _draw_settlement(draw, cx: float, cy: float, hex_size: float,
         (cx + s, cy - s * 0.2),
         (cx + s, cy + s),
     ]
+    sx, sy = 2, 3
+    shadow_pts = [(x + sx, y + sy) for x, y in pts]
+    draw.polygon(shadow_pts, fill=SHADOW_COLOR)
     draw.polygon(pts, fill=fill, outline=PIECE_OUTLINE)
+    # Diagonal highlight streak: short polygon along the upper-left of the
+    # base so the piece reads as lit from upper-left.
+    streak = [
+        (cx - s + 1, cy + s - 1),
+        (cx - s + 1, cy - s * 0.2 + 1),
+        (cx - s * 0.4, cy - s * 0.2 + 1),
+    ]
+    draw.polygon(streak, fill=highlight)
 
 
 def _draw_city(draw, cx: float, cy: float, hex_size: float,
                color_name: str) -> None:
     """Wider L-shape to distinguish from a settlement: short tower on the left,
-    tall tower on the right, single baseline."""
+    tall tower on the right, single baseline. Drop shadow + highlight streak
+    match the settlement styling."""
     fill = PLAYER_COLORS.get(color_name, (180, 180, 180))
+    highlight = _lighten(fill, 0.18)
     w = hex_size * 0.34
     h = hex_size * 0.26
     tall = hex_size * 0.40
-    # L-profile polygon (points go clockwise from bottom-left).
     pts = [
         (cx - w, cy + h * 0.6),
         (cx - w, cy - h * 0.1),
@@ -465,4 +514,40 @@ def _draw_city(draw, cx: float, cy: float, hex_size: float,
         (cx + w, cy - tall * 0.6),
         (cx + w, cy + h * 0.6),
     ]
+    sx, sy = 2, 3
+    shadow_pts = [(x + sx, y + sy) for x, y in pts]
+    draw.polygon(shadow_pts, fill=SHADOW_COLOR)
     draw.polygon(pts, fill=fill, outline=PIECE_OUTLINE)
+    # Highlight streak on the left wall of the tall tower.
+    streak = [
+        (cx - w + 1, cy + h * 0.6 - 1),
+        (cx - w + 1, cy - h * 0.1 + 1),
+        (cx - w + hex_size * 0.04, cy - h * 0.1 + 1),
+        (cx - w + hex_size * 0.04, cy + h * 0.6 - 1),
+    ]
+    draw.polygon(streak, fill=highlight)
+
+
+def _lighten(rgb: tuple[int, int, int], amount: float) -> tuple[int, int, int]:
+    """Blend `rgb` toward white by `amount` ∈ [0, 1]. Used for piece highlights."""
+    r, g, b = rgb
+    return (
+        int(r + (255 - r) * amount),
+        int(g + (255 - g) * amount),
+        int(b + (255 - b) * amount),
+    )
+
+
+def _paint_vertical_gradient(img, x0: int, y0: int, x1: int, y1: int,
+                             top_rgb, bottom_rgb) -> None:
+    """Fill the rectangle (x0,y0)-(x1,y1) with a vertical color gradient.
+
+    Uses row-by-row rectangles — slower than numpy but keeps dependencies
+    at PIL only. The board canvas is small enough that this is fine."""
+    draw = ImageDraw.Draw(img)
+    height = max(1, y1 - y0)
+    for row in range(y0, y1):
+        t = (row - y0) / height
+        color = tuple(int(top_rgb[i] + (bottom_rgb[i] - top_rgb[i]) * t)
+                      for i in range(3))
+        draw.rectangle((x0, row, x1, row + 1), fill=color)
