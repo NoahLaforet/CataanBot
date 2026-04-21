@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.4.1
+// @version      0.4.2
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -26,20 +26,32 @@
         text:     'span.messagePart-XeUsOgLX',
     };
 
-    // Dedup is two-layered:
-    //  1. Per-DOM-node dataset marker — skips a node we already processed
+    // Dedup is three-layered:
+    //  1. At-bottom gate — we only process entries when the scroller is
+    //     at the bottom (user is following live). Scrolling up to review
+    //     causes colonist to destroy the bottom nodes and re-render older
+    //     ones in-place; treating those as new floods the bridge with
+    //     minutes-old events stamped with the current time. Pausing while
+    //     scrolled up sidesteps the whole mess. New events that arrive
+    //     while scrolled up are captured when the user scrolls back down.
+    //  2. Per-DOM-node dataset marker — skips a node we already processed
     //     this run. Handles MutationObserver + polling racing on the same
     //     element.
-    //  2. Short-TTL content cache — skips the same payload if we posted it
-    //     within RECENT_TTL_MS. Handles colonist's virtualized scroller
-    //     destroying and re-creating nodes as you scroll: fresh DOM node
-    //     (no dataset marker) but identical content from seconds ago.
+    //  3. Short-TTL content cache — skips the same payload if we posted it
+    //     within RECENT_TTL_MS. Backstop for the rare case a recycled node
+    //     slips past the at-bottom check.
     // TTL is short enough that two genuinely-repeated events (robber move
     // to the same tile two turns later) are still posted — turns take
     // much longer than RECENT_TTL_MS between identical-content rounds.
     const NODE_KEY_ATTR = 'cataanbotKey';
     const RECENT_TTL_MS = 5000;
+    const AT_BOTTOM_PX = 50;
     const recentSeen = new Map();
+
+    function isAtBottom(scroller) {
+        return (scroller.scrollHeight - scroller.scrollTop
+                - scroller.clientHeight) < AT_BOTTOM_PX;
+    }
 
     // Walk the whole scrollItemContainer in document order, emitting
     // ordered parts. We can't just walk messagePart because some events
@@ -186,6 +198,7 @@
         scroller.querySelectorAll(SEL.entry).forEach(processEntry);
 
         const observer = new MutationObserver((mutations) => {
+            if (!isAtBottom(scroller)) return;
             for (const m of mutations) {
                 m.addedNodes.forEach((n) => {
                     if (!(n instanceof Element)) return;
@@ -204,6 +217,7 @@
         // virtualized list) and occasionally skip nodes; the per-node dedup
         // above means re-scanning is cheap and idempotent.
         setInterval(() => {
+            if (!isAtBottom(scroller)) return;
             scroller.querySelectorAll(SEL.entry).forEach(processEntry);
         }, 500);
     }
