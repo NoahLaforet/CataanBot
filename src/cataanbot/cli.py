@@ -255,6 +255,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                vp_chart: str | None = None,
                production_chart: str | None = None,
                dice_chart: str | None = None,
+               hand_chart: str | None = None,
                postmortem: str | None = None) -> int:
     """Replay a bridge JSONL file through the Event→Tracker dispatcher.
 
@@ -309,7 +310,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
             if (report or report_out or vp_chart or production_chart
-                    or dice_chart or postmortem):
+                    or dice_chart or hand_chart or postmortem):
                 events_for_report.append(event)
                 results_for_report.append(result)
                 ts = payload.get("ts") if isinstance(payload, dict) else None
@@ -400,6 +401,18 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             title=f"Dice rolls — actual vs. expected — {jsonl_path}",
         )
         print(f"wrote dice histogram to {path}")
+    if hand_chart:
+        from cataanbot.timeline import (
+            build_hand_timeline, render_hand_chart,
+        )
+        hand_samples = build_hand_timeline(
+            events_for_report, timestamps_for_report, color_map,
+        )
+        path = render_hand_chart(
+            hand_samples, color_map, hand_chart,
+            title=f"Hand size over time — {jsonl_path}",
+        )
+        print(f"wrote hand timeline to {path}")
     if postmortem:
         from cataanbot.postmortem import render_postmortem_html
         final_vp = tracker.vp_status()["per_color"]
@@ -640,10 +653,16 @@ def main(argv: list[str] | None = None) -> int:
              "counts per value (the 2d6 fairness graphic).",
     )
     p_replay.add_argument(
+        "--hand-chart", dest="hand_chart", default=None,
+        metavar="PATH",
+        help="Render a PNG line chart of reconstructed hand size over "
+             "time per player. Based on event-stream replay.",
+    )
+    p_replay.add_argument(
         "--postmortem", dest="postmortem", default=None,
         metavar="PATH",
         help="Write a single self-contained HTML postmortem to PATH, "
-             "with the full text report and all three charts inline.",
+             "with the full text report and all four charts inline.",
     )
 
     args = parser.parse_args(argv)
@@ -676,7 +695,7 @@ def main(argv: list[str] | None = None) -> int:
                           args.save_to, args.render_to, args.hex_size,
                           args.report, args.report_out, args.vp_chart,
                           args.production_chart, args.dice_chart,
-                          args.postmortem)
+                          args.hand_chart, args.postmortem)
     return 2
 
 

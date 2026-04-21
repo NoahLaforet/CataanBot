@@ -40,8 +40,8 @@ def test_render_postmortem_html_writes_complete_file(tmp_path: Path):
     assert out.exists()
     body = out.read_text()
     assert body.startswith("<!doctype html>")
-    assert body.count("<img ") == 3
-    assert body.count("data:image/png;base64,") == 3
+    assert body.count("<img ") == 4
+    assert body.count("data:image/png;base64,") == 4
     # Report section included.
     assert "<pre>" in body
     assert "Winner: Alice" in body or "Alice" in body

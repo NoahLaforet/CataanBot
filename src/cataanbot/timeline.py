@@ -65,6 +65,20 @@ class ProductionSample:
     event_index: int
 
 
+@dataclass
+class HandSample:
+    """One point on the hand-size timeline.
+
+    `size` is each seated player's total inferred cards-in-hand (known
+    + unknown bucket from hidden steals) at this event, as reconstructed
+    by `hand_tracker`. Emitted every time any player's hand size
+    changes.
+    """
+    t: float | None
+    size: dict[str, int]    # color → total cards in hand
+    event_index: int
+
+
 def _first_ts(timestamps: list[float | None]) -> float | None:
     for ts in timestamps:
         if ts is not None:
@@ -163,6 +177,48 @@ def build_production_timeline(
     return samples
 
 
+def build_hand_timeline(
+    events: list[Event],
+    timestamps: list[float | None] | None,
+    color_map: ColorMap,
+) -> list[HandSample]:
+    """Walk the event stream and emit a sample each time any player's
+    reconstructed hand size changes. Uses `hand_tracker.apply_event` as
+    the source of truth so the timeline and the report's hand table
+    can't drift apart.
+    """
+    from cataanbot.hand_tracker import apply_event as _apply_hand
+    from cataanbot.hand_tracker import init_hands
+
+    if timestamps is None:
+        timestamps = [None] * len(events)
+    first_ts = _first_ts(timestamps)
+
+    hands = init_hands(color_map)
+    def _snapshot() -> dict[str, int]:
+        return {c: h.total for c, h in hands.items()}
+
+    samples: list[HandSample] = [
+        HandSample(
+            t=0.0 if first_ts is not None else None,
+            size=_snapshot(), event_index=-1,
+        ),
+    ]
+    prev = _snapshot()
+    for i, event in enumerate(events):
+        if not _apply_hand(hands, event, color_map):
+            continue
+        now = _snapshot()
+        if now == prev:
+            continue  # applied but no hand-size movement
+        prev = now
+        ts = timestamps[i] if i < len(timestamps) else None
+        samples.append(HandSample(
+            t=_rel_t(ts, first_ts), size=dict(now), event_index=i,
+        ))
+    return samples
+
+
 def _sample_x(t: float | None, event_index: int) -> float:
     """x-coord for a sample: minutes when timestamped, else event index."""
     return t / 60.0 if t is not None else float(max(event_index, 0))
@@ -181,6 +237,14 @@ def _production_series(
 ) -> tuple[list[float], list[int]]:
     xs = [_sample_x(s.t, s.event_index) for s in samples]
     ys = [s.cards.get(color, 0) for s in samples]
+    return xs, ys
+
+
+def _hand_series(
+    samples: list[HandSample], color: str,
+) -> tuple[list[float], list[int]]:
+    xs = [_sample_x(s.t, s.event_index) for s in samples]
+    ys = [s.size.get(color, 0) for s in samples]
     return xs, ys
 
 
@@ -227,6 +291,59 @@ def render_vp_chart(
         footer=(
             "Public VP only — hidden dev-card VP stays off this chart "
             "until a winner is declared."
+        ),
+        out_path=out_path,
+    )
+
+
+def render_hand_chart(
+    samples: list[HandSample],
+    color_map: ColorMap,
+    out_path: str | Path,
+    title: str | None = None,
+) -> Path:
+    """Draw a PNG step chart of reconstructed hand size over time.
+
+    One line per seated color. Dashed line at 7 cards marks the 7-roll
+    discard threshold (you get forced to discard half when a 7 is
+    rolled and you hold 8+). Excellent for spotting "this player was
+    sitting on 8 cards all game and never got 7-hit" vs. "they dumped
+    on every 7."
+    """
+    users_by_color = {c: u for u, c in color_map.as_dict().items()}
+    seated = [c for c in _SEAT_ORDER if c in users_by_color]
+    if not seated:
+        raise ValueError("no seated players in color_map — nothing to chart")
+
+    has_time = any(s.t is not None for s in samples)
+    series = {c: _hand_series(samples, c) for c in seated}
+    final_sample = samples[-1] if samples else None
+
+    final_sizes = {
+        c: (final_sample.size.get(c, 0) if final_sample else 0)
+        for c in seated
+    }
+    peak = 0
+    for _xs, ys in series.values():
+        for y in ys:
+            if y > peak:
+                peak = y
+    max_y = float(max(10, peak + 2))
+
+    return _render_step_chart(
+        seated=seated,
+        users_by_color=users_by_color,
+        series=series,
+        has_time=has_time,
+        max_y=max_y,
+        y_tick_step=2,
+        threshold=(7.0, "7+ cards → discard on 7", (180, 40, 40)),
+        legend_heading="Final hand size",
+        legend_value=lambda c: str(final_sizes[c]),
+        title=title or "Hand size over time",
+        footer=(
+            "Reconstructed from the event stream — drift grows with "
+            "hidden steals and setup-phase gaps."
         ),
         out_path=out_path,
     )

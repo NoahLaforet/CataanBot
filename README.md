@@ -155,8 +155,13 @@ dispatcher — useful for auditing past games without booting colonist.
 # are actual; signed delta labels above each bar.
 ./bin/cataanbot replay game.jsonl --dice-chart dice.png
 
+# Render the hand-size timeline — reconstructed cards-in-hand per
+# player from the event stream (debits on build/trade/discard, credits
+# on produce/steal). Dashed line marks the 7-card discard threshold.
+./bin/cataanbot replay game.jsonl --hand-chart hand.png
+
 # One-shot postmortem: single self-contained HTML file with the
-# full text report and all three charts embedded as base64 PNGs.
+# full text report and all four charts embedded as base64 PNGs.
 ./bin/cataanbot replay game.jsonl --postmortem game5.html
 ```
 
