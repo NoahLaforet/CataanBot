@@ -117,6 +117,26 @@ virtualized list) via a MutationObserver and POSTs each new entry to
 `http://127.0.0.1:8765/log` as structured JSON — text, colored name
 pills, and icon `alt` values. See `COLONIST_RECON.md` for the DOM spec.
 
+## Replaying a captured JSONL (offline)
+
+The bridge's `--jsonl` mirror gives you a replayable log of any captured
+game. `cataanbot replay` walks that file through the Event → Tracker
+dispatcher — useful for auditing past games without booting colonist.
+
+```bash
+# Auto-assign colors in first-appearance order
+./bin/cataanbot replay ~/Desktop/cataanbot-game5.jsonl
+
+# Pin colors explicitly, save final state, render the board
+./bin/cataanbot replay game.jsonl \
+  --player BrickdDaddy=BLUE --player Thorin=ORANGE \
+  --save replayed.json --render replayed.png -v
+```
+
+Events that need board topology (settlement / city / road placements and
+robber moves) are currently reported as `unhandled` — once the
+DOM-to-catanatron-node mapping lands, they'll flow through too.
+
 ## Development
 
 Tests are plain pytest; the `tests/conftest.py` shim puts `src/` on the path so
