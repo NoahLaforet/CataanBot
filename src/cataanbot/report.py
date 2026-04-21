@@ -88,6 +88,29 @@ class PlayerStats:
 
 
 @dataclass
+class TradeImpact:
+    """One player-to-player trade scored by per-side marginal-value delta.
+
+    Marginal value of a resource for a given player is approximated as
+    `1 / (0.5 + total_produced_so_far[resource])`, using the event-stream
+    cumulative produce counts as a scarcity proxy. Rarer-for-you = higher
+    marginal, so `giver_delta > 0` means what you received was worth more
+    than what you gave up (from your perspective).
+
+    Bank / port trades are excluded — those land in PlayerStats.bank_trades
+    with their own implicit 2:1/3:1/4:1 EV that doesn't map cleanly to
+    this scoring rubric.
+    """
+    event_index: int
+    giver: str
+    receiver: str
+    gave: dict[str, int]
+    got: dict[str, int]
+    giver_delta: float
+    receiver_delta: float
+
+
+@dataclass
 class SevenImpact:
     """One 7-roll and the damage it did.
 
@@ -149,6 +172,7 @@ class ReplayReport:
     color_map: ColorMap | None = None
     hand_dynamics: dict[str, HandDynamics] | None = None
     sevens: list[SevenImpact] = field(default_factory=list)
+    trade_impacts: list[TradeImpact] = field(default_factory=list)
 
 
 def build_report(
@@ -168,6 +192,10 @@ def build_report(
     histogram: Counter = Counter()
     winner_username: str | None = None
     sevens: list[SevenImpact] = []
+    trade_impacts: list[TradeImpact] = []
+    # Per-username cumulative produce counts — snapshotted at each
+    # player-to-player TradeCommitEvent to score trade quality.
+    produced_so_far: dict[str, dict[str, int]] = {}
     # When the current roll is a 7, this points at the SevenImpact being
     # filled in. A new RollEvent closes the window (discards/robber/steal
     # attributed to that 7 must appear before the next roll).
@@ -191,6 +219,9 @@ def build_report(
             stats = _stats_for(stats_by_color, color_map, event.player)
             for res, n in event.resources.items():
                 stats.produced[res] = stats.produced.get(res, 0) + n
+            psf = produced_so_far.setdefault(event.player, {})
+            for res, n in event.resources.items():
+                psf[res] = psf.get(res, 0) + n
         elif isinstance(event, DiscardEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             for res, n in event.resources.items():
@@ -282,6 +313,20 @@ def build_report(
                     recv_stats.trade_gave[res] = (
                         recv_stats.trade_gave.get(res, 0) + n
                     )
+                giver_psf = produced_so_far.get(event.giver, {})
+                recv_psf = produced_so_far.get(event.receiver, {})
+                giver_d = _score_trade_delta(
+                    gave=event.gave, got=event.got, produced=giver_psf,
+                )
+                recv_d = _score_trade_delta(
+                    gave=event.got, got=event.gave, produced=recv_psf,
+                )
+                trade_impacts.append(TradeImpact(
+                    event_index=i,
+                    giver=event.giver, receiver=event.receiver,
+                    gave=dict(event.gave), got=dict(event.got),
+                    giver_delta=giver_d, receiver_delta=recv_d,
+                ))
         elif isinstance(event, VPEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.vp_awards.append(event.reason)
@@ -322,7 +367,26 @@ def build_report(
         color_map=color_map,
         hand_dynamics=dynamics,
         sevens=sevens,
+        trade_impacts=trade_impacts,
     )
+
+
+def _score_trade_delta(
+    gave: dict[str, int], got: dict[str, int], produced: dict[str, int],
+) -> float:
+    """Delta in marginal-value terms: got_value - gave_value for a
+    player whose cumulative resource production so far is `produced`.
+
+    Marginal = 1 / (0.5 + produced_count). Early in the game everything
+    is scarce, so deltas are large; later produces compress the scale,
+    which matches the intuition that a single brick is life-or-death
+    turn 1 and nearly fungible turn 30.
+    """
+    def _marginal(res: str) -> float:
+        return 1.0 / (0.5 + produced.get(res, 0))
+    got_value = sum(_marginal(r) * n for r, n in got.items())
+    gave_value = sum(_marginal(r) * n for r, n in gave.items())
+    return got_value - gave_value
 
 
 # 8 cards is the first hand size that triggers discard on a 7 (colonist
@@ -394,6 +458,8 @@ def format_report(report: ReplayReport) -> str:
     lines.append("")
     lines.extend(_format_seven_impacts(report))
     lines.append("")
+    lines.extend(_format_trade_impacts(report))
+    lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
 
@@ -403,6 +469,57 @@ def _format_reconstructed_hands(report: ReplayReport) -> list[str]:
         return []
     from cataanbot.hand_tracker import format_hands_table
     return format_hands_table(report.reconstructed_hands, report.color_map)
+
+
+def _format_trade_impacts(report: ReplayReport) -> list[str]:
+    """Rank player-to-player trades by how lopsided they looked at the
+    moment they happened. Uses cumulative-produce-to-date as the scarcity
+    proxy, so the scoring adapts to each player's board reality without
+    needing topology.
+
+    Surfaces the top 8 most lopsided; omits near-even trades entirely
+    (|delta| < 0.15 for both sides) since those aren't interesting.
+    """
+    lines = ["Trade quality (delta from each side's perspective):"]
+    if not report.trade_impacts:
+        lines.append("  (no player-to-player trades in log)")
+        return lines
+    scored = [
+        t for t in report.trade_impacts
+        if abs(t.giver_delta) >= 0.15 or abs(t.receiver_delta) >= 0.15
+    ]
+    if not scored:
+        lines.append("  (all trades were roughly even given production so far)")
+        return lines
+    scored.sort(key=lambda t: max(
+        abs(t.giver_delta), abs(t.receiver_delta),
+    ), reverse=True)
+    shown = scored[:8]
+    header = (
+        f"  {'#':>3}  {'event':>6}  {'giver':<12} {'gave':<20} "
+        f"{'got':<20} {'giver Δ':>8}  {'receiver':<12} {'recv Δ':>7}"
+    )
+    lines.append(header)
+    lines.append("  " + "-" * (len(header) - 2))
+    for idx, t in enumerate(shown, start=1):
+        gave_str = _fmt_res_counter(t.gave)
+        got_str = _fmt_res_counter(t.got)
+        lines.append(
+            f"  {idx:>3}  #{t.event_index:>5}  "
+            f"{t.giver:<12} {gave_str:<20} {got_str:<20} "
+            f"{t.giver_delta:>+8.2f}  {t.receiver:<12} "
+            f"{t.receiver_delta:>+7.2f}"
+        )
+    if len(scored) > len(shown):
+        lines.append(
+            f"  (+ {len(scored) - len(shown)} more lopsided trades not shown)"
+        )
+    lines.append("")
+    lines.append(
+        "  Δ > 0 = that side came out ahead given their scarcity at the time; "
+        "|Δ| < 0.15 hidden"
+    )
+    return lines
 
 
 def _format_seven_impacts(report: ReplayReport) -> list[str]:
