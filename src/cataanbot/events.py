@@ -72,8 +72,10 @@ class RobberMoveEvent:
 class StealEvent:
     thief: str
     victim: str
-    # Resource stays hidden in real play — left as None here. We'll
-    # infer in a later layer by diffing hands.
+    # Filled in when the log reveals the resource — happens when the
+    # *current user* is either the thief or the victim. Stays None for
+    # third-party steals, which we'll infer from hands later.
+    resource: str | None = None
 
 
 @dataclass
@@ -106,7 +108,12 @@ class DevCardBuyEvent:
 @dataclass
 class DevCardPlayEvent:
     player: str
-    card: str            # 'knight' | 'road_building' | 'year_of_plenty' | 'monopoly' | 'vp'
+    card: str            # 'knight' | 'road_building' | 'year_of_plenty' | 'monopoly' | 'vp' | 'unknown'
+    # Year of Plenty fills `resources` with the two taken cards; Monopoly
+    # fills `resource` with the claimed type. Everything else leaves them
+    # empty.
+    resources: dict[str, int] = field(default_factory=dict)
+    resource: str | None = None
 
 
 @dataclass
@@ -115,6 +122,17 @@ class VPEvent:
     player: str
     reason: str
     vp_delta: int
+    # If this is a transfer (e.g. X took longest road from Y), the
+    # previous holder who loses the bonus. None for first-time awards.
+    previous_holder: str | None = None
+
+
+@dataclass
+class RollBlockedEvent:
+    """A tile rolled its number but couldn't produce because the robber
+    sits on it. No player attribution — the tile is the subject."""
+    tile_label: str
+    prob: int | None
 
 
 @dataclass
@@ -150,6 +168,7 @@ Event = Union[
     DevCardBuyEvent,
     DevCardPlayEvent,
     VPEvent,
+    RollBlockedEvent,
     InfoEvent,
     DisconnectEvent,
     UnknownEvent,

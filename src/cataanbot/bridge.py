@@ -101,8 +101,8 @@ def _event_oneliner(event: Any) -> str:
     from cataanbot.events import (
         BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
         DisconnectEvent, InfoEvent, NoStealEvent, ProduceEvent,
-        RobberMoveEvent, RollEvent, StealEvent, TradeCommitEvent,
-        TradeOfferEvent, UnknownEvent, VPEvent,
+        RobberMoveEvent, RollBlockedEvent, RollEvent, StealEvent,
+        TradeCommitEvent, TradeOfferEvent, UnknownEvent, VPEvent,
     )
 
     if isinstance(event, RollEvent):
@@ -118,7 +118,8 @@ def _event_oneliner(event: Any) -> str:
         prob = f" (prob {event.prob})" if event.prob is not None else ""
         return f"{event.player} moved robber → {event.tile_label}{prob}"
     if isinstance(event, StealEvent):
-        return f"{event.thief} stole from {event.victim}"
+        res = f" [{event.resource}]" if event.resource else ""
+        return f"{event.thief} stole from {event.victim}{res}"
     if isinstance(event, NoStealEvent):
         return "no one to steal from"
     if isinstance(event, TradeOfferEvent):
@@ -130,9 +131,18 @@ def _event_oneliner(event: Any) -> str:
     if isinstance(event, DevCardBuyEvent):
         return f"{event.player} bought dev card"
     if isinstance(event, DevCardPlayEvent):
-        return f"{event.player} played {event.card}"
+        extra = ""
+        if event.resources:
+            extra = f" → {_fmt_res(event.resources)}"
+        elif event.resource:
+            extra = f" → {event.resource}"
+        return f"{event.player} played {event.card}{extra}"
     if isinstance(event, VPEvent):
-        return f"{event.player} +{event.vp_delta} VP ({event.reason})"
+        frm = f" (from {event.previous_holder})" if event.previous_holder else ""
+        return f"{event.player} +{event.vp_delta} VP ({event.reason}){frm}"
+    if isinstance(event, RollBlockedEvent):
+        prob = f" (prob {event.prob})" if event.prob is not None else ""
+        return f"robber blocks {event.tile_label}{prob} — no production"
     if isinstance(event, InfoEvent):
         return f"info: {event.text}"
     if isinstance(event, DisconnectEvent):

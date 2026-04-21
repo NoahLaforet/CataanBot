@@ -3,23 +3,28 @@ from __future__ import annotations
 
 from cataanbot.events import (
     BuildEvent,
+    DevCardBuyEvent,
+    DevCardPlayEvent,
     DiscardEvent,
     DisconnectEvent,
     InfoEvent,
     NoStealEvent,
     ProduceEvent,
     RobberMoveEvent,
+    RollBlockedEvent,
     RollEvent,
     StealEvent,
     TradeCommitEvent,
     TradeOfferEvent,
+    VPEvent,
 )
 from cataanbot.parser import parse_event
 
 
-def _make(parts):
+def _make(parts, self_name=None):
     """Build a minimal payload around a parts array."""
-    return {"ts": 0, "text": "", "parts": parts, "names": [], "icons": []}
+    return {"ts": 0, "text": "", "parts": parts, "names": [], "icons": [],
+            "self": self_name}
 
 
 def _name(n):
@@ -224,6 +229,92 @@ def test_bot_selecting_discard_is_info():
         _text("Bot is selecting cards to discard for"), _name("Hans"),
     ]))
     assert isinstance(ev, InfoEvent)
+
+
+def test_self_steal_from_opponent_reveals_resource():
+    ev = parse_event(_make([
+        _text("You stole from"), _name("Hans"), _icon("Brick"),
+    ], self_name="BrickdDaddy"))
+    assert isinstance(ev, StealEvent)
+    assert ev.thief == "BrickdDaddy"
+    assert ev.victim == "Hans"
+    assert ev.resource == "BRICK"
+
+
+def test_opponent_steal_from_self_reveals_resource():
+    ev = parse_event(_make([
+        _name("Hans"), _text("stole from you"), _icon("Wool"),
+    ], self_name="BrickdDaddy"))
+    assert isinstance(ev, StealEvent)
+    assert ev.thief == "Hans"
+    assert ev.victim == "BrickdDaddy"
+    assert ev.resource == "SHEEP"
+
+
+def test_self_steal_without_session_falls_back():
+    ev = parse_event(_make([
+        _text("You stole from"), _name("Hans"), _icon("Brick"),
+    ]))
+    assert isinstance(ev, StealEvent)
+    assert ev.thief == "YOU"
+    assert ev.resource == "BRICK"
+
+
+def test_roll_blocked_by_robber():
+    ev = parse_event(_make([
+        _icon("prob_8"), _icon("lumber tile"),
+        _text("is blocked by the Robber. No resources produced"),
+    ]))
+    assert isinstance(ev, RollBlockedEvent)
+    assert ev.tile_label == "lumber tile"
+    assert ev.prob == 8
+
+
+def test_dev_card_buy_via_icon():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("bought"), _icon("Development Card"),
+    ]))
+    assert isinstance(ev, DevCardBuyEvent)
+    assert ev.player == "BrickdDaddy"
+
+
+def test_dev_card_played_generic():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("used"),
+    ]))
+    assert isinstance(ev, DevCardPlayEvent)
+    assert ev.player == "BrickdDaddy"
+    assert ev.card == "unknown"
+
+
+def test_year_of_plenty_takes_two_from_bank():
+    ev = parse_event(_make([
+        _name("Brit"), _text("took from bank"), _icon("Grain"), _icon("Ore"),
+    ]))
+    assert isinstance(ev, DevCardPlayEvent)
+    assert ev.card == "year_of_plenty"
+    assert ev.resources == {"WHEAT": 1, "ORE": 1}
+
+
+def test_longest_road_with_transfer_names_previous_holder():
+    ev = parse_event(_make([
+        _name("Brit"), _text("took Longest Road from"),
+        _name("BrickdDaddy"),
+    ]))
+    assert isinstance(ev, VPEvent)
+    assert ev.player == "Brit"
+    assert ev.reason == "longest_road"
+    assert ev.previous_holder == "BrickdDaddy"
+    assert ev.vp_delta == 2
+
+
+def test_largest_army_first_time_has_no_previous():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("has Largest Army"),
+    ]))
+    assert isinstance(ev, VPEvent)
+    assert ev.reason == "largest_army"
+    assert ev.previous_holder is None
 
 
 def test_disconnect_and_reconnect():

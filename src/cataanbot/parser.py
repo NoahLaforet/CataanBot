@@ -38,6 +38,7 @@ from cataanbot.events import (
     NoStealEvent,
     ProduceEvent,
     RobberMoveEvent,
+    RollBlockedEvent,
     RollEvent,
     StealEvent,
     TradeCommitEvent,
@@ -108,6 +109,7 @@ def parse_event(payload: dict[str, Any]) -> Event:
 
     text = _text_join(parts).lower()
     player = _first_name(parts)
+    self_name = payload.get("self")
 
     # --- Info / skip lines ---------------------------------------------------
     if text.startswith("friendly robber"):
@@ -116,6 +118,29 @@ def parse_event(payload: dict[str, Any]) -> Event:
         return InfoEvent(text=_text_join(parts))
     if text.startswith("no player to steal from"):
         return NoStealEvent()
+
+    # --- Roll blocked (tile carries the subject, no player name) --------------
+    if "blocked by the robber" in text:
+        tile, prob = _robber_target(parts)
+        return RollBlockedEvent(tile_label=tile, prob=prob)
+
+    # --- Self-perspective steals (log reveals the resource) ------------------
+    # "You stole from X [Brick]"
+    if text.startswith("you stole from") and player is not None:
+        res_alt = _first_resource_alt(parts)
+        return StealEvent(
+            thief=self_name or "YOU",
+            victim=player,
+            resource=COLONIST_TO_CATAN_RESOURCE.get(res_alt) if res_alt else None,
+        )
+    # "X stole from you [Wool]"
+    if player is not None and "stole from you" in text:
+        res_alt = _first_resource_alt(parts)
+        return StealEvent(
+            thief=player,
+            victim=self_name or "YOU",
+            resource=COLONIST_TO_CATAN_RESOURCE.get(res_alt) if res_alt else None,
+        )
 
     # --- Disconnect / reconnect ----------------------------------------------
     if player and "has disconnected" in text:
@@ -206,17 +231,42 @@ def parse_event(payload: dict[str, Any]) -> Event:
         )
 
     # --- Dev card buy / play -------------------------------------------------
-    if "bought" in text and "development" in text:
+    # "X bought [Development Card]"
+    if "bought" in text and any(
+            a.lower() == "development card" for a in _icons(parts)
+    ):
         return DevCardBuyEvent(player=player)
-    if "used" in text and ("knight" in text or "road building" in text
-                            or "year of plenty" in text or "monopoly" in text):
-        card = _dev_card_kind(text)
-        return DevCardPlayEvent(player=player, card=card)
+    # Year of Plenty: "X took from bank [Grain] [Ore]" — 2 resource icons.
+    if "took from bank" in text:
+        resources = _count_resources(_icons(parts))
+        return DevCardPlayEvent(
+            player=player, card="year_of_plenty", resources=resources,
+        )
+    # Knight / Road Building / Monopoly / generic: "X used [icon?]"
+    if "used" in text:
+        alts = [a.lower() for a in _icons(parts)]
+        text_lc = text
+        if "knight" in text_lc or any("knight" in a for a in alts):
+            return DevCardPlayEvent(player=player, card="knight")
+        if "road building" in text_lc or any("road_building" in a for a in alts):
+            return DevCardPlayEvent(player=player, card="road_building")
+        if "monopoly" in text_lc or any("monopoly" in a for a in alts):
+            return DevCardPlayEvent(player=player, card="monopoly")
+        if "year of plenty" in text_lc:
+            return DevCardPlayEvent(player=player, card="year_of_plenty")
+        # Card type not recoverable from the log line alone; downstream
+        # can resolve from the next event (e.g. a robber move => knight).
+        return DevCardPlayEvent(player=player, card="unknown")
 
     # --- VP standalone callouts ----------------------------------------------
     if "longest road" in text or "largest army" in text:
         reason = "longest_road" if "longest road" in text else "largest_army"
-        return VPEvent(player=player, reason=reason, vp_delta=2)
+        others = [n for n in _names(parts) if n != player]
+        previous = others[0] if others else None
+        return VPEvent(
+            player=player, reason=reason, vp_delta=2,
+            previous_holder=previous,
+        )
 
     return UnknownEvent(
         text=_text_join(parts),
@@ -294,6 +344,14 @@ def _split_trade_icons(
         # Boundary text not found — return everything as 'before'.
         return _icons(parts), []
     return _icons(parts, 0, boundary_idx), _icons(parts, boundary_idx + 1)
+
+
+def _first_resource_alt(parts: list[dict]) -> str | None:
+    """Return the alt of the first icon whose alt names a known resource."""
+    for a in _icons(parts):
+        if a in COLONIST_TO_CATAN_RESOURCE:
+            return a
+    return None
 
 
 def _dev_card_kind(text: str) -> str:
