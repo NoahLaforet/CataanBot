@@ -87,6 +87,11 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
     scores = score_opening_nodes(game, legal_nodes=legal_nodes)
     print(format_opening_ranking(scores, top=top))
 
+    # When --after is given, we render the *alternatives* top-N alongside
+    # the claimed picks (as gray X markers) — that matches what the terminal
+    # output emphasizes, and lets the image stand alone.
+    render_scores = scores
+    after_scores = None
     if after:
         after_legal = legal_nodes_after_picks(game, after)
         if legal_nodes is not None:
@@ -98,13 +103,17 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
             print(f"\nAssuming {picks_str} already claimed:")
             after_scores = score_opening_nodes(game, legal_nodes=after_legal)
             print(format_opening_ranking(after_scores, top=top))
+            render_scores = after_scores
 
     if render_to:
         from cataanbot.render import render_board
-        top_nodes = [s.node_id for s in scores[:top]]
+        top_nodes = [s.node_id for s in render_scores[:top]]
         path = render_board(game, render_to, hex_size=hex_size,
-                            highlight_nodes=top_nodes)
-        print(f"\nboard rendered to {path} (top {top} marked with gold dots)")
+                            highlight_nodes=top_nodes,
+                            claimed_nodes=after)
+        suffix = " (gray X = claimed via --after)" if after else ""
+        print(f"\nboard rendered to {path} "
+              f"(top {top} marked with gold dots{suffix})")
     return 0
 
 
