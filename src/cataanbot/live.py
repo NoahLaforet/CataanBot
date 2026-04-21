@@ -222,6 +222,9 @@ def _dispatch(
         return _apply_vp(tracker, color_map, event)
 
     if isinstance(event, BuildEvent):
+        # Register the player so the color map is stable across replays
+        # even while the full action stays unhandled.
+        color_map.get(event.player)
         return DispatchResult(
             event, "unhandled",
             f"{event.player} built {event.piece} "
@@ -229,6 +232,7 @@ def _dispatch(
         )
 
     if isinstance(event, RobberMoveEvent):
+        color_map.get(event.player)
         return DispatchResult(
             event, "unhandled",
             f"{event.player} moved robber → {event.tile_label} "

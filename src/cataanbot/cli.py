@@ -249,7 +249,8 @@ def cmd_bridge(host: str, port: int, jsonl: str | None) -> int:
 
 def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                verbose: bool, save_to: str | None,
-               render_to: str | None, hex_size: int) -> int:
+               render_to: str | None, hex_size: int,
+               report: bool = False) -> int:
     """Replay a bridge JSONL file through the Event→Tracker dispatcher.
 
     Each line is parsed with `parse_event` and applied to a fresh
@@ -285,6 +286,9 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
 
     tracker = Tracker()
     counts = {"applied": 0, "skipped": 0, "unhandled": 0, "error": 0}
+    events_for_report = []
+    results_for_report = []
+    timestamps_for_report = []
     with fh:
         for lineno, line in enumerate(fh, start=1):
             line = line.strip()
@@ -299,6 +303,13 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             event = parse_event(payload)
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
+            if report:
+                events_for_report.append(event)
+                results_for_report.append(result)
+                ts = payload.get("ts") if isinstance(payload, dict) else None
+                timestamps_for_report.append(
+                    float(ts) if isinstance(ts, (int, float)) else None,
+                )
             if verbose or result.status == "error":
                 stream = sys.stderr if result.status == "error" else sys.stdout
                 print(
@@ -320,6 +331,20 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
     print(f"color map: {mapping_str}")
     print()
     print(tracker.summary())
+
+    if report:
+        from cataanbot.report import build_report, format_report
+        final_vp = tracker.vp_status()["per_color"]
+        rep = build_report(
+            events=events_for_report,
+            dispatch_results=results_for_report,
+            color_map=color_map,
+            final_vp=final_vp,
+            timestamps=timestamps_for_report,
+            jsonl_path=jsonl_path,
+        )
+        print()
+        print(format_report(rep))
 
     if save_to:
         path = tracker.save(save_to)
@@ -525,6 +550,11 @@ def main(argv: list[str] | None = None) -> int:
         "--hex-size", type=int, default=60,
         help="Hex radius in pixels when --render is used.",
     )
+    p_replay.add_argument(
+        "--report", action="store_true",
+        help="After replay, print a postmortem report: winner, final VP, "
+             "per-player aggregates, dice histogram, and parser quality.",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
@@ -553,7 +583,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_bridge(args.host, args.port, args.jsonl)
     if args.cmd == "replay":
         return cmd_replay(args.jsonl, args.player, args.verbose,
-                          args.save_to, args.render_to, args.hex_size)
+                          args.save_to, args.render_to, args.hex_size,
+                          args.report)
     return 2
 
 

@@ -131,6 +131,10 @@ dispatcher — useful for auditing past games without booting colonist.
 ./bin/cataanbot replay game.jsonl \
   --player BrickdDaddy=BLUE --player Thorin=ORANGE \
   --save replayed.json --render replayed.png -v
+
+# Postmortem: winner, final VP, per-player aggregates, dice histogram,
+# and parser-quality breakdown — all derived from the event stream.
+./bin/cataanbot replay game.jsonl --report
 ```
 
 Events that need board topology (settlement / city / road placements and
