@@ -1,0 +1,111 @@
+"""Advisor scoring: opening, second-settle, robber, trade."""
+from __future__ import annotations
+
+import pytest
+
+from cataanbot.advisor import (
+    evaluate_trade,
+    legal_nodes_after_picks,
+    score_opening_nodes,
+    score_robber_targets,
+    score_second_settlements,
+)
+from cataanbot.tracker import Tracker
+
+
+@pytest.fixture
+def tracker():
+    return Tracker(seed=4242)
+
+
+def test_score_opening_nodes_returns_ranked_results(tracker):
+    scores = score_opening_nodes(tracker.game)
+    assert len(scores) > 0
+    # Sorted descending.
+    for a, b in zip(scores, scores[1:]):
+        assert a.score >= b.score
+
+
+def test_score_opening_nodes_respects_legal_pool(tracker):
+    all_scores = score_opening_nodes(tracker.game)
+    picked = all_scores[0].node_id
+    legal = legal_nodes_after_picks(tracker.game, [picked])
+    filtered = score_opening_nodes(tracker.game, legal_nodes=legal)
+    filtered_ids = {s.node_id for s in filtered}
+    assert picked not in filtered_ids
+    # No neighbor of the picked node is eligible either.
+    assert len(filtered_ids) < len(all_scores)
+
+
+def test_score_opening_top_node_is_on_a_good_number(tracker):
+    """Top opening pick should touch at least one high-pip (6/8) or
+    multi-resource tile — guards against a regression that would rank
+    desert-adjacent corner nodes highly."""
+    top = score_opening_nodes(tracker.game)[0]
+    numbers = [n for _res, n in top.tiles if n is not None]
+    # raw_production is the per-roll expected-yield sum (each tile's
+    # probability ×1), so a 3-tile inland node caps around ~0.4. Sanity:
+    # the top node should touch at least 2 numbered tiles with nonzero
+    # expected yield, not a corner desert-adjacent spot.
+    assert top.raw_production > 0.2
+    assert len(numbers) >= 2
+
+
+def test_score_second_settlements_excludes_first_node(tracker):
+    top = score_opening_nodes(tracker.game)[0]
+    seconds = score_second_settlements(tracker.game, top.node_id, color="RED")
+    ids = {s.node_id for s in seconds}
+    assert top.node_id not in ids
+
+
+def test_score_robber_targets_skips_current_robber(tracker):
+    from catanatron import Color
+    # Move robber onto a specific tile we can verify is skipped.
+    robber = tracker.game.state.board.robber_coordinate
+    results = score_robber_targets(tracker.game, "RED")
+    assert all(r.coord != robber for r in results)
+    assert len(results) > 0
+
+
+def test_robber_targets_favor_opponent_builds(tracker):
+    """A tile with an opponent settlement should outscore one with nobody."""
+    from catanatron import Color
+    # Place BLUE on a high-pip spot.
+    top = score_opening_nodes(tracker.game)[0]
+    tracker.settle("BLUE", top.node_id)
+    scores = score_robber_targets(tracker.game, "RED")
+    with_victim = [s for s in scores if s.opponent_blocked > 0]
+    assert with_victim, "placing BLUE should create at least one robber target"
+    # The highest overall score should hit an opponent.
+    assert scores[0].opponent_blocked > 0
+
+
+def test_evaluate_trade_delta_sign(tracker):
+    # With no buildings, every resource has equal marginal value, so
+    # giving N for N of a different resource is a wash.
+    e = evaluate_trade(tracker.game, "RED", 1, "WOOD", 1, "WHEAT")
+    assert abs(e.delta) < 1e-6
+    # Giving 2 wood for 1 wheat at equal marginal value is unfavorable.
+    e = evaluate_trade(tracker.game, "RED", 2, "WOOD", 1, "WHEAT")
+    assert e.delta < 0
+
+
+def test_evaluate_trade_favors_scarce_resource(tracker):
+    """If RED produces lots of WOOD and no WHEAT, getting WHEAT in
+    return for WOOD at 1:1 should be favorable."""
+    from catanatron import Color
+    # Pick a node that produces WOOD but no WHEAT so the asymmetry is
+    # unambiguous in marginal-value terms.
+    m = tracker.game.state.board.map
+    pick = None
+    for nid in m.land_nodes:
+        prod = m.node_production.get(nid, {})
+        if prod.get("WOOD", 0) > 0.1 and prod.get("WHEAT", 0) == 0:
+            pick = nid
+            break
+    assert pick is not None
+    tracker.game.state.board.build_settlement(
+        Color.RED, pick, initial_build_phase=True
+    )
+    e = evaluate_trade(tracker.game, "RED", 1, "WOOD", 1, "WHEAT")
+    assert e.delta > 0
