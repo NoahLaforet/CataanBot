@@ -9,6 +9,7 @@ from cataanbot.events import (
     DisconnectEvent,
     GameOverEvent,
     InfoEvent,
+    MonopolyStealEvent,
     NoStealEvent,
     ProduceEvent,
     RobberMoveEvent,
@@ -378,6 +379,18 @@ def test_starting_resources_are_production():
     assert isinstance(ev, ProduceEvent)
     assert ev.player == "Marja"
     assert ev.resources == {"BRICK": 1, "SHEEP": 1, "WOOD": 1}
+
+
+def test_monopoly_claim_pulls_total_from_opponents():
+    # Icon alt comes back lowercase ('lumber') in this row even though
+    # the "Lumber" (title) alt is used elsewhere; rule is case-insensitive.
+    ev = parse_event(_make([
+        _name("Afrika"), _text("stole 10"), _icon("lumber"),
+    ]))
+    assert isinstance(ev, MonopolyStealEvent)
+    assert ev.player == "Afrika"
+    assert ev.resource == "WOOD"
+    assert ev.count == 10
 
 
 def test_happy_settling_is_info():

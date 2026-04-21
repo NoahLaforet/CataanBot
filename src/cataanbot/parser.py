@@ -37,6 +37,7 @@ from cataanbot.events import (
     Event,
     GameOverEvent,
     InfoEvent,
+    MonopolyStealEvent,
     NoStealEvent,
     ProduceEvent,
     RobberMoveEvent,
@@ -217,6 +218,18 @@ def parse_event(payload: dict[str, Any]) -> Event:
         if others:
             return StealEvent(thief=player, victim=others[0])
 
+    # --- Monopoly claim ------------------------------------------------------
+    # Follow-up to "X used Monopoly": "X stole N [resource]". No 'from'
+    # clause, no victim name — the count is pooled across all opponents.
+    if "stole" in text and "from" not in text:
+        m = _MONOPOLY_COUNT_RE.search(_text_join(parts))
+        res_alt = _first_resource_alt_ci(parts)
+        canon = COLONIST_TO_CATAN_RESOURCE.get(res_alt) if res_alt else None
+        if m and canon:
+            return MonopolyStealEvent(
+                player=player, resource=canon, count=int(m.group(1)),
+            )
+
     # --- Bank trade ----------------------------------------------------------
     # "Hans gave bank ... and took ..."
     if "gave bank" in text:
@@ -369,6 +382,20 @@ def _first_resource_alt(parts: list[dict]) -> str | None:
         if a in COLONIST_TO_CATAN_RESOURCE:
             return a
     return None
+
+
+def _first_resource_alt_ci(parts: list[dict]) -> str | None:
+    """Case-insensitive variant: colonist sometimes lowercases icon alts
+    (seen in Monopoly follow-up rows)."""
+    lookup = {k.lower(): k for k in COLONIST_TO_CATAN_RESOURCE}
+    for a in _icons(parts):
+        if a.lower() in lookup:
+            return lookup[a.lower()]
+    return None
+
+
+# "Afrika stole 10" — one-or-two-digit count after 'stole'.
+_MONOPOLY_COUNT_RE = re.compile(r"stole\s+(\d+)", re.IGNORECASE)
 
 
 # Disconnect/reconnect lines often render without a colored name span
