@@ -29,4 +29,6 @@ htmlcov/
 logs/
 *.log
 data/
-board.png
+# Rendered boards, histograms, advisor overlays live at the repo root.
+# Ignore them there without hiding example PNGs checked in under subdirs.
+/*.png
