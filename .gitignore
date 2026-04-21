@@ -32,3 +32,6 @@ data/
 # Rendered boards, histograms, advisor overlays live at the repo root.
 # Ignore them there without hiding example PNGs checked in under subdirs.
 /*.png
+
+# colonist WS capture dumps — session-specific, large, often noisy.
+ws_captures/
