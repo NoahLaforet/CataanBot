@@ -34,6 +34,7 @@ from cataanbot.events import (
     DiscardEvent,
     DisconnectEvent,
     Event,
+    GameOverEvent,
     InfoEvent,
     NoStealEvent,
     ProduceEvent,
@@ -118,6 +119,11 @@ def parse_event(payload: dict[str, Any]) -> Event:
         return InfoEvent(text=_text_join(parts))
     if text.startswith("no player to steal from"):
         return NoStealEvent()
+
+    # --- Game over ----------------------------------------------------------
+    # "Hans won the game!" + trophy icons
+    if "won the game" in text and player is not None:
+        return GameOverEvent(winner=player)
 
     # --- Roll blocked (tile carries the subject, no player name) --------------
     if "blocked by the robber" in text:

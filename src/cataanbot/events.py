@@ -128,6 +128,12 @@ class VPEvent:
 
 
 @dataclass
+class GameOverEvent:
+    """End of game — someone won."""
+    winner: str
+
+
+@dataclass
 class RollBlockedEvent:
     """A tile rolled its number but couldn't produce because the robber
     sits on it. No player attribution — the tile is the subject."""
@@ -168,6 +174,7 @@ Event = Union[
     DevCardBuyEvent,
     DevCardPlayEvent,
     VPEvent,
+    GameOverEvent,
     RollBlockedEvent,
     InfoEvent,
     DisconnectEvent,

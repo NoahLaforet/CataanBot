@@ -7,6 +7,7 @@ from cataanbot.events import (
     DevCardPlayEvent,
     DiscardEvent,
     DisconnectEvent,
+    GameOverEvent,
     InfoEvent,
     NoStealEvent,
     ProduceEvent,
@@ -315,6 +316,14 @@ def test_largest_army_first_time_has_no_previous():
     assert isinstance(ev, VPEvent)
     assert ev.reason == "largest_army"
     assert ev.previous_holder is None
+
+
+def test_game_over():
+    ev = parse_event(_make([
+        _name("Hans"), _text("won the game!"), _icon("trophy"), _icon("trophy"),
+    ]))
+    assert isinstance(ev, GameOverEvent)
+    assert ev.winner == "Hans"
 
 
 def test_disconnect_and_reconnect():

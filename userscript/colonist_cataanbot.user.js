@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.3.0
+// @version      0.3.1
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -105,25 +105,23 @@
         };
     }
 
-    // Detect the active user's username by scanning for a "(You)" marker
-    // in the lobby/profile DOM. Cached after first hit so we don't rescan
-    // on every message. Returns null if not yet resolvable.
+    // Detect the active user's username from localStorage.userState —
+    // colonist.io stores the logged-in user there as `username`. Much
+    // more reliable than DOM scraping (the "(You)" marker only shows
+    // up in the lobby, not during gameplay). Cached after first read.
     let cachedSelf = null;
     function detectSelf() {
         if (cachedSelf) return cachedSelf;
-        // colonist.io tags the current user's row with " (You)" in the
-        // players panel. Walk a compact subtree; searching the whole
-        // document is pointlessly expensive.
-        const candidates = document.querySelectorAll(
-            'div[class*="player"], div[class*="Player"], div[class*="user"], span'
-        );
-        for (const el of candidates) {
-            const t = el.innerText || '';
-            const m = t.match(/^(\S[^\n]{0,30}?)\s*\(You\)\s*$/m);
-            if (m) {
-                cachedSelf = m[1].trim();
+        try {
+            const raw = localStorage.getItem('userState');
+            if (!raw) return null;
+            const us = JSON.parse(raw);
+            if (us && typeof us.username === 'string' && us.username) {
+                cachedSelf = us.username;
                 return cachedSelf;
             }
+        } catch (_) {
+            /* ignore parse errors */
         }
         return null;
     }

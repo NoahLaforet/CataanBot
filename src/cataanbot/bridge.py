@@ -100,9 +100,10 @@ def _event_oneliner(event: Any) -> str:
     """Compact human-readable summary of a parsed Event."""
     from cataanbot.events import (
         BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
-        DisconnectEvent, InfoEvent, NoStealEvent, ProduceEvent,
-        RobberMoveEvent, RollBlockedEvent, RollEvent, StealEvent,
-        TradeCommitEvent, TradeOfferEvent, UnknownEvent, VPEvent,
+        DisconnectEvent, GameOverEvent, InfoEvent, NoStealEvent,
+        ProduceEvent, RobberMoveEvent, RollBlockedEvent, RollEvent,
+        StealEvent, TradeCommitEvent, TradeOfferEvent, UnknownEvent,
+        VPEvent,
     )
 
     if isinstance(event, RollEvent):
@@ -143,6 +144,8 @@ def _event_oneliner(event: Any) -> str:
     if isinstance(event, RollBlockedEvent):
         prob = f" (prob {event.prob})" if event.prob is not None else ""
         return f"robber blocks {event.tile_label}{prob} — no production"
+    if isinstance(event, GameOverEvent):
+        return f"GAME OVER — {event.winner} won"
     if isinstance(event, InfoEvent):
         return f"info: {event.text}"
     if isinstance(event, DisconnectEvent):
