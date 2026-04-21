@@ -587,6 +587,55 @@ class Tracker:
         from cataanbot.render import render_board
         return render_board(self.game, path)
 
+    def vp_status(self) -> dict[str, Any]:
+        """Snapshot of public VP per color plus a callout for near-winners.
+
+        `callout` is one of: "winner", "one_away", "two_away", "leader",
+        or None when the race is still wide open (all < 6 VP).
+        `leaders` is the list of color names tied for the top score."""
+        state = self.game.state
+        per_color: dict[str, int] = {}
+        for color_name in DEFAULT_COLORS:
+            idx = state.color_to_index.get(self._color(color_name))
+            if idx is None:
+                continue
+            per_color[color_name] = int(
+                state.player_state.get(f"P{idx}_VICTORY_POINTS", 0)
+            )
+        if not per_color:
+            return {"per_color": {}, "leaders": [], "top": 0, "callout": None}
+        top = max(per_color.values())
+        leaders = [c for c, v in per_color.items() if v == top]
+        if top >= 10:
+            callout = "winner"
+        elif top >= 9:
+            callout = "one_away"
+        elif top >= 8:
+            callout = "two_away"
+        elif top >= 6:
+            callout = "leader"
+        else:
+            callout = None
+        return {"per_color": per_color, "leaders": leaders,
+                "top": top, "callout": callout}
+
+    def vp_callout_line(self) -> str | None:
+        """Single-line human-readable form of `vp_status()` for summaries.
+        Returns None when no callout applies (early game)."""
+        status = self.vp_status()
+        callout = status["callout"]
+        if callout is None:
+            return None
+        who = "/".join(status["leaders"])
+        top = status["top"]
+        if callout == "winner":
+            return f"*** {who} at {top} VP — GAME OVER ***"
+        if callout == "one_away":
+            return f"!! {who} at {top} VP — one turn from winning !!"
+        if callout == "two_away":
+            return f"{who} at {top} VP — two from winning"
+        return f"Leader: {who} at {top} VP"
+
     def summary(self) -> str:
         board = self.game.state.board
         by_color: dict[str, dict[str, int]] = {}
@@ -599,8 +648,13 @@ class Tracker:
         for name in road_counts:
             road_counts[name] //= 2
 
-        lines = [f"seed: {self.seed}   history ops: {len(self.history)}",
-                 f"robber: {board.robber_coordinate}"]
+        lines = []
+        callout = self.vp_callout_line()
+        if callout:
+            lines.append(callout)
+            lines.append("")
+        lines.append(f"seed: {self.seed}   history ops: {len(self.history)}")
+        lines.append(f"robber: {board.robber_coordinate}")
         res_cols = "".join(f"{r[:3]:>4}" for r in _RESOURCE_NAMES)
         header = (f"{'color':<7} {'settle':>6} {'city':>4} {'road':>4} "
                   f"|{res_cols}  tot")
