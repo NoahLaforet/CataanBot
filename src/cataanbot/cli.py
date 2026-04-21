@@ -247,6 +247,89 @@ def cmd_bridge(host: str, port: int, jsonl: str | None) -> int:
     return serve(host=host, port=port, jsonl=jsonl)
 
 
+def cmd_replay(jsonl_path: str, player_args: list[str] | None,
+               verbose: bool, save_to: str | None,
+               render_to: str | None, hex_size: int) -> int:
+    """Replay a bridge JSONL file through the Event→Tracker dispatcher.
+
+    Each line is parsed with `parse_event` and applied to a fresh
+    Tracker via `apply_event`. Lets us audit past games offline — no
+    live colonist session needed."""
+    import json
+
+    from cataanbot.live import ColorMap, ColorMapError, apply_event
+    from cataanbot.parser import parse_event
+    from cataanbot.tracker import Tracker
+
+    color_map = ColorMap()
+    if player_args:
+        for arg in player_args:
+            if "=" not in arg:
+                print(
+                    f"bad --player arg {arg!r}; use USERNAME=COLOR",
+                    file=sys.stderr,
+                )
+                return 1
+            user, color = arg.split("=", 1)
+            try:
+                color_map.add(user.strip(), color.strip())
+            except ColorMapError as e:
+                print(f"--player: {e}", file=sys.stderr)
+                return 1
+
+    try:
+        fh = open(jsonl_path)
+    except FileNotFoundError:
+        print(f"no such file: {jsonl_path}", file=sys.stderr)
+        return 1
+
+    tracker = Tracker()
+    counts = {"applied": 0, "skipped": 0, "unhandled": 0, "error": 0}
+    with fh:
+        for lineno, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"{jsonl_path}:{lineno}: bad JSON — {e}",
+                      file=sys.stderr)
+                continue
+            event = parse_event(payload)
+            result = apply_event(tracker, color_map, event)
+            counts[result.status] = counts.get(result.status, 0) + 1
+            if verbose or result.status == "error":
+                stream = sys.stderr if result.status == "error" else sys.stdout
+                print(
+                    f"[{result.status:>9}] {type(event).__name__}: "
+                    f"{result.message}",
+                    file=stream,
+                )
+
+    print()
+    print(
+        f"replay complete: {counts['applied']} applied, "
+        f"{counts['skipped']} skipped, "
+        f"{counts['unhandled']} unhandled, "
+        f"{counts['error']} errors",
+    )
+    mapping_str = ", ".join(
+        f"{u}={c}" for u, c in color_map.as_dict().items()
+    ) or "(empty)"
+    print(f"color map: {mapping_str}")
+    print()
+    print(tracker.summary())
+
+    if save_to:
+        path = tracker.save(save_to)
+        print(f"\nsaved tracker state to {path}")
+    if render_to:
+        path = tracker.render(render_to)
+        print(f"board rendered to {path}")
+    return 0
+
+
 def cmd_hands(save_path: str) -> int:
     """Per-color hand accounting against a saved tracker state."""
     tracker = _load_tracker(save_path)
@@ -412,6 +495,37 @@ def main(argv: list[str] | None = None) -> int:
                           help="Also mirror every event to this .jsonl file "
                                "(one JSON object per line).")
 
+    p_replay = sub.add_parser(
+        "replay",
+        help="Replay a bridge .jsonl file through the Event→Tracker "
+             "dispatcher so we can audit past games offline.",
+    )
+    p_replay.add_argument("jsonl", help="Path to the .jsonl file.")
+    p_replay.add_argument(
+        "--player", dest="player", action="append", default=None,
+        metavar="USERNAME=COLOR",
+        help="Pin a colonist username to a catanatron color "
+             "(RED/BLUE/WHITE/ORANGE). Repeatable. Unset names auto-assign "
+             "in first-appearance order.",
+    )
+    p_replay.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Print each event's dispatch status as it's applied.",
+    )
+    p_replay.add_argument(
+        "--save", dest="save_to", default=None,
+        help="Write the final tracker state to a JSON save file you can "
+             "feed to the advisor subcommands.",
+    )
+    p_replay.add_argument(
+        "--render", dest="render_to", default=None,
+        help="Render the final tracker state to this PNG.",
+    )
+    p_replay.add_argument(
+        "--hex-size", type=int, default=60,
+        help="Hex radius in pixels when --render is used.",
+    )
+
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
         return cmd_doctor()
@@ -437,6 +551,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hands(args.save)
     if args.cmd == "bridge":
         return cmd_bridge(args.host, args.port, args.jsonl)
+    if args.cmd == "replay":
+        return cmd_replay(args.jsonl, args.player, args.verbose,
+                          args.save_to, args.render_to, args.hex_size)
     return 2
 
 
