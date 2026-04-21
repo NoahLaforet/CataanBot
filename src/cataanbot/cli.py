@@ -276,11 +276,23 @@ def cmd_render(output: str, hex_size: int, ticks: int,
     return 0
 
 
+def _package_version() -> str:
+    """Look up the installed package version; fall back to 'unknown' if
+    we're running from a source tree without setuptools metadata."""
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("cataanbot")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="cataanbot",
         description="Settlers of Catan advisor.",
     )
+    parser.add_argument("--version", action="version",
+                        version=f"cataanbot {_package_version()}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor", help="Verify catanatron integration works.")
 
