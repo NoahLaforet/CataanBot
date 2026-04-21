@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.5.0
+// @version      0.5.2
 // @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765. v0.5 adds WebSocket frame capture for topology mapping.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
 // @connect      127.0.0.1
 // @connect      localhost
 // ==/UserScript==
@@ -24,33 +25,86 @@
     // protocol directly. We patch the WebSocket constructor before any
     // colonist code runs (hence @run-at document-start), wrap send and
     // message events on every instance, and stash frames to a rolling
-    // buffer on window.__cataanbotWS for offline inspection.
+    // buffer on unsafeWindow.__cataanbotWS for offline inspection.
     //
-    // Buffer is capped so long sessions don't balloon memory. Binary
-    // frames (Blob / ArrayBuffer) are captured as a typed placeholder
-    // with byteLength so we still see they happened without paying for
-    // the bytes — colonist's traffic is almost certainly JSON text.
-    const WS_BUFFER_MAX = 500;
+    // unsafeWindow is required because Tampermonkey runs userscripts in
+    // Chrome's isolated content-script world. Patching `window.WebSocket`
+    // from the isolated world changes the isolated window, not the main
+    // world colonist actually uses — so colonist's `new WebSocket()` call
+    // hits the untouched native constructor. `unsafeWindow` is the main-
+    // world window; patches there propagate to the real runtime.
+    //
+    // Every frame is captured in full as base64 so the protocol can be
+    // decoded offline. v0.5.1 truncated large frames to 64 bytes which
+    // hid GameStart + tileCornerStates diffs — exactly the topology
+    // frames we need. v0.5.2 also skips the ~1Hz ping/pong envelope
+    // (channel id "136", ~33 bytes) so long capture sessions don't
+    // evict the important frames at the head of the buffer.
+    //
+    // Expose __cataanbotWSDump() as a one-shot "save capture to disk"
+    // helper so we can grab the buffer from the DevTools console without
+    // pasting a scrape every time.
+    const WS_BUFFER_MAX = 2000;
     (function installWSInterceptor() {
-        if (window.__cataanbotWS) return;
+        const tgt = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        if (tgt.__cataanbotWS) return;
         const buffer = [];
-        const summary = { opened: 0, sent: 0, recv: 0, errors: 0 };
-        window.__cataanbotWS = { buffer, summary };
+        const summary = { opened: 0, sent: 0, recv: 0,
+            pings: 0, errors: 0 };
+        tgt.__cataanbotWS = { buffer, summary };
 
-        const NativeWebSocket = window.WebSocket;
+        const NativeWebSocket = tgt.WebSocket;
         if (!NativeWebSocket) return;
+
+        function bytesToBase64(bytes) {
+            let bin = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+                bin += String.fromCharCode.apply(
+                    null, bytes.subarray(i, i + chunk));
+            }
+            return btoa(bin);
+        }
 
         function describeData(data) {
             if (typeof data === 'string') {
                 return { kind: 'text', length: data.length, data };
             }
+            let bytes = null;
+            let kind = null;
             if (data instanceof ArrayBuffer) {
-                return { kind: 'arraybuffer', byteLength: data.byteLength };
+                bytes = new Uint8Array(data);
+                kind = 'arraybuffer';
+            } else if (ArrayBuffer.isView(data)) {
+                bytes = new Uint8Array(
+                    data.buffer, data.byteOffset, data.byteLength);
+                kind = data.constructor?.name || 'typedarray';
+            }
+            if (bytes) {
+                return {
+                    kind, byteLength: bytes.length,
+                    b64: bytesToBase64(bytes),
+                };
             }
             if (typeof Blob !== 'undefined' && data instanceof Blob) {
-                return { kind: 'blob', byteLength: data.size };
+                return { kind: 'blob', byteLength: data.size, pending: true };
             }
             return { kind: typeof data, preview: String(data).slice(0, 120) };
+        }
+
+        // colonist's keepalive envelope is channel id "136" with only a
+        // {timestamp: uint64} body. Always ~33 bytes and drowns out the
+        // ~5KB GameStart frame if we buffer them. Detect by byte pattern
+        // on the raw head: msgpack fixmap-2 (0x82) "id"(0xA2 i d) "136"
+        // (0xA3 '1' '3' '6').
+        const PING_PATTERN = [0x82, 0xa2, 0x69, 0x64,
+            0xa3, 0x31, 0x33, 0x36];
+        function isPingBytes(bytes) {
+            if (!bytes || bytes.length > 40) return false;
+            for (let i = 0; i < PING_PATTERN.length; i++) {
+                if (bytes[i] !== PING_PATTERN[i]) return false;
+            }
+            return true;
         }
 
         function pushFrame(frame) {
@@ -58,6 +112,22 @@
             if (buffer.length > WS_BUFFER_MAX) {
                 buffer.splice(0, buffer.length - WS_BUFFER_MAX);
             }
+        }
+
+        function recordFrame(dir, data, wsId) {
+            let bytes = null;
+            if (data instanceof ArrayBuffer) {
+                bytes = new Uint8Array(data);
+            } else if (ArrayBuffer.isView(data)) {
+                bytes = new Uint8Array(
+                    data.buffer, data.byteOffset, data.byteLength);
+            }
+            if (bytes && isPingBytes(bytes)) {
+                summary.pings += 1;
+                return;
+            }
+            pushFrame({ dir, ts: Date.now() / 1000,
+                wsId, ...describeData(data) });
         }
 
         function PatchedWebSocket(url, protocols) {
@@ -72,8 +142,7 @@
             ws.send = function patchedSend(data) {
                 try {
                     summary.sent += 1;
-                    pushFrame({ dir: 'out', ts: Date.now() / 1000,
-                        wsId, ...describeData(data) });
+                    recordFrame('out', data, wsId);
                 } catch (e) { summary.errors += 1; }
                 return origSend(data);
             };
@@ -81,8 +150,7 @@
             ws.addEventListener('message', (ev) => {
                 try {
                     summary.recv += 1;
-                    pushFrame({ dir: 'in', ts: Date.now() / 1000,
-                        wsId, ...describeData(ev.data) });
+                    recordFrame('in', ev.data, wsId);
                 } catch (e) { summary.errors += 1; }
             });
             ws.addEventListener('close', () => {
@@ -95,8 +163,32 @@
         PatchedWebSocket.OPEN = NativeWebSocket.OPEN;
         PatchedWebSocket.CLOSING = NativeWebSocket.CLOSING;
         PatchedWebSocket.CLOSED = NativeWebSocket.CLOSED;
-        window.WebSocket = PatchedWebSocket;
-        console.log(LOG_PREFIX, 'WS interceptor installed');
+        tgt.WebSocket = PatchedWebSocket;
+
+        tgt.__cataanbotWSDump = function dumpWS(label) {
+            const payload = {
+                schema: 1, capturedAt: Date.now() / 1000,
+                url: location.href, summary,
+                buffer: buffer.slice(),
+            };
+            const blob = new Blob(
+                [JSON.stringify(payload, null, 2)],
+                { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const ts = new Date().toISOString()
+                .replace(/[:.]/g, '-').slice(0, 19);
+            a.download = `cataanbot-ws-${label ? label + '-' : ''}${ts}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            return a.download;
+        };
+
+        console.log(LOG_PREFIX, 'WS interceptor v0.5.2 installed on',
+            tgt === window ? 'window' : 'unsafeWindow');
     })();
 
     // Selectors captured from DOM recon (COLONIST_RECON.md). Class
