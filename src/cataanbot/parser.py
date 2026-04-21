@@ -198,12 +198,17 @@ def parse_event(payload: dict[str, Any]) -> Event:
 
     # --- Build ---------------------------------------------------------------
     # "Hans built a Settlement  (+1 VP)" / "BrickdDaddy built a Road"
-    # Setup phase and dev-card placements use "placed a" instead of "built a".
+    # Setup phase and Road Building dev card use "placed a" instead of
+    # "built a" — those placements are free, so mark paid=False to keep
+    # the hand tracker from double-charging them.
     if "built a" in text or "placed a" in text:
         piece = _build_piece(parts)
         if piece is not None:
             vp = 1 if piece in ("settlement", "city") else 0
-            return BuildEvent(player=player, piece=piece, vp_delta=vp)
+            paid = "built a" in text
+            return BuildEvent(
+                player=player, piece=piece, vp_delta=vp, paid=paid,
+            )
 
     # --- Robber move ---------------------------------------------------------
     # "Hans moved Robber  to Desert" or "...to [robber] [prob_9] [ore tile]"

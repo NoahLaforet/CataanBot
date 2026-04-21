@@ -374,6 +374,8 @@ def test_setup_placement_counts_as_build():
     assert isinstance(ev, BuildEvent)
     assert ev.piece == "settlement"
     assert ev.vp_delta == 1
+    # Setup placements are free — don't charge the hand.
+    assert ev.paid is False
 
 
 def test_dev_card_placed_road():
@@ -383,6 +385,16 @@ def test_dev_card_placed_road():
     assert isinstance(ev, BuildEvent)
     assert ev.piece == "road"
     assert ev.vp_delta == 0
+    # Road Building dev card places roads for free too.
+    assert ev.paid is False
+
+
+def test_built_a_sets_paid_true():
+    ev = parse_event(_make([
+        _name("BrickdDaddy"), _text("built a Road"), _icon("road"),
+    ]))
+    assert isinstance(ev, BuildEvent)
+    assert ev.paid is True
 
 
 def test_starting_resources_are_production():

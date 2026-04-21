@@ -52,6 +52,11 @@ class BuildEvent:
     player: str
     piece: str           # 'settlement' | 'road' | 'city'
     vp_delta: int = 0
+    # True for normal mid-game builds ("X built a ..." — debit resources).
+    # False for free placements: setup-phase settlements/roads and the two
+    # roads placed by the Road Building dev card ("X placed a ..."). The
+    # hand tracker skips the cost debit when paid=False; VP still counts.
+    paid: bool = True
 
 
 @dataclass

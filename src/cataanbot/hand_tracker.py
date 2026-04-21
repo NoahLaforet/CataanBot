@@ -171,6 +171,11 @@ def apply_event(
         hand = _lookup(hands, color_map, event.player)
         if hand is None:
             return False
+        # Free placements (setup-phase settlements/roads, Road Building
+        # dev card) don't debit. `paid=False` skips the cost but we still
+        # return True so the timeline treats the event as meaningful.
+        if not event.paid:
+            return False
         cost = _BUILD_COSTS.get(event.piece)
         if not cost:
             return False
