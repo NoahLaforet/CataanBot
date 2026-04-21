@@ -88,11 +88,16 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
                  highlight_nodes: list[int] | None = None,
                  show_legend: bool = True,
-                 label_style: str = "icon") -> Path:
+                 label_style: str = "icon",
+                 claimed_nodes: list[int] | None = None) -> Path:
     """Render the board to a PNG. Returns the output path.
 
     `highlight_nodes`, if given, is a ranked list of node_ids to mark with
     numbered circles — use this to visualize advisor recommendations.
+
+    `claimed_nodes`, if given, are nodes to mark with a dim gray "X" —
+    used by `openings --after` to show hypothetical already-taken spots
+    alongside the fresh ranking.
 
     `show_legend` (default True) adds a bottom strip showing per-player
     VP, buildings, roads, and longest-road / largest-army badges so the
@@ -247,6 +252,25 @@ def render_board(game: "Game", out_path: str | Path, hex_size: int = 60,
             _draw_settlement(draw, cx, cy, hex_size, color.name)
         elif kind == "CITY":
             _draw_city(draw, cx, cy, hex_size, color.name)
+
+    # Claimed (hypothetical) nodes: dim gray circle with a dark X. Draw
+    # before highlight markers so a ranked pick that lands on the same
+    # node would visibly layer on top.
+    if claimed_nodes:
+        for nid in claimed_nodes:
+            if nid not in node_pos:
+                continue
+            cx, cy = node_pos[nid]
+            r = hex_size * 0.18
+            draw.ellipse(
+                (cx - r, cy - r, cx + r, cy + r),
+                fill=(170, 170, 170), outline=PIECE_OUTLINE, width=2,
+            )
+            d = r * 0.55
+            draw.line([(cx - d, cy - d), (cx + d, cy + d)],
+                      fill=PIECE_OUTLINE, width=2)
+            draw.line([(cx - d, cy + d), (cx + d, cy - d)],
+                      fill=PIECE_OUTLINE, width=2)
 
     if highlight_nodes:
         highlight_font = _load_font(int(hex_size * 0.28))
