@@ -77,12 +77,14 @@ _BLOCKING_TOP_K = 3
 _BLOCKING_WEIGHT = 0.05
 
 
-def score_opening_nodes(game: "Game") -> list[NodeScore]:
+def score_opening_nodes(game: "Game",
+                        legal_nodes: set[int] | None = None) -> list[NodeScore]:
     """Return every land node scored for opening placement, best first.
 
-    Score = base_score + denial_bonus, where:
-        base_score  = raw_production × diversity_factor + port_bonus
+    Score = base_score + denial_bonus + blocking_bonus, where:
+        base_score   = raw_production × diversity_factor + port_bonus
         denial_bonus = _DENIAL_WEIGHT × Σ base_score(neighbor)
+        blocking_bonus = _BLOCKING_WEIGHT × (baseline_top_K − remaining_top_K)
 
     Denial reflects the distance-rule consequence: taking node N locks out
     every node one edge away. A spot surrounded by other high-value spots
@@ -92,11 +94,20 @@ def score_opening_nodes(game: "Game") -> list[NodeScore]:
     Diversity rewards nodes that touch 3 distinct resources over ones that
     stack on a single resource even at equal pip sum — early-game you want
     access to building materials, not volume of one commodity. Port bonus
-    is small; it breaks ties among otherwise similar spots."""
+    is small; it breaks ties among otherwise similar spots.
+
+    `legal_nodes`, when given, restricts the candidate pool, the blocking
+    baseline, and the denial neighbor set. Use this when advising on a
+    live game where some spots are already taken or distance-blocked —
+    denying an already-taken neighbor isn't worth anything, so dropping
+    them from the denial sum is consistent.
+    """
     m = game.state.board.map
     node_to_port = _build_node_port_labels(m)
     neighbors = _build_node_neighbors(m)
-    land_nodes = set(m.land_nodes)
+    all_land_nodes = set(m.land_nodes)
+    land_nodes = (all_land_nodes & legal_nodes
+                  if legal_nodes is not None else all_land_nodes)
 
     # Pass 1: compute base_score per node.
     base_by_node: dict[int, float] = {}
