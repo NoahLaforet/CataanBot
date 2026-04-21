@@ -26,15 +26,49 @@ def cmd_doctor() -> int:
     return 0
 
 
-def cmd_openings(top: int, render_to: str | None, hex_size: int) -> int:
-    """Rank opening settlement spots on a fresh random board."""
+def cmd_openings(top: int, render_to: str | None, hex_size: int,
+                 save_path: str | None = None,
+                 color: str | None = None) -> int:
+    """Rank opening settlement spots.
+
+    Default: fresh random board, scores every land node.
+
+    With `--save PATH --color C`: load a live tracker state and filter the
+    candidate pool to nodes C can legally place on right now (distance
+    rule honored, taken spots excluded). Useful in the middle of the
+    opening draft when turns have already been played."""
     try:
         from cataanbot.advisor import score_opening_nodes, format_opening_ranking
     except ImportError as e:
         print(f"advisor deps missing: {e}", file=sys.stderr)
         return 1
-    game = _new_game()
-    scores = score_opening_nodes(game)
+
+    legal_nodes = None
+    if save_path:
+        if not color:
+            print("--save requires --color to know whose legal spots to use",
+                  file=sys.stderr)
+            return 1
+        tracker = _load_tracker(save_path)
+        if tracker is None:
+            return 1
+        from cataanbot.tracker import TrackerError
+        try:
+            c = tracker._color(color)
+        except TrackerError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        game = tracker.game
+        legal_nodes = set(
+            game.state.board.buildable_node_ids(c, initial_build_phase=True)
+        )
+        if not legal_nodes:
+            print(f"no legal opening spots left for {color}", file=sys.stderr)
+            return 1
+    else:
+        game = _new_game()
+
+    scores = score_opening_nodes(game, legal_nodes=legal_nodes)
     print(format_opening_ranking(scores, top=top))
     if render_to:
         from cataanbot.render import render_board
@@ -216,6 +250,12 @@ def main(argv: list[str] | None = None) -> int:
                             help="Also render the generated board to this PNG.")
     p_openings.add_argument("--hex-size", type=int, default=60,
                             help="Hex radius in pixels when --render is used.")
+    p_openings.add_argument("--save", dest="save_path", default=None,
+                            help="Score a live tracker state instead of a fresh "
+                                 "random board. Requires --color.")
+    p_openings.add_argument("--color", default=None,
+                            help="Whose legal placements to filter to when "
+                                 "--save is given.")
 
     sub.add_parser("play", help="Launch the manual-tracker REPL.")
 
@@ -266,7 +306,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "render":
         return cmd_render(args.output, args.hex_size, args.ticks, args.labels)
     if args.cmd == "openings":
-        return cmd_openings(args.top, args.render_to, args.hex_size)
+        return cmd_openings(args.top, args.render_to, args.hex_size,
+                            args.save_path, args.color)
     if args.cmd == "play":
         return cmd_play()
     if args.cmd == "robberadvice":
