@@ -250,7 +250,8 @@ def cmd_bridge(host: str, port: int, jsonl: str | None) -> int:
 def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                verbose: bool, save_to: str | None,
                render_to: str | None, hex_size: int,
-               report: bool = False) -> int:
+               report: bool = False,
+               report_out: str | None = None) -> int:
     """Replay a bridge JSONL file through the Event→Tracker dispatcher.
 
     Each line is parsed with `parse_event` and applied to a fresh
@@ -303,7 +304,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             event = parse_event(payload)
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
-            if report:
+            if report or report_out:
                 events_for_report.append(event)
                 results_for_report.append(result)
                 ts = payload.get("ts") if isinstance(payload, dict) else None
@@ -332,7 +333,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
     print()
     print(tracker.summary())
 
-    if report:
+    if report or report_out:
         from cataanbot.report import build_report, format_report
         final_vp = tracker.vp_status()["per_color"]
         rep = build_report(
@@ -343,8 +344,15 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
             timestamps=timestamps_for_report,
             jsonl_path=jsonl_path,
         )
-        print()
-        print(format_report(rep))
+        rendered = format_report(rep)
+        if report:
+            print()
+            print(rendered)
+        if report_out:
+            from pathlib import Path
+            out_path = Path(report_out)
+            out_path.write_text(rendered + "\n")
+            print(f"\nwrote report to {out_path}")
 
     if save_to:
         path = tracker.save(save_to)
@@ -555,6 +563,11 @@ def main(argv: list[str] | None = None) -> int:
         help="After replay, print a postmortem report: winner, final VP, "
              "per-player aggregates, dice histogram, and parser quality.",
     )
+    p_replay.add_argument(
+        "--report-out", dest="report_out", default=None,
+        help="Write the postmortem report to this text file "
+             "(implies --report data collection; doesn't force stdout).",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
@@ -584,7 +597,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "replay":
         return cmd_replay(args.jsonl, args.player, args.verbose,
                           args.save_to, args.render_to, args.hex_size,
-                          args.report)
+                          args.report, args.report_out)
     return 2
 
 
