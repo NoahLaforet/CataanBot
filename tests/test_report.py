@@ -447,6 +447,76 @@ def test_hand_dynamics_reports_drift_on_overdraft():
     assert d.peak_size == 0
 
 
+def test_trade_impact_scores_lopsided_trade():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    # Alice has produced 10 wood already — wood is cheap for her.
+    # Bob has produced nothing — everything is scarce for him.
+    # So Alice giving wood for Bob's ore should look great for Alice
+    # and terrible for Bob (from Bob's perspective).
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 10}),
+        ProduceEvent(player="Bob", resources={"ORE": 1}),
+        TradeCommitEvent(
+            giver="Alice", receiver="Bob",
+            gave={"WOOD": 1}, got={"ORE": 1},
+        ),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 0, "BLUE": 0},
+    )
+    assert len(rep.trade_impacts) == 1
+    t = rep.trade_impacts[0]
+    assert t.giver == "Alice"
+    assert t.receiver == "Bob"
+    # Alice got ORE (0 produced for her → marginal 2.0), gave WOOD
+    # (10 produced → marginal ~0.095). Delta strongly positive.
+    assert t.giver_delta > 1.5
+    # Bob gave up ORE (1 produced → marginal ~0.67), got WOOD (0
+    # produced → marginal 2.0). Delta also positive for Bob since
+    # his scarcity profile inverts it.
+    assert t.receiver_delta > 1.0
+
+
+def test_trade_impact_skips_bank_trades():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"WOOD": 4}, got={"ORE": 1},
+        ),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    assert rep.trade_impacts == []
+
+
+def test_format_report_includes_trade_quality_section():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 10}),
+        TradeCommitEvent(
+            giver="Alice", receiver="Bob",
+            gave={"WOOD": 1}, got={"ORE": 1},
+        ),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 0, "BLUE": 0},
+    )
+    out = format_report(rep)
+    assert "Trade quality" in out
+
+
+def test_format_report_handles_no_trades_gracefully():
+    cm = ColorMap({"Alice": "RED"})
+    rep = build_report([], [], cm, final_vp={"RED": 0})
+    out = format_report(rep)
+    assert "Trade quality" in out
+    assert "no player-to-player trades in log" in out
+
+
 def test_seven_impact_captures_roller_discards_robber_steal():
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [
