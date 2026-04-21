@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.4.3
-// @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765.
+// @version      0.5.0
+// @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765. v0.5 adds WebSocket frame capture for topology mapping.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
 // @connect      localhost
@@ -17,6 +17,87 @@
 
     const BRIDGE_URL = 'http://127.0.0.1:8765/log';
     const LOG_PREFIX = '[cataanbot]';
+
+    // WebSocket frame capture. Colonist renders the board on a single
+    // <canvas id="game-canvas"> — no per-tile DOM — so the only way to
+    // map board state to catanatron coordinates is to read the game
+    // protocol directly. We patch the WebSocket constructor before any
+    // colonist code runs (hence @run-at document-start), wrap send and
+    // message events on every instance, and stash frames to a rolling
+    // buffer on window.__cataanbotWS for offline inspection.
+    //
+    // Buffer is capped so long sessions don't balloon memory. Binary
+    // frames (Blob / ArrayBuffer) are captured as a typed placeholder
+    // with byteLength so we still see they happened without paying for
+    // the bytes — colonist's traffic is almost certainly JSON text.
+    const WS_BUFFER_MAX = 500;
+    (function installWSInterceptor() {
+        if (window.__cataanbotWS) return;
+        const buffer = [];
+        const summary = { opened: 0, sent: 0, recv: 0, errors: 0 };
+        window.__cataanbotWS = { buffer, summary };
+
+        const NativeWebSocket = window.WebSocket;
+        if (!NativeWebSocket) return;
+
+        function describeData(data) {
+            if (typeof data === 'string') {
+                return { kind: 'text', length: data.length, data };
+            }
+            if (data instanceof ArrayBuffer) {
+                return { kind: 'arraybuffer', byteLength: data.byteLength };
+            }
+            if (typeof Blob !== 'undefined' && data instanceof Blob) {
+                return { kind: 'blob', byteLength: data.size };
+            }
+            return { kind: typeof data, preview: String(data).slice(0, 120) };
+        }
+
+        function pushFrame(frame) {
+            buffer.push(frame);
+            if (buffer.length > WS_BUFFER_MAX) {
+                buffer.splice(0, buffer.length - WS_BUFFER_MAX);
+            }
+        }
+
+        function PatchedWebSocket(url, protocols) {
+            const ws = protocols === undefined
+                ? new NativeWebSocket(url)
+                : new NativeWebSocket(url, protocols);
+            summary.opened += 1;
+            const wsId = summary.opened;
+            pushFrame({ dir: 'open', ts: Date.now() / 1000, wsId, url });
+
+            const origSend = ws.send.bind(ws);
+            ws.send = function patchedSend(data) {
+                try {
+                    summary.sent += 1;
+                    pushFrame({ dir: 'out', ts: Date.now() / 1000,
+                        wsId, ...describeData(data) });
+                } catch (e) { summary.errors += 1; }
+                return origSend(data);
+            };
+
+            ws.addEventListener('message', (ev) => {
+                try {
+                    summary.recv += 1;
+                    pushFrame({ dir: 'in', ts: Date.now() / 1000,
+                        wsId, ...describeData(ev.data) });
+                } catch (e) { summary.errors += 1; }
+            });
+            ws.addEventListener('close', () => {
+                pushFrame({ dir: 'close', ts: Date.now() / 1000, wsId });
+            });
+            return ws;
+        }
+        PatchedWebSocket.prototype = NativeWebSocket.prototype;
+        PatchedWebSocket.CONNECTING = NativeWebSocket.CONNECTING;
+        PatchedWebSocket.OPEN = NativeWebSocket.OPEN;
+        PatchedWebSocket.CLOSING = NativeWebSocket.CLOSING;
+        PatchedWebSocket.CLOSED = NativeWebSocket.CLOSED;
+        window.WebSocket = PatchedWebSocket;
+        console.log(LOG_PREFIX, 'WS interceptor installed');
+    })();
 
     // Selectors captured from DOM recon (COLONIST_RECON.md). Class
     // hashes are fragile across deploys — fall back defensively.
