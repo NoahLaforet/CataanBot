@@ -100,10 +100,10 @@ def _event_oneliner(event: Any) -> str:
     """Compact human-readable summary of a parsed Event."""
     from cataanbot.events import (
         BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
-        DisconnectEvent, GameOverEvent, InfoEvent, NoStealEvent,
-        ProduceEvent, RobberMoveEvent, RollBlockedEvent, RollEvent,
-        StealEvent, TradeCommitEvent, TradeOfferEvent, UnknownEvent,
-        VPEvent,
+        DisconnectEvent, GameOverEvent, InfoEvent, MonopolyStealEvent,
+        NoStealEvent, ProduceEvent, RobberMoveEvent, RollBlockedEvent,
+        RollEvent, StealEvent, TradeCommitEvent, TradeOfferEvent,
+        UnknownEvent, VPEvent,
     )
 
     if isinstance(event, RollEvent):
@@ -138,6 +138,9 @@ def _event_oneliner(event: Any) -> str:
         elif event.resource:
             extra = f" → {event.resource}"
         return f"{event.player} played {event.card}{extra}"
+    if isinstance(event, MonopolyStealEvent):
+        return (f"{event.player} monopolied {event.count}x{event.resource} "
+                f"from opponents")
     if isinstance(event, VPEvent):
         frm = f" (from {event.previous_holder})" if event.previous_holder else ""
         return f"{event.player} +{event.vp_delta} VP ({event.reason}){frm}"

@@ -117,6 +117,15 @@ class DevCardPlayEvent:
 
 
 @dataclass
+class MonopolyStealEvent:
+    """Follow-up to a Monopoly dev card: total cards of a single resource
+    pulled from every opponent. Colonist logs this as 'X stole N [res]'."""
+    player: str
+    resource: str
+    count: int
+
+
+@dataclass
 class VPEvent:
     """Standalone VP callout (largest-army / longest-road / dev-card VP)."""
     player: str
@@ -173,6 +182,7 @@ Event = Union[
     TradeCommitEvent,
     DevCardBuyEvent,
     DevCardPlayEvent,
+    MonopolyStealEvent,
     VPEvent,
     GameOverEvent,
     RollBlockedEvent,
