@@ -295,6 +295,19 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
     events_for_report = []
     results_for_report = []
     timestamps_for_report = []
+    # Dedup window for "placed a ..." / "built a ..." echoes. Colonist's
+    # virtualized scroller destroys + re-creates log nodes as they
+    # scroll out, and the 0.4.2 userscript's 5s content cache was
+    # shorter than the ~45s setup-phase burst — so setup placements
+    # re-fired 2-4 times per player. Scoped to placement/build lines
+    # only because those events are always resource-gated: a real
+    # same-piece build by the same player within 60s would require
+    # fresh production between them, which the game's turn cadence
+    # rarely allows. Other events (rolls, produces, trades) can
+    # legitimately repeat within 60s and get left alone.
+    DEDUP_WINDOW_S = 60.0
+    seen_build_ts: dict[str, float] = {}
+    dedup_dropped = 0
     with fh:
         for lineno, line in enumerate(fh, start=1):
             line = line.strip()
@@ -306,6 +319,21 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
                 print(f"{jsonl_path}:{lineno}: bad JSON — {e}",
                       file=sys.stderr)
                 continue
+            key = payload.get("key") if isinstance(payload, dict) else None
+            raw_ts = payload.get("ts") if isinstance(payload, dict) else None
+            ts_f = float(raw_ts) if isinstance(raw_ts, (int, float)) else None
+            text_lc = (payload.get("text") or "").lower() if isinstance(
+                payload, dict) else ""
+            is_build_line = (
+                "placed a" in text_lc or "built a" in text_lc
+            )
+            if key and ts_f is not None and is_build_line:
+                last = seen_build_ts.get(key)
+                if last is not None and (ts_f - last) < DEDUP_WINDOW_S:
+                    dedup_dropped += 1
+                    seen_build_ts[key] = ts_f
+                    continue
+                seen_build_ts[key] = ts_f
             event = parse_event(payload)
             result = apply_event(tracker, color_map, event)
             counts[result.status] = counts.get(result.status, 0) + 1
@@ -332,6 +360,11 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
         f"{counts['unhandled']} unhandled, "
         f"{counts['error']} errors",
     )
+    if dedup_dropped:
+        print(
+            f"  (deduped {dedup_dropped} echoed event(s) "
+            f"from colonist's virtualized log)"
+        )
     mapping_str = ", ".join(
         f"{u}={c}" for u, c in color_map.as_dict().items()
     ) or "(empty)"
