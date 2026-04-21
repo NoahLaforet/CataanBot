@@ -582,8 +582,15 @@ class TrackerRepl(cmd.Cmd):
         self._maybe_render()
 
     def do_show(self, _arg: str) -> None:
-        """show — print a text summary of tracked state."""
+        """show — print a text summary of tracked state.
+
+        Appends a compact two-line dice-roll histogram when rolls have
+        been recorded, so you can eyeball luck without running `stats`."""
         print(self.tracker.summary())
+        if any(op["op"] == "roll" for op in self.tracker.history):
+            from cataanbot.stats import compute_stats, format_mini_histogram
+            print()
+            print(format_mini_histogram(compute_stats(self.tracker)))
 
     def do_render(self, arg: str) -> None:
         """render [path] — write the current board to a PNG (default: tracked_board.png)."""
