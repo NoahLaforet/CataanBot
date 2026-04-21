@@ -701,42 +701,60 @@ def _draw_wood_icon(draw, cx: float, cy: float, size: float) -> None:
 
 
 def _draw_sheep_icon(draw, cx: float, cy: float, size: float) -> None:
-    """Woolly body as three overlapping off-white circles, with a small dark
-    head on the right and two tiny legs."""
-    r = size * 0.42
-    # Body: three overlapping circles form the fluffy back.
-    for dx, dy, rr in ((-size * 0.35, size * 0.05, r),
-                        (0,            -size * 0.05, r * 1.05),
-                        (size * 0.3,  size * 0.05, r)):
+    """Single fluffy body: a wide oval as the main mass with three small
+    wool-bump circles along the top edge for texture, a dark oval head
+    on the right, and two tiny legs underneath."""
+    # Main body: wide oval centered slightly left so the head has room.
+    body_l = cx - size * 0.75
+    body_r = cx + size * 0.35
+    body_t = cy - size * 0.1
+    body_b = cy + size * 0.55
+    draw.ellipse((body_l, body_t, body_r, body_b),
+                 fill=_ICON_SHEEP_BODY, outline=PIECE_OUTLINE, width=2)
+    # Three small wool bumps scalloping the top — each a little half-circle
+    # that overlaps the body edge.
+    bump_r = size * 0.2
+    for bx in (cx - size * 0.45, cx - size * 0.15, cx + size * 0.15):
         draw.ellipse(
-            (cx + dx - rr, cy + dy - rr, cx + dx + rr, cy + dy + rr),
-            fill=_ICON_SHEEP_BODY, outline=PIECE_OUTLINE,
+            (bx - bump_r, body_t - bump_r * 0.9,
+             bx + bump_r, body_t + bump_r * 0.4),
+            fill=_ICON_SHEEP_BODY, outline=PIECE_OUTLINE, width=2,
         )
-    # Head on the right — small dark oval overlapping the rightmost wool bump.
-    hx = cx + size * 0.6
+    # Re-draw the body outline cleanly across where bumps overlapped it, so
+    # the bumps read as raised fluff instead of separate blobs.
+    draw.chord((body_l, body_t, body_r, body_b), 180, 360,
+               fill=_ICON_SHEEP_BODY)
+    # Head on the right — dark oval clipped onto the body's right side.
+    hx = cx + size * 0.5
     hy = cy + size * 0.1
-    hr = size * 0.22
-    draw.ellipse((hx - hr, hy - hr, hx + hr, hy + hr),
-                 fill=_ICON_SHEEP_HEAD, outline=PIECE_OUTLINE)
-    # Legs.
-    for lx in (cx - size * 0.3, cx + size * 0.2):
-        draw.line([(lx, cy + size * 0.45), (lx, cy + size * 0.9)],
-                  fill=PIECE_OUTLINE, width=max(1, int(size * 0.1)))
+    hrx = size * 0.25
+    hry = size * 0.2
+    draw.ellipse((hx - hrx, hy - hry, hx + hrx, hy + hry),
+                 fill=_ICON_SHEEP_HEAD, outline=PIECE_OUTLINE, width=2)
+    # Two dark legs sticking below the body.
+    leg_w = max(1, int(size * 0.12))
+    for lx in (cx - size * 0.4, cx + size * 0.1):
+        draw.line([(lx, body_b - size * 0.05), (lx, cy + size * 0.95)],
+                  fill=PIECE_OUTLINE, width=leg_w)
 
 
 def _draw_brick_icon(draw, cx: float, cy: float, size: float) -> None:
-    """Three bricks in a staggered 2-over-1 pattern."""
-    bw = size * 0.45
+    """Brick-wall pattern: two bottom bricks with a visible mortar gap,
+    one top brick centered over them (offset so joints don't align)."""
+    bw = size * 0.5
     bh = size * 0.32
-    # Bottom row: two bricks side by side.
-    bricks = [
-        (cx - bw - size * 0.03, cy + size * 0.2, cx - size * 0.03, cy + size * 0.2 + bh),
-        (cx + size * 0.03, cy + size * 0.2, cx + size * 0.03 + bw, cy + size * 0.2 + bh),
-        # Top brick: centered, slightly offset so it bridges the two below.
-        (cx - bw * 0.8, cy + size * 0.2 - bh - size * 0.04,
-         cx + bw * 0.8, cy + size * 0.2 - size * 0.04),
-    ]
-    for x0, y0, x1, y1 in bricks:
+    gap = max(2, int(size * 0.1))
+    # Bottom row: two bricks, separated horizontally by `gap` so the mortar
+    # line between them is visually obvious instead of bleeding together.
+    bot_y0 = cy + size * 0.22
+    bot_y1 = bot_y0 + bh
+    bot_left  = (cx - bw - gap / 2, bot_y0, cx - gap / 2, bot_y1)
+    bot_right = (cx + gap / 2, bot_y0, cx + gap / 2 + bw, bot_y1)
+    # Top row: single wider brick centered, with a mortar gap below.
+    top_y1 = bot_y0 - gap
+    top_y0 = top_y1 - bh
+    top_brick = (cx - bw * 0.9, top_y0, cx + bw * 0.9, top_y1)
+    for x0, y0, x1, y1 in (bot_left, bot_right, top_brick):
         draw.rectangle((x0, y0, x1, y1),
                        fill=_ICON_BRICK_FILL, outline=_ICON_BRICK_MORTAR, width=2)
 
