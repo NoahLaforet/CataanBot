@@ -137,6 +137,13 @@ dispatcher — useful for auditing past games without booting colonist.
 # Postmortem: winner, final VP, per-player aggregates, dice histogram,
 # and parser-quality breakdown — all derived from the event stream.
 ./bin/cataanbot replay game.jsonl --report
+
+# Write the same postmortem to a file instead of stdout.
+./bin/cataanbot replay game.jsonl --report-out game5-report.txt
+
+# Render a per-event VP timeline PNG (step chart, one line per seat,
+# dashed 10-VP win line, minute x-axis when the JSONL has timestamps).
+./bin/cataanbot replay game.jsonl --vp-chart vp.png
 ```
 
 Events that need board topology (settlement / city / road placements and
