@@ -25,6 +25,12 @@ from cataanbot.live import ColorMap, DispatchResult
 
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 
+# 2d6 probabilities — how often each sum "should" appear.
+_DICE_PROBABILITY = {
+    2: 1 / 36, 3: 2 / 36, 4: 3 / 36, 5: 4 / 36, 6: 5 / 36,
+    7: 6 / 36, 8: 5 / 36, 9: 4 / 36, 10: 3 / 36, 11: 2 / 36, 12: 1 / 36,
+}
+
 
 @dataclass
 class PlayerStats:
@@ -241,13 +247,25 @@ def _format_histogram(hist: Counter) -> list[str]:
     if not hist:
         lines.append("  (no rolls)")
         return lines
+    total = sum(hist.values())
     max_count = max(hist.values())
     bar_width = 32
     for n in range(2, 13):
         c = hist.get(n, 0)
         bar = "█" * int(round(bar_width * c / max_count)) if max_count else ""
+        exp = total * _DICE_PROBABILITY[n]
+        # Signed delta vs. 2d6 expectation — lets you eyeball "the dice god
+        # hated BrickdDaddy's 8s" at a glance. Only shown once we have
+        # enough rolls to make noise less misleading.
+        if total >= 12:
+            delta = c - exp
+            luck = f"  (exp {exp:>4.1f}, {delta:+.1f})"
+        else:
+            luck = ""
         marker = "  ← most" if c == max_count and c > 0 else ""
-        lines.append(f"  {n:>2}: {bar:<{bar_width}} {c}{marker}")
+        lines.append(
+            f"  {n:>2}: {bar:<{bar_width}} {c}{luck}{marker}"
+        )
     return lines
 
 
