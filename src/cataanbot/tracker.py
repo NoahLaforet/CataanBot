@@ -129,6 +129,8 @@ class Tracker:
             )
         except ValueError as e:
             raise TrackerError(str(e)) from e
+        # Opponent settlements can break a longest road — recompute always.
+        self._recompute_longest_road()
         self._recompute_vp()
 
     def city(self, color: str, node_id: int) -> None:
@@ -169,6 +171,92 @@ class Tracker:
                                              (node_a, node_b))
         except ValueError as e:
             raise TrackerError(str(e)) from e
+        self._recompute_longest_road()
+        self._recompute_vp()
+
+    def _recompute_longest_road(self) -> None:
+        """Refresh `LONGEST_ROAD_LENGTH` per color and reassign `HAS_ROAD`.
+
+        Uses catanatron's `continuous_roads_by_player` for the per-color
+        longest path; requires length ≥ 5 to qualify. The current holder
+        keeps the card unless another color strictly exceeds them —
+        matches the standard Catan rule."""
+        state = self.game.state
+        board = state.board
+        lengths: dict = {}
+        for color, idx in state.color_to_index.items():
+            try:
+                paths = board.continuous_roads_by_player(color)
+            except Exception:
+                paths = []
+            length = max((len(p) for p in paths), default=0)
+            lengths[color] = length
+            state.player_state[f"P{idx}_LONGEST_ROAD_LENGTH"] = length
+
+        current_holder = None
+        for color, idx in state.color_to_index.items():
+            if state.player_state.get(f"P{idx}_HAS_ROAD"):
+                current_holder = color
+                break
+
+        eligible = [(c, lengths[c]) for c, _ in lengths.items()
+                    if lengths[c] >= 5]
+        if not eligible:
+            new_holder = None
+        else:
+            best_color, best_len = max(eligible, key=lambda kv: kv[1])
+            if (current_holder is not None
+                    and lengths.get(current_holder, 0) >= 5
+                    and best_len <= lengths[current_holder]):
+                new_holder = current_holder
+            else:
+                new_holder = best_color
+
+        if new_holder is not current_holder:
+            if current_holder is not None:
+                idx = state.color_to_index[current_holder]
+                state.player_state[f"P{idx}_HAS_ROAD"] = False
+            if new_holder is not None:
+                idx = state.color_to_index[new_holder]
+                state.player_state[f"P{idx}_HAS_ROAD"] = True
+
+    def _recompute_largest_army(self) -> None:
+        """Refresh `HAS_ARMY` based on PLAYED_KNIGHT counts.
+
+        Threshold is 3 played knights; holder keeps the card until another
+        color strictly exceeds them."""
+        state = self.game.state
+        played: dict = {}
+        for color, idx in state.color_to_index.items():
+            played[color] = int(
+                state.player_state.get(f"P{idx}_PLAYED_KNIGHT", 0)
+            )
+
+        current_holder = None
+        for color, idx in state.color_to_index.items():
+            if state.player_state.get(f"P{idx}_HAS_ARMY"):
+                current_holder = color
+                break
+
+        eligible = [(c, played[c]) for c in played if played[c] >= 3]
+        if not eligible:
+            new_holder = None
+        else:
+            best_color, best_n = max(eligible, key=lambda kv: kv[1])
+            if (current_holder is not None
+                    and played.get(current_holder, 0) >= 3
+                    and best_n <= played[current_holder]):
+                new_holder = current_holder
+            else:
+                new_holder = best_color
+
+        if new_holder is not current_holder:
+            if current_holder is not None:
+                idx = state.color_to_index[current_holder]
+                state.player_state[f"P{idx}_HAS_ARMY"] = False
+            if new_holder is not None:
+                idx = state.color_to_index[new_holder]
+                state.player_state[f"P{idx}_HAS_ARMY"] = True
 
     def _recompute_vp(self) -> None:
         """Recompute VICTORY_POINTS keys from current board state.
@@ -337,6 +425,9 @@ class Tracker:
         state.player_state[played_key] = (
             int(state.player_state.get(played_key, 0)) + 1
         )
+        if dev_type == "KNIGHT":
+            self._recompute_largest_army()
+            self._recompute_vp()
 
     def dev_counts(self, color: str) -> dict[str, dict[str, int]]:
         """Return {type: {'hand': n, 'played': n}} for one color."""
