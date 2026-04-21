@@ -409,3 +409,58 @@ def test_build_report_registers_winner_color():
     assert rep.winner_username == "Zoe"
     assert rep.winner_color == "RED"
     assert "RED" in rep.players
+
+
+def test_hand_dynamics_tracks_peak_and_vulnerable_events():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 4}),   # hand=4
+        ProduceEvent(player="Alice", resources={"BRICK": 5}),  # hand=9 (8+)
+        ProduceEvent(player="Alice", resources={"SHEEP": 1}),  # hand=10 (8+)
+        DiscardEvent(player="Alice", resources={"WOOD": 4, "BRICK": 1}),
+                                                               # hand=5
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    d = rep.hand_dynamics["RED"]
+    assert d.peak_size == 10
+    assert d.peak_event_index == 2
+    # Two samples had hand ≥ 8: after event 1 (9 cards) and event 2 (10).
+    assert d.vulnerable_events == 2
+    assert d.final_drift == 0
+
+
+def test_hand_dynamics_reports_drift_on_overdraft():
+    cm = ColorMap({"Alice": "RED"})
+    # Alice discards without ever producing — every discard underflows,
+    # bumping drift. Hand never reaches 8, so vulnerable_events stays 0.
+    events = [
+        DiscardEvent(player="Alice", resources={"WOOD": 2}),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    d = rep.hand_dynamics["RED"]
+    assert d.final_drift == 2
+    assert d.vulnerable_events == 0
+    assert d.peak_size == 0
+
+
+def test_format_report_includes_hand_dynamics_section():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 8}),  # hand=8
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    out = format_report(rep)
+    assert "Hand dynamics" in out
+    # "Alice" appears in several sections; check the dynamics row has
+    # the peak number (8) on the same line.
+    dyn_line = next(
+        ln for ln in out.splitlines()
+        if "Alice" in ln and " 8 " in ln and "#0" in ln
+    )
+    assert dyn_line

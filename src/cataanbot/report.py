@@ -88,6 +88,23 @@ class PlayerStats:
 
 
 @dataclass
+class HandDynamics:
+    """Time-series hand stats per color, derived from the hand_tracker walk.
+
+    `peak_size` is the max total cards (known + unknown) held at any point.
+    `vulnerable_events` counts distinct hand-change samples where the total
+    was 8 or more — a rough "how often were you exposed to discard-on-7"
+    gauge. `final_drift` is the end-of-game overdraft-clamp count for this
+    color — anything above ~3 means the reconstruction for that hand
+    missed events and the other numbers are approximate.
+    """
+    peak_size: int = 0
+    peak_event_index: int = -1
+    vulnerable_events: int = 0
+    final_drift: int = 0
+
+
+@dataclass
 class ReplayReport:
     """Everything build_report collected for one game."""
     jsonl_path: str | None
@@ -104,6 +121,7 @@ class ReplayReport:
     # tests of the report structure stable.
     reconstructed_hands: dict | None = None
     color_map: ColorMap | None = None
+    hand_dynamics: dict[str, HandDynamics] | None = None
 
 
 def build_report(
@@ -218,8 +236,7 @@ def build_report(
     winner_color = (
         color_map.get(winner_username) if winner_username else None
     )
-    from cataanbot.hand_tracker import reconstruct_hands
-    hands = reconstruct_hands(events, color_map)
+    hands, dynamics = _walk_hands_with_dynamics(events, color_map)
     return ReplayReport(
         jsonl_path=jsonl_path,
         winner_username=winner_username,
@@ -232,7 +249,45 @@ def build_report(
         last_ts=last_ts,
         reconstructed_hands=hands,
         color_map=color_map,
+        hand_dynamics=dynamics,
     )
+
+
+# 8 cards is the first hand size that triggers discard on a 7 (colonist
+# rounds down, so "more than 7" = 8+). Using that threshold lets
+# vulnerable_events line up with the chart's discard-threshold dashed line.
+_DISCARD_THRESHOLD = 8
+
+
+def _walk_hands_with_dynamics(
+    events: list[Event], color_map: ColorMap,
+) -> tuple[dict, dict[str, HandDynamics]]:
+    """Run the event stream through hand_tracker and also track per-color
+    peak size + discard-vulnerability counts along the way.
+
+    Single pass so we don't double-walk. Peak is the max total (known +
+    unknown) seen at any step; vulnerable_events counts distinct event
+    samples where the total was ≥ 8 (the real discard threshold) — it's
+    a loose proxy for "how often did the player sit on a big hand".
+    """
+    from cataanbot.hand_tracker import apply_event, init_hands
+    hands = init_hands(color_map)
+    dynamics = {c: HandDynamics() for c in hands}
+    for i, event in enumerate(events):
+        changed = apply_event(hands, event, color_map)
+        if not changed:
+            continue
+        for color, hand in hands.items():
+            total = hand.total
+            d = dynamics[color]
+            if total > d.peak_size:
+                d.peak_size = total
+                d.peak_event_index = i
+            if total >= _DISCARD_THRESHOLD:
+                d.vulnerable_events += 1
+    for color, hand in hands.items():
+        dynamics[color].final_drift = hand.drift
+    return hands, dynamics
 
 
 def format_report(report: ReplayReport) -> str:
@@ -263,6 +318,8 @@ def format_report(report: ReplayReport) -> str:
     lines.append("")
     lines.extend(_format_reconstructed_hands(report))
     lines.append("")
+    lines.extend(_format_hand_dynamics(report))
+    lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
 
@@ -272,6 +329,51 @@ def _format_reconstructed_hands(report: ReplayReport) -> list[str]:
         return []
     from cataanbot.hand_tracker import format_hands_table
     return format_hands_table(report.reconstructed_hands, report.color_map)
+
+
+def _format_hand_dynamics(report: ReplayReport) -> list[str]:
+    if not report.hand_dynamics or report.color_map is None:
+        return []
+    users = {c: u for u, c in report.color_map.as_dict().items()}
+    players = _players_in_color_order(report.players)
+    if not players:
+        return []
+    name_w = max((len(s.username) for _, s in players), default=8)
+    name_w = max(name_w, 6)
+    header = (
+        f"  {'player':<{name_w}}  "
+        f"{'peak':>4}  {'at event':>9}  "
+        f"{'8+ events':>10}  {'drift':>5}"
+    )
+    lines = [
+        "Hand dynamics (from the event-stream reconstruction):",
+        "",
+        header,
+        "  " + "-" * (len(header) - 2),
+    ]
+    for color, stats in players:
+        d = report.hand_dynamics.get(color)
+        if d is None:
+            continue
+        user = users.get(color, stats.username)
+        peak_idx = (
+            f"#{d.peak_event_index}" if d.peak_event_index >= 0 else "—"
+        )
+        lines.append(
+            f"  {user:<{name_w}}  "
+            f"{d.peak_size:>4}  {peak_idx:>9}  "
+            f"{d.vulnerable_events:>10}  {d.final_drift:>5}"
+        )
+    lines.append("")
+    lines.append(
+        "  peak = max total cards held; 8+ events = hand-change samples at "
+        "8+ cards"
+    )
+    lines.append(
+        "  (a 7 roll at 8+ forces a discard); drift ≥3 means the hand for "
+        "that color is approximate"
+    )
+    return lines
 
 
 # ---------------------------------------------------------------------------
