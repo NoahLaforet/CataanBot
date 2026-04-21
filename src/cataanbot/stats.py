@@ -210,6 +210,35 @@ def format_stats(stats: dict[str, Any], bar_width: int = 24) -> str:
     return "\n".join(lines)
 
 
+_BARS = "▁▂▃▄▅▆▇█"
+
+
+def format_mini_histogram(stats: dict[str, Any]) -> str:
+    """Two-line inline histogram for embedding in `show`.
+
+    Layout: a numbers row (2..12) above a bar-height row, plus a trailing
+    count. Heights are quantized into 8 unicode block chars so the whole
+    thing is terminal-safe and never wraps."""
+    total = stats["total_rolls"]
+    if total == 0:
+        return "Rolls: (none yet)"
+    histogram = stats["histogram"]
+    max_count = max(histogram.values())
+    numbers = "  ".join(f"{n:>2}" for n in range(2, 13))
+    bars_cells = []
+    for n in range(2, 13):
+        cnt = histogram[n]
+        if cnt == 0:
+            bars_cells.append(" ·")
+        else:
+            # Quantize to 0-7; 7 is full block. Empty stays as a dot.
+            idx = min(len(_BARS) - 1,
+                      max(0, int(round((cnt / max_count) * (len(_BARS) - 1)))))
+            bars_cells.append(f" {_BARS[idx]}")
+    bars = "  ".join(bars_cells)
+    return f"Rolls ({total} total): max={max_count}\n  {numbers}\n  {bars}"
+
+
 def render_histogram(stats: dict[str, Any], out_path) -> "Path":
     """Write a PNG bar chart of roll frequencies vs. expected 2d6.
 
