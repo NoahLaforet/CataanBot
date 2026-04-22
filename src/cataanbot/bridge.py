@@ -447,7 +447,14 @@ def _track_overlay_state(st, results) -> None:
 def _compute_robber_snapshot(
     game, display_colors: dict[str, str] | None = None, top: int = 5,
 ) -> list[dict[str, Any]] | None:
-    """Snapshot the top-N robber rankings for the overlay."""
+    """Snapshot the top-N robber rankings for the overlay.
+
+    Each target gets a ``suggested_victim`` color — the best single person
+    to steal from when the tile has more than one adjacent opposing
+    settlement/city. Scoring: card count dominates (biggest EV per steal,
+    more cards = more likely to hold a needed resource), but a near-win
+    opponent (VP≥6) gets boosted priority to deny them resources.
+    """
     from cataanbot.advisor import score_robber_targets
 
     sess = game.session
@@ -486,12 +493,32 @@ def _compute_robber_snapshot(
     except Exception:  # noqa: BLE001
         return None
     display = display_colors or {}
-    return [
-        {
+    out = []
+    for s in scores[:top]:
+        # Pick the best victim: card count dominates (best steal EV), VP
+        # pressure boosts near-winners, pip contribution is a small nudge.
+        def _victim_priority(vcolor: str) -> float:
+            cards = s.opponent_hand_size.get(vcolor, 0)
+            vp = s.victim_vp.get(vcolor, 0)
+            pips = s.victims.get(vcolor, 0)
+            vp_weight = 3.0 if vp >= 8 else (1.8 if vp >= 6 else 1.0)
+            return cards * vp_weight + pips * 0.3
+        suggested_color: str | None = None
+        if s.victims:
+            # Prefer a victim with >=1 card; all-empty-hands falls back to
+            # the highest priority anyway, which is fine.
+            with_cards = [
+                c for c in s.victims
+                if s.opponent_hand_size.get(c, 0) > 0
+            ]
+            pool = with_cards or list(s.victims.keys())
+            suggested_color = max(pool, key=_victim_priority)
+        out.append({
             "coord": list(s.coord),
             "resource": s.resource,
             "number": s.number,
             "score": round(s.score, 2),
+            "suggested_victim": suggested_color,
             "victims": [
                 {
                     "color": c,
@@ -500,13 +527,106 @@ def _compute_robber_snapshot(
                     "pips": pips,
                     "vp": s.victim_vp.get(c, 0),
                     "cards": s.opponent_hand_size.get(c, 0),
+                    "suggested": (c == suggested_color),
                 }
                 for c, pips in sorted(
                     s.victims.items(), key=lambda kv: -kv[1])
             ],
-        }
-        for s in scores[:top]
-    ]
+        })
+    return out
+
+
+def _compute_knight_hint(
+    game, display_colors: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Recommend whether to play a Knight dev card this turn.
+
+    Fires only when self has at least one KNIGHT in hand. The "should
+    play" logic weighs:
+        * Robber currently on one of self's tiles → urgent remove
+        * Top robber target score >= 4 → meaningful block
+        * An opp at 7+ VP with 2+ played knights → deny largest-army
+
+    Returns {have, should_play, reason, best_target} or None if self has
+    no Knight or we can't determine self color.
+    """
+    from catanatron import Color
+
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return None
+    username = sess.player_names.get(sess.self_color_id)
+    if not username:
+        return None
+    try:
+        color = game.color_map.get(username)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        my_enum = Color[color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+
+    state = game.tracker.game.state
+    idx = state.color_to_index.get(my_enum)
+    if idx is None:
+        return None
+    knight_in_hand = int(
+        state.player_state.get(f"P{idx}_KNIGHT_IN_HAND", 0))
+    if knight_in_hand <= 0:
+        return None
+
+    board = game.tracker.game.state.board
+    robber = board.robber_coordinate
+    # Robber currently blocking me? Find self buildings on the robber tile.
+    self_blocked_pips = 0
+    m = board.map
+    robber_tile = m.land_tiles.get(robber) if robber else None
+    if robber_tile is not None and robber_tile.number:
+        from cataanbot.advisor import PIP_DOTS_BY_NUMBER
+        robber_node_ids = set(robber_tile.nodes.values())
+        for nid, (bcol, _bt) in board.buildings.items():
+            if bcol != my_enum or int(nid) not in robber_node_ids:
+                continue
+            self_blocked_pips += PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
+
+    # Opp closing in on largest army? (>= 2 played knights, >= 7 VP)
+    largest_army_threat = False
+    for opp_color, opp_idx in state.color_to_index.items():
+        if opp_color == my_enum:
+            continue
+        played = int(state.player_state.get(
+            f"P{opp_idx}_PLAYED_KNIGHT", 0))
+        vp = int(state.player_state.get(
+            f"P{opp_idx}_VICTORY_POINTS", 0))
+        if played >= 2 and vp >= 7:
+            largest_army_threat = True
+            break
+
+    # Best robber target score (reuses the existing ranker).
+    top_targets = _compute_robber_snapshot(
+        game, display_colors=display_colors, top=1) or []
+    top_target = top_targets[0] if top_targets else None
+    top_score = float(top_target["score"]) if top_target else 0.0
+
+    should = False
+    reason = "hold — no urgent block"
+    if self_blocked_pips > 0:
+        should = True
+        reason = f"robber on your tile ({self_blocked_pips} pips blocked)"
+    elif largest_army_threat:
+        should = True
+        reason = "opp closing on largest army — break their tempo"
+    elif top_score >= 4.0:
+        should = True
+        reason = f"strong block available (score {top_score:+.1f})"
+
+    return {
+        "have": knight_in_hand,
+        "should_play": should,
+        "reason": reason,
+        "best_target": top_target,
+    }
 
 
 def _build_advisor_snapshot(st) -> dict[str, Any]:
@@ -529,6 +649,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "my_turn": False,
         "recommendations": [],
         "incoming_trade": None,
+        "knight_hint": None,
     }
     if not game.started:
         return snap
@@ -745,6 +866,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     if pending:
         snap["incoming_trade"] = _evaluate_pending_trade(
             st, game, self_color, hand, pending)
+    # Knight-card play-timing advice: only fires when self has >=1 KNIGHT
+    # in hand. Harmless to compute every snapshot; _compute_knight_hint
+    # bails out cheaply when nothing to say.
+    try:
+        snap["knight_hint"] = _compute_knight_hint(
+            game, display_colors=st.get("display_colors") or {})
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] knight_hint failed: {e!r}", flush=True)
     return snap
 
 
