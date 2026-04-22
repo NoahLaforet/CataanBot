@@ -208,9 +208,19 @@ def events_from_diff(
             continue
         if not isinstance(c, dict):
             continue
-        owner = c.get("owner")
         bt = c.get("buildingType")
-        if owner is None or bt not in (1, 2):
+        if bt not in (1, 2):
+            continue
+        # City upgrades ship as {"buildingType": 2} with no owner —
+        # colonist only includes owner in the diff when it actually
+        # changed. Fall back to the cached owner so the upgrade isn't
+        # dropped; otherwise the tracker stays on SETTLEMENT at that
+        # node and the recommender keeps suggesting "build city" on a
+        # corner that's already a city.
+        owner = c.get("owner")
+        if owner is None:
+            owner = sess.corner_owners.get(cid)
+        if owner is None:
             continue
         node_id = sess.mapping.node_id.get(cid)
         if node_id is None:

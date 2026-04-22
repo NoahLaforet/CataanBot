@@ -104,6 +104,27 @@ def test_diff_city_upgrade_emits_city_event():
     assert events[0].node_id == sess.mapping.node_id[pick_cid]
 
 
+def test_diff_city_upgrade_without_owner_falls_back_to_cached_owner():
+    """Colonist only ships the owner field when it actually changes. A
+    settlement→city upgrade keeps the same owner, so the diff arrives
+    as ``{"buildingType": 2}`` alone. Without a fallback to the cached
+    owner, the upgrade gets dropped and the tracker keeps showing
+    SETTLEMENT at that corner — which is how the recommender ends up
+    suggesting "build a city" on a node that's already a city."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    pick_cid = next(iter(sess.mapping.node_id))
+    events_from_diff(sess, {"mapState": {
+        "tileCornerStates": {
+            str(pick_cid): {"owner": 1, "buildingType": 1}}}})
+    # Upgrade ships without owner — the real colonist shape.
+    events = events_from_diff(sess, {"mapState": {
+        "tileCornerStates": {
+            str(pick_cid): {"buildingType": 2}}}})
+    assert [e.piece for e in events] == ["city"]
+    assert events[0].player == sess.player_for(1)
+    assert events[0].node_id == sess.mapping.node_id[pick_cid]
+
+
 def test_diff_road_becomes_build_event_with_edge_nodes():
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
     pick_eid = next(eid for eid in sess.mapping.edge_nodes
