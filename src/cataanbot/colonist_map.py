@@ -261,3 +261,105 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
         m.port_types[int(pid)] = int(p["type"])
 
     return m
+
+
+def build_catanatron_map_from_colonist(
+    map_state: dict[str, Any],
+    mapping: "MapMapping | None" = None,
+):
+    """Return a CatanMap that mirrors colonist's resource / dice / port layout.
+
+    We walk ``BASE_MAP_TEMPLATE.topology`` in iteration order and
+    hand-build the tile dict ourselves:
+
+    * For the 19 land coords, we use colonist's actual tile type + dice
+      number (``mapping.tile_types`` / ``mapping.tile_dice``). Iterating
+      them in template order preserves catanatron's 0..53 land node IDs,
+      so ``MapMapping.node_id`` / ``edge_nodes`` remain valid on the
+      returned map.
+    * For the 18 water-ring coords, we check each outward-facing direction
+      for a colonist port sitting on that edge (matched against
+      ``mapping.port_edges`` land-node pairs). Matches become
+      ``Port`` tiles with the right resource and direction; everything
+      else is plain ``Water``. This is critical: colonist and catanatron
+      place ports at *different* 9 edges of the water ring, so we can't
+      just reuse the template's port positions.
+
+    Result: ``yield_resources`` off catanatron's board produces the exact
+    payout the live game would, and port-adjacency queries see the real
+    port layout.
+    """
+    from catanatron.models.map import (
+        BASE_MAP_TEMPLATE, CatanMap, Direction, LandTile, Port, Water,
+        PORT_DIRECTION_TO_NODEREFS, UNIT_VECTORS, get_nodes_and_edges,
+    )
+
+    if mapping is None:
+        mapping = build_mapping(map_state)
+
+    hex_states = map_state.get("tileHexStates", {})
+    cube_to_colonist_tid = {
+        axial_to_cube(t["x"], t["y"]): int(tid)
+        for tid, t in hex_states.items()
+    }
+    pair_to_colonist_pid = {
+        pair: pid for pid, pair in mapping.port_edges.items()
+    }
+
+    tiles: dict[tuple[int, int, int], Any] = {}
+    node_autoinc = 0
+    tile_autoinc = 0
+    port_autoinc = 0
+
+    # Land tiles first — same order as BASE_MAP_TEMPLATE so the 0..53 land
+    # node IDs come out identical to what build_mapping saw.
+    for coord, tt in BASE_MAP_TEMPLATE.topology.items():
+        if tt is not LandTile:
+            continue
+        nodes, edges, node_autoinc = get_nodes_and_edges(
+            tiles, coord, node_autoinc)
+        col_tid = cube_to_colonist_tid.get(coord)
+        if col_tid is None:
+            raise MapMappingError(
+                f"colonist map missing land tile at {coord}")
+        type_int = mapping.tile_types[col_tid]
+        resource = tile_resource(type_int)
+        dice = mapping.tile_dice.get(col_tid, 0)
+        tiles[coord] = LandTile(
+            tile_autoinc, resource, dice if dice else None, nodes, edges)
+        tile_autoinc += 1
+
+    # Ring tiles: Port at the direction matching a colonist port edge,
+    # Water everywhere else. Ring positions themselves match catanatron's
+    # template (base Catan water ring is fixed); only port slots move.
+    for coord, tt in BASE_MAP_TEMPLATE.topology.items():
+        if tt is LandTile:
+            continue
+        nodes, edges, node_autoinc = get_nodes_and_edges(
+            tiles, coord, node_autoinc)
+
+        port_direction = None
+        port_pid = None
+        for direction in Direction:
+            nbr = tuple(c + v for c, v in zip(coord, UNIT_VECTORS[direction]))
+            nbr_tile = tiles.get(nbr)
+            if not isinstance(nbr_tile, LandTile):
+                continue
+            a_ref, b_ref = PORT_DIRECTION_TO_NODEREFS[direction]
+            pair = frozenset({nodes[a_ref], nodes[b_ref]})
+            pid = pair_to_colonist_pid.get(pair)
+            if pid is not None:
+                port_direction = direction
+                port_pid = pid
+                break
+
+        if port_direction is not None:
+            type_int = mapping.port_types[port_pid]
+            tiles[coord] = Port(
+                port_autoinc, port_resource(type_int),
+                port_direction, nodes, edges)
+            port_autoinc += 1
+        else:
+            tiles[coord] = Water(nodes, edges)
+
+    return CatanMap.from_tiles(tiles)
