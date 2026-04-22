@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.10.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.0 adds an incoming-trade panel: opponent's pending offer gets an accept/decline verdict with a one-line reason.
+// @version      0.10.1
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -151,12 +151,12 @@
 <style>
   :host, * { box-sizing: border-box; }
   .panel {
-    font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace;
+    font: 14px/1.4 ui-monospace, Menlo, Consolas, monospace;
     color: #e8e8e8;
     background: rgba(18, 18, 22, 0.94);
     border: 1px solid #2a2a32;
     border-radius: 6px;
-    width: 280px;
+    width: 340px;
     box-shadow: 0 6px 24px rgba(0,0,0,0.45);
     user-select: none;
   }
@@ -193,7 +193,7 @@
   .afford.none { color: #888; }
   .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
   .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
-  .opp { color: #ccc; font-size: 11px; }
+  .opp { color: #ccc; font-size: 13px; }
   .opp-hand { color: #b5c4d0; font-variant-numeric: tabular-nums; }
   .opp.tracked .opp-hand { color: #a4ef9c; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
@@ -230,7 +230,7 @@
   .rec.plan { opacity: 0.85; font-style: italic; }
   .rec.plan .kind { color: #a0c8f0; }
   /* Road-direction hint under an opening-settlement pick. */
-  .rec-sub { color: #9ad0b5; font-size: 11px;
+  .rec-sub { color: #9ad0b5; font-size: 13px;
              padding: 0 8px 3px 62px; opacity: 0.95; }
   .rec-sub .warn { color: #f0a57a; font-weight: 500; }
   .rec-sub .arrow { color: #7a9aa8; margin-right: 4px; }
@@ -238,7 +238,7 @@
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
   .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
-  .drift { color: #ff9999; margin: 2px 0; font-size: 11px; }
+  .drift { color: #ff9999; margin: 2px 0; font-size: 13px; }
   /* Incoming trade panel — pops up when an opponent makes an offer and
      vanishes on the next roll/commit. Verdict pill color signals the
      advice at a glance (green=accept, red=decline, muted=consider). */
@@ -249,9 +249,9 @@
   }
   .trade-offer .trade-h { color: #f0a57a; font-weight: 600;
                           margin-bottom: 2px; }
-  .trade-offer .trade-body { color: #d8d8d8; font-size: 11px;
+  .trade-offer .trade-body { color: #d8d8d8; font-size: 13px;
                              margin: 1px 0; }
-  .trade-offer .trade-reason { color: #aaa; font-size: 11px;
+  .trade-offer .trade-reason { color: #aaa; font-size: 13px;
                                font-style: italic; margin-top: 2px; }
   .trade-offer .verdict {
     display: inline-block; padding: 1px 6px; border-radius: 3px;

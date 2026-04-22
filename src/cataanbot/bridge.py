@@ -292,7 +292,8 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     stomp the file.
     """
     from cataanbot.events import (
-        GameOverEvent, RollEvent, TradeCommitEvent, TradeOfferEvent,
+        DevCardPlayEvent, GameOverEvent, RobberMoveEvent, RollEvent,
+        TradeCommitEvent, TradeOfferEvent,
     )
     from cataanbot.live import apply_event
     from cataanbot.parser import parse_event
@@ -328,6 +329,22 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         }
     elif isinstance(event, (TradeCommitEvent, RollEvent)):
         st["pending_trade_offer"] = None
+
+    # Robber ranking on Knight play. WS pipeline's _track_overlay_state
+    # already covers the 7-roll case, but DevCardPlayEvents only come
+    # through the DOM log, so we hook here. Clearing on RobberMoveEvent
+    # is redundant with the WS path but costs nothing and keeps us safe
+    # if colonist stops shipping the robber-move diff.
+    game = st.get("game")
+    if (isinstance(event, DevCardPlayEvent) and event.card == "knight"
+            and game is not None
+            and _is_self_player(game, event.player)):
+        st["robber_pending"] = True
+        st["robber_snapshot"] = _compute_robber_snapshot(
+            game, display_colors=st.get("display_colors") or {})
+    elif isinstance(event, RobberMoveEvent):
+        st["robber_pending"] = False
+        st["robber_snapshot"] = None
 
     if isinstance(event, GameOverEvent) and not st["pm_written"]:
         _write_postmortem(st, event)

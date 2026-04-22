@@ -527,6 +527,75 @@ def test_feed_postmortem_tracks_and_clears_trade_offer():
     assert st["pending_trade_offer"] is None
 
 
+def test_feed_postmortem_triggers_robber_on_self_knight():
+    """Playing a Knight should arm the robber-ranking panel the same
+    way rolling a 7 does. Opponent knights must NOT arm it — they pick
+    their own tile."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _feed_postmortem
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    assert sess.self_color_id is not None
+    self_user = sess.player_names[sess.self_color_id]
+    opp_user = next(
+        u for cid, u in sess.player_names.items()
+        if cid != sess.self_color_id and game.color_map.has(u))
+
+    def _knight_payload(player: str):
+        # Colonist logs a knight play as "X used [Knight]". Parser
+        # matches on the lowercase "knight" substring in the text.
+        return {
+            "text": f"{player} used Knight",
+            "parts": [
+                {"kind": "name", "name": player},
+                {"kind": "text", "text": "used"},
+                {"kind": "icon", "alt": "Knight"},
+            ],
+            "names": [{"name": player, "color": "rgb(200,200,200)"}],
+            "icons": [{"alt": "Knight"}],
+            "ts": 1.0,
+        }
+
+    def _fresh_st():
+        return {
+            "game": game,
+            "display_colors": {},
+            "pm_tracker": Tracker(),
+            "pm_color_map": ColorMap(),
+            "pm_events": [],
+            "pm_results": [],
+            "pm_timestamps": [],
+            "pm_written": False,
+            "pm_dir": None,
+            "pending_trade_offer": None,
+            "robber_pending": False,
+            "robber_snapshot": None,
+        }
+
+    # Opp knight — must not set robber_pending (we don't pick the tile).
+    st = _fresh_st()
+    _feed_postmortem(st, _knight_payload(opp_user))
+    assert st["robber_pending"] is False
+    assert st["robber_snapshot"] is None
+
+    # Self knight — arms robber panel.
+    st = _fresh_st()
+    _feed_postmortem(st, _knight_payload(self_user))
+    assert st["robber_pending"] is True
+    # Snapshot is best-effort; at minimum it should be a list (possibly
+    # empty on edge boards). None would mean the compute path errored.
+    assert st["robber_snapshot"] is not None
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""
