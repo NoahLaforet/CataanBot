@@ -93,3 +93,55 @@ def test_feed_midgame_capture_builds_and_rolls_apply():
     buildings = game.tracker.game.state.board.buildings
     assert len(buildings) >= 4, (
         f"expected at least the 4 initial settlements, got {len(buildings)}")
+
+
+def test_paid_builds_debit_costs_and_setup_is_free():
+    """First 2 settlements + 2 roads per color are free; subsequent
+    settlements/cities/roads should debit the standard build cost."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.events import BuildEvent
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    assert game.started
+
+    red = game.color_map.get("Alice" if game.color_map.has("Alice") else
+                             next(iter(game.color_map.as_dict())))
+    before = dict(game.tracker.hand(red))
+    # Pre-load enough cards to cover a settlement + a city + a road.
+    for res, n in (("WOOD", 2), ("BRICK", 2), ("SHEEP", 1),
+                   ("WHEAT", 3), ("ORE", 3)):
+        game.tracker.give(red, n, res)
+
+    # Simulate four settlement + two road BuildEvents: the first two
+    # settlements and two roads are the setup-phase placements (free).
+    username = game.color_map.reverse(red)
+    free_events = [
+        BuildEvent(player=username, piece="settlement", node_id=0),
+        BuildEvent(player=username, piece="road", edge_nodes=(0, 1)),
+        BuildEvent(player=username, piece="settlement", node_id=3),
+        BuildEvent(player=username, piece="road", edge_nodes=(3, 4)),
+    ]
+    paid_events = [
+        BuildEvent(player=username, piece="settlement", node_id=6),
+        BuildEvent(player=username, piece="road", edge_nodes=(6, 7)),
+        BuildEvent(player=username, piece="city", node_id=6),
+    ]
+    for ev in free_events + paid_events:
+        game._debit_build(ev)
+
+    after = game.tracker.hand(red)
+    # Paid settlement = W+B+Sh+Wh, paid road = W+B, city = 2Wh+3Ore.
+    # Net debit from paid builds only (setup was free).
+    expected_debit = {"WOOD": 2, "BRICK": 2, "SHEEP": 1,
+                      "WHEAT": 3, "ORE": 3}
+    for res, n in expected_debit.items():
+        got = before.get(res, 0) + n - after.get(res, 0)
+        assert got == n, (
+            f"{res}: expected debit of {n}, got {got} "
+            f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
