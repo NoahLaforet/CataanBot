@@ -674,34 +674,91 @@ def _fmt_trade_side(pack: dict[str, int]) -> str:
     return ", ".join(parts) if parts else "∅"
 
 
+def _trim_pack(pack: dict[str, int], target_total: int) -> dict[str, int]:
+    """Shrink ``pack`` down to ``target_total`` cards, dropping from the
+    largest bucket first. Buckets that hit zero are removed entirely so
+    the caller doesn't end up with ``{ORE: 0}`` noise."""
+    out = {r: int(n) for r, n in pack.items() if n > 0}
+    remaining = sum(out.values())
+    while remaining > target_total and out:
+        top = max(out, key=out.get)
+        out[top] -= 1
+        if out[top] <= 0:
+            del out[top]
+        remaining -= 1
+    return out
+
+
+def _suggest_counter_offer(
+    game, self_color, self_hand: dict[str, int],
+    give: dict[str, int], want: dict[str, int], *, opp_vp: int,
+) -> dict[str, Any] | None:
+    """Suggest a fairer version of an incoming offer.
+
+    The heuristic is intentionally narrow: trim ``want`` down to at most
+    the size of ``give`` (so the counter is at worst 1:1 in our favor)
+    and re-evaluate. If that subset turns into an "accept", surface it
+    as the counter. Anything else is noise — a counter we'd still
+    decline isn't worth proposing, and a counter the opponent would
+    obviously refuse (e.g. doubling ``give``) wastes a turn.
+
+    Returns ``{give, want, reason}`` or None.
+    """
+    want_total = sum(int(n) for n in want.values())
+    give_total = sum(int(n) for n in give.values())
+    if want_total <= give_total or want_total <= 1:
+        return None
+    counter_want = _trim_pack(want, give_total)
+    if not counter_want:
+        return None
+    sub = evaluate_incoming_trade(
+        game, self_color, self_hand, give, counter_want,
+        opp_vp=opp_vp, _allow_counter=False,
+    )
+    if sub.get("verdict") != "accept":
+        return None
+    return {
+        "give": dict(give),
+        "want": counter_want,
+        "reason": f"rebalance {want_total}→{sum(counter_want.values())} "
+                  f"for 1:1",
+    }
+
+
 def evaluate_incoming_trade(
     game, self_color, self_hand: dict[str, int],
     give: dict[str, int], want: dict[str, int],
-    *, opp_vp: int = 0,
+    *, opp_vp: int = 0, _allow_counter: bool = True,
 ) -> dict[str, Any]:
     """Rate an incoming player-to-player offer.
 
     The offerer proposes: they give ``give``, they want ``want``.
     From our seat, accepting means ``hand += give - want``.
 
-    Returns ``{verdict, score, reason, before, after}`` where:
+    Returns ``{verdict, score, reason, before, after, counter}`` where:
         verdict ∈ {"accept", "decline", "consider"}
         score   float — delta of best affordable-now rec before → after;
                 positive leans accept
         reason  short human-readable string for the overlay
         before  top "now" rec kind at current hand, or None
         after   top "now" rec kind after the swap, or None
+        counter {give, want, reason} suggestion for decline/consider
+                offers that rebalance into an accept, else None
 
     Affordability comes first — if we can't spare ``want``, auto-decline.
     Then we compare what's buildable this turn before and after the swap.
     A build unlocked → accept; a build lost → decline. Neutral deltas
     fall to a fairness check (giving more cards than we get) and an
     opp-close-to-win guard (VP≥8) before landing on "consider".
+
+    ``_allow_counter`` gates the counter-offer search; internal recursion
+    (from ``_suggest_counter_offer``) sets it False to avoid infinite
+    fan-out when a counter itself would spawn another counter.
     """
     if not want:
         return {"verdict": "consider", "score": 0.0,
                 "reason": "open offer — no ask", "before": None,
-                "after": None}
+                "after": None, "counter": None}
     for r, n in want.items():
         if self_hand.get(r, 0) < int(n):
             return {
@@ -710,11 +767,12 @@ def evaluate_incoming_trade(
                 "reason": f"can't spare {n} {_RES_TITLE.get(r, r.title())}",
                 "before": None,
                 "after": None,
+                "counter": None,
             }
     if not give:
         return {"verdict": "decline", "score": -10.0,
                 "reason": "they give nothing in return",
-                "before": None, "after": None}
+                "before": None, "after": None, "counter": None}
 
     new_hand = dict(self_hand)
     for r, n in want.items():
@@ -753,29 +811,44 @@ def evaluate_incoming_trade(
     kind_downgrade = (_KIND_RANK.get(after_kind, 0)
                       < _KIND_RANK.get(before_kind, 0))
 
+    # Counter is only meaningful on non-accept paths. Skip entirely when
+    # the opp is close to winning — any deal feeds them closer to 10 VP.
+    def _maybe_counter() -> dict[str, Any] | None:
+        if not _allow_counter or opp_vp >= _CLOSE_TO_WIN_VP:
+            return None
+        return _suggest_counter_offer(
+            game, self_color, self_hand, give, want, opp_vp=opp_vp,
+        )
+
     if kind_upgrade or delta >= 1.0:
         if opp_vp >= _CLOSE_TO_WIN_VP:
             return {"verdict": "decline", "score": delta,
                     "reason": f"opp at {opp_vp} VP — don't feed",
-                    "before": before_kind, "after": after_kind}
+                    "before": before_kind, "after": after_kind,
+                    "counter": None}
         label = after_kind or "build"
         return {"verdict": "accept", "score": delta,
                 "reason": f"unlocks {label} (+{delta:.1f})",
-                "before": before_kind, "after": after_kind}
+                "before": before_kind, "after": after_kind,
+                "counter": None}
     if kind_downgrade or delta <= -1.0:
         label = before_kind or "build"
         return {"verdict": "decline", "score": delta,
                 "reason": f"blocks {label} ({delta:.1f})",
-                "before": before_kind, "after": after_kind}
+                "before": before_kind, "after": after_kind,
+                "counter": _maybe_counter()}
     if want_total > give_total:
         return {"verdict": "decline", "score": delta,
                 "reason": f"lopsided — give {want_total}, "
                           f"get {give_total}",
-                "before": before_kind, "after": after_kind}
+                "before": before_kind, "after": after_kind,
+                "counter": _maybe_counter()}
     if opp_vp >= _CLOSE_TO_WIN_VP:
         return {"verdict": "decline", "score": delta,
                 "reason": f"opp at {opp_vp} VP — hold cards",
-                "before": before_kind, "after": after_kind}
+                "before": before_kind, "after": after_kind,
+                "counter": None}
     return {"verdict": "consider", "score": delta,
             "reason": "neutral swap",
-            "before": before_kind, "after": after_kind}
+            "before": before_kind, "after": after_kind,
+            "counter": _maybe_counter()}

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.10.1
+// @version      0.11.1
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -262,6 +262,35 @@
   .trade-offer .verdict.consider{ background: #404040; color: #ddd; }
   .trade-offer .swap-side { color: #b8c6d6; }
   .trade-offer .swap-arrow { color: #7a9aa8; margin: 0 4px; }
+  .trade-offer .counter {
+    margin-top: 4px; padding: 3px 6px; border-radius: 3px;
+    background: #1c2b34; border-left: 2px solid #7ac7e8;
+    font-size: 13px; color: #c8dde8;
+  }
+  .trade-offer .counter .counter-h {
+    color: #7ac7e8; font-weight: 600; margin-right: 4px;
+  }
+  .trade-offer .counter .counter-reason {
+    color: #8aa0ab; font-style: italic; margin-left: 4px;
+  }
+  .victim-top { color: #ffd36e; font-weight: 700; }
+  .knight-hint {
+    border: 1px solid #3a3a4a; border-radius: 4px;
+    padding: 4px 6px; margin: 6px 0 4px;
+    background: #1a1d24;
+  }
+  .knight-hint .kh-h {
+    color: #ffd36e; font-weight: 600; margin-bottom: 2px;
+  }
+  .knight-hint .kh-reason {
+    color: #d8d8d8; font-size: 13px; margin: 1px 0;
+  }
+  .knight-hint .kh-verdict {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-weight: 700; letter-spacing: 0.5px; margin-right: 4px;
+  }
+  .knight-hint .kh-verdict.play { background: #1e4d2b; color: #a4ef9c; }
+  .knight-hint .kh-verdict.hold { background: #404040; color: #ddd; }
   .muted { color: #888; }
   .err { color: #ff9999; }
 </style>
@@ -528,6 +557,23 @@
             parts.push('<div class="trade-reason">'
                 + `<span class="verdict ${verdictCls}">${verdictLabel}</span>`
                 + escapeHtml(t.reason || '') + '</div>');
+            if (t.counter) {
+                // Counter-offer is a fairer version we'd actually accept.
+                // Show give→want like the main offer so Noah can type it in.
+                parts.push('<div class="counter">'
+                    + '<span class="counter-h">counter:</span>'
+                    + '<span class="swap-side">ask '
+                    + escapeHtml(fmtSide(t.counter.give))
+                    + '</span><span class="swap-arrow">↔</span>'
+                    + '<span class="swap-side">for '
+                    + escapeHtml(fmtSide(t.counter.want))
+                    + '</span>'
+                    + (t.counter.reason
+                        ? `<span class="counter-reason">`
+                            + escapeHtml(t.counter.reason) + `</span>`
+                        : '')
+                    + '</div>');
+            }
             parts.push('</div>');
         }
         if (snap.last_roll) {
@@ -545,6 +591,30 @@
             parts.push(`<div class="roll ${lr.is_you ? 'you-rolled' : ''}">`
                 + `${who}</div>`);
         }
+        if (snap.knight_hint && snap.knight_hint.have > 0) {
+            // Standalone knight-play panel (separate from the active-robber
+            // ranking): fires whenever self holds a Knight so Noah knows
+            // whether to play it this turn.
+            const kh = snap.knight_hint;
+            const verdictCls = kh.should_play ? 'play' : 'hold';
+            const verdictLbl = kh.should_play ? 'PLAY' : 'HOLD';
+            let tail = '';
+            if (kh.best_target) {
+                const t = kh.best_target;
+                const tile = t.resource
+                    ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
+                    : 'DES';
+                const scoreTxt = (t.score > 0 ? '+' : '') + t.score;
+                tail = ` · top ${tile} (${scoreTxt})`;
+            }
+            parts.push('<div class="knight-hint">');
+            parts.push(`<div class="kh-h">knight card (×${kh.have})</div>`);
+            parts.push('<div class="kh-reason">'
+                + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + escapeHtml(kh.reason || '')
+                + escapeHtml(tail) + '</div>');
+            parts.push('</div>');
+        }
         if (snap.robber_pending && (snap.robber_targets || []).length) {
             parts.push('<div class="robber-h">robber targets</div>');
             parts.push('<table class="robber">');
@@ -556,10 +626,15 @@
                 const victims = (t.victims || []).map(v => {
                     const bg = v.color_css || COLOR_HEX[v.color] || '#888';
                     const fg = contrastText(bg);
+                    const star = v.suggested ? '★' : '';
                     const pill = `<span class="color-pill" style="background:${bg};`
-                        + `color:${fg};font-size:10px;">${
-                        escapeHtml((v.color || '?').slice(0, 1))}</span>`;
-                    return `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
+                        + `color:${fg};font-size:10px;${
+                            v.suggested ? 'outline:2px solid #ffd36e;' : ''
+                        }">${escapeHtml((v.color || '?').slice(0, 1))}</span>`;
+                    const label = `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
+                    return v.suggested
+                        ? `<span class="victim-top">${star}${label}</span>`
+                        : label;
                 }).join(' ') || '<span class="muted">—</span>';
                 parts.push(`<tr>`
                     + `<td>${i + 1}.</td>`

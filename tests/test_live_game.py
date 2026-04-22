@@ -596,6 +596,103 @@ def test_feed_postmortem_triggers_robber_on_self_knight():
     assert st["robber_snapshot"] is not None
 
 
+def test_compute_robber_snapshot_marks_suggested_victim():
+    """Each robber target should carry a suggested_victim color — the
+    best person to steal from. Preference order: card count dominates
+    (steal EV), VP pressure boosts near-winners, pips break ties."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_robber_snapshot
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    snap = _compute_robber_snapshot(game, display_colors={}, top=5)
+    assert snap is not None and len(snap) > 0
+    # Every target with victims must pick exactly one of those victims.
+    for target in snap:
+        victims = target["victims"]
+        if not victims:
+            continue
+        assert target["suggested_victim"] is not None, target
+        sv = target["suggested_victim"]
+        # The suggested color must appear in the victims list.
+        assert any(v["color"] == sv for v in victims), target
+        # Exactly one victim flagged suggested=True.
+        flagged = [v for v in victims if v.get("suggested")]
+        assert len(flagged) == 1, flagged
+        assert flagged[0]["color"] == sv
+
+
+def test_compute_knight_hint_none_when_no_knight():
+    """No Knight in hand → no hint (None). The overlay uses this to
+    hide the panel entirely."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_knight_hint
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    # Midgame capture is needed for self_color_id to latch (setup-only
+    # captures never see the first resourceCards frame).
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    assert sess.self_color_id is not None
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    idx = game.tracker.game.state.color_to_index[Color[color.upper()]]
+    # Force knight count to 0 — whatever the capture had, this is a
+    # clean "no knight" baseline.
+    game.tracker.game.state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 0
+    hint = _compute_knight_hint(game)
+    assert hint is None
+
+
+def test_compute_knight_hint_play_when_robber_blocks_self():
+    """Robber parked on one of our own production tiles → recommend
+    play, with reason mentioning the block."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_knight_hint
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names.get(sess.self_color_id)
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    idx = cat.state.color_to_index[my_enum]
+    # Give self a Knight so the hint fires.
+    cat.state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 1
+    # Park the robber on a tile adjacent to one of self's buildings.
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    assert self_nodes
+    robber_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    cat.state.board.robber_coordinate = robber_coord
+    hint = _compute_knight_hint(game)
+    assert hint is not None
+    assert hint["have"] == 1
+    assert hint["should_play"] is True
+    assert "your tile" in hint["reason"].lower() or "block" in hint["reason"].lower()
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""

@@ -732,3 +732,80 @@ def test_trade_decline_when_give_is_empty():
         give={}, want={"ORE": 1},
     )
     assert verdict["verdict"] == "decline"
+
+
+def test_trade_counter_suggested_on_lopsided_decline():
+    """Opp asks 1 Sheep for 2 Ore. Paying 2 Ore leaves us with 0 Ore — no
+    dev card. Paying 1 Ore (the counter) still lets us buy the dev card
+    AND adds a Sheep, so the counter should tip from decline to accept."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    # No buildable structures on current road net — only dev card matters.
+    # 2 Ore + 1 Wheat, no Sheep: one dev-card purchase away from affordable.
+    hand = {"WHEAT": 1, "ORE": 2}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"SHEEP": 1}, want={"ORE": 2},
+    )
+    assert verdict["verdict"] == "decline", verdict
+    assert verdict["counter"] is not None, verdict
+    counter = verdict["counter"]
+    assert counter["want"] == {"ORE": 1}
+    assert counter["give"] == {"SHEEP": 1}
+    assert "1:1" in counter["reason"]
+
+
+def test_trade_no_counter_when_opp_close_to_win():
+    """Don't offer a counter-trade when the opp is at 8+ VP — even a
+    balanced 1-for-1 feeds them toward the win."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    # Same dev-card setup as the lopsided-decline test, just with opp_vp=9.
+    hand = {"WHEAT": 1, "ORE": 2}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"SHEEP": 1}, want={"ORE": 2},
+        opp_vp=9,
+    )
+    assert verdict["verdict"] == "decline"
+    assert verdict["counter"] is None, verdict
+
+
+def test_trade_no_counter_when_accept_already():
+    """Already-accepted offers don't need a counter — the accept path
+    returns counter=None so the overlay doesn't show a redundant pill."""
+    from catanatron import Color
+
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "ORE": 2}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"SHEEP": 1}, want={"ORE": 1},
+    )
+    assert verdict["verdict"] == "accept"
+    assert verdict["counter"] is None
+
+
+def test_trade_no_counter_when_trimmed_still_bad():
+    """Counter only fires when the trimmed version flips to accept. A
+    swap that's neutral even after trimming should come back with no
+    counter (nothing to suggest)."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    # Neutral lopsided swap with no unlock potential: trimming want to
+    # give's size still doesn't produce a "this unlocks a build" swap.
+    hand = {"SHEEP": 3}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"WHEAT": 1}, want={"SHEEP": 2},
+    )
+    assert verdict["verdict"] == "decline"
+    assert verdict["counter"] is None, verdict
