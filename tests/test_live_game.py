@@ -339,6 +339,68 @@ def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
     assert hand["WOOD"] == 1, target
 
 
+def test_advisor_snapshot_clips_inferred_to_physical_supply():
+    """By conservation, bank + all hands = 19 per resource in base Catan.
+    When the tracker's inferred bucket for an opp would imply more of a
+    resource than is physically unclaimed (e.g., bank shows only 2 ORE
+    left and self holds 0, so the entire opp-pool for ORE is 2), the
+    snapshot must clip inferred[ORE] to that cap and surface the excess
+    as ``unknown`` rather than displaying an impossible count."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    assert game.session.self_color_id is not None
+
+    sess = game.session
+    opp_cid = next(
+        cid for cid in sess.player_names
+        if cid != sess.self_color_id
+        and game.color_map.has(sess.player_names[cid]))
+    opp_user = sess.player_names[opp_cid]
+    opp_color = game.color_map.get(opp_user)
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = game.color_map.get(self_user)
+
+    # Directly manipulate state to simulate a tracker desync: bank shows
+    # 17 ORE (only 2 unclaimed across all opps), self holds 0 ORE, but
+    # the tracker attributed 5 ORE to this opp — physically impossible
+    # per conservation (17 + 0 + 5 + ... would exceed 19).
+    state = game.tracker.game.state
+    from catanatron.state import RESOURCES
+    ore_idx = RESOURCES.index("ORE")
+    state.resource_freqdeck[ore_idx] = 17
+    self_idx = state.color_to_index[game.tracker._color(self_color)]
+    state.player_state[f"P{self_idx}_ORE_IN_HAND"] = 0
+    opp_idx = state.color_to_index[game.tracker._color(opp_color)]
+    state.player_state[f"P{opp_idx}_ORE_IN_HAND"] = 5
+    # Pad the real hand count so the physical-supply clip runs before
+    # the over-attribution trim (inferred_total stays ≤ real_total).
+    sess.hand_card_counts[opp_cid] = 20
+
+    st = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    target = next(o for o in snap["opps"] if o["username"] == opp_user)
+    # Cap = max(0, 19 - bank_ore - self_ore) = 19 - 17 - 0 = 2.
+    # Inferred must never exceed what physically remains in the opp pool.
+    assert target["hand"]["ORE"] <= 2, target
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""
