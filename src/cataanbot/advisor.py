@@ -238,13 +238,21 @@ def _vp_weight(vp: int) -> float:
     return 1.0 + 0.4 * max(0, vp - 3)
 
 
-def score_robber_targets(game: "Game", my_color: str) -> list[RobberScore]:
+def score_robber_targets(
+    game: "Game", my_color: str,
+    hand_size_override: dict[str, int] | None = None,
+) -> list[RobberScore]:
     """Rank every land tile (except where the robber is now) for blocking value.
 
     Score is `opponent_pips_blocked - own_pips_blocked`, where a settlement
     on an adjacent node contributes 1× the tile's pip dots and a city
     contributes 2×. The desert (no number) scores 0 but is still a valid
     "unblock yourself" target if the robber is currently hurting you.
+
+    ``hand_size_override`` replaces the catanatron-derived opponent hand
+    sizes on a per-color basis. The live bridge passes in the WS-derived
+    card counts, which are ground truth even when per-resource tracking
+    has drifted (trades, steals, discards we didn't fully see).
     """
     from catanatron import Color
     from catanatron.state import RESOURCES
@@ -266,6 +274,9 @@ def score_robber_targets(game: "Game", my_color: str) -> list[RobberScore]:
         vp_by_color[color.name] = int(
             state.player_state.get(f"P{idx}_VICTORY_POINTS", 0)
         )
+    if hand_size_override:
+        for c, n in hand_size_override.items():
+            hand_sizes[c.upper()] = int(n)
 
     results: list[RobberScore] = []
     for coord, tile in m.land_tiles.items():

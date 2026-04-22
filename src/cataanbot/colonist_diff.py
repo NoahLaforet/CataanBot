@@ -84,6 +84,14 @@ class LiveSession:
     # don't need to know the type, just that a purchase happened and the
     # hand should be debited 1 WHEAT + 1 SHEEP + 1 ORE.
     dev_card_counts: dict[int, int] = field(default_factory=dict)
+    # cid → current resource-card count for every player. For the self-
+    # player this is the authoritative total. For opponents it's ground
+    # truth on hand SIZE even though the per-resource breakdown is
+    # hidden (colonist zero-fills the cards array for privacy). Used by
+    # the robber advisor to rank steal EV by victim hand size without
+    # depending on catanatron's per-resource tracking, which drifts low
+    # when unseen events (trades, steals, discards we miss) fire.
+    hand_card_counts: dict[int, int] = field(default_factory=dict)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -321,6 +329,10 @@ def _hand_sync_events(
             cid = int(cid_str)
         except (TypeError, ValueError):
             continue
+        # Hand size is authoritative for everyone — latch it regardless
+        # of whether we can resolve the per-resource breakdown.
+        sess.hand_card_counts[cid] = sum(
+            1 for c in cards if isinstance(c, int))
         has_real = any(int(c) != 0 for c in cards if isinstance(c, int))
         if has_real and sess.self_color_id is None:
             sess.self_color_id = cid
