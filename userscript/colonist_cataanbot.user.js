@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.7.0
+// @version      0.7.2
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.7 adds an in-page advisor overlay that polls /advisor for self hand + buildability + robber rankings.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -76,6 +76,10 @@
         });
     }
 
+    // Fallback pill colors for the catanatron 4-enum. Used only when
+    // the bridge hasn't yet harvested a CSS color for the player from
+    // the chat log — which happens for the first few WS frames of a
+    // game before the first log line shows up.
     const COLOR_HEX = {
         RED: '#e8715f', BLUE: '#4aa7d4', ORANGE: '#e29a4a',
         WHITE: '#f0f0f0', GREEN: '#7ac74f', BROWN: '#a07045',
@@ -84,14 +88,61 @@
         WOOD: 'Wd', BRICK: 'Br', SHEEP: 'Sh', WHEAT: 'Wh', ORE: 'Or',
     };
 
-    function mountOverlay() {
-        if (document.getElementById('cataanbot-overlay-host')) return;
-        if (!document.body) {
-            window.addEventListener(
-                'DOMContentLoaded', mountOverlay, { once: true });
-            return;
+    // Pick the best available pill color. Prefer the CSS color the
+    // chat-pill shipped (true colonist UI color, including premium
+    // unlocks like black), fall back to the catanatron enum mapping.
+    function pillColor(player) {
+        if (player && player.color_css) return player.color_css;
+        if (player && player.color) return COLOR_HEX[player.color] || '#888';
+        return '#888';
+    }
+
+    // Return readable text color (black or white) for a given bg.
+    function contrastText(css) {
+        // Best-effort parse. RGB/RGBA or hex.
+        const c = String(css || '').trim();
+        let r, g, b;
+        let m = c.match(/^#([0-9a-f]{3})$/i);
+        if (m) {
+            r = parseInt(m[1][0] + m[1][0], 16);
+            g = parseInt(m[1][1] + m[1][1], 16);
+            b = parseInt(m[1][2] + m[1][2], 16);
+        } else {
+            m = c.match(/^#([0-9a-f]{6})$/i);
+            if (m) {
+                r = parseInt(m[1].slice(0, 2), 16);
+                g = parseInt(m[1].slice(2, 4), 16);
+                b = parseInt(m[1].slice(4, 6), 16);
+            } else {
+                m = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+                if (m) {
+                    r = +m[1]; g = +m[2]; b = +m[3];
+                } else {
+                    return '#111';
+                }
+            }
         }
-        const host = document.createElement('div');
+        // Perceived brightness; threshold picked so mid-blue → white text.
+        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        return luma > 140 ? '#111' : '#fff';
+    }
+
+    function mountOverlay() {
+        if (!document.body) return null;
+        let host = document.getElementById('cataanbot-overlay-host');
+        if (host && host.shadowRoot) {
+            // Already mounted (e.g. via a re-entry path). Rewire the
+            // ui handle so callers can still drive renders.
+            const root = host.shadowRoot;
+            return {
+                host,
+                panel: root.getElementById('panel'),
+                body: root.getElementById('body'),
+                content: root.getElementById('content'),
+                dot: root.getElementById('dot'),
+            };
+        }
+        host = document.createElement('div');
         host.id = 'cataanbot-overlay-host';
         host.style.cssText = 'position:fixed;top:12px;right:12px;'
             + 'z-index:2147483647;pointer-events:auto;';
@@ -216,10 +267,11 @@
         const parts = [];
         const me = snap.self;
         if (me) {
-            const pill = `<span class="color-pill" style="background:${
-                COLOR_HEX[me.color] || '#888'};">${me.color}</span>`;
+            const bg = pillColor(me);
+            const fg = contrastText(bg);
+            const pill = `<span class="color-pill" style="background:${bg};`
+                + `color:${fg};">${escapeHtml(me.username)}</span>`;
             parts.push(`<div class="you">${pill}`
-                + ` <b>${escapeHtml(me.username)}</b>`
                 + ` <span class="muted">${me.cards}c · ${me.vp} VP</span></div>`);
             const hand = Object.entries(me.hand || {})
                 .filter(([, n]) => n > 0)
@@ -235,10 +287,12 @@
             parts.push('<div class="hr"></div>');
             parts.push('<div class="opps">');
             for (const o of snap.opps) {
-                const pill = `<span class="color-pill" style="background:${
-                    COLOR_HEX[o.color] || '#888'};">${o.color}</span>`;
+                const bg = pillColor(o);
+                const fg = contrastText(bg);
+                const pill = `<span class="color-pill" style="background:${bg};`
+                    + `color:${fg};">${escapeHtml(o.username)}</span>`;
                 parts.push(`<div class="opp">${pill}`
-                    + ` ${o.cards}c · ${o.vp}VP</div>`);
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP</span></div>`);
             }
             parts.push('</div>');
         }
@@ -259,9 +313,11 @@
                     ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
                     : 'DES';
                 const victims = (t.victims || []).map(v => {
-                    const pill = `<span class="color-pill" style="background:${
-                        COLOR_HEX[v.color] || '#888'};font-size:10px;">${
-                        v.color.slice(0, 1)}</span>`;
+                    const bg = v.color_css || COLOR_HEX[v.color] || '#888';
+                    const fg = contrastText(bg);
+                    const pill = `<span class="color-pill" style="background:${bg};`
+                        + `color:${fg};font-size:10px;">${
+                        escapeHtml((v.color || '?').slice(0, 1))}</span>`;
                     return `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
                 }).join(' ') || '<span class="muted">—</span>';
                 parts.push(`<tr>`
@@ -282,14 +338,23 @@
     }
 
     function startAdvisorPoll() {
-        const ui = mountOverlay();
+        let ui = mountOverlay();
         if (!ui) {
-            setTimeout(startAdvisorPoll, 500);
+            // document.body not there yet — @run-at document-start fires
+            // before the DOM is built on colonist. Keep retrying; every
+            // tick is cheap and mountOverlay is idempotent once the host
+            // exists.
+            setTimeout(startAdvisorPoll, 200);
             return;
         }
         let lastSeq = -1;
         let lastSnap = null;
         const tick = () => {
+            // Re-grab the ui handle every tick in case the host element
+            // got nuked (colonist occasionally wipes the DOM between
+            // lobby and game views). mountOverlay is a no-op if already
+            // present, a full rebuild if not.
+            ui = mountOverlay() || ui;
             getJson(BRIDGE_ADVISOR_URL).then((snap) => {
                 if (snap && snap.seq !== lastSeq) {
                     lastSeq = snap.seq;

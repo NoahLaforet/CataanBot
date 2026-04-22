@@ -86,3 +86,33 @@ def test_feed_postmortem_without_game_over_writes_nothing(tmp_path: Path):
     ))
     assert list(tmp_path.glob("*.html")) == []
     assert st["pm_written"] is False
+
+
+def test_harvest_display_colors_latches_first_css_color():
+    from cataanbot.bridge import _harvest_display_colors
+
+    st = {"display_colors": {}}
+    _harvest_display_colors(st, {
+        "names": [
+            {"name": "Alice", "color": "rgb(232, 113, 95)"},
+            {"name": "Bob",   "color": "#121214"},
+        ],
+    })
+    assert st["display_colors"] == {
+        "Alice": "rgb(232, 113, 95)",
+        "Bob": "#121214",
+    }
+
+    # Later appearances don't overwrite — first color wins.
+    _harvest_display_colors(st, {
+        "names": [{"name": "Alice", "color": "rgb(1,2,3)"}],
+    })
+    assert st["display_colors"]["Alice"] == "rgb(232, 113, 95)"
+
+    # Empty / missing colors are skipped.
+    _harvest_display_colors(st, {
+        "names": [{"name": "Cara", "color": ""},
+                  {"name": "Dana"}],
+    })
+    assert "Cara" not in st["display_colors"]
+    assert "Dana" not in st["display_colors"]

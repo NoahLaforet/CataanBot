@@ -98,6 +98,12 @@ def _build_app(jsonl_path: Path | None = None,
         "pm_timestamps": [],
         "pm_written": False,
         "pm_dir": postmortem_dir,
+        # username → CSS color harvested from DOM-log name pills. The
+        # WS gameState only ships an opaque integer color id (and the
+        # colonist palette includes premium unlocks like BLACK that
+        # don't map onto catanatron's 4-color enum), so the chat log is
+        # our source of truth for what color the user actually sees.
+        "display_colors": {},
     }
 
     @app.get("/")
@@ -117,6 +123,7 @@ def _build_app(jsonl_path: Path | None = None,
     def log(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         st["log_count"] += 1
         st["seq"] += 1
+        _harvest_display_colors(st, payload)
         _print_event(payload, st["log_count"])
         if jsonl_path is not None:
             with jsonl_path.open("a") as f:
@@ -173,6 +180,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["pm_results"] = []
         st["pm_timestamps"] = []
         st["pm_written"] = False
+        st["display_colors"] = {}
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -234,6 +242,28 @@ def _print_game_start(game) -> None:
     print(f"    map: {len(board.map.land_tiles)} land tiles, "
           f"robber at {board.robber_coordinate}", flush=True)
     print()
+
+
+def _harvest_display_colors(st, payload: dict[str, Any]) -> None:
+    """Pull {name, color} pairs out of a /log payload and latch them.
+
+    Colonist's chat pills carry the player's true UI color in a CSS
+    ``style="color: rgb(...)"`` attribute. The userscript captures this
+    as ``names: [{name, color}]`` on each payload. Cache the first
+    non-empty color per username — once someone shows up in the log
+    we know what color they are for the rest of the game."""
+    names = payload.get("names")
+    if not isinstance(names, list):
+        return
+    for entry in names:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        color = entry.get("color")
+        if (isinstance(name, str) and name
+                and isinstance(color, str) and color.strip()
+                and name not in st["display_colors"]):
+            st["display_colors"][name] = color.strip()
 
 
 def _feed_postmortem(st, payload: dict[str, Any]) -> None:
@@ -351,7 +381,8 @@ def _track_overlay_state(st, results) -> None:
             }
             if r.event.total == 7 and is_you:
                 st["robber_pending"] = True
-                st["robber_snapshot"] = _compute_robber_snapshot(game)
+                st["robber_snapshot"] = _compute_robber_snapshot(
+                    game, display_colors=st["display_colors"])
             elif r.event.total == 7:
                 # Opponent rolled 7 — you don't pick, clear any stale
                 # overlay ranking from a prior self-roll if somehow still set.
@@ -364,7 +395,9 @@ def _track_overlay_state(st, results) -> None:
             st["robber_snapshot"] = None
 
 
-def _compute_robber_snapshot(game, top: int = 5) -> list[dict[str, Any]] | None:
+def _compute_robber_snapshot(
+    game, display_colors: dict[str, str] | None = None, top: int = 5,
+) -> list[dict[str, Any]] | None:
     """Snapshot the top-N robber rankings for the overlay."""
     from cataanbot.advisor import score_robber_targets
 
@@ -378,6 +411,14 @@ def _compute_robber_snapshot(game, top: int = 5) -> list[dict[str, Any]] | None:
         color = game.color_map.get(username)
     except Exception:  # noqa: BLE001
         return None
+    # catanatron-color → username, so the victim pills can surface the
+    # real colonist UI color for the robber ranking.
+    reverse = {}
+    for cid, user in sess.player_names.items():
+        try:
+            reverse[game.color_map.get(user)] = user
+        except Exception:  # noqa: BLE001
+            continue
     hand_size_override: dict[str, int] = {}
     for cid, count in sess.hand_card_counts.items():
         user = sess.player_names.get(cid)
@@ -395,6 +436,7 @@ def _compute_robber_snapshot(game, top: int = 5) -> list[dict[str, Any]] | None:
         )
     except Exception:  # noqa: BLE001
         return None
+    display = display_colors or {}
     return [
         {
             "coord": list(s.coord),
@@ -404,6 +446,8 @@ def _compute_robber_snapshot(game, top: int = 5) -> list[dict[str, Any]] | None:
             "victims": [
                 {
                     "color": c,
+                    "color_css": display.get(reverse.get(c, "")),
+                    "username": reverse.get(c),
                     "pips": pips,
                     "vp": s.victim_vp.get(c, 0),
                     "cards": s.opponent_hand_size.get(c, 0),
@@ -463,6 +507,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     snap["self"] = {
         "username": username,
         "color": self_color,
+        "color_css": st["display_colors"].get(username),
         "hand": hand,
         "cards": cards,
         "afford": afford,
@@ -481,6 +526,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["opps"].append({
             "username": user,
             "color": c,
+            "color_css": st["display_colors"].get(user),
             "cards": int(count),
             "vp": _get_vp(game, c),
         })
