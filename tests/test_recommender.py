@@ -170,6 +170,54 @@ def test_now_ranks_above_equal_score_soon():
     assert out[0]["when"] == "now"
 
 
+def test_bank_trade_suggests_when_one_card_short():
+    """{WOOD:5, BRICK:1, SHEEP:0, WHEAT:1} is 1 Sheep short of a
+    settlement. 4:1 bank trade on Wood should be suggested."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    hand = {"WOOD": 5, "BRICK": 1, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=6)
+    trades = [r for r in out if r["kind"] == "trade"]
+    assert trades, f"expected a trade rec, got {[r['kind'] for r in out]}"
+    t = trades[0]
+    assert t["get"] == {"SHEEP": 1}
+    assert t["give"] == {"WOOD": 4}
+    assert t["unlocks"] == "settlement"
+    assert t["when"] == "now"
+
+
+def test_no_bank_trade_when_two_cards_short():
+    """Two missing cards → bank trade would require 2×4 = 8 cards for
+    a 1-card-cost building. Not worth it; no trade rec."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    hand = {"WOOD": 8, "BRICK": 0, "SHEEP": 0, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=6)
+    trades = [r for r in out if r["kind"] == "trade"]
+    assert not trades, f"no trade expected, got {trades}"
+
+
+def test_trade_protects_resources_still_needed():
+    """If we're 1 Sheep short of a settlement but only have exactly
+    1 Wheat (also needed for the settlement), we must NOT trade away
+    that Wheat — it'd leave us blocked on Wheat after the trade."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    # WOOD 1 + BRICK 1 + WHEAT 1 + no SHEEP. We have no stockpile of
+    # an unneeded resource, so no trade source exists → no trade.
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=6)
+    trades = [r for r in out if r["kind"] == "trade"]
+    assert not trades, f"should not trade away a needed resource: {trades}"
+
+
 def test_city_scores_higher_than_dev_card():
     """Upgrading a settlement to a city is strictly better than a
     random dev card at the same affordable-turn, so it should always

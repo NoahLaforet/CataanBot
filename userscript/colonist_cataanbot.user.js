@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.3
+// @version      0.8.4
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.1 adds quality-banded 1-10 scoring on recommendations, hand-drift warning, and disconnect-survivable hand resync.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -333,6 +333,7 @@
                     city: 'city',
                     road: 'road',
                     dev_card: 'dev card',
+                    trade: 'trade',
                 }[r.kind] || r.kind;
                 // Tile trio is the human-readable locator — catanatron
                 // node IDs like "@12" mean nothing visually on the board.
