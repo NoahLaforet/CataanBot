@@ -522,6 +522,73 @@ def _best_trade_offer(hand: dict[str, int], need_resource: str,
     return (best[0], best[1])
 
 
+def _owned_port_nodes(game, c) -> set[int]:
+    """Return the set of node_ids where color ``c`` sits on a port
+    corner — i.e. has any settlement or city on a port node. Used to
+    gate port sell rates in ``_sell_rate``."""
+    port_nodes = set()
+    m = game.state.board.map
+    for resource_key, nodes in m.port_nodes.items():
+        port_nodes |= set(nodes)
+    out: set[int] = set()
+    for nid, (bcol, btype) in game.state.board.buildings.items():
+        if bcol == c and btype in ("SETTLEMENT", "CITY"):
+            out.add(int(nid))
+    return out & port_nodes
+
+
+def _plan_bank_trades(hand: dict[str, int], cost: dict[str, int],
+                      owned_nodes: set[int],
+                      port_nodes,
+                      bank_supply: dict[str, int] | None = None,
+                      ) -> list[tuple[str, int, str]] | None:
+    """Plan a sequence of port/bank trades that makes ``cost`` affordable.
+
+    Returns a list of ``(source_resource, rate, target_resource)`` tuples
+    if the build is reachable via trades this turn, else None. Greedy by
+    cheapest rate: we always pay the fewest cards per missing card.
+
+    ``bank_supply`` (when given) caps trades — if the bank has 0 of a
+    needed resource the trade won't land at the window, so we fail the
+    plan rather than emit an undoable rec.
+    """
+    available = dict(hand)
+    needs: dict[str, int] = {}
+    for r, n in cost.items():
+        have = available.get(r, 0)
+        if have >= n:
+            available[r] = have - n
+        else:
+            available[r] = 0
+            needs[r] = n - have
+    if not needs:
+        return []
+    trades: list[tuple[str, int, str]] = []
+    for need_res, need_count in needs.items():
+        for _ in range(need_count):
+            if bank_supply is not None and bank_supply.get(need_res, 0) <= 0:
+                return None
+            best_src: str | None = None
+            best_rate = 99
+            for src, surplus in available.items():
+                if src == need_res or surplus <= 0:
+                    continue
+                rate = _sell_rate(src, owned_nodes, port_nodes)
+                if surplus < rate:
+                    continue
+                if rate < best_rate:
+                    best_src, best_rate = src, rate
+            if best_src is None:
+                return None
+            available[best_src] -= best_rate
+            trades.append((best_src, best_rate, need_res))
+            if bank_supply is not None:
+                bank_supply = dict(bank_supply)
+                bank_supply[need_res] = max(
+                    0, bank_supply.get(need_res, 0) - 1)
+    return trades
+
+
 def _hand_can_afford(hand: dict[str, int], cost: dict[str, int]) -> bool:
     return all(hand.get(r, 0) >= n for r, n in cost.items())
 
@@ -539,6 +606,27 @@ _RES_TITLE = {
     "WOOD": "Wood", "BRICK": "Brick", "SHEEP": "Sheep",
     "WHEAT": "Wheat", "ORE": "Ore",
 }
+
+# Human-friendly labels for rec kinds — used anywhere a `kind` key gets
+# rendered into overlay text. Without this, raw snake_case identifiers
+# like "dev_card" and "propose_trade" leak into detail strings and read
+# as Python variable names to the user.
+_KIND_LABEL = {
+    "settlement": "settlement",
+    "city": "city",
+    "road": "road",
+    "dev_card": "dev card",
+    "trade": "trade",
+    "propose_trade": "trade proposal",
+    "bank_trade": "port trade",
+    "opening_settlement": "settlement",
+}
+
+
+def _kind_label(kind: str | None) -> str:
+    if not kind:
+        return "build"
+    return _KIND_LABEL.get(kind, kind.replace("_", " "))
 
 
 def _missing_for(hand: dict[str, int],
@@ -568,6 +656,8 @@ def _tile_label(m, node_id: int) -> list[tuple[str, int | None]]:
 
 def recommend_actions(
     game, color, hand: dict[str, int], *, top: int = 4,
+    opp_hands: dict[str, dict[str, int]] | None = None,
+    bank_supply: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Rank what to do with the current hand.
 
@@ -757,80 +847,223 @@ def recommend_actions(
                            f"· knight / VP / road / YoP / mono"),
             })
 
-    # --- Trade proposals -------------------------------------------------
-    # If a build is blocked by exactly 1 missing card and we're sitting
-    # on any spare resource, float a 1:1 propose_trade so Noah knows to
-    # open the trade UI. Score matches the unlocked build minus a small
-    # "proposal might be rejected" penalty so a direct build edges ahead.
-    # (kind, cost, score_fn, target_fn).
-    # ``target_fn`` returns (node_id, prod) for location-linked builds
-    # or ``None`` for dev card (no node, fixed score).
+    # --- Bank / port trade unlocks --------------------------------------
+    # When a build is missing cards but the player has enough spare
+    # cards to pay through a 2:1 port, 3:1 port, or 4:1 bank, emit a
+    # concrete trade rec that completes the build. This is the rec the
+    # user asked for when they said "I have tons of ore and a 2:1 port
+    # but the bot won't tell me to trade for a settlement".
+    #
+    # Skipped when bank_supply signals 0 of the needed resource — a
+    # bank/port trade against an empty pool is a no-op in colonist.
+    port_nodes_map = m.port_nodes
+    my_owned_nodes: set[int] = set()
+    for nid, (bcol, btype) in game.state.board.buildings.items():
+        if bcol == c and btype in ("SETTLEMENT", "CITY"):
+            my_owned_nodes.add(int(nid))
+
+    def _resource_title(r: str) -> str:
+        return _RES_TITLE.get(r, r.title())
+
+    def _fmt_pack(pack: dict[str, int]) -> str:
+        return ", ".join(f"{n} {_resource_title(r)}"
+                         for r, n in pack.items() if n)
+
+    def _collapse_trade_plan(plan: list[tuple[str, int, str]]) -> tuple[
+            dict[str, int], dict[str, int], str]:
+        """Collapse a multi-step port plan into net give/get packs plus a
+        human description."""
+        give: dict[str, int] = {}
+        get: dict[str, int] = {}
+        steps: list[str] = []
+        for src, rate, tgt in plan:
+            give[src] = give.get(src, 0) + rate
+            get[tgt] = get.get(tgt, 0) + 1
+            steps.append(f"{rate} {_resource_title(src)} → "
+                         f"1 {_resource_title(tgt)}")
+        return give, get, " + ".join(steps)
+
+    # Roads deliberately left out: they're cheap (2 cards) and their
+    # value depends on *where* they'd extend — trading for a generic
+    # road with no target node produces a suggestion Noah can't act on.
+    # Settlement / city / dev-card trades unlock concrete, high-value
+    # moves, so those are the ones worth surfacing.
     _trade_targets = [
         ("settlement", _SETTLEMENT_COST, _score_settlement,
          _best_settlement_spot),
         ("city",       _CITY_COST,       _score_city,
          _best_owned_settlement),
         ("dev_card",   _DEV_COST,        lambda _p: _DEV_CARD_SCORE,
-         lambda: None),
+         None),
     ]
     for kind, cost, score_fn, target_fn in _trade_targets:
         if _hand_can_afford(hand, cost):
             continue
-        missing = _missing_for(hand, cost)
-        if sum(missing.values()) != 1:
-            continue  # Multi-trade plans get too expensive to be useful.
-        need_res = next(iter(missing))
-        # Prefer a 1:1 player-trade proposal first — cheaper than any
-        # bank/port rate, and colonist lets us broadcast to the table.
-        # A spare surplus (anything beyond the build's own cost) is
-        # enough to make a fair 1:1 offer worth floating. Pick the
-        # source with the largest surplus so we're parting with the
-        # most dispensable card.
-        propose_source: str | None = None
-        propose_surplus = 0
-        for res, n in hand.items():
-            if res == need_res:
-                continue
-            excess = n - cost.get(res, 0)
-            if excess >= 1 and excess > propose_surplus:
-                propose_source = res
-                propose_surplus = excess
-        target = target_fn()
-        if kind == "dev_card":
-            node_or_none, prod = None, 0.0
-        elif target is None:
+        plan = _plan_bank_trades(
+            hand, cost, my_owned_nodes, port_nodes_map,
+            bank_supply=bank_supply)
+        if not plan:
             continue
-        else:
+        node_or_none: int | None = None
+        prod = 0.0
+        if target_fn is not None:
+            target = target_fn()
+            if target is None:
+                continue
             node_or_none, prod = target
         base_score = score_fn(prod)
-        if propose_source is None:
-            # No spare card to offer — no trade rec for this build. Bank
-            # trades are strictly dominated by the 1:1 propose whenever
-            # propose is possible, so there's no useful fallback here.
-            continue
-        # Player trade is cheaper (1:1) but not guaranteed to land —
-        # smaller penalty than bank, still below a direct build.
-        propose_score = round(min(base_score - 0.3, 9.5), 1)
-        rec = {
-            "kind": "propose_trade",
+        give, get, steps = _collapse_trade_plan(plan)
+        # Bank trades guarantee their result (vs. propose_trade which may
+        # not land), but cost more cards. Score 1.0 below the direct
+        # build so affording-now stays the top pick when possible.
+        rate_sum = sum(r for _, r, _ in plan)
+        trade_score = round(min(max(base_score - 1.0, 2.0), 9.0), 1)
+        label_word = _kind_label(kind)
+        rec: dict[str, Any] = {
+            "kind": "bank_trade",
             "when": "now",
-            "score": propose_score,
-            "give": {propose_source: 1},
-            "get": {need_res: 1},
+            "score": trade_score,
+            "give": give,
+            "get": get,
             "unlocks": kind,
-            "detail": (f"propose 1 "
-                       f"{_RES_TITLE.get(propose_source, propose_source)} "
-                       f"→ 1 {_RES_TITLE.get(need_res, need_res)} "
-                       f"· ask the table · unlocks {kind}"),
+            "detail": (f"{steps} · then build {label_word}"
+                       if len(plan) == 1
+                       else f"trade {_fmt_pack(give)} → {_fmt_pack(get)} "
+                            f"({rate_sum} cards) · then build {label_word}"),
         }
         if node_or_none is not None:
             rec["node_id"] = int(node_or_none)
             rec["tiles"] = _tile_label(m, int(node_or_none))
         recs.append(rec)
-        # One trade suggestion per turn is plenty — don't flood the
-        # overlay. The highest-impact one (settlement > city > dev)
-        # wins by virtue of being considered first.
+        # One port/bank trade per rec cycle keeps the overlay focused on
+        # the single best unlock path. Higher-priority builds win by
+        # virtue of coming first in _trade_targets.
         break
+
+    # --- Player-to-player trade proposals -------------------------------
+    # For each blocked build, emit a few propose_trade variants at
+    # different denominations: 1:1 (fair), 2:1 (concede to get a yes),
+    # and 2:2 (even swap when we need two of a thing). Skipped when no
+    # opponent is known to hold the resource we'd be asking for — a
+    # proposal for a wheat nobody has is dead on arrival.
+    opp_resource_total: dict[str, int] = {}
+    opp_has_unknown = False
+    if opp_hands is not None:
+        for opp_hand in opp_hands.values():
+            for r, n in opp_hand.items():
+                if r == "unknown":
+                    if n > 0:
+                        opp_has_unknown = True
+                    continue
+                opp_resource_total[r] = opp_resource_total.get(r, 0) + int(n)
+        # Any unknown card among opponents means we can't rule a resource
+        # out entirely. Only skip when we know the board cold.
+    # Reserve resources across every build we'd still plausibly make
+    # this turn — affordable now, or one-to-two cards off. Trading a
+    # resource away that some higher-priority blocked build needs (e.g.
+    # offering our only WOOD for a dev-card unlock while the settlement
+    # is also blocked on WOOD) would move us further from the real goal.
+    reserved_across: dict[str, int] = {}
+    for _k, _c, _s, _t in _trade_targets:
+        _missing = _missing_for(hand, _c)
+        if sum(_missing.values()) > 2:
+            continue
+        for r, n in _c.items():
+            reserved_across[r] = max(
+                reserved_across.get(r, 0), min(n, hand.get(r, 0)))
+
+    for kind, cost, score_fn, target_fn in _trade_targets:
+        if _hand_can_afford(hand, cost):
+            continue
+        missing = _missing_for(hand, cost)
+        total_missing = sum(missing.values())
+        # Only propose when a single trade closes the gap. Two-missing
+        # needs two trades to actually unlock the build, and emitting
+        # a "trade 1→1" rec that alone can't unlock is misleading —
+        # the "save for X" plan path surfaces those instead.
+        if total_missing != 1:
+            continue
+        if target_fn is None and kind != "dev_card":
+            continue
+        target = target_fn() if target_fn is not None else None
+        if target is None and kind in ("settlement", "city"):
+            continue
+        node_or_none, prod = (target if target is not None else (None, 0.0))
+        base_score = score_fn(prod)
+        need_pairs = list(missing.items())
+        # Surplus = hand minus every resource reserved by an affordable-
+        # or-reachable build (incl. this one). If the last WOOD in hand
+        # is needed for a blocked settlement, it's not spare — trading
+        # it to unlock a dev card would only dig the settlement hole
+        # deeper.
+        surplus: dict[str, int] = {}
+        for res, n in hand.items():
+            spare = n - reserved_across.get(res, 0)
+            if spare > 0:
+                surplus[res] = spare
+        if not surplus:
+            continue
+        emitted_for_kind = 0
+        for need_res, need_n in need_pairs:
+            if opp_hands is not None and not opp_has_unknown:
+                if opp_resource_total.get(need_res, 0) <= 0:
+                    # Nobody has this — no point asking for it.
+                    continue
+            # Candidate variants (give_count, get_count, label, score_adj).
+            # 1:1 is the friendliest; 2:1 is a concession offer; 2:2 is
+            # useful when we need two of something (e.g. city); 1:2 is
+            # a longshot but shows up last.
+            variants: list[tuple[int, int, str, float]] = [
+                (1, 1, "1:1 fair", 0.0),
+                (2, 1, "2:1 concede", -0.6),
+            ]
+            if need_n >= 2:
+                variants.append((2, 2, "2:2 even", -0.2))
+            variants.append((1, 2, "1:2 longshot", -1.2))
+            for give_n, get_n, label, adj in variants:
+                best_src = None
+                best_spare = 0
+                for src, spare in surplus.items():
+                    if src == need_res or spare < give_n:
+                        continue
+                    if spare > best_spare:
+                        best_src = src
+                        best_spare = spare
+                if best_src is None:
+                    continue
+                propose_score = round(
+                    min(base_score - 0.3 + adj, 9.5), 1)
+                propose_score = max(propose_score, 1.5)
+                kind_word = _kind_label(kind)
+                rec = {
+                    "kind": "propose_trade",
+                    "when": "now",
+                    "score": propose_score,
+                    "give": {best_src: give_n},
+                    "get": {need_res: get_n},
+                    "unlocks": kind,
+                    "variant": label,
+                    "detail": (
+                        f"propose {label}: {give_n} "
+                        f"{_resource_title(best_src)} → "
+                        f"{get_n} {_resource_title(need_res)} · "
+                        f"ask the table · toward {kind_word}"),
+                }
+                if node_or_none is not None:
+                    rec["node_id"] = int(node_or_none)
+                    rec["tiles"] = _tile_label(m, int(node_or_none))
+                recs.append(rec)
+                emitted_for_kind += 1
+                # Cap variants per missing-resource so the overlay doesn't
+                # fill up with trade suggestions.
+                if emitted_for_kind >= 3:
+                    break
+            if emitted_for_kind >= 3:
+                break
+        if emitted_for_kind:
+            # One build's worth of trade proposals is enough — the next
+            # blocked build will still surface as a "save for X" plan.
+            break
 
     # 1-ply search rerank: for each affordable build, simulate executing
     # it on a game copy and score the resulting state. The rec with the
@@ -1003,13 +1236,13 @@ def evaluate_incoming_trade(
                     "reason": f"opp at {opp_vp} VP — don't feed",
                     "before": before_kind, "after": after_kind,
                     "counter": None}
-        label = after_kind or "build"
+        label = _kind_label(after_kind)
         return {"verdict": "accept", "score": delta,
                 "reason": f"unlocks {label} (+{delta:.1f})",
                 "before": before_kind, "after": after_kind,
                 "counter": None}
     if kind_downgrade or delta <= -1.0:
-        label = before_kind or "build"
+        label = _kind_label(before_kind)
         return {"verdict": "decline", "score": delta,
                 "reason": f"blocks {label} ({delta:.1f})",
                 "before": before_kind, "after": after_kind,
