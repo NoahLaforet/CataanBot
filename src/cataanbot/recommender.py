@@ -53,12 +53,11 @@ def _score_road(landing_prod: float) -> float:
 
 _DEV_CARD_SCORE = 3.0
 
-def _best_trade_rate(resource: str, owned_nodes: set[int],
-                     port_nodes) -> int:
-    """Cheapest bank/port trade rate the player can access for this
-    resource. ``port_nodes`` is catanatron's ``map.port_nodes`` — a
-    ``None`` key holds the set of generic (3:1) port nodes, each
-    resource key holds its 2:1 port nodes."""
+def _sell_rate(resource: str, owned_nodes: set[int], port_nodes) -> int:
+    """Cheapest rate at which the player can SELL this resource. A
+    settlement on a matching 2:1 port returns 2; on any 3:1 generic
+    port returns 3; otherwise 4:1 bank. Ports apply to the resource
+    you're giving up, not the one you're getting."""
     specific = port_nodes.get(resource) or set()
     if owned_nodes & set(specific):
         return 2
@@ -68,27 +67,34 @@ def _best_trade_rate(resource: str, owned_nodes: set[int],
     return 4
 
 
-def _find_trade_source(hand: dict[str, int], need_resource: str,
-                       rate: int,
-                       reserved: dict[str, int] | None = None) -> str | None:
-    """Pick a resource whose *excess* over what this build needs is ≥
-    the trade rate. ``reserved`` is the build's cost dict — we must
-    leave that much behind so the build itself is still possible.
-
-    Picks the largest excess stockpile to minimize disruption to future
-    turns. Returns None if nothing's tradeable."""
-    candidates = []
+def _best_trade_offer(hand: dict[str, int], need_resource: str,
+                      owned_nodes: set[int], port_nodes,
+                      reserved: dict[str, int] | None = None,
+                      ) -> tuple[str, int] | None:
+    """Pick the best (source, rate) trade we can make to get 1 of
+    ``need_resource``. For each resource we have surplus of (beyond
+    ``reserved`` — the build's own cost), compute our sell rate for it
+    and check whether we have ``rate`` excess cards to cover the trade.
+    Prefer the cheapest rate; break ties on largest excess so the trade
+    minimizes future-turn impact."""
     reserved = reserved or {}
+    best: tuple[str, int, int] | None = None  # (res, rate, excess)
     for res, n in hand.items():
         if res == need_resource:
             continue
         excess = n - reserved.get(res, 0)
-        if excess >= rate:
-            candidates.append((res, excess))
-    if not candidates:
+        if excess <= 0:
+            continue
+        rate = _sell_rate(res, owned_nodes, port_nodes)
+        if excess < rate:
+            continue
+        # Cheaper rate wins; ties broken by larger excess.
+        if (best is None or rate < best[1]
+                or (rate == best[1] and excess > best[2])):
+            best = (res, rate, excess)
+    if best is None:
         return None
-    candidates.sort(key=lambda rn: -rn[1])
-    return candidates[0][0]
+    return (best[0], best[1])
 
 
 def _hand_can_afford(hand: dict[str, int], cost: dict[str, int]) -> bool:
@@ -357,12 +363,14 @@ def recommend_actions(
         if sum(missing.values()) != 1:
             continue  # Multi-trade plans get too expensive to be useful.
         need_res = next(iter(missing))
-        rate_needed = _best_trade_rate(need_res, owned_building_nodes,
-                                       port_nodes)
         # Reserve the build's cost; any excess beyond that is tradeable.
-        source = _find_trade_source(hand, need_res, rate_needed, cost)
-        if source is None:
+        # The rate depends on what we're SELLING (port applies to the
+        # give side), so source + rate get picked together.
+        offer = _best_trade_offer(hand, need_res, owned_building_nodes,
+                                  port_nodes, reserved=cost)
+        if offer is None:
             continue
+        source, rate_needed = offer
         target = target_fn()
         if kind == "dev_card":
             node_or_none, prod = None, 0.0
