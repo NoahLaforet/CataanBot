@@ -104,6 +104,12 @@ def _build_app(jsonl_path: Path | None = None,
         # don't map onto catanatron's 4-color enum), so the chat log is
         # our source of truth for what color the user actually sees.
         "display_colors": {},
+        # Latest pending player-to-player trade offer from the DOM log.
+        # {"player", "give", "want", "ts"} when live; cleared on commit,
+        # on any subsequent offer, or on the next dice roll. Evaluated
+        # lazily in the snapshot builder so the verdict always reflects
+        # the freshest tracker state.
+        "pending_trade_offer": None,
     }
 
     @app.get("/")
@@ -181,6 +187,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["pm_timestamps"] = []
         st["pm_written"] = False
         st["display_colors"] = {}
+        st["pending_trade_offer"] = None
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -284,7 +291,9 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     and flip ``pm_written`` so reruns (log virtualization echoes) don't
     stomp the file.
     """
-    from cataanbot.events import GameOverEvent
+    from cataanbot.events import (
+        GameOverEvent, RollEvent, TradeCommitEvent, TradeOfferEvent,
+    )
     from cataanbot.live import apply_event
     from cataanbot.parser import parse_event
 
@@ -305,6 +314,20 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     st["pm_events"].append(event)
     st["pm_results"].append(result)
     st["pm_timestamps"].append(ts_f)
+
+    # Trade-offer lifecycle. Offers are informational to the tracker but
+    # the advisor surfaces them as accept/decline recommendations, so we
+    # cache the latest one here and let the snapshot builder evaluate it
+    # against the live hand. Any commit/roll invalidates the cached offer.
+    if isinstance(event, TradeOfferEvent):
+        st["pending_trade_offer"] = {
+            "player": event.player,
+            "give": dict(event.give),
+            "want": dict(event.want),
+            "ts": ts_f,
+        }
+    elif isinstance(event, (TradeCommitEvent, RollEvent)):
+        st["pending_trade_offer"] = None
 
     if isinstance(event, GameOverEvent) and not st["pm_written"]:
         _write_postmortem(st, event)
@@ -488,6 +511,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "robber_targets": st.get("robber_snapshot") or [],
         "my_turn": False,
         "recommendations": [],
+        "incoming_trade": None,
     }
     if not game.started:
         return snap
@@ -699,7 +723,60 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             "hand_tracked": (unknown == 0 and real_total > 0),
             "vp": _get_vp(game, c),
         })
+
+    pending = st.get("pending_trade_offer")
+    if pending:
+        snap["incoming_trade"] = _evaluate_pending_trade(
+            st, game, self_color, hand, pending)
     return snap
+
+
+def _evaluate_pending_trade(st, game, self_color, self_hand,
+                            pending: dict[str, Any]) -> dict[str, Any] | None:
+    """Build the ``incoming_trade`` snapshot field — offer metadata plus
+    a verdict from ``recommender.evaluate_incoming_trade``.
+
+    Skips self-originated offers: those are our outbound proposals and
+    don't need an accept/decline recommendation. Returns None in that
+    case so the overlay hides the panel.
+    """
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    offerer = pending.get("player") or ""
+    sess = game.session
+    if sess is not None and sess.self_color_id is not None:
+        self_user = sess.player_names.get(sess.self_color_id)
+        if self_user and offerer == self_user:
+            return None
+
+    give = pending.get("give") or {}
+    want = pending.get("want") or {}
+    opp_vp = 0
+    try:
+        opp_color = game.color_map.get(offerer)
+        opp_vp = _get_vp(game, opp_color)
+    except Exception:  # noqa: BLE001
+        opp_color = None
+
+    try:
+        verdict = evaluate_incoming_trade(
+            game.tracker.game, self_color, self_hand,
+            give, want, opp_vp=opp_vp,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] evaluate_incoming_trade failed: {e!r}",
+              flush=True)
+        return None
+
+    return {
+        "offerer": offerer,
+        "offerer_color": opp_color,
+        "offerer_color_css": st["display_colors"].get(offerer),
+        "offerer_vp": opp_vp,
+        "give": give,
+        "want": want,
+        **verdict,
+    }
 
 
 def _get_vp(game, color: str) -> int:

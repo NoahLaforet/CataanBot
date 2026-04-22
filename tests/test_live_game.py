@@ -401,6 +401,132 @@ def test_advisor_snapshot_clips_inferred_to_physical_supply():
     assert target["hand"]["ORE"] <= 2, target
 
 
+def test_advisor_snapshot_surfaces_incoming_trade_verdict():
+    """A pending TradeOfferEvent should show up on the snapshot with an
+    evaluate_incoming_trade verdict attached. Self-originated offers
+    must not surface — we don't accept-or-decline our own proposals."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    assert sess.self_color_id is not None
+
+    # Force a known-comfortable self hand so the swap has room to move.
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = game.color_map.get(self_user)
+    game.tracker.set_hand(self_color, {
+        "WOOD": 1, "BRICK": 1, "SHEEP": 0, "WHEAT": 1, "ORE": 2,
+    })
+
+    opp_user = next(
+        u for cid, u in sess.player_names.items()
+        if cid != sess.self_color_id and game.color_map.has(u))
+
+    base_st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+
+    # No pending offer → field stays None.
+    st = dict(base_st, pending_trade_offer=None)
+    snap = _build_advisor_snapshot(st)
+    assert snap["incoming_trade"] is None
+
+    # Opp offers SHEEP for ORE — should populate the field with a verdict.
+    st = dict(base_st, pending_trade_offer={
+        "player": opp_user, "give": {"SHEEP": 1},
+        "want": {"ORE": 1}, "ts": None,
+    })
+    snap = _build_advisor_snapshot(st)
+    inc = snap["incoming_trade"]
+    assert inc is not None
+    assert inc["offerer"] == opp_user
+    assert inc["give"] == {"SHEEP": 1}
+    assert inc["want"] == {"ORE": 1}
+    assert inc["verdict"] in ("accept", "decline", "consider")
+    assert isinstance(inc["reason"], str) and inc["reason"]
+
+    # Self-originated offer must not surface (no accept/decline for us).
+    st = dict(base_st, pending_trade_offer={
+        "player": self_user, "give": {"ORE": 1},
+        "want": {"SHEEP": 1}, "ts": None,
+    })
+    snap = _build_advisor_snapshot(st)
+    assert snap["incoming_trade"] is None
+
+
+def test_feed_postmortem_tracks_and_clears_trade_offer():
+    """`_feed_postmortem` should stash a TradeOfferEvent in
+    `pending_trade_offer` and drop it on the next dice roll. This gates
+    the overlay's accept/decline panel — a stale offer after the turn
+    advanced is worse than no panel at all."""
+    from cataanbot.bridge import _feed_postmortem
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    def _offer_payload(offerer: str, give_alt: str, want_alt: str):
+        return {
+            "text": f"{offerer} wants to give {give_alt} for {want_alt}",
+            "parts": [
+                {"kind": "name", "name": offerer},
+                {"kind": "text", "text": "wants to give"},
+                {"kind": "icon", "alt": give_alt},
+                {"kind": "text", "text": "for"},
+                {"kind": "icon", "alt": want_alt},
+            ],
+            "names": [{"name": offerer, "color": "rgb(224,151,66)"}],
+            "icons": [{"alt": give_alt}, {"alt": want_alt}],
+            "ts": 1.0,
+        }
+
+    def _roll_payload(player: str, d1: int, d2: int):
+        return {
+            "text": f"{player} rolled {d1 + d2}",
+            "parts": [
+                {"kind": "name", "name": player},
+                {"kind": "text", "text": "rolled"},
+                {"kind": "icon", "alt": f"dice_{d1}"},
+                {"kind": "icon", "alt": f"dice_{d2}"},
+            ],
+            "names": [{"name": player, "color": "rgb(255,0,0)"}],
+            "icons": [{"alt": f"dice_{d1}"}, {"alt": f"dice_{d2}"}],
+            "ts": 2.0,
+        }
+
+    st: dict = {
+        "pm_tracker": Tracker(),
+        "pm_color_map": ColorMap(),
+        "pm_events": [],
+        "pm_results": [],
+        "pm_timestamps": [],
+        "pm_written": False,
+        "pm_dir": None,
+        "pending_trade_offer": None,
+    }
+    _feed_postmortem(st, _offer_payload("Alice", "Lumber", "Brick"))
+    assert st["pending_trade_offer"] is not None
+    assert st["pending_trade_offer"]["player"] == "Alice"
+    assert st["pending_trade_offer"]["give"] == {"WOOD": 1}
+    assert st["pending_trade_offer"]["want"] == {"BRICK": 1}
+
+    _feed_postmortem(st, _roll_payload("Alice", 3, 4))
+    assert st["pending_trade_offer"] is None
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""

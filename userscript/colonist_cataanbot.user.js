@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.9.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.9.0 reworks opening-pick rendering as number-first tile chips with hot-pip (6/8) highlighting.
+// @version      0.10.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.0 adds an incoming-trade panel: opponent's pending offer gets an accept/decline verdict with a one-line reason.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -239,6 +239,29 @@
   .rec.trade .kind { color: #f0a57a; }
   .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
   .drift { color: #ff9999; margin: 2px 0; font-size: 11px; }
+  /* Incoming trade panel — pops up when an opponent makes an offer and
+     vanishes on the next roll/commit. Verdict pill color signals the
+     advice at a glance (green=accept, red=decline, muted=consider). */
+  .trade-offer {
+    border: 1px solid #3a3a4a; border-radius: 4px;
+    padding: 4px 6px; margin: 6px 0 4px;
+    background: #1a1d24;
+  }
+  .trade-offer .trade-h { color: #f0a57a; font-weight: 600;
+                          margin-bottom: 2px; }
+  .trade-offer .trade-body { color: #d8d8d8; font-size: 11px;
+                             margin: 1px 0; }
+  .trade-offer .trade-reason { color: #aaa; font-size: 11px;
+                               font-style: italic; margin-top: 2px; }
+  .trade-offer .verdict {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-weight: 700; letter-spacing: 0.5px; margin-right: 4px;
+  }
+  .trade-offer .verdict.accept  { background: #1e4d2b; color: #a4ef9c; }
+  .trade-offer .verdict.decline { background: #4d1e1e; color: #ef9c9c; }
+  .trade-offer .verdict.consider{ background: #404040; color: #ddd; }
+  .trade-offer .swap-side { color: #b8c6d6; }
+  .trade-offer .swap-arrow { color: #7a9aa8; margin: 0 4px; }
   .muted { color: #888; }
   .err { color: #ff9999; }
 </style>
@@ -471,6 +494,40 @@
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
+            parts.push('</div>');
+        }
+        if (snap.incoming_trade) {
+            const t = snap.incoming_trade;
+            const bg = t.offerer_color_css
+                || COLOR_HEX[t.offerer_color] || '#888';
+            const fg = contrastText(bg);
+            const offererPill = t.offerer
+                ? `<span class="color-pill" style="background:${bg};`
+                    + `color:${fg};">${escapeHtml(t.offerer)}</span> `
+                : '';
+            // Pack -> "1 Ore, 2 Sheep" for both sides of the swap.
+            const fmtSide = (pack) => {
+                const keys = Object.keys(pack || {});
+                if (!keys.length) return '∅';
+                return keys
+                    .filter(r => pack[r] > 0)
+                    .map(r => `${pack[r]} ${RES_ABBREV[r] || r.slice(0, 2)}`)
+                    .join(' ');
+            };
+            const verdictCls = ['accept', 'decline', 'consider']
+                .includes(t.verdict) ? t.verdict : 'consider';
+            const verdictLabel = verdictCls.toUpperCase();
+            parts.push('<div class="trade-offer">');
+            parts.push(`<div class="trade-h">incoming trade ${offererPill}`
+                + `<span class="muted">${t.offerer_vp ?? 0} VP</span></div>`);
+            parts.push('<div class="trade-body">'
+                + '<span class="swap-side">gives ' + escapeHtml(fmtSide(t.give))
+                + '</span><span class="swap-arrow">↔</span>'
+                + '<span class="swap-side">wants ' + escapeHtml(fmtSide(t.want))
+                + '</span></div>');
+            parts.push('<div class="trade-reason">'
+                + `<span class="verdict ${verdictCls}">${verdictLabel}</span>`
+                + escapeHtml(t.reason || '') + '</div>');
             parts.push('</div>');
         }
         if (snap.last_roll) {

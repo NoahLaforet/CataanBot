@@ -666,3 +666,116 @@ def recommend_actions(
     recs.sort(key=lambda r: (-float(r.get("score", 0)),
                              0 if r.get("when") == "now" else 1))
     return recs[:top]
+
+
+def _fmt_trade_side(pack: dict[str, int]) -> str:
+    parts = [f"{n} {_RES_TITLE.get(r, r.title())}"
+             for r, n in pack.items() if n]
+    return ", ".join(parts) if parts else "∅"
+
+
+def evaluate_incoming_trade(
+    game, self_color, self_hand: dict[str, int],
+    give: dict[str, int], want: dict[str, int],
+    *, opp_vp: int = 0,
+) -> dict[str, Any]:
+    """Rate an incoming player-to-player offer.
+
+    The offerer proposes: they give ``give``, they want ``want``.
+    From our seat, accepting means ``hand += give - want``.
+
+    Returns ``{verdict, score, reason, before, after}`` where:
+        verdict ∈ {"accept", "decline", "consider"}
+        score   float — delta of best affordable-now rec before → after;
+                positive leans accept
+        reason  short human-readable string for the overlay
+        before  top "now" rec kind at current hand, or None
+        after   top "now" rec kind after the swap, or None
+
+    Affordability comes first — if we can't spare ``want``, auto-decline.
+    Then we compare what's buildable this turn before and after the swap.
+    A build unlocked → accept; a build lost → decline. Neutral deltas
+    fall to a fairness check (giving more cards than we get) and an
+    opp-close-to-win guard (VP≥8) before landing on "consider".
+    """
+    if not want:
+        return {"verdict": "consider", "score": 0.0,
+                "reason": "open offer — no ask", "before": None,
+                "after": None}
+    for r, n in want.items():
+        if self_hand.get(r, 0) < int(n):
+            return {
+                "verdict": "decline",
+                "score": -10.0,
+                "reason": f"can't spare {n} {_RES_TITLE.get(r, r.title())}",
+                "before": None,
+                "after": None,
+            }
+    if not give:
+        return {"verdict": "decline", "score": -10.0,
+                "reason": "they give nothing in return",
+                "before": None, "after": None}
+
+    new_hand = dict(self_hand)
+    for r, n in want.items():
+        new_hand[r] = new_hand.get(r, 0) - int(n)
+    for r, n in give.items():
+        new_hand[r] = new_hand.get(r, 0) + int(n)
+
+    def _best_now_rec(h: dict[str, int]) -> dict[str, Any] | None:
+        try:
+            recs = recommend_actions(game, self_color, h, top=4)
+        except Exception:  # noqa: BLE001
+            return None
+        for r in recs:
+            if r.get("when") == "now":
+                return r
+        return None
+
+    before = _best_now_rec(self_hand)
+    after = _best_now_rec(new_hand)
+    s_before = float(before.get("score", 0.0)) if before else 0.0
+    s_after = float(after.get("score", 0.0)) if after else 0.0
+    delta = round(s_after - s_before, 2)
+
+    before_kind = before.get("kind") if before else None
+    after_kind = after.get("kind") if after else None
+    give_total = sum(int(n) for n in give.values())
+    want_total = sum(int(n) for n in want.values())
+    _CLOSE_TO_WIN_VP = 8
+    # Rank of build types so we can detect a kind upgrade. Score deltas
+    # alone undersell e.g. "road → settlement" (raw gap is only ~0.5)
+    # even though it's a real upgrade in the type of move available.
+    _KIND_RANK = {None: 0, "dev_card": 1, "road": 2, "trade": 2,
+                  "settlement": 3, "city": 4}
+    kind_upgrade = (_KIND_RANK.get(after_kind, 0)
+                    > _KIND_RANK.get(before_kind, 0))
+    kind_downgrade = (_KIND_RANK.get(after_kind, 0)
+                      < _KIND_RANK.get(before_kind, 0))
+
+    if kind_upgrade or delta >= 1.0:
+        if opp_vp >= _CLOSE_TO_WIN_VP:
+            return {"verdict": "decline", "score": delta,
+                    "reason": f"opp at {opp_vp} VP — don't feed",
+                    "before": before_kind, "after": after_kind}
+        label = after_kind or "build"
+        return {"verdict": "accept", "score": delta,
+                "reason": f"unlocks {label} (+{delta:.1f})",
+                "before": before_kind, "after": after_kind}
+    if kind_downgrade or delta <= -1.0:
+        label = before_kind or "build"
+        return {"verdict": "decline", "score": delta,
+                "reason": f"blocks {label} ({delta:.1f})",
+                "before": before_kind, "after": after_kind}
+    if want_total > give_total:
+        return {"verdict": "decline", "score": delta,
+                "reason": f"lopsided — give {want_total}, "
+                          f"get {give_total}",
+                "before": before_kind, "after": after_kind}
+    if opp_vp >= _CLOSE_TO_WIN_VP:
+        return {"verdict": "decline", "score": delta,
+                "reason": f"opp at {opp_vp} VP — hold cards",
+                "before": before_kind, "after": after_kind}
+    return {"verdict": "consider", "score": delta,
+            "reason": "neutral swap",
+            "before": before_kind, "after": after_kind}
