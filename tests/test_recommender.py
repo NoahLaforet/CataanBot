@@ -203,6 +203,23 @@ def test_no_bank_trade_when_two_cards_short():
     assert not trades, f"no trade expected, got {trades}"
 
 
+def test_dev_card_trade_has_no_node_id():
+    """Trade to unlock a dev card shouldn't leak a misleading node_id
+    (dev cards don't go on the board)."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    # 1 short of dev card (need ORE), excess WOOD to trade with.
+    hand = {"WOOD": 5, "SHEEP": 1, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=6)
+    trades = [r for r in out if r["kind"] == "trade"
+              and r.get("unlocks") == "dev_card"]
+    assert trades, f"expected dev_card trade, got {[r['kind'] for r in out]}"
+    t = trades[0]
+    assert "node_id" not in t, t
+    assert t["get"] == {"ORE": 1}
+
+
 def test_trade_protects_resources_still_needed():
     """If we're 1 Sheep short of a settlement but only have exactly
     1 Wheat (also needed for the settlement), we must NOT trade away

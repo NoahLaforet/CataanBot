@@ -339,13 +339,16 @@ def recommend_actions(
         if bcol == c
     }
     port_nodes = getattr(m, "port_nodes", {}) or {}
+    # (kind, cost, score_fn, target_fn).
+    # ``target_fn`` returns (node_id, prod) for location-linked builds
+    # or ``None`` for dev card (no node, fixed score).
     _trade_targets = [
         ("settlement", _SETTLEMENT_COST, _score_settlement,
          _best_settlement_spot),
         ("city",       _CITY_COST,       _score_city,
          _best_owned_settlement),
         ("dev_card",   _DEV_COST,        lambda _p: _DEV_CARD_SCORE,
-         lambda: (0, 0.0)),
+         lambda: None),
     ]
     for kind, cost, score_fn, target_fn in _trade_targets:
         if _hand_can_afford(hand, cost):
@@ -361,10 +364,12 @@ def recommend_actions(
         if source is None:
             continue
         target = target_fn()
-        if target is None:
+        if kind == "dev_card":
+            node_or_none, prod = None, 0.0
+        elif target is None:
             continue
-        node_or_none, prod = (target if isinstance(target, tuple)
-                              else (None, 0.0))
+        else:
+            node_or_none, prod = target
         base_score = score_fn(prod)
         # Small penalty for trade inefficiency — a direct build next
         # turn often nets more cards back. Cap at 9.5.
