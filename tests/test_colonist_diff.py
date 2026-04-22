@@ -12,7 +12,7 @@ from cataanbot.colonist_diff import (
 )
 from cataanbot.colonist_proto import load_capture
 from cataanbot.events import (
-    BuildEvent, ProduceEvent, RobberMoveEvent, RollEvent,
+    BuildEvent, ProduceEvent, RobberMoveEvent, RollEvent, VPEvent,
 )
 from cataanbot.live import ColorMap, apply_event
 from cataanbot.tracker import Tracker
@@ -362,3 +362,163 @@ def test_midgame_capture_streams_into_tracker_without_errors():
     assert applied > 0, "expected at least one applied build/robber event"
     assert errored == 0, (
         f"{errored} events raised tracker errors in midgame replay")
+
+
+def _minimal_session() -> LiveSession:
+    """LiveSession wired with stable per-color usernames — enough for the
+    diff extractor to attribute VPEvents without needing a full capture."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    return sess
+
+
+def test_diff_emits_longest_road_vpevent_on_has_flag_true():
+    """``hasLongestRoad: true`` appearing on a color for the first time
+    must produce a VPEvent(reason='longest_road') with that color as
+    the new player. Without this, the tracker never flips HAS_ROAD
+    true for the authoritative award and the +2 VP is invisible on
+    the HUD even though colonist itself painted the bonus."""
+    sess = _minimal_session()
+    diff = {
+        "mechanicLongestRoadState": {
+            "1": {"longestRoad": 5, "hasLongestRoad": True},
+        },
+    }
+    events = events_from_diff(sess, diff)
+    vp_events = [e for e in events if isinstance(e, VPEvent)]
+    assert len(vp_events) == 1, f"expected 1 VPEvent, got {events}"
+    ev = vp_events[0]
+    assert ev.reason == "longest_road"
+    assert ev.player == sess.player_for(1)
+    assert ev.previous_holder is None
+    assert sess.has_longest_road_cid == 1
+
+
+def test_diff_emits_largest_army_vpevent_with_previous_holder_on_transfer():
+    """When LA transfers, colonist sets ``hasLargestArmy: true`` on the
+    new holder; we must emit a VPEvent that names the *old* holder as
+    previous_holder so ``_apply_vp`` strips HAS_ARMY from them before
+    granting it — otherwise both flags end up true simultaneously and
+    the VP counter double-counts."""
+    sess = _minimal_session()
+    sess.has_largest_army_cid = 2  # pretend Vtarj already held it
+    diff = {
+        "mechanicLargestArmyState": {
+            "5": {"hasLargestArmy": True},
+        },
+    }
+    events = events_from_diff(sess, diff)
+    vp_events = [e for e in events if isinstance(e, VPEvent)]
+    assert len(vp_events) == 1
+    ev = vp_events[0]
+    assert ev.reason == "largest_army"
+    assert ev.player == sess.player_for(5)
+    assert ev.previous_holder == sess.player_for(2)
+    assert sess.has_largest_army_cid == 5
+
+
+def test_diff_skips_vpevent_when_already_current_holder():
+    """A later diff that re-ships ``hasLongestRoad: true`` on the same
+    cid (e.g. the player keeps extending their road) must NOT emit a
+    duplicate VPEvent — the bonus was already applied on the first
+    transition, and double-firing would add another +2 VP each road."""
+    sess = _minimal_session()
+    sess.has_longest_road_cid = 1
+    diff = {
+        "mechanicLongestRoadState": {
+            "1": {"longestRoad": 6, "hasLongestRoad": True},
+        },
+    }
+    events = events_from_diff(sess, diff)
+    assert not [e for e in events if isinstance(e, VPEvent)]
+
+
+def test_diff_vpevent_wires_into_tracker_vp_with_bonus():
+    """End-to-end: a diff awarding longest_road to a color whose
+    internal road count is *below* 5 must still leave that color with
+    HAS_ROAD=True and VP credited +2 after ``apply_event`` runs. This
+    is the exact live bug — our tracker's own road count can lag
+    colonist, and the HUD was losing the +2 because _recompute_longest
+    _road was stripping the flag on the next build."""
+    sess = _minimal_session()
+    tracker = Tracker()
+    # Start fresh — no roads on the board, nobody holds longest road.
+    cm = ColorMap()
+    # Pre-register so apply_event doesn't tack on a new color.
+    cm.get(sess.player_for(1))
+
+    diff = {
+        "mechanicLongestRoadState": {
+            "1": {"longestRoad": 5, "hasLongestRoad": True},
+        },
+    }
+    for ev in events_from_diff(sess, diff):
+        apply_event(tracker, cm, ev)
+
+    color = cm.get(sess.player_for(1))
+    state = tracker.game.state
+    idx = state.color_to_index[tracker._color(color)]
+    assert state.player_state[f"P{idx}_HAS_ROAD"] is True
+    assert state.player_state[f"P{idx}_VICTORY_POINTS"] == 2, (
+        f"VP should include +2 for longest road, got "
+        f"{state.player_state[f'P{idx}_VICTORY_POINTS']}")
+
+
+def test_tracker_recompute_longest_road_does_not_strip_without_displacer():
+    """Regression for the stripping bug: if a color holds HAS_ROAD (set
+    via VPEvent) and our internal road count is 0 (missed road diffs),
+    a subsequent _recompute_longest_road must leave HAS_ROAD alone. In
+    the old logic, the absence of any qualifier set new_holder=None and
+    the code stripped the existing flag — silently wiping the +2 VP
+    every time any build happened."""
+    from catanatron import Color
+
+    tracker = Tracker()
+    state = tracker.game.state
+    idx = state.color_to_index[Color.RED]
+    state.player_state[f"P{idx}_HAS_ROAD"] = True
+
+    tracker._recompute_longest_road()
+    assert state.player_state[f"P{idx}_HAS_ROAD"] is True, (
+        "HAS_ROAD was stripped despite no displacer — colonist's award "
+        "would be silently erased")
+
+
+def test_tracker_recompute_largest_army_preserves_flag_under_undercount():
+    """Same guarantee for largest army: if HAS_ARMY is true from a
+    colonist VPEvent but our PLAYED_KNIGHT counter is below the
+    threshold (missed ``used [knight]`` DOM log lines), recompute must
+    not strip the flag."""
+    from catanatron import Color
+
+    tracker = Tracker()
+    state = tracker.game.state
+    idx = state.color_to_index[Color.RED]
+    state.player_state[f"P{idx}_HAS_ARMY"] = True
+
+    tracker._recompute_largest_army()
+    assert state.player_state[f"P{idx}_HAS_ARMY"] is True
+
+
+def test_tracker_recompute_longest_road_still_transfers_on_real_displacer():
+    """The conservative recompute must not become a black hole — when
+    another color's actual internal road count strictly exceeds the
+    current holder's, HAS_ROAD must move. This protects the replay /
+    offline analysis path (no VPEvent stream) from freezing on the
+    first holder forever."""
+    from catanatron import Color
+
+    tracker = Tracker()
+    state = tracker.game.state
+    # Current holder is RED per prior VPEvent but their internal count
+    # will show 0 — BLUE builds a continuous 6-road and should displace.
+    red_idx = state.color_to_index[Color.RED]
+    blue_idx = state.color_to_index[Color.BLUE]
+    state.player_state[f"P{red_idx}_HAS_ROAD"] = True
+
+    # Stub in per-color lengths without actually building — patch the
+    # board method so we can drive the recompute deterministically.
+    tracker.game.state.board.continuous_roads_by_player = lambda c: (
+        [[1, 2, 3, 4, 5, 6]] if c == Color.BLUE else [])
+    tracker._recompute_longest_road()
+    assert state.player_state[f"P{red_idx}_HAS_ROAD"] is False
+    assert state.player_state[f"P{blue_idx}_HAS_ROAD"] is True
