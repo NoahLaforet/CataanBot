@@ -595,6 +595,22 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             print(f"[advisor] recommend_actions failed: {e!r}",
                   flush=True)
             snap["recommendations"] = []
+    # Physical-supply cap: base Catan has 19 of each resource, so by
+    # conservation `bank[r] + sum(all hands)[r] == 19`. The tracker's
+    # internal freqdeck stays consistent, but its "max-resource" guess
+    # on unknown steals can still attribute a resource to one opp even
+    # when that many aren't physically unclaimed. Cap each opp's
+    # inferred bucket to `19 - bank[r] - self[r]` so we never display
+    # "4 ore" when only 2 are actually left in play.
+    _CAP_RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
+    opp_res_cap: dict[str, int] = {}
+    try:
+        freqdeck = cat_game.state.resource_freqdeck
+        for idx, r in enumerate(_CAP_RESOURCES):
+            opp_res_cap[r] = max(
+                0, 19 - int(freqdeck[idx]) - int(hand.get(r, 0)))
+    except Exception:  # noqa: BLE001
+        opp_res_cap = {}
     for cid, count in sorted(sess.hand_card_counts.items()):
         if cid == sess.self_color_id:
             continue
@@ -617,6 +633,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             inferred = dict(game.tracker.hand(c))
         except Exception:  # noqa: BLE001
             inferred = {}
+        # Clip to physical supply first. Any excess gets absorbed into
+        # ``unknown`` below, which is more honest than displaying a
+        # count that couldn't exist on the board.
+        if opp_res_cap:
+            for r, n in list(inferred.items()):
+                cap = opp_res_cap.get(r, n)
+                if n > cap:
+                    inferred[r] = cap
         # Reconcile inference against the authoritative card count.
         # Over-attribution (inferred > real) happens when the tracker's
         # "max-resource" guess for unknown steals commits to the wrong
