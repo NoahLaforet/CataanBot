@@ -606,6 +606,132 @@ def test_recommend_opening_flags_second_pick_context():
         assert "2nd pick" in r["detail"]
 
 
+def test_recommend_opening_round_one_attaches_plan_second():
+    """Round-1 recs (no self settlement yet) should surface a paired
+    plan.second with the best hypothetical 2nd-settlement pick so Noah
+    reads each F pick as a coordinated 2-settle plan, not a one-off."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=7,
+    )
+    out = recommend_opening(g, "RED", top=3)
+    assert out
+    for r in out:
+        plan = r.get("plan")
+        assert plan is not None and "second" in plan, (
+            f"round-1 rec should carry plan.second: {r}")
+        n = plan["second"]
+        assert isinstance(n["node_id"], int)
+        assert n["node_id"] != r["node_id"], (
+            "paired N must be a different node than F")
+        assert 1 <= n["covers"] <= 5
+        assert isinstance(n["adds"], list)
+        assert isinstance(n["tiles"], list)
+
+
+def test_recommend_opening_round_one_plan_reflects_joint_coverage():
+    """plan.second.covers must equal the distinct-resource count of F ∪ N.
+    Keeps the overlay's coverage claim (e.g. "cov 5/5") honest."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanatron.state import RESOURCES
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=11,
+    )
+    m = g.state.board.map
+    out = recommend_opening(g, "RED", top=3)
+    assert out
+    for r in out:
+        plan = r["plan"]["second"]
+        F_prod = m.node_production.get(r["node_id"], {})
+        N_prod = m.node_production.get(plan["node_id"], {})
+        covered = {res for res in RESOURCES
+                   if F_prod.get(res, 0.0) + N_prod.get(res, 0.0) > 0.0}
+        assert plan["covers"] == len(covered), (
+            f"coverage mismatch for F={r['node_id']} "
+            f"N={plan['node_id']}: claim={plan['covers']} actual={len(covered)}")
+
+
+def test_recommend_opening_round_one_road_respects_planned_n():
+    """The round-1 road's toward_node must not be a distance-1 neighbor
+    of the planned 2nd-settlement — that spot becomes illegal once N
+    lands, so pointing a road at it is wasted commitment."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import _build_node_neighbors
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=19,
+    )
+    neighbors = _build_node_neighbors(g.state.board.map)
+    out = recommend_opening(g, "RED", top=5)
+    assert out
+    for r in out:
+        if r.get("road") is None:
+            continue
+        plan = r.get("plan") or {}
+        n_info = plan.get("second")
+        if n_info is None:
+            continue
+        n_nid = n_info["node_id"]
+        toward = r["road"]["toward_node"]
+        n_blocked = {n_nid} | set(neighbors.get(n_nid, set()))
+        assert toward not in n_blocked, (
+            f"road toward {toward} is distance-1 from planned N={n_nid}: {r}")
+
+
+def test_recommend_opening_round_two_uses_complement_ranking():
+    """Round-2 picks should come from score_second_settlements (complement
+    over raw production) so a 4/5-coverage candidate edges out a higher-pip
+    but fully-overlapping pick. Check the top pick actually complements F
+    by contributing at least one resource F doesn't already produce."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanatron.state import RESOURCES
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=23,
+    )
+    m = g.state.board.map
+    # Pick a real high-pip land node for RED's first settle.
+    nodes_by_pip = sorted(
+        m.land_nodes,
+        key=lambda n: sum(m.node_production.get(n, {}).values()),
+        reverse=True,
+    )
+    first = nodes_by_pip[0]
+    g.state.board.build_settlement(Color.RED, first, initial_build_phase=True)
+
+    out = recommend_opening(g, "RED", top=3)
+    assert out
+    top = out[0]
+    F_prod = m.node_production.get(first, {})
+    N_prod = m.node_production.get(top["node_id"], {})
+    # At least one resource in N that F doesn't already cover. This is
+    # the whole point of complement-ranking — stacking the same resource
+    # isn't ranked as a top round-2 pick.
+    f_res = {r for r in RESOURCES if F_prod.get(r, 0.0) > 0.0}
+    n_res = {r for r in RESOURCES if N_prod.get(r, 0.0) > 0.0}
+    assert n_res - f_res, (
+        f"top round-2 pick must add a new resource; "
+        f"F={first} covers {sorted(f_res)}, N={top['node_id']} "
+        f"covers {sorted(n_res)}"
+    )
+    # And the detail string should mention what's being added + coverage.
+    assert "adds" in top["detail"] or "covers" in top["detail"]
+
+
 def test_live_game_resyncs_hand_on_reconnect_type4():
     """A second type=4 frame on an already-booted LiveGame should
     re-sync the self-hand from the replay's playerStates rather than
