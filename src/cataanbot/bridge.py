@@ -493,7 +493,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         return snap
     hand = dict(game.tracker.hand(self_color))
-    cards = sum(hand.values())
+    # Authoritative total comes from colonist's raw resourceCards.cards
+    # length (what we track in hand_card_counts). tracker.hand() is the
+    # event-reconstructed breakdown and can drift when we miss frames
+    # (disconnects, dead ws sessions) — a drift indicator we surface.
+    tracker_total = sum(hand.values())
+    cards = int(sess.hand_card_counts.get(sess.self_color_id, tracker_total))
+    hand_drift = (tracker_total != cards)
     afford = []
     if all(hand.get(r, 0) >= n for r, n in
            (("WOOD", 1), ("BRICK", 1), ("SHEEP", 1), ("WHEAT", 1))):
@@ -514,6 +520,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "cards": cards,
         "afford": afford,
         "vp": vp,
+        # True when per-resource breakdown disagrees with the raw-total.
+        # Overlay surfaces this so Noah knows the hand detail is unreliable
+        # until the next HandSync frame corrects us.
+        "hand_drift": hand_drift,
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
