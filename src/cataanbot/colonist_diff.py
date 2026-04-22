@@ -92,6 +92,12 @@ class LiveSession:
     # depending on catanatron's per-resource tracking, which drifts low
     # when unseen events (trades, steals, discards we miss) fire.
     hand_card_counts: dict[int, int] = field(default_factory=dict)
+    # Last-seen value of `currentState.currentTurnPlayerColor`. Colonist
+    # only ships this key in the diff that it *changes* in, so a roll
+    # frame on the same player's turn arrives without it. Caching here
+    # lets a roll fall back to the prior turn's color when the current
+    # diff omits it.
+    current_turn_color_id: int | None = None
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -240,19 +246,27 @@ def events_from_diff(
     for ev in _hand_sync_events(sess, diff.get("playerStates") or {}):
         out.append(ev)
 
+    # Latch currentTurnPlayerColor any time the diff ships it, so a later
+    # roll frame on the same player's turn can still be attributed.
+    cs = diff.get("currentState") or {}
+    if isinstance(cs, dict) and cs.get("currentTurnPlayerColor") is not None:
+        try:
+            sess.current_turn_color_id = int(cs["currentTurnPlayerColor"])
+        except (TypeError, ValueError):
+            pass
+
     dice = diff.get("diceState") or {}
     # A fresh roll always carries both dice1 and dice2 in the diff. A
     # "diceThrown: False" frame on its own only signals the roll has
     # been consumed — no new roll, no new event.
     if isinstance(dice, dict) and "dice1" in dice and "dice2" in dice:
-        total = int(dice["dice1"]) + int(dice["dice2"])
-        # Attribute the roll to whoever currentState says is on move. The
-        # currentState.currentTurnPlayerColor key shows up in the same
-        # frame before the roll lands.
-        cs = diff.get("currentState") or {}
+        # Prefer the value that just landed in this diff (most precise);
+        # fall back to the session-cached turn color for roll frames
+        # that don't re-ship it.
         roller_color = cs.get("currentTurnPlayerColor")
-        player = sess.player_for(
-            int(roller_color) if roller_color is not None else None)
+        cid = (int(roller_color) if roller_color is not None
+               else sess.current_turn_color_id)
+        player = sess.player_for(cid)
         out.append(RollEvent(player=player, d1=int(dice["dice1"]),
                              d2=int(dice["dice2"])))
 
