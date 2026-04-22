@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from cataanbot.advisor import (
+    _vp_weight,
     evaluate_trade,
     legal_nodes_after_picks,
     score_opening_nodes,
@@ -109,3 +110,28 @@ def test_evaluate_trade_favors_scarce_resource(tracker):
     )
     e = evaluate_trade(tracker.game, "RED", 1, "WOOD", 1, "WHEAT")
     assert e.delta > 0
+
+
+def test_vp_weight_preserves_legacy_10vp_calibration():
+    """The robber VP-weight ramp used to be anchored at the hardcoded
+    baseline of 3 VP. After the config refactor the baseline is derived
+    (early_game_baseline_vp = round(0.3 * target)), but for the default
+    10-VP game the output must match the old calibration exactly —
+    otherwise every robber score calibrated against the old scale
+    drifts silently."""
+    # Legacy: below baseline (3 VP) all clamp to 1.0.
+    assert _vp_weight(0) == 1.0
+    assert _vp_weight(3) == 1.0
+    # Legacy: 0.4 per VP above baseline.
+    assert _vp_weight(6) == pytest.approx(2.2)
+    assert _vp_weight(9) == pytest.approx(3.4)
+
+
+def test_vp_weight_scales_with_custom_target():
+    """For a 12-VP game the baseline lifts to 4, so vp=3 is now
+    sub-baseline (weight 1.0) and the ramp above 4 matches the linear
+    slope. This is the whole point of making target configurable."""
+    # 12 * 0.3 = 3.6 → baseline=4
+    assert _vp_weight(3, vp_target=12) == 1.0
+    assert _vp_weight(4, vp_target=12) == 1.0
+    assert _vp_weight(7, vp_target=12) == pytest.approx(2.2)

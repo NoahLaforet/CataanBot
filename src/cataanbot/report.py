@@ -389,10 +389,13 @@ def _score_trade_delta(
     return got_value - gave_value
 
 
-# 8 cards is the first hand size that triggers discard on a 7 (colonist
-# rounds down, so "more than 7" = 8+). Using that threshold lets
-# vulnerable_events line up with the chart's discard-threshold dashed line.
-_DISCARD_THRESHOLD = 8
+# First hand size that triggers discard on a 7 is DISCARD_LIMIT + 1
+# (colonist rounds down, so "more than N" = N+1 cards). Using that
+# threshold lets vulnerable_events line up with the chart's
+# discard-threshold dashed line and lets custom rules (e.g., Cities &
+# Knights' 9-card limit) scale cleanly via CATAANBOT_DISCARD_LIMIT.
+from cataanbot.config import DISCARD_LIMIT as _DISCARD_LIMIT
+_DISCARD_THRESHOLD = _DISCARD_LIMIT + 1
 
 
 def _walk_hands_with_dynamics(

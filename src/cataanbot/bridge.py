@@ -453,7 +453,8 @@ def _compute_robber_snapshot(
     to steal from when the tile has more than one adjacent opposing
     settlement/city. Scoring: card count dominates (biggest EV per steal,
     more cards = more likely to hold a needed resource), but a near-win
-    opponent (VP≥6) gets boosted priority to deny them resources.
+    opponent (VP ≥ ``mid_late_vp()``) gets boosted priority to deny them
+    resources.
     """
     from cataanbot.advisor import score_robber_targets
 
@@ -497,11 +498,15 @@ def _compute_robber_snapshot(
     for s in scores[:top]:
         # Pick the best victim: card count dominates (best steal EV), VP
         # pressure boosts near-winners, pip contribution is a small nudge.
+        from cataanbot.config import close_to_win_vp, mid_late_vp
+        close_vp = close_to_win_vp()
+        mid_vp = mid_late_vp()
         def _victim_priority(vcolor: str) -> float:
             cards = s.opponent_hand_size.get(vcolor, 0)
             vp = s.victim_vp.get(vcolor, 0)
             pips = s.victims.get(vcolor, 0)
-            vp_weight = 3.0 if vp >= 8 else (1.8 if vp >= 6 else 1.0)
+            vp_weight = 3.0 if vp >= close_vp else (
+                1.8 if vp >= mid_vp else 1.0)
             return cards * vp_weight + pips * 0.3
         suggested_color: str | None = None
         if s.victims:
@@ -590,7 +595,10 @@ def _compute_knight_hint(
                 continue
             self_blocked_pips += PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
 
-    # Opp closing in on largest army? (>= 2 played knights, >= 7 VP)
+    # Opp closing in on largest army? (>= 2 played knights, at/above
+    # largest-army-threat VP threshold)
+    from cataanbot.config import largest_army_threat_vp
+    la_threat_vp = largest_army_threat_vp()
     largest_army_threat = False
     for opp_color, opp_idx in state.color_to_index.items():
         if opp_color == my_enum:
@@ -599,7 +607,7 @@ def _compute_knight_hint(
             f"P{opp_idx}_PLAYED_KNIGHT", 0))
         vp = int(state.player_state.get(
             f"P{opp_idx}_VICTORY_POINTS", 0))
-        if played >= 2 and vp >= 7:
+        if played >= 2 and vp >= la_threat_vp:
             largest_army_threat = True
             break
 
