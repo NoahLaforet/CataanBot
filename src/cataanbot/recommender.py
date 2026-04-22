@@ -86,6 +86,45 @@ def _resources_added(base: dict[str, float],
             if v > 0.0 and r not in base_covered]
 
 
+def _label_archetype(tiles_f: list, tiles_n: list,
+                     f_port: str | None,
+                     n_port: str | None) -> str | None:
+    """Tag a coordinated F+N plan with a strategic archetype.
+
+    Labels are based on tile-count across F ∪ N (not production magnitude —
+    count mirrors how players pick, e.g. "I have 2 ore tiles so I'm going
+    ore-city"). Returns one of "ore-city", "wood-first", "balanced",
+    "port", or ``None`` if the combo doesn't fit a distinctive profile.
+
+    Priority: a 2:1 port on a produced resource trumps other labels, since
+    it reshapes how you'll convert surplus across the whole game. Then
+    ore-city (2+ ore + wheat), wood-first (heavy wood/brick), balanced
+    (4+ distinct resources).
+    """
+    counts: dict[str, int] = {}
+    for res, _num in list(tiles_f) + list(tiles_n):
+        if res == "DESERT":
+            continue
+        counts[res] = counts.get(res, 0) + 1
+    for port in (f_port, n_port):
+        if not port or port == "3:1":
+            continue
+        port_res = port.split(" ", 1)[0]
+        if counts.get(port_res, 0) > 0:
+            return "port"
+    ore = counts.get("ORE", 0)
+    wheat = counts.get("WHEAT", 0)
+    wood = counts.get("WOOD", 0)
+    brick = counts.get("BRICK", 0)
+    if ore >= 2 and wheat >= 1:
+        return "ore-city"
+    if (wood + brick) >= 3 or (wood >= 2 and brick >= 1):
+        return "wood-first"
+    if len(counts) >= 4:
+        return "balanced"
+    return None
+
+
 def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     """Rank remaining opening settlement spots during the setup phase.
 
@@ -227,6 +266,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             legal_nodes=legal_after_f,
         )
         plan_second: dict[str, Any] | None = None
+        archetype: str | None = None
         n_neighbors: set[int] = set()
         if pair_scored:
             n = pair_scored[0]
@@ -239,6 +279,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
                 "covers": coverage,
                 "adds": new_res,
             }
+            archetype = _label_archetype(s.tiles, n.tiles, s.port, n.port)
             n_neighbors = (neighbors.get(int(n.node_id), set())
                            | {int(n.node_id)})
             # The overlay renders plan.second as its own sub-line, so
@@ -263,7 +304,10 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             "road": road,
         }
         if plan_second is not None:
-            rec["plan"] = {"second": plan_second}
+            plan: dict[str, Any] = {"second": plan_second}
+            if archetype is not None:
+                plan["archetype"] = archetype
+            rec["plan"] = plan
         recs.append(rec)
     # All opening settlements placed but self still owes a matching road?
     # Emit a "finish the road" rec so the overlay doesn't go blank during

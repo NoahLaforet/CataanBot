@@ -689,6 +689,104 @@ def test_recommend_opening_round_one_road_respects_planned_n():
             f"road toward {toward} is distance-1 from planned N={n_nid}: {r}")
 
 
+def test_archetype_ore_city_when_two_ore_plus_wheat():
+    """Two ore tiles + at least one wheat → ore-city archetype. This is
+    the classic city-first opening and should override more generic
+    labels like 'balanced'."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("ORE", 6), ("WHEAT", 8), ("SHEEP", 3)]
+    tiles_n = [("ORE", 9), ("BRICK", 4), ("DESERT", None)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) == "ore-city"
+
+
+def test_archetype_wood_first_when_heavy_wood_brick():
+    """2+ wood AND 1+ brick → wood-first archetype (road/settlement
+    expansion strategy)."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("WOOD", 6), ("BRICK", 8), ("SHEEP", 3)]
+    tiles_n = [("WOOD", 9), ("WHEAT", 4), ("DESERT", None)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) == "wood-first"
+
+
+def test_archetype_balanced_when_five_resources_no_dominance():
+    """5/5 resource coverage with no resource repeated → balanced."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("WOOD", 6), ("BRICK", 8), ("WHEAT", 5)]
+    tiles_n = [("SHEEP", 9), ("ORE", 10), ("DESERT", None)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) == "balanced"
+
+
+def test_archetype_port_trumps_other_labels():
+    """A 2:1 port on a produced resource is distinctive enough to flip
+    archetype regardless of tile distribution — the port reshapes the
+    whole trade economy."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("WOOD", 6), ("BRICK", 8), ("SHEEP", 3)]
+    tiles_n = [("WOOD", 9), ("WHEAT", 4), ("DESERT", None)]
+    # Without the port, this would be wood-first. With a WHEAT 2:1 port
+    # on F (and wheat produced via N), port wins.
+    assert _label_archetype(
+        tiles_f, tiles_n, "WHEAT 2:1", None) == "port"
+
+
+def test_archetype_port_requires_resource_on_board():
+    """A 2:1 port without any matching production doesn't trigger the
+    port label — you can't convert surplus you don't have."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("WOOD", 6), ("BRICK", 8), ("WHEAT", 5)]
+    tiles_n = [("SHEEP", 9), ("ORE", 10), ("DESERT", None)]
+    # ORE 2:1 — but already 5/5 covered with ore in N → port wins. Try
+    # a resource that really isn't produced: there isn't one here, so
+    # swap to a scenario with limited coverage and a 2:1 port on a
+    # resource missing from both tiles.
+    tiles_f = [("WOOD", 6), ("WOOD", 8), ("SHEEP", 3)]
+    tiles_n = [("BRICK", 9), ("BRICK", 4), ("DESERT", None)]
+    # 4 resources missing WHEAT + ORE. Port on WHEAT without any wheat
+    # tiles → falls back to wood-first (3+ wood+brick).
+    assert _label_archetype(
+        tiles_f, tiles_n, "WHEAT 2:1", None) == "wood-first"
+
+
+def test_archetype_none_when_uninteresting():
+    """Sparse / irregular combos return None rather than forcing a label."""
+    from cataanbot.recommender import _label_archetype
+
+    # 2 resources total, neither dominant enough to label.
+    tiles_f = [("SHEEP", 6), ("DESERT", None)]
+    tiles_n = [("SHEEP", 9), ("WHEAT", 4)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) is None
+
+
+def test_recommend_opening_attaches_archetype_to_plan():
+    """Round-1 picks should carry plan.archetype where applicable so the
+    overlay can surface strategy framing alongside the paired plan."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    out = recommend_opening(g, "RED", top=5)
+    assert out
+    # At least one of the top picks should have a recognizable archetype.
+    labeled = [r for r in out
+               if r.get("plan") and r["plan"].get("archetype")]
+    assert labeled, (
+        "no archetype label surfaced — at least one top-5 pick should "
+        "fit balanced/wood-first/ore-city/port on a fresh board")
+    # And any label that does appear must be one of the allowed values.
+    allowed = {"balanced", "wood-first", "ore-city", "port"}
+    for r in labeled:
+        assert r["plan"]["archetype"] in allowed, r
+
+
 def test_recommend_opening_round_two_uses_complement_ranking():
     """Round-2 picks should come from score_second_settlements (complement
     over raw production) so a 4/5-coverage candidate edges out a higher-pip
