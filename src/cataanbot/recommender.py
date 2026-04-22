@@ -461,11 +461,18 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
                 exp_score = ns.score
                 exp_node = x
                 exp_contested = contested
+        # Skip far-candidates that lead nowhere legal — the whole point
+        # of the opening road is to point at a future settlement spot,
+        # and `far` itself is distance-1 from our new settlement so it
+        # can never be one. Better to return no road than to recommend
+        # one that breaks the distance-2 rule.
+        if exp_node is None:
+            continue
         # Tiebreaker: far-node's own pip production.
         far_prod = _node_pip_production(m, far)
         combined = exp_score * 100.0 + far_prod
         if best is None or combined > best[0]:
-            best = (combined, far, exp_node or far, exp_contested)
+            best = (combined, far, exp_node, exp_contested)
     if best is None:
         return None
     _, far, expansion, contested = best
