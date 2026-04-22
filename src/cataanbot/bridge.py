@@ -518,20 +518,47 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         if btype in ("SETTLEMENT", "CITY"):
             buildings_per_color[col] = (
                 buildings_per_color.get(col, 0) + 1)
+    # Roads: count unique edges per color. catanatron stores each road
+    # under both (a,b) and (b,a) orderings, so de-dup with a frozenset.
+    roads_per_color: dict[Any, int] = {}
+    seen_edges: set[frozenset[int]] = set()
+    for edge, col in cat_game.state.board.roads.items():
+        key = frozenset((int(edge[0]), int(edge[1])))
+        if key in seen_edges:
+            continue
+        seen_edges.add(key)
+        roads_per_color[col] = roads_per_color.get(col, 0) + 1
+    # Opening is complete only when every color has 2 settlements AND
+    # 2 roads. The 2nd settlement alone isn't enough — if we flipped
+    # ``is_setup`` False as soon as the last 2nd settlement landed, the
+    # opening picks (with their road-direction hint) would vanish
+    # before the placing player had a chance to lay the matching road.
     opening_complete = (
         num_players > 0
         and len(buildings_per_color) >= num_players
         and min(buildings_per_color.values()) >= 2
+        and len(roads_per_color) >= num_players
+        and min(roads_per_color.values()) >= 2
     )
     is_setup = not opening_complete
     snap["setup_phase"] = is_setup
     if is_setup:
         from cataanbot.recommender import recommend_opening
+        # self_color_id latches after self's 2nd settlement ships its
+        # first resourceCards frame. Pass it in when we have it so the
+        # "finish your opening road" followup can fire — without a
+        # color, recommend_opening can't tell whose road is missing.
+        rec_color: str | None = None
+        if sess.self_color_id is not None:
+            user = sess.player_names.get(sess.self_color_id)
+            if user:
+                try:
+                    rec_color = game.color_map.get(user)
+                except Exception:  # noqa: BLE001
+                    rec_color = None
         try:
-            # None is fine — recommend_opening only uses color for the
-            # "2nd pick" hint, which gracefully degrades.
             snap["recommendations"] = recommend_opening(
-                cat_game, None, top=5)
+                cat_game, rec_color, top=5)
         except Exception as e:  # noqa: BLE001
             print(f"[advisor] recommend_opening failed: {e!r}",
                   flush=True)

@@ -479,6 +479,51 @@ def test_recommend_opening_tolerates_none_color():
         assert "2nd pick" not in r["detail"]
 
 
+def test_opening_road_followup_targets_red_settlement_without_road():
+    """Helper that fires when the main opening rec list is empty and
+    self still owes a road. Places two RED settlements and exactly one
+    matching road, then verifies the followup helper picks the un-roaded
+    settlement and hands back a road hint (edge + toward_node)."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import (
+        _build_node_neighbors, score_opening_nodes,
+    )
+    from cataanbot.recommender import _opening_road_followup
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=17,
+    )
+    # Two RED settlements: the first has a road, the second doesn't.
+    # Pick nodes that are distance-2 legal relative to each other.
+    board = g.state.board
+    m = board.map
+    neighbors = _build_node_neighbors(m)
+    # First RED settlement — any land node works.
+    first = next(iter(m.land_nodes))
+    board.build_settlement(Color.RED, first, initial_build_phase=True)
+    # First road out of `first` → any neighbor.
+    first_nb = next(iter(neighbors[first]))
+    board.build_road(Color.RED, (first, first_nb))
+    # Second RED settlement — a land node at distance ≥ 2 from first.
+    blocked = {first} | set(neighbors[first])
+    second = next(iter(n for n in m.land_nodes if n not in blocked))
+    board.build_settlement(Color.RED, second, initial_build_phase=True)
+
+    full_scored = {ns.node_id: ns for ns in score_opening_nodes(g)}
+    out = _opening_road_followup(
+        game=g, c=Color.RED, neighbors=neighbors,
+        scored_by_node=full_scored, m=m,
+    )
+    assert out, "followup must emit a rec when RED's 2nd settlement lacks a road"
+    rec = out[0]
+    # Targets the un-roaded settlement, carries a usable road hint.
+    assert rec["node_id"] == second, (rec, first, second)
+    assert rec["road"] is not None
+    assert "road" in rec["detail"].lower()
+
+
 def test_recommend_opening_flags_second_pick_context():
     """When RED already has one settlement, the detail string should
     signal "2nd pick" so Noah knows to weigh resource-complement."""
