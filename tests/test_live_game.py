@@ -181,6 +181,54 @@ def test_self_player_hand_syncs_from_ws_cards():
             f"tracker has {hand.get(res, 0)}; full hand {hand}")
 
 
+def test_advisor_snapshot_surfaces_opp_hand_breakdown():
+    """After replaying a real capture, each opp's entry should include
+    the inferred per-resource hand plus an `unknown` bucket accounting
+    for 3rd-party steals/discards we couldn't attribute.
+
+    Contract:
+        * ``sum(hand.values()) + unknown == cards``
+        * ``hand_tracked`` flips True iff unknown == 0 and cards > 0.
+    """
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+
+    st = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["game_started"]
+    assert snap["opps"], "no opps in snapshot"
+    for opp in snap["opps"]:
+        hand = opp["hand"]
+        unknown = opp["unknown"]
+        cards = opp["cards"]
+        # Breakdown must never claim more than the authoritative total.
+        assert sum(hand.values()) <= cards, opp
+        # Reported unknown bucket must reconcile the two.
+        assert sum(hand.values()) + unknown == cards, opp
+        # Tracked flag is the precise boundary condition.
+        assert opp["hand_tracked"] == (unknown == 0 and cards > 0), opp
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""

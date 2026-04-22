@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.2
+// @version      0.8.3
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.1 adds quality-banded 1-10 scoring on recommendations, hand-drift warning, and disconnect-survivable hand resync.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -192,8 +192,10 @@
   .afford { color: #b8e8b8; margin: 0 0 6px; }
   .afford.none { color: #888; }
   .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
-  .opps { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
-  .opp { color: #ccc; }
+  .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
+  .opp { color: #ccc; font-size: 11px; }
+  .opp-hand { color: #b5c4d0; font-variant-numeric: tabular-nums; }
+  .opp.tracked .opp-hand { color: #a4ef9c; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
@@ -382,8 +384,31 @@
                 const fg = contrastText(bg);
                 const pill = `<span class="color-pill" style="background:${bg};`
                     + `color:${fg};">${escapeHtml(o.username)}</span>`;
-                parts.push(`<div class="opp">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP</span></div>`);
+                // Inferred hand breakdown + unknown remainder. The hand
+                // comes from the tracker (produce + known trades + builds
+                // etc). Unknown counts reflect 3rd-party steals and
+                // closed-type discards where we know the count moved but
+                // not the type. "?" is shown for unknown cards when there
+                // are any, alongside the known resources.
+                const handParts = [];
+                const hand = o.hand || {};
+                for (const [res, n] of Object.entries(hand)) {
+                    if (n > 0) {
+                        handParts.push(
+                            `${n} ${RES_ABBREV[res] || res.slice(0, 2)}`);
+                    }
+                }
+                if ((o.unknown || 0) > 0) {
+                    handParts.push(`${o.unknown} ?`);
+                }
+                const breakdown = handParts.length
+                    ? `<span class="opp-hand">${handParts.join('  ')}</span>`
+                    : '';
+                const trackCls = o.hand_tracked ? ' tracked' : '';
+                parts.push(`<div class="opp${trackCls}">${pill}`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP</span>`
+                    + (breakdown ? ` ${breakdown}` : '')
+                    + `</div>`);
             }
             parts.push('</div>');
         }
