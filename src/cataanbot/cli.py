@@ -462,6 +462,68 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
     return 0
 
 
+def cmd_ws_replay(capture_path: str, verbose: bool,
+                  save_to: str | None, render_to: str | None,
+                  hex_size: int) -> int:
+    """Drive a colonist WS capture file through LiveGame.feed().
+
+    Unlike ``replay`` (which consumes bridge JSONL from the DOM log
+    scraper), this path feeds decoded WebSocket frames — so builds,
+    roads, and robber moves resolve to real catanatron node/coord ids
+    and actually apply, not just get echoed as 'unhandled'."""
+    from pathlib import Path
+
+    from cataanbot.colonist_proto import load_capture
+    from cataanbot.live_game import LiveGame
+
+    path = Path(capture_path).expanduser()
+    if not path.exists():
+        print(f"no such file: {path}", file=sys.stderr)
+        return 1
+
+    game = LiveGame()
+    counts: dict[str, int] = {}
+    event_counts: dict[str, int] = {}
+    for frame in load_capture(path):
+        if frame.error:
+            continue
+        payload = frame.payload
+        if not isinstance(payload, dict):
+            continue
+        for result in game.feed(payload):
+            counts[result.status] = counts.get(result.status, 0) + 1
+            ev_name = type(result.event).__name__
+            event_counts[ev_name] = event_counts.get(ev_name, 0) + 1
+            if verbose:
+                print(f"{result.status:10s} {ev_name:20s} {result.message}")
+
+    if not game.started:
+        print("capture has no GameStart (type=4) frame — nothing to replay",
+              file=sys.stderr)
+        return 1
+
+    print(f"\nfed {sum(counts.values())} events "
+          f"({', '.join(f'{k}={v}' for k, v in sorted(counts.items()))})")
+    print(f"players: {game.color_map.as_dict()}")
+    print()
+    print(game.tracker.summary())
+
+    if save_to:
+        out = game.tracker.save(Path(save_to).expanduser())
+        print(f"\nwrote tracker save to {out}")
+    if render_to:
+        try:
+            from cataanbot.render import render_board
+        except ImportError as e:
+            print(f"render deps missing: {e}", file=sys.stderr)
+            return 1
+        rendered = render_board(game.tracker.game,
+                                Path(render_to).expanduser(),
+                                hex_size=hex_size)
+        print(f"wrote {rendered}")
+    return 0
+
+
 def cmd_hands(save_path: str) -> int:
     """Per-color hand accounting against a saved tracker state."""
     tracker = _load_tracker(save_path)
@@ -627,6 +689,30 @@ def main(argv: list[str] | None = None) -> int:
                           help="Also mirror every event to this .jsonl file "
                                "(one JSON object per line).")
 
+    p_ws_replay = sub.add_parser(
+        "ws-replay",
+        help="Drive a colonist WebSocket capture file through the full "
+             "LiveGame pipeline (maps builds/roads/robber to real board "
+             "positions, unlike the JSONL replay path).",
+    )
+    p_ws_replay.add_argument("capture", help="Path to a WS capture .json file.")
+    p_ws_replay.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Print each event's dispatch status as it's applied.",
+    )
+    p_ws_replay.add_argument(
+        "--save", dest="save_to", default=None,
+        help="Write the final tracker state to a JSON save file.",
+    )
+    p_ws_replay.add_argument(
+        "--render", dest="render_to", default=None,
+        help="Render the final tracker state to this PNG.",
+    )
+    p_ws_replay.add_argument(
+        "--hex-size", type=int, default=60,
+        help="Hex radius in pixels when --render is used.",
+    )
+
     p_replay = sub.add_parser(
         "replay",
         help="Replay a bridge .jsonl file through the Event→Tracker "
@@ -729,6 +815,9 @@ def main(argv: list[str] | None = None) -> int:
                           args.report, args.report_out, args.vp_chart,
                           args.production_chart, args.dice_chart,
                           args.hand_chart, args.postmortem)
+    if args.cmd == "ws-replay":
+        return cmd_ws_replay(args.capture, args.verbose, args.save_to,
+                             args.render_to, args.hex_size)
     return 2
 
 
