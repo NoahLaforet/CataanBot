@@ -548,11 +548,37 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             c = game.color_map.get(user)
         except Exception:  # noqa: BLE001
             continue
+        # Inferred per-resource breakdown. The tracker applies every
+        # observable delta (produce, known trades, builds, dev-card buys)
+        # to opponent hands as they happen — so ``tracker.hand(color)``
+        # is a lower-bound estimate. It can *diverge* from the authoritative
+        # ``hand_card_counts`` total when a 3rd-party steal or a
+        # closed-type discard happens; we surface that gap as ``unknown``.
+        # Steals/discards between opponents make the breakdown noisy, so
+        # clients should treat high unknown% as low-confidence.
+        try:
+            inferred = dict(game.tracker.hand(c))
+        except Exception:  # noqa: BLE001
+            inferred = {}
+        # Trim over-debits: if the breakdown claims more cards than
+        # colonist's authoritative total, the inference is broken for
+        # this player. Drop it and report all cards as unknown so the UI
+        # doesn't lie.
+        inferred_total = sum(inferred.values())
+        real_total = int(count)
+        if inferred_total > real_total:
+            inferred = {}
+            inferred_total = 0
+        unknown = max(0, real_total - inferred_total)
         snap["opps"].append({
             "username": user,
             "color": c,
             "color_css": st["display_colors"].get(user),
-            "cards": int(count),
+            "cards": real_total,
+            "hand": inferred,
+            "unknown": unknown,
+            # True when we know every card: breakdown sums to the total.
+            "hand_tracked": (unknown == 0 and real_total > 0),
             "vp": _get_vp(game, c),
         })
     return snap
