@@ -151,6 +151,12 @@ class LiveGame:
         see that distinction from the WS diff alone, so we infer it from
         the running per-color count of applied placements.
 
+        Self-color builds are skipped: the playerStates.resourceCards
+        snapshot that rides alongside the build in the same diff is an
+        absolute post-build hand, and HandSyncEvent already applied it
+        authoritatively. Debiting again would over-deduct and leave the
+        tracker 3 ORE / 2 WHEAT short of ground truth on every city.
+
         Cost debits are best-effort: if a color's inferred hand lacks
         the resource, we swallow the error rather than crashing the
         feed. Missing card context is expected in beta — trades with
@@ -160,6 +166,8 @@ class LiveGame:
         tally = self.build_counts.setdefault(
             color, {"settlement": 0, "city": 0, "road": 0})
         tally[event.piece] += 1
+        if self._is_self_color(color):
+            return
         if event.piece == "settlement" and tally["settlement"] > 2:
             cost = _SETTLEMENT_COST
         elif event.piece == "city":
@@ -173,3 +181,11 @@ class LiveGame:
                 self.tracker.take(color, amount, resource)
             except TrackerError:
                 pass
+
+    def _is_self_color(self, color: str) -> bool:
+        if self.session is None or self.session.self_color_id is None:
+            return False
+        self_name = self.session.player_names.get(self.session.self_color_id)
+        if not self_name or not self.color_map.has(self_name):
+            return False
+        return self.color_map.get(self_name) == color
