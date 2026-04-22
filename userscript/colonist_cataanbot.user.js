@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.13.0
+// @version      0.14.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -249,13 +249,21 @@
   .rec-sub.plan-second .arrow { color: #7a9ab8; }
   .rec-sub.plan-second .cov { color: #8fb0d8; margin-left: 6px;
                               font-variant: tabular-nums; }
-  /* Strategy-archetype tag (balanced / wood-first / ore-city / port). */
+  /* Strategy-archetype tag (balanced / wood-first / ore-city / port /
+     dev-card). */
   .rec-sub.plan-second .arch { background: rgba(160, 192, 232, 0.18);
                                color: #d0e0f5; border-radius: 6px;
                                padding: 1px 6px; margin-left: 6px;
                                font-size: 11px; font-weight: 500;
                                text-transform: lowercase;
                                letter-spacing: 0.02em; }
+  /* Option letter (A/B/C/D) shown before round-1 picks so Noah can
+     reference them by letter — "I'm taking Option B". */
+  .rec .opt { display: inline-block; min-width: 22px; margin-right: 6px;
+              padding: 1px 6px; border-radius: 4px;
+              background: rgba(255, 222, 122, 0.16); color: #ffde7a;
+              font-weight: 600; font-size: 12px;
+              font-variant: tabular-nums; text-align: center; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
@@ -443,7 +451,7 @@
                         + `</span></span>`;
                 })
                 .join('');
-            const renderRec = (r, isTop) => {
+            const renderRec = (r, isTop, optLetter) => {
                 const topCls = isTop ? ' top' : '';
                 const kindLabel = {
                     settlement: 'settle',
@@ -469,7 +477,14 @@
                 const planCls = r.when === 'soon' ? ' plan' : '';
                 const tradeCls = (r.kind === 'trade'
                     || r.kind === 'propose_trade') ? ' trade' : '';
+                // Option A/B/C/D label — only during opening picks so
+                // Noah can say "I'm taking Option B" out loud with a
+                // friend across the table.
+                const optHtml = optLetter
+                    ? `<span class="opt">${optLetter}</span>`
+                    : '';
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}">`
+                    + optHtml
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
                     + ` <span class="kind">${kindLabel}</span>`
                     + `<span class="tiles">${loc}</span> `
@@ -517,7 +532,15 @@
                     ? '→ opening picks'
                     : '→ best moves';
                 parts.push(`<div class="recs-h">${header}</div>`);
-                nowRecs.forEach((r, i) => renderRec(r, i === 0));
+                nowRecs.forEach((r, i) => {
+                    // Only stamp A/B/C/... on opening picks — mid-game
+                    // recs already read as a ranked action list.
+                    const optLetter = (isSetup
+                        && r.kind === 'opening_settlement')
+                        ? String.fromCharCode(65 + i)
+                        : null;
+                    renderRec(r, i === 0, optLetter);
+                });
             } else if (!isSetup) {
                 parts.push('<div class="turn-hint">your turn — '
                     + 'nothing affordable</div>');
