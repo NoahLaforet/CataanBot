@@ -37,7 +37,7 @@ from cataanbot.colonist_map import (
 )
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, Event, HandSyncEvent, ProduceEvent,
-    RobberMoveEvent, RollEvent,
+    RobberMoveEvent, RollEvent, VPEvent,
 )
 
 # Resource type ints used inside `playerStates.{cid}.resourceCards.cards`.
@@ -98,6 +98,16 @@ class LiveSession:
     # lets a roll fall back to the prior turn's color when the current
     # diff omits it.
     current_turn_color_id: int | None = None
+    # Color id currently holding Longest Road / Largest Army per
+    # colonist's authoritative mechanic state. ``mechanicLongestRoadState
+    # .{cid}.hasLongestRoad`` flips to true when awarded and to false on
+    # the previous holder when it transfers. Tracking it here lets us
+    # emit a VPEvent on the transition so the tracker's HAS_ROAD /
+    # HAS_ARMY flags stay synced with colonist's view — our own road /
+    # knight tracking can lag when a diff is missed, and without this
+    # handshake the VP bonus never lands on the HUD.
+    has_longest_road_cid: int | None = None
+    has_largest_army_cid: int | None = None
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -147,6 +157,24 @@ class LiveSession:
         robber = game_state.get("mechanicRobberState") or {}
         if isinstance(robber, dict) and "locationTileIndex" in robber:
             sess.robber_tile_id = int(robber["locationTileIndex"])
+
+        # Seed bonus-holder cids from the full game state so a mid-game
+        # reconnect doesn't re-award the card on the next diff that
+        # happens to re-ship `hasLongestRoad: true`.
+        for attr, key in (("has_longest_road_cid", "mechanicLongestRoadState"),
+                          ("has_largest_army_cid", "mechanicLargestArmyState")):
+            mech = game_state.get(key) or {}
+            if not isinstance(mech, dict):
+                continue
+            flag = ("hasLongestRoad" if attr == "has_longest_road_cid"
+                    else "hasLargestArmy")
+            for pid_str, pstate in mech.items():
+                if isinstance(pstate, dict) and pstate.get(flag):
+                    try:
+                        setattr(sess, attr, int(pid_str))
+                    except (TypeError, ValueError):
+                        pass
+                    break
 
         return sess
 
@@ -267,6 +295,9 @@ def events_from_diff(
     for ev in _hand_sync_events(sess, diff.get("playerStates") or {}):
         out.append(ev)
 
+    for ev in _bonus_vp_events(sess, diff):
+        out.append(ev)
+
     # Latch currentTurnPlayerColor any time the diff ships it, so a later
     # roll frame on the same player's turn can still be attributed.
     cs = diff.get("currentState") or {}
@@ -385,6 +416,61 @@ def _hand_sync_events(
             player=sess.player_for(cid),
             resources=bag,
         ))
+    return out
+
+
+def _bonus_vp_events(
+    sess: LiveSession, diff: dict[str, Any],
+) -> list[VPEvent]:
+    """Emit VPEvents for Longest Road / Largest Army transitions.
+
+    Colonist ships the authoritative holder on each build / knight play
+    as ``mechanic{LongestRoad,LargestArmy}State.{cid}.has{LongestRoad,
+    LargestArmy}: true``. Flipping this to ``false`` on the previous
+    holder is what tells the client to re-paint the VP counter. Our
+    local tracker otherwise has to infer the award from a road-length
+    or knight-count recompute, and that inference breaks if any of
+    those events go missing (road diff drops, knight play isn't seen
+    on the DOM log). Emitting a VPEvent on the diff transition lets
+    the tracker's existing ``_apply_vp`` path sync HAS_ROAD / HAS_ARMY
+    — so the VP counter gets the bonus even when our own count lags.
+
+    Emits zero-to-one event per mechanic per diff: only on the frame
+    that actually changes the holder.
+    """
+    out: list[VPEvent] = []
+    for mech_key, flag_key, attr, reason in (
+        ("mechanicLongestRoadState", "hasLongestRoad",
+         "has_longest_road_cid", "longest_road"),
+        ("mechanicLargestArmyState", "hasLargestArmy",
+         "has_largest_army_cid", "largest_army"),
+    ):
+        mech = diff.get(mech_key) or {}
+        if not isinstance(mech, dict):
+            continue
+        new_holder_cid: int | None = None
+        for pid_str, pstate in mech.items():
+            if not isinstance(pstate, dict):
+                continue
+            if flag_key in pstate and bool(pstate[flag_key]):
+                try:
+                    new_holder_cid = int(pid_str)
+                except (TypeError, ValueError):
+                    continue
+                break
+        if new_holder_cid is None:
+            continue
+        prev_cid = getattr(sess, attr)
+        if prev_cid == new_holder_cid:
+            continue
+        out.append(VPEvent(
+            player=sess.player_for(new_holder_cid),
+            reason=reason,
+            vp_delta=2,
+            previous_holder=(sess.player_for(prev_cid)
+                             if prev_cid is not None else None),
+        ))
+        setattr(sess, attr, new_holder_cid)
     return out
 
 

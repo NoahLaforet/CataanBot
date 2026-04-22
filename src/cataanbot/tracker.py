@@ -181,12 +181,20 @@ class Tracker:
         self._recompute_vp()
 
     def _recompute_longest_road(self) -> None:
-        """Refresh `LONGEST_ROAD_LENGTH` per color and reassign `HAS_ROAD`.
+        """Refresh `LONGEST_ROAD_LENGTH` per color; award HAS_ROAD only on
+        clear displacement.
 
-        Uses catanatron's `continuous_roads_by_player` for the per-color
-        longest path; requires length ≥ 5 to qualify. The current holder
-        keeps the card unless another color strictly exceeds them —
-        matches the standard Catan rule."""
+        Colonist is the authoritative source for the HAS_ROAD flag —
+        ``colonist_diff._bonus_vp_events`` emits a VPEvent on every
+        ``hasLongestRoad`` transition. Our own recompute runs after
+        every road / settlement build to keep LONGEST_ROAD_LENGTH
+        current and to *award* the card when colonist's signal is
+        absent (e.g. replay / offline analysis). We deliberately do
+        NOT strip HAS_ROAD when our internal count drops below 5, only
+        when another color strictly exceeds the current holder — our
+        road tracking can lag (missed road diff, opponent settlement
+        that breaks a chain we tracked incompletely) and an overzealous
+        strip would silently vanish the +2 VP bonus from the HUD."""
         state = self.game.state
         board = state.board
         lengths: dict = {}
@@ -207,30 +215,35 @@ class Tracker:
 
         eligible = [(c, lengths[c]) for c, _ in lengths.items()
                     if lengths[c] >= 5]
-        if not eligible:
-            new_holder = None
-        else:
+        best_color = best_len = None
+        if eligible:
             best_color, best_len = max(eligible, key=lambda kv: kv[1])
-            if (current_holder is not None
-                    and lengths.get(current_holder, 0) >= 5
-                    and best_len <= lengths[current_holder]):
-                new_holder = current_holder
-            else:
-                new_holder = best_color
 
-        if new_holder is not current_holder:
-            if current_holder is not None:
-                idx = state.color_to_index[current_holder]
-                state.player_state[f"P{idx}_HAS_ROAD"] = False
-            if new_holder is not None:
-                idx = state.color_to_index[new_holder]
+        if current_holder is None:
+            if best_color is not None:
+                idx = state.color_to_index[best_color]
                 state.player_state[f"P{idx}_HAS_ROAD"] = True
+        else:
+            current_len = lengths.get(current_holder, 0)
+            if (best_color is not None
+                    and best_color != current_holder
+                    and best_len > current_len):
+                prev_idx = state.color_to_index[current_holder]
+                new_idx = state.color_to_index[best_color]
+                state.player_state[f"P{prev_idx}_HAS_ROAD"] = False
+                state.player_state[f"P{new_idx}_HAS_ROAD"] = True
 
     def _recompute_largest_army(self) -> None:
-        """Refresh `HAS_ARMY` based on PLAYED_KNIGHT counts.
+        """Refresh `HAS_ARMY` based on PLAYED_KNIGHT counts; award on
+        clear displacement only.
 
-        Threshold is 3 played knights; holder keeps the card until another
-        color strictly exceeds them."""
+        Same policy as ``_recompute_longest_road``: colonist's diff is
+        authoritative (see ``_bonus_vp_events``). Our recompute awards
+        HAS_ARMY when no one holds it and a qualifier appears, or when
+        a strict displacer emerges — but never strips the flag when our
+        knight count merely drops below threshold, because a DOM-log
+        miss on a ``X used [knight]`` line would otherwise silently
+        erase the +2 VP bonus."""
         state = self.game.state
         played: dict = {}
         for color, idx in state.color_to_index.items():
@@ -245,24 +258,23 @@ class Tracker:
                 break
 
         eligible = [(c, played[c]) for c in played if played[c] >= 3]
-        if not eligible:
-            new_holder = None
-        else:
+        best_color = best_n = None
+        if eligible:
             best_color, best_n = max(eligible, key=lambda kv: kv[1])
-            if (current_holder is not None
-                    and played.get(current_holder, 0) >= 3
-                    and best_n <= played[current_holder]):
-                new_holder = current_holder
-            else:
-                new_holder = best_color
 
-        if new_holder is not current_holder:
-            if current_holder is not None:
-                idx = state.color_to_index[current_holder]
-                state.player_state[f"P{idx}_HAS_ARMY"] = False
-            if new_holder is not None:
-                idx = state.color_to_index[new_holder]
+        if current_holder is None:
+            if best_color is not None:
+                idx = state.color_to_index[best_color]
                 state.player_state[f"P{idx}_HAS_ARMY"] = True
+        else:
+            current_n = played.get(current_holder, 0)
+            if (best_color is not None
+                    and best_color != current_holder
+                    and best_n > current_n):
+                prev_idx = state.color_to_index[current_holder]
+                new_idx = state.color_to_index[best_color]
+                state.player_state[f"P{prev_idx}_HAS_ARMY"] = False
+                state.player_state[f"P{new_idx}_HAS_ARMY"] = True
 
     def _recompute_vp(self) -> None:
         """Recompute VICTORY_POINTS keys from current board state.
