@@ -53,6 +53,43 @@ def _score_road(landing_prod: float) -> float:
 
 _DEV_CARD_SCORE = 3.0
 
+def _best_trade_rate(resource: str, owned_nodes: set[int],
+                     port_nodes) -> int:
+    """Cheapest bank/port trade rate the player can access for this
+    resource. ``port_nodes`` is catanatron's ``map.port_nodes`` — a
+    ``None`` key holds the set of generic (3:1) port nodes, each
+    resource key holds its 2:1 port nodes."""
+    specific = port_nodes.get(resource) or set()
+    if owned_nodes & set(specific):
+        return 2
+    generic = port_nodes.get(None) or set()
+    if owned_nodes & set(generic):
+        return 3
+    return 4
+
+
+def _find_trade_source(hand: dict[str, int], need_resource: str,
+                       rate: int,
+                       reserved: dict[str, int] | None = None) -> str | None:
+    """Pick a resource whose *excess* over what this build needs is ≥
+    the trade rate. ``reserved`` is the build's cost dict — we must
+    leave that much behind so the build itself is still possible.
+
+    Picks the largest excess stockpile to minimize disruption to future
+    turns. Returns None if nothing's tradeable."""
+    candidates = []
+    reserved = reserved or {}
+    for res, n in hand.items():
+        if res == need_resource:
+            continue
+        excess = n - reserved.get(res, 0)
+        if excess >= rate:
+            candidates.append((res, excess))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda rn: -rn[1])
+    return candidates[0][0]
+
 
 def _hand_can_afford(hand: dict[str, int], cost: dict[str, int]) -> bool:
     return all(hand.get(r, 0) >= n for r, n in cost.items())
@@ -288,6 +325,71 @@ def recommend_actions(
                 "detail": (f"{_format_missing(missing)} "
                            f"· knight / VP / road / YoP / mono"),
             })
+
+    # --- Bank/port trades ------------------------------------------------
+    # If a build is blocked by exactly 1 missing card and we're sitting
+    # on enough of some other resource to bank-trade (4:1) or port-trade
+    # (3:1 generic, 2:1 specific), suggest the trade. The trade rec is
+    # tagged ``when: "now"`` because bank trades execute on the same
+    # turn — it unlocks the build right now. Score matches the unlocked
+    # build minus a small efficiency penalty so a direct build always
+    # edges ahead of "trade + build".
+    owned_building_nodes = {
+        int(n) for n, (bcol, _) in game.state.board.buildings.items()
+        if bcol == c
+    }
+    port_nodes = getattr(m, "port_nodes", {}) or {}
+    _trade_targets = [
+        ("settlement", _SETTLEMENT_COST, _score_settlement,
+         _best_settlement_spot),
+        ("city",       _CITY_COST,       _score_city,
+         _best_owned_settlement),
+        ("dev_card",   _DEV_COST,        lambda _p: _DEV_CARD_SCORE,
+         lambda: (0, 0.0)),
+    ]
+    for kind, cost, score_fn, target_fn in _trade_targets:
+        if _hand_can_afford(hand, cost):
+            continue
+        missing = _missing_for(hand, cost)
+        if sum(missing.values()) != 1:
+            continue  # Multi-trade plans get too expensive to be useful.
+        need_res = next(iter(missing))
+        rate_needed = _best_trade_rate(need_res, owned_building_nodes,
+                                       port_nodes)
+        # Reserve the build's cost; any excess beyond that is tradeable.
+        source = _find_trade_source(hand, need_res, rate_needed, cost)
+        if source is None:
+            continue
+        target = target_fn()
+        if target is None:
+            continue
+        node_or_none, prod = (target if isinstance(target, tuple)
+                              else (None, 0.0))
+        base_score = score_fn(prod)
+        # Small penalty for trade inefficiency — a direct build next
+        # turn often nets more cards back. Cap at 9.5.
+        trade_score = round(min(base_score - 0.5, 9.5), 1)
+        rate_label = {2: "2:1 port", 3: "3:1 port",
+                      4: "4:1 bank"}[rate_needed]
+        rec = {
+            "kind": "trade",
+            "when": "now",
+            "score": trade_score,
+            "give": {source: rate_needed},
+            "get": {need_res: 1},
+            "unlocks": kind,
+            "detail": (f"{rate_needed} {_RES_TITLE.get(source, source)} "
+                       f"→ 1 {_RES_TITLE.get(need_res, need_res)} "
+                       f"· {rate_label} · unlocks {kind}"),
+        }
+        if node_or_none is not None:
+            rec["node_id"] = int(node_or_none)
+            rec["tiles"] = _tile_label(m, int(node_or_none))
+        recs.append(rec)
+        # One trade suggestion per turn is plenty — don't flood the
+        # overlay. The highest-impact one (settlement > city > dev)
+        # wins by virtue of being considered first.
+        break
 
     # Sort by score descending. Ties break with "now" before "soon" so the
     # act-now option ranks above an equally-scored plan.
