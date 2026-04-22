@@ -143,7 +143,67 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             "port": s.port,
             "road": road,
         })
+    # All opening settlements placed but self still owes a matching road?
+    # Emit a "finish the road" rec so the overlay doesn't go blank during
+    # that window. Fires only when we know self's color — otherwise we
+    # can't tell whose settlement needs a road.
+    if not recs and c is not None:
+        recs.extend(_opening_road_followup(
+            game=game, c=c, neighbors=neighbors,
+            scored_by_node=full_scored, m=m,
+        ))
     return recs
+
+
+def _opening_road_followup(*, game, c, neighbors, scored_by_node, m):
+    """One-off road hint for self's most-recently-placed opening
+    settlement that doesn't yet have a self-owned adjacent road.
+
+    Used when the main opening settlement recs are exhausted (all
+    settlements placed) but at least one player still owes their
+    opening road. Returning a non-empty list keeps the overlay showing
+    something useful between settlement placement and road placement."""
+    out: list[dict[str, Any]] = []
+    roads = game.state.board.roads
+    # Highest-pip self settlement without a road is the likely target —
+    # it's usually the one just placed, and if not it's still the more
+    # important of the two to cover.
+    candidates: list[tuple[float, int]] = []
+    for nid, (col, btype) in game.state.board.buildings.items():
+        if col != c or btype != "SETTLEMENT":
+            continue
+        has_self_road = False
+        for x in neighbors.get(int(nid), set()):
+            if (roads.get((int(nid), int(x))) == c
+                    or roads.get((int(x), int(nid))) == c):
+                has_self_road = True
+                break
+        if has_self_road:
+            continue
+        prod = _node_pip_production(m, int(nid))
+        candidates.append((prod, int(nid)))
+    if not candidates:
+        return out
+    candidates.sort(reverse=True)
+    _, nid = candidates[0]
+    road = _best_opening_road(
+        settlement=nid, neighbors=neighbors,
+        scored_by_node=scored_by_node, m=m, game=game, my_color=c,
+    )
+    if not road:
+        return out
+    out.append({
+        "kind": "opening_settlement",
+        "when": "now",
+        "node_id": nid,
+        "score": _score_opening(scored_by_node[nid].score)
+                 if nid in scored_by_node else 5.0,
+        "detail": "lay your matching road",
+        "tiles": _tile_label(m, nid),
+        "port": None,
+        "road": road,
+    })
+    return out
 
 
 def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
