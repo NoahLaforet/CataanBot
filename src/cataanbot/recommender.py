@@ -589,19 +589,11 @@ def recommend_actions(
                            f"· knight / VP / road / YoP / mono"),
             })
 
-    # --- Bank/port trades ------------------------------------------------
+    # --- Trade proposals -------------------------------------------------
     # If a build is blocked by exactly 1 missing card and we're sitting
-    # on enough of some other resource to bank-trade (4:1) or port-trade
-    # (3:1 generic, 2:1 specific), suggest the trade. The trade rec is
-    # tagged ``when: "now"`` because bank trades execute on the same
-    # turn — it unlocks the build right now. Score matches the unlocked
-    # build minus a small efficiency penalty so a direct build always
-    # edges ahead of "trade + build".
-    owned_building_nodes = {
-        int(n) for n, (bcol, _) in game.state.board.buildings.items()
-        if bcol == c
-    }
-    port_nodes = getattr(m, "port_nodes", {}) or {}
+    # on any spare resource, float a 1:1 propose_trade so Noah knows to
+    # open the trade UI. Score matches the unlocked build minus a small
+    # "proposal might be rejected" penalty so a direct build edges ahead.
     # (kind, cost, score_fn, target_fn).
     # ``target_fn`` returns (node_id, prod) for location-linked builds
     # or ``None`` for dev card (no node, fixed score).
@@ -620,14 +612,21 @@ def recommend_actions(
         if sum(missing.values()) != 1:
             continue  # Multi-trade plans get too expensive to be useful.
         need_res = next(iter(missing))
-        # Reserve the build's cost; any excess beyond that is tradeable.
-        # The rate depends on what we're SELLING (port applies to the
-        # give side), so source + rate get picked together.
-        offer = _best_trade_offer(hand, need_res, owned_building_nodes,
-                                  port_nodes, reserved=cost)
-        if offer is None:
-            continue
-        source, rate_needed = offer
+        # Prefer a 1:1 player-trade proposal first — cheaper than any
+        # bank/port rate, and colonist lets us broadcast to the table.
+        # A spare surplus (anything beyond the build's own cost) is
+        # enough to make a fair 1:1 offer worth floating. Pick the
+        # source with the largest surplus so we're parting with the
+        # most dispensable card.
+        propose_source: str | None = None
+        propose_surplus = 0
+        for res, n in hand.items():
+            if res == need_res:
+                continue
+            excess = n - cost.get(res, 0)
+            if excess >= 1 and excess > propose_surplus:
+                propose_source = res
+                propose_surplus = excess
         target = target_fn()
         if kind == "dev_card":
             node_or_none, prod = None, 0.0
@@ -636,21 +635,25 @@ def recommend_actions(
         else:
             node_or_none, prod = target
         base_score = score_fn(prod)
-        # Small penalty for trade inefficiency — a direct build next
-        # turn often nets more cards back. Cap at 9.5.
-        trade_score = round(min(base_score - 0.5, 9.5), 1)
-        rate_label = {2: "2:1 port", 3: "3:1 port",
-                      4: "4:1 bank"}[rate_needed]
+        if propose_source is None:
+            # No spare card to offer — no trade rec for this build. Bank
+            # trades are strictly dominated by the 1:1 propose whenever
+            # propose is possible, so there's no useful fallback here.
+            continue
+        # Player trade is cheaper (1:1) but not guaranteed to land —
+        # smaller penalty than bank, still below a direct build.
+        propose_score = round(min(base_score - 0.3, 9.5), 1)
         rec = {
-            "kind": "trade",
+            "kind": "propose_trade",
             "when": "now",
-            "score": trade_score,
-            "give": {source: rate_needed},
+            "score": propose_score,
+            "give": {propose_source: 1},
             "get": {need_res: 1},
             "unlocks": kind,
-            "detail": (f"{rate_needed} {_RES_TITLE.get(source, source)} "
+            "detail": (f"propose 1 "
+                       f"{_RES_TITLE.get(propose_source, propose_source)} "
                        f"→ 1 {_RES_TITLE.get(need_res, need_res)} "
-                       f"· {rate_label} · unlocks {kind}"),
+                       f"· ask the table · unlocks {kind}"),
         }
         if node_or_none is not None:
             rec["node_id"] = int(node_or_none)

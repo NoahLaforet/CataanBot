@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.11.1
+// @version      0.11.2
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -430,6 +430,7 @@
                     road: 'road',
                     dev_card: 'dev card',
                     trade: 'trade',
+                    propose_trade: 'propose',
                     opening_settlement: 'settle',
                 }[r.kind] || r.kind;
                 const tilesHtml = tilesToHtml(r.tiles);
@@ -445,7 +446,8 @@
                 const scoreCls = s >= 8 ? 'strong'
                     : (s >= 5 ? 'decent' : 'weak');
                 const planCls = r.when === 'soon' ? ' plan' : '';
-                const tradeCls = r.kind === 'trade' ? ' trade' : '';
+                const tradeCls = (r.kind === 'trade'
+                    || r.kind === 'propose_trade') ? ' trade' : '';
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}">`
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
                     + ` <span class="kind">${kindLabel}</span>`

@@ -170,9 +170,10 @@ def test_now_ranks_above_equal_score_soon():
     assert out[0]["when"] == "now"
 
 
-def test_bank_trade_suggests_when_one_card_short():
+def test_propose_trade_suggested_when_one_card_short():
     """{WOOD:5, BRICK:1, SHEEP:0, WHEAT:1} is 1 Sheep short of a
-    settlement. 4:1 bank trade on Wood should be suggested."""
+    settlement and has a Wood surplus. Propose 1 Wood → 1 Sheep should
+    be suggested (cheaper than the 4:1 bank fallback)."""
     from cataanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
@@ -182,13 +183,29 @@ def test_bank_trade_suggests_when_one_card_short():
     b.build_road(Color.RED, (2, 3))
     hand = {"WOOD": 5, "BRICK": 1, "WHEAT": 1}
     out = recommend_actions(g, "RED", hand, top=6)
-    trades = [r for r in out if r["kind"] == "trade"]
-    assert trades, f"expected a trade rec, got {[r['kind'] for r in out]}"
-    t = trades[0]
+    proposals = [r for r in out if r["kind"] == "propose_trade"]
+    assert proposals, f"expected a propose_trade, got {[r['kind'] for r in out]}"
+    t = proposals[0]
     assert t["get"] == {"SHEEP": 1}
-    assert t["give"] == {"WOOD": 4}
+    assert t["give"] == {"WOOD": 1}
     assert t["unlocks"] == "settlement"
     assert t["when"] == "now"
+
+
+def test_no_trade_when_no_spare_surplus():
+    """When every card we hold is already reserved by the blocked
+    build's cost, there's nothing spare to propose. Bank-trade fallback
+    is gone (propose strictly dominates), so no trade rec fires."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    # Settlement needs WOOD+BRICK+SHEEP+WHEAT. Hand has exactly one of
+    # each EXCEPT SHEEP → 1 SHEEP short, no surplus anywhere.
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=6)
+    trades = [r for r in out
+              if r["kind"] in ("trade", "propose_trade")]
+    assert not trades, trades
 
 
 def test_no_bank_trade_when_two_cards_short():
@@ -203,12 +220,11 @@ def test_no_bank_trade_when_two_cards_short():
     assert not trades, f"no trade expected, got {trades}"
 
 
-def test_port_trade_uses_cheaper_rate_when_available():
-    """A settlement on a specific-resource 2:1 port should let the
-    recommender trade 2-of-that-resource for 1 instead of 4.
-    Uses dev-card as the unlock target so the test doesn't depend on
-    having buildable settlement spots — the cheaper rate is the
-    assertion, not the unlocked kind."""
+def test_propose_trade_dominates_port_rate_when_spare_exists():
+    """A 1:1 propose is cheaper than a 2:1 port — with any WOOD
+    surplus, the propose rec must fire rather than the 2:1 port trade
+    (which would waste a card). Keeps the old port path as a fallback
+    for no-surplus situations."""
     from cataanbot.recommender import recommend_actions
     from catanatron import Color
 
@@ -222,28 +238,32 @@ def test_port_trade_uses_cheaper_rate_when_available():
     port_node = next(iter(wood_port_nodes - occupied))
     b.build_settlement(Color.RED, port_node, initial_build_phase=True)
     # Dev card cost is SHEEP + WHEAT + ORE. Have SHEEP+WHEAT but no ORE,
-    # and 2 Wood on the port: 2:1 WOOD→ORE should fire.
+    # and 2 Wood on the port. Propose 1 WOOD → 1 ORE beats 2 WOOD → 1 ORE.
     hand = {"WOOD": 2, "SHEEP": 1, "WHEAT": 1}
     out = recommend_actions(g, "RED", hand, top=6)
-    trades = [r for r in out if r["kind"] == "trade"
-              and r.get("get") == {"ORE": 1}]
-    assert trades, f"expected WOOD→ORE trade, got {[r['kind'] for r in out]}"
-    t = trades[0]
-    assert t["give"] == {"WOOD": 2}, t
-    assert "2:1 port" in t["detail"]
+    proposals = [r for r in out
+                 if r["kind"] == "propose_trade"
+                 and r.get("get") == {"ORE": 1}]
+    assert proposals, (
+        f"expected WOOD→ORE propose, got {[r['kind'] for r in out]}")
+    t = proposals[0]
+    assert t["give"] == {"WOOD": 1}, t
+    assert "propose" in t["detail"].lower()
     assert t["unlocks"] == "dev_card"
 
 
 def test_dev_card_trade_has_no_node_id():
     """Trade to unlock a dev card shouldn't leak a misleading node_id
-    (dev cards don't go on the board)."""
+    (dev cards don't go on the board). Applies to both propose and bank
+    variants."""
     from cataanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # 1 short of dev card (need ORE), excess WOOD to trade with.
     hand = {"WOOD": 5, "SHEEP": 1, "WHEAT": 1}
     out = recommend_actions(g, "RED", hand, top=6)
-    trades = [r for r in out if r["kind"] == "trade"
+    trades = [r for r in out
+              if r["kind"] in ("trade", "propose_trade")
               and r.get("unlocks") == "dev_card"]
     assert trades, f"expected dev_card trade, got {[r['kind'] for r in out]}"
     t = trades[0]
@@ -262,7 +282,8 @@ def test_trade_protects_resources_still_needed():
     # an unneeded resource, so no trade source exists → no trade.
     hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1}
     out = recommend_actions(g, "RED", hand, top=6)
-    trades = [r for r in out if r["kind"] == "trade"]
+    trades = [r for r in out
+              if r["kind"] in ("trade", "propose_trade")]
     assert not trades, f"should not trade away a needed resource: {trades}"
 
 
@@ -795,14 +816,15 @@ def test_trade_no_counter_when_accept_already():
 
 def test_trade_no_counter_when_trimmed_still_bad():
     """Counter only fires when the trimmed version flips to accept. A
-    swap that's neutral even after trimming should come back with no
-    counter (nothing to suggest)."""
+    swap where the trimmed version still unlocks nothing (same kind
+    before/after, same score) should come back with no counter."""
     from cataanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
-    # Neutral lopsided swap with no unlock potential: trimming want to
-    # give's size still doesn't produce a "this unlocks a build" swap.
-    hand = {"SHEEP": 3}
+    # Hand with exactly 2 SHEEP and nothing else. Before/full/counter
+    # all land at nothing-affordable (dev is still missing ORE+WHEAT
+    # before, missing ORE after counter — too far for propose).
+    hand = {"SHEEP": 2}
     verdict = evaluate_incoming_trade(
         g, "RED", hand,
         give={"WHEAT": 1}, want={"SHEEP": 2},
