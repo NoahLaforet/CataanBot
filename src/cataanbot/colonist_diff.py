@@ -198,6 +198,27 @@ def events_from_diff(
         ))
         sess.known_corners[cid] = int(bt)
         sess.corner_owners[cid] = int(owner)
+        # A player's *2nd* settlement places and immediately yields the
+        # three adjacent tile resources — colonist never ships this as a
+        # dice-roll payout, and without it opponent hands stay blank
+        # until their first real roll fires. Detect it by counting the
+        # owner's settlements *after* this update: exactly 2 means this
+        # diff is the 2nd-settlement placement. The WS playerStates diff
+        # also ships a resourceCards update in the same frame for the
+        # self-player, so HandSyncEvent (emitted further down) will
+        # overwrite any double-count on our own hand.
+        if piece == "settlement":
+            owner_settlements = sum(
+                1 for cid2, own in sess.corner_owners.items()
+                if own == int(owner)
+                and sess.known_corners.get(cid2) == 1)
+            if owner_settlements == 2:
+                bag = _starting_resources_for_corner(sess.mapping, cid)
+                if bag:
+                    out.append(ProduceEvent(
+                        player=sess.player_for(int(owner)),
+                        resources=bag,
+                    ))
 
     for eid_str, e in edge_diff.items():
         try:
@@ -365,6 +386,22 @@ def _hand_sync_events(
             resources=bag,
         ))
     return out
+
+
+def _starting_resources_for_corner(
+    mapping: MapMapping, cid: int,
+) -> dict[str, int]:
+    """Return the per-resource yield a 2nd settlement gets from its
+    three adjacent tiles. Skips desert (non-producing) tiles."""
+    bag: dict[str, int] = {}
+    for tid, corners in mapping.tile_corners.items():
+        if cid not in corners:
+            continue
+        res = tile_resource(mapping.tile_types.get(tid, 0))
+        if res is None:
+            continue
+        bag[res] = bag.get(res, 0) + 1
+    return bag
 
 
 def produce_events_for_roll(
