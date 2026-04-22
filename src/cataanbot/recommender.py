@@ -63,6 +63,27 @@ _CITY_COST = {"WHEAT": 2, "ORE": 3}
 _ROAD_COST = {"WOOD": 1, "BRICK": 1}
 _DEV_COST = {"SHEEP": 1, "WHEAT": 1, "ORE": 1}
 
+# Max missing-card budget for a "save for X" plan. Two-off is a realistic
+# 1-2 turn away target; anything further is noise.
+_PLAN_MAX_MISSING = 2
+
+_RES_TITLE = {
+    "WOOD": "Wood", "BRICK": "Brick", "SHEEP": "Sheep",
+    "WHEAT": "Wheat", "ORE": "Ore",
+}
+
+
+def _missing_for(hand: dict[str, int],
+                 cost: dict[str, int]) -> dict[str, int]:
+    return {r: n - hand.get(r, 0) for r, n in cost.items()
+            if hand.get(r, 0) < n}
+
+
+def _format_missing(missing: dict[str, int]) -> str:
+    parts = [f"{n} {_RES_TITLE.get(r, r.title())}"
+             for r, n in missing.items()]
+    return "need " + ", ".join(parts)
+
 
 def _node_pip_production(m, node_id: int) -> float:
     """Sum of pip-weighted resource yield for a node, including desert (0)."""
@@ -86,8 +107,13 @@ def recommend_actions(
     ``hand`` is a ``{resource: count}`` dict in catanatron canonical
     names (WOOD/BRICK/SHEEP/WHEAT/ORE).
 
+    Each rec carries a ``when`` tag:
+        "now"  — affordable this turn
+        "soon" — 1-2 cards off; surface as a "save for X" planning hint
+    UI typically groups by ``when``.
+
     Returns up to ``top`` dicts, sorted by heuristic score descending:
-        {kind, score, detail, node_id?, edge?, tiles?}
+        {kind, when, score, detail, node_id?, edge?, tiles?, missing?}
     where ``kind`` ∈ {settlement, city, road, dev_card}.
     """
     from catanatron import Color
@@ -95,6 +121,26 @@ def recommend_actions(
     c = color if isinstance(color, Color) else Color[str(color).upper()]
     m = game.state.board.map
     recs: list[dict[str, Any]] = []
+
+    def _best_settlement_spot() -> tuple[int, float] | None:
+        try:
+            nodes = game.state.board.buildable_node_ids(
+                c, initial_build_phase=False)
+        except Exception:  # noqa: BLE001
+            return None
+        scored = [(node, _node_pip_production(m, node)) for node in nodes]
+        scored.sort(key=lambda s: -s[1])
+        return (int(scored[0][0]), scored[0][1]) if scored else None
+
+    def _best_owned_settlement() -> tuple[int, float] | None:
+        best = None
+        for node_id, (bcol, btype) in game.state.board.buildings.items():
+            if bcol != c or btype != "SETTLEMENT":
+                continue
+            prod = _node_pip_production(m, int(node_id))
+            if best is None or prod > best[1]:
+                best = (int(node_id), prod)
+        return best
 
     # --- Settlements -----------------------------------------------------
     # buildable_node_ids respects distance-2 + road-connectivity rules.
@@ -111,6 +157,7 @@ def recommend_actions(
         for node, prod in scored[:3]:
             recs.append({
                 "kind": "settlement",
+                "when": "now",
                 "node_id": int(node),
                 "score": _score_settlement(prod),
                 "detail": f"prod {prod:.2f}/roll",
@@ -126,6 +173,7 @@ def recommend_actions(
             prod = _node_pip_production(m, int(node_id))
             recs.append({
                 "kind": "city",
+                "when": "now",
                 "node_id": int(node_id),
                 "score": _score_city(prod),
                 "detail": f"2× prod ({prod:.2f}/roll) + 1 VP",
@@ -173,6 +221,7 @@ def recommend_actions(
             # direct build since you still have to save for the settle.
             recs.append({
                 "kind": "road",
+                "when": "now",
                 "edge": list(edge),
                 "landing_node": landing,
                 "score": _score_road(prod),
@@ -186,9 +235,62 @@ def recommend_actions(
     if _hand_can_afford(hand, _DEV_COST):
         recs.append({
             "kind": "dev_card",
+            "when": "now",
             "score": _DEV_CARD_SCORE,
             "detail": "knight / VP / road-building / YoP / monopoly",
         })
 
-    recs.sort(key=lambda r: -float(r.get("score", 0)))
+    # --- "Save for X" plans ---------------------------------------------
+    # When a bigger purchase is 1-2 cards away, surface it so the user can
+    # decide to hold rather than spend on whatever's affordable now.
+    # e.g. road is affordable but a settlement is 1 Sheep away → the
+    # overlay shows both and the user picks.
+    if not _hand_can_afford(hand, _SETTLEMENT_COST):
+        missing = _missing_for(hand, _SETTLEMENT_COST)
+        if 0 < sum(missing.values()) <= _PLAN_MAX_MISSING:
+            best = _best_settlement_spot()
+            if best is not None:
+                node, prod = best
+                recs.append({
+                    "kind": "settlement",
+                    "when": "soon",
+                    "node_id": node,
+                    "score": _score_settlement(prod),
+                    "missing": missing,
+                    "detail": (f"{_format_missing(missing)} "
+                               f"· {prod:.2f}/roll target"),
+                    "tiles": _tile_label(m, node),
+                })
+    if not _hand_can_afford(hand, _CITY_COST):
+        missing = _missing_for(hand, _CITY_COST)
+        if 0 < sum(missing.values()) <= _PLAN_MAX_MISSING:
+            best = _best_owned_settlement()
+            if best is not None:
+                node, prod = best
+                recs.append({
+                    "kind": "city",
+                    "when": "soon",
+                    "node_id": node,
+                    "score": _score_city(prod),
+                    "missing": missing,
+                    "detail": (f"{_format_missing(missing)} "
+                               f"· 2×{prod:.2f}/roll + 1 VP"),
+                    "tiles": _tile_label(m, node),
+                })
+    if not _hand_can_afford(hand, _DEV_COST):
+        missing = _missing_for(hand, _DEV_COST)
+        if 0 < sum(missing.values()) <= _PLAN_MAX_MISSING:
+            recs.append({
+                "kind": "dev_card",
+                "when": "soon",
+                "score": _DEV_CARD_SCORE,
+                "missing": missing,
+                "detail": (f"{_format_missing(missing)} "
+                           f"· knight / VP / road / YoP / mono"),
+            })
+
+    # Sort by score descending. Ties break with "now" before "soon" so the
+    # act-now option ranks above an equally-scored plan.
+    recs.sort(key=lambda r: (-float(r.get("score", 0)),
+                             0 if r.get("when") == "now" else 1))
     return recs[:top]
