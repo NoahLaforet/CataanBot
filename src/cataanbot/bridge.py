@@ -216,6 +216,17 @@ def _print_dispatch_results(game, results, seq: int,
     if not advisor:
         return
 
+    # When the self-player rolls a 7, the next thing they have to do is
+    # pick a robber tile — surface the ranking right away so they don't
+    # have to alt-tab. Opponent 7-rolls are handled by the RobberMoveEvent
+    # path elsewhere (nothing to suggest — they pick).
+    for r in results:
+        if (isinstance(r.event, RollEvent) and r.event.total == 7
+                and r.status in ("applied", "skipped")
+                and _is_self_player(game, r.event.player)):
+            _print_robber_targets(game)
+            break
+
     # Minimal advisor output: whenever the self-player's hand is
     # updated, or after a roll, print what they can afford to build.
     triggered = any(isinstance(r.event, (HandSyncEvent, RollEvent))
@@ -224,6 +235,52 @@ def _print_dispatch_results(game, results, seq: int,
     if not triggered:
         return
     _print_self_advisor(game)
+
+
+def _is_self_player(game, username: str | None) -> bool:
+    if not username:
+        return False
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return False
+    return sess.player_names.get(sess.self_color_id) == username
+
+
+def _print_robber_targets(game, top: int = 5) -> None:
+    """Compact top-N robber ranking for when the self-player rolls a 7."""
+    from cataanbot.advisor import score_robber_targets
+
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return
+    username = sess.player_names.get(sess.self_color_id)
+    if not username:
+        return
+    color = game.color_map.get(username)
+    try:
+        scores = score_robber_targets(game.tracker.game, color)
+    except Exception as e:  # noqa: BLE001
+        print(f"    [robber] ranking failed: {e}", flush=True)
+        return
+    if not scores:
+        print("    [robber] no legal targets", flush=True)
+        return
+    print(f"    [robber] you rolled 7 — top {top} targets for {color}:",
+          flush=True)
+    for i, s in enumerate(scores[:top], start=1):
+        coord_str = f"({s.coord[0]},{s.coord[1]},{s.coord[2]})"
+        tile_str = ("DESERT" if s.resource is None
+                    else f"{s.resource[:3]}{s.number or ''}")
+        if s.victims:
+            victim_str = ", ".join(
+                f"{c}({p}p/{s.victim_vp.get(c,0)}VP/"
+                f"{s.opponent_hand_size.get(c,0)}c)"
+                for c, p in s.victims.items()
+            )
+        else:
+            victim_str = "—"
+        print(f"        {i}. {coord_str:<12} {tile_str:<8} "
+              f"score={s.score:+5.1f}  {victim_str}", flush=True)
 
 
 def _print_self_advisor(game) -> None:
