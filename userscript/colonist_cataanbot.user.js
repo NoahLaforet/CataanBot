@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8 adds turn-aware action recommendations (best settlement/city/road/dev spot) when it's your turn. Also fixes hand-abbrev spacing and roller-name fallback.
+// @version      0.8.1
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.1 adds quality-banded 1-10 scoring on recommendations, hand-drift warning, and disconnect-survivable hand resync.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -202,11 +202,21 @@
   .recs-h { color: #7ac74f; font-weight: 600; margin: 6px 0 2px; }
   .rec { color: #d8d8d8; margin: 1px 0; }
   .rec .kind {
-    display: inline-block; min-width: 70px; color: #ffde7a; font-weight: 600;
+    display: inline-block; min-width: 56px; color: #ffde7a; font-weight: 600;
   }
   .rec.top { color: #fff; font-weight: 600; }
   .rec .detail { color: #aaa; font-weight: 400; }
+  .rec .score {
+    display: inline-block; min-width: 52px;
+    padding: 0 5px; border-radius: 3px;
+    font-weight: 700; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .rec .score.strong { background: #1e4d2b; color: #a4ef9c; }
+  .rec .score.decent { background: #504620; color: #ffe07a; }
+  .rec .score.weak   { background: #2a2a32; color: #999; }
   .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
+  .drift { color: #ff9999; margin: 2px 0; font-size: 11px; }
   .muted { color: #888; }
   .err { color: #ff9999; }
 </style>
@@ -287,6 +297,14 @@
                 .map(([r, n]) => `${n} ${RES_ABBREV[r] || r.slice(0, 2)}`)
                 .join('  ') || '<span class="muted">∅</span>';
             parts.push(`<div class="hand">${hand}</div>`);
+            // Hand-drift warning. Tracker's event-reconstructed breakdown
+            // disagreed with colonist's authoritative card count — the
+            // per-resource detail is unreliable until the next HandSync
+            // frame corrects us. Typically caused by a ws disconnect.
+            if (me.hand_drift) {
+                parts.push('<div class="drift">⚠ hand detail stale '
+                    + '(waiting for resync)</div>');
+            }
             const afford = (me.afford || []).join(' · ');
             parts.push(afford
                 ? `<div class="afford">→ ${afford}</div>`
@@ -311,11 +329,17 @@
                 const tiles = (r.tiles || []).map(t =>
                     `${(t[0] || '?').slice(0, 3)}${t[1] != null ? t[1] : ''}`
                 ).join(' ');
+                // Color the N/10 score by quality band:
+                //   8-10 green (strong), 5-7 yellow (decent), 1-4 gray (weak)
+                const s = Number(r.score || 0);
+                const scoreCls = s >= 8 ? 'strong'
+                    : (s >= 5 ? 'decent' : 'weak');
                 parts.push(`<div class="rec${topCls}">`
-                    + `<span class="kind">${kindLabel}</span>${loc} `
+                    + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
+                    + ` <span class="kind">${kindLabel}</span>${loc} `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
                     + (tiles ? ` · ${escapeHtml(tiles)}` : '')
-                    + ` (${r.score})</span></div>`);
+                    + `</span></div>`);
             }
         } else if (snap.my_turn) {
             parts.push('<div class="turn-hint">your turn — '

@@ -85,9 +85,12 @@ class LiveGame:
     def feed(self, payload: dict[str, Any]) -> list[DispatchResult]:
         """Push one WS frame payload into the game. Returns dispatch results.
 
-        * type=4 (GameStart): boots the session if we hadn't yet; replays
-          after the first GameStart are ignored (a single capture file
-          only contains one game).
+        * type=4 (GameStart): boots the session if we hadn't yet; if the
+          session is already booted, this is a reconnect — colonist ships
+          the full gameState again to bring the new WS subscriber up to
+          speed. We re-sync the self-hand from the replay's playerStates
+          (board state is preserved) so the tracker recovers from drift
+          accumulated during the dead connection.
         * type=91 (GameStateDiff): extracts Events and dispatches each to
           the Tracker, returning a ``DispatchResult`` per event.
         * Anything else: returns an empty list.
@@ -96,8 +99,11 @@ class LiveGame:
             return []
         ptype = payload.get("type")
         body = payload.get("payload") or {}
-        if ptype == 4 and not self.started:
-            self.start_from_game_state(body)
+        if ptype == 4:
+            if not self.started:
+                self.start_from_game_state(body)
+            else:
+                self._resync_from_replay(body)
             return []
         if ptype != 91 or not self.started:
             return []
@@ -111,6 +117,31 @@ class LiveGame:
                     and isinstance(result.event, BuildEvent)):
                 self._debit_build(result.event)
         return results
+
+    def _resync_from_replay(self, body: dict[str, Any]) -> None:
+        """Reapply just the hand state from a reconnect's full gameState.
+
+        Colonist replays the *current* gameState on a new WS session —
+        including every player's resourceCards. If we dropped frames
+        during a disconnect, the tracker's self-hand will be stale. We
+        re-run the HandSync emitter against the replay and push a
+        corrective HandSyncEvent through the normal dispatcher, which
+        overwrites the tracker's hand via ``tracker.set_hand``.
+
+        Everything else (board, roads, buildings) stays as-is — the
+        mapState snapshot in a reconnect frame matches what we already
+        have, so there's nothing to replay there.
+        """
+        from cataanbot.colonist_diff import _hand_sync_events
+        game_state = body.get("gameState") if "gameState" in body else body
+        if not isinstance(game_state, dict):
+            return
+        player_states = game_state.get("playerStates") or {}
+        if not isinstance(player_states, dict):
+            return
+        events = _hand_sync_events(self.session, player_states)
+        for ev in events:
+            apply_event(self.tracker, self.color_map, ev)
 
     def _debit_build(self, event: BuildEvent) -> None:
         """Charge the standard cost for a placement, if it wasn't free.

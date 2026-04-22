@@ -3,8 +3,15 @@
 Given the tracker's catanatron game plus the self-color's current hand,
 returns a ranked list of actionable recommendations. Each recommendation
 is a concrete move (build settlement at node N, build road on edge E,
-upgrade city at node N, buy dev card) with a heuristic score so the
-overlay can surface the top pick.
+upgrade city at node N, buy dev card) with a heuristic **1-10 score** so
+the overlay can surface the top pick.
+
+Score calibration (all kinds share the same 1-10 scale so they're
+directly comparable):
+    * 10 = exceptional move (best spot on the board, big VP swing)
+    * 7-9 = strong, clearly worth doing this turn
+    * 4-6 = decent, solid progress
+    * 1-3 = weak, usually a last-resort
 
 Scope is deliberately narrow: this is a *heuristic* advisor, not a full
 AlphaBeta/ValueFunction search. It reuses the opening-placement scoring
@@ -19,6 +26,32 @@ trade into), but the initial cut only fires when it's actually your turn.
 from __future__ import annotations
 
 from typing import Any
+
+
+def _clip(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _score_settlement(prod: float) -> float:
+    """Settlement 1-10 score. A ~0.83-prod corner (a pristine 6/8/10
+    triangle) pins at 10; a 0.1-prod wasteland sits at ~2."""
+    return round(_clip(prod * 12.0 + 2.0, 2.0, 10.0), 1)
+
+
+def _score_city(prod: float) -> float:
+    """City 1-10 score. Adds a +3 base for the VP pop on top of the
+    doubled production — a decent city at 0.4 prod scores ~7."""
+    return round(_clip(prod * 10.0 + 3.0, 4.0, 10.0), 1)
+
+
+def _score_road(landing_prod: float) -> float:
+    """Road is a means-to-end: you still need to save for the settlement.
+    Caps at 7 so a direct settle always ranks above a road toward the
+    same spot."""
+    return round(_clip(landing_prod * 9.0, 1.0, 7.0), 1)
+
+
+_DEV_CARD_SCORE = 3.0
 
 
 def _hand_can_afford(hand: dict[str, int], cost: dict[str, int]) -> bool:
@@ -76,14 +109,11 @@ def recommend_actions(
         ]
         scored.sort(key=lambda s: -s[1])
         for node, prod in scored[:3]:
-            # node_production is per-roll probability (~0.05-1.5). Scale by
-            # 10 so a 0.5-prod settlement scores ~5 — clearly ahead of a
-            # dev-card (1.5) but not so inflated that weak spots swamp it.
             recs.append({
                 "kind": "settlement",
                 "node_id": int(node),
-                "score": round(prod * 10.0, 2),
-                "detail": f"prod {prod:.2f}",
+                "score": _score_settlement(prod),
+                "detail": f"prod {prod:.2f}/roll",
                 "tiles": _tile_label(m, int(node)),
             })
 
@@ -94,14 +124,11 @@ def recommend_actions(
             if bcol != c or btype != "SETTLEMENT":
                 continue
             prod = _node_pip_production(m, int(node_id))
-            # City doubles yield on an existing corner — upgrade value ≈
-            # extra production (one more copy) + 1 VP. Same prod scale as
-            # settlement but with a +2 base to reflect the VP pop.
             recs.append({
                 "kind": "city",
                 "node_id": int(node_id),
-                "score": round(prod * 8.0 + 2.0, 2),
-                "detail": f"2× prod at {prod:.2f}",
+                "score": _score_city(prod),
+                "detail": f"2× prod ({prod:.2f}/roll) + 1 VP",
                 "tiles": _tile_label(m, int(node_id)),
             })
 
@@ -144,24 +171,22 @@ def recommend_actions(
             (edge, prod, landing) = edge_scores[0]
             # Road reaches a settle spot eventually — lower score than a
             # direct build since you still have to save for the settle.
-            # Roads are a means — you still have to save for the settle.
-            # Score at ~40% of settling there outright.
             recs.append({
                 "kind": "road",
                 "edge": list(edge),
                 "landing_node": landing,
-                "score": round(prod * 4.0, 2),
+                "score": _score_road(prod),
                 "detail": f"→ {prod:.2f}-prod spot",
                 "tiles": _tile_label(m, landing) if landing else [],
             })
 
     # --- Dev card --------------------------------------------------------
-    # Always a sane fallback. Score low so real builds outrank it, but
-    # non-zero so it surfaces when nothing else is affordable.
+    # Always a sane fallback. Fixed score of 3 on the 1-10 scale — real
+    # builds usually outrank it, but it surfaces when nothing else fits.
     if _hand_can_afford(hand, _DEV_COST):
         recs.append({
             "kind": "dev_card",
-            "score": 1.2,
+            "score": _DEV_CARD_SCORE,
             "detail": "knight / VP / road-building / YoP / monopoly",
         })
 
