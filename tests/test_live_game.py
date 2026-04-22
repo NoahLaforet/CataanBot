@@ -229,6 +229,67 @@ def test_advisor_snapshot_surfaces_opp_hand_breakdown():
         assert opp["hand_tracked"] == (unknown == 0 and cards > 0), opp
 
 
+def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
+    """When the tracker over-attributes (inferred > real), the snapshot
+    must trim the excess off the largest bucket(s) instead of zeroing
+    the whole breakdown. Secondary buckets represent real observations
+    (produced, traded, built) and shouldn't evaporate just because one
+    unknown-steal heuristic committed to the wrong resource."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    # Replay both captures — self_color_id only latches after colonist
+    # ships a resourceCards frame with non-zero values, and the bridge
+    # bails on the opps loop until that happens.
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    assert game.session.self_color_id is not None
+
+    # Pick an opponent — any non-self cid with a username + color.
+    sess = game.session
+    opp_cid = next(
+        cid for cid in sess.player_names
+        if cid != sess.self_color_id
+        and game.color_map.has(sess.player_names[cid]))
+    opp_user = sess.player_names[opp_cid]
+    opp_color = game.color_map.get(opp_user)
+
+    # Force inferred = {WOOD:5, BRICK:2, SHEEP:1, WHEAT:0, ORE:0} (=8)
+    # against an authoritative real total of 4. Excess 4 should come
+    # entirely out of WOOD (the max bucket) leaving BRICK/SHEEP intact.
+    game.tracker.set_hand(opp_color, {
+        "WOOD": 5, "BRICK": 2, "SHEEP": 1, "WHEAT": 0, "ORE": 0,
+    })
+    sess.hand_card_counts[opp_cid] = 4
+
+    st = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    target = next(o for o in snap["opps"] if o["username"] == opp_user)
+    hand = target["hand"]
+    # Total matches the authoritative count exactly — trim filled the gap.
+    assert sum(hand.values()) == 4, target
+    assert target["unknown"] == 0, target
+    # Secondary buckets (non-max) must be preserved: BRICK=2, SHEEP=1.
+    assert hand["BRICK"] == 2, target
+    assert hand["SHEEP"] == 1, target
+    # WOOD absorbed the full excess: 5 - 4 = 1 remaining.
+    assert hand["WOOD"] == 1, target
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""

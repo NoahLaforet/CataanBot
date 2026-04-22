@@ -507,16 +507,21 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # when catanatron's own turn machinery transitions into mid-game,
     # and our event-driven dispatch doesn't always trigger that.
     cat_game = game.tracker.game
+    # Setup-phase detection: count settlements+cities per seat directly.
+    # Must include cities — when a settlement upgrades, catanatron
+    # rewrites the building's type, so a seat with 2 openings that
+    # later upgrades one drops to ``settlements == 1`` even though the
+    # opening phase is long over.
     num_players = len(sess.player_names) if sess.player_names else 0
-    settlements_per_color: dict[Any, int] = {}
+    buildings_per_color: dict[Any, int] = {}
     for _nid, (col, btype) in cat_game.state.board.buildings.items():
-        if btype == "SETTLEMENT":
-            settlements_per_color[col] = (
-                settlements_per_color.get(col, 0) + 1)
+        if btype in ("SETTLEMENT", "CITY"):
+            buildings_per_color[col] = (
+                buildings_per_color.get(col, 0) + 1)
     opening_complete = (
         num_players > 0
-        and len(settlements_per_color) >= num_players
-        and min(settlements_per_color.values()) >= 2
+        and len(buildings_per_color) >= num_players
+        and min(buildings_per_color.values()) >= 2
     )
     is_setup = not opening_complete
     snap["setup_phase"] = is_setup
@@ -612,15 +617,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             inferred = dict(game.tracker.hand(c))
         except Exception:  # noqa: BLE001
             inferred = {}
-        # Trim over-debits: if the breakdown claims more cards than
-        # colonist's authoritative total, the inference is broken for
-        # this player. Drop it and report all cards as unknown so the UI
-        # doesn't lie.
+        # Reconcile inference against the authoritative card count.
+        # Over-attribution (inferred > real) happens when the tracker's
+        # "max-resource" guess for unknown steals commits to the wrong
+        # resource and we haven't caught up yet. Trim only the excess
+        # from the largest bucket(s) instead of zeroing the whole hand —
+        # the partial knowledge we still have is more useful than a
+        # blanket "?". Remaining gap after trimming is ``unknown``.
         inferred_total = sum(inferred.values())
         real_total = int(count)
         if inferred_total > real_total:
-            inferred = {}
-            inferred_total = 0
+            trimmed = dict(inferred)
+            excess = inferred_total - real_total
+            while excess > 0 and any(v > 0 for v in trimmed.values()):
+                best = max(trimmed, key=lambda r: trimmed.get(r, 0))
+                n = min(excess, trimmed[best])
+                trimmed[best] -= n
+                excess -= n
+            inferred = trimmed
+            inferred_total = sum(inferred.values())
         unknown = max(0, real_total - inferred_total)
         snap["opps"].append({
             "username": user,
