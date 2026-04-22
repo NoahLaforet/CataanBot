@@ -177,6 +177,21 @@ class DisconnectEvent:
 
 
 @dataclass
+class HandSyncEvent:
+    """Ground-truth resource hand for one player, sourced from the WS
+    `playerStates.{cid}.resourceCards` snapshot.
+
+    Colonist ships the current user's hand as exact resource ints and
+    everyone else's as zero-filled placeholders. The diff extractor only
+    emits this event when the hand contents are fully known (i.e. for
+    the self-player, whose cards come through with real type ints).
+    Opponent count-only sync lives in the opponent-inference path, not
+    here."""
+    player: str
+    resources: dict[str, int]
+
+
+@dataclass
 class UnknownEvent:
     """Parser couldn't classify — kept verbatim so we can add a rule later."""
     text: str
@@ -202,5 +217,6 @@ Event = Union[
     RollBlockedEvent,
     InfoEvent,
     DisconnectEvent,
+    HandSyncEvent,
     UnknownEvent,
 ]

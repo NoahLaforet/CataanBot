@@ -358,6 +358,24 @@ class Tracker:
             "op": "take", "args": [color.upper(), int(amount), resource.upper()]
         })
 
+    def set_hand(self, color: str, resources: dict[str, int]) -> None:
+        """Overwrite a color's hand to match `resources` exactly.
+
+        Applied as a sequence of give/take deltas so the bank freqdeck
+        stays consistent with player totals. Resources missing from the
+        dict are set to zero. Unknown keys raise TrackerError via the
+        give/take path.
+        """
+        current = self.hand(color)
+        for resource in _RESOURCE_NAMES:
+            target = int(resources.get(resource, 0))
+            have = int(current.get(resource, 0))
+            delta = target - have
+            if delta > 0:
+                self.give(color, delta, resource)
+            elif delta < 0:
+                self.take(color, -delta, resource)
+
     def _apply_adjust(self, color: str, amount: int, resource: str,
                       sign: int) -> None:
         if amount < 0:

@@ -29,6 +29,7 @@ from cataanbot.events import (
     DisconnectEvent,
     Event,
     GameOverEvent,
+    HandSyncEvent,
     InfoEvent,
     MonopolyStealEvent,
     NoStealEvent,
@@ -223,6 +224,14 @@ def _dispatch(
 
     if isinstance(event, BuildEvent):
         return _apply_build(tracker, color_map, event)
+
+    if isinstance(event, HandSyncEvent):
+        color = color_map.get(event.player)
+        tracker.set_hand(color, event.resources)
+        return DispatchResult(
+            event, "applied",
+            f"{color} hand sync → {_fmt_res(event.resources) or '∅'}",
+        )
 
     if isinstance(event, RobberMoveEvent):
         return _apply_robber_move(tracker, color_map, event)

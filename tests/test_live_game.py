@@ -95,6 +95,63 @@ def test_feed_midgame_capture_builds_and_rolls_apply():
         f"expected at least the 4 initial settlements, got {len(buildings)}")
 
 
+def test_self_player_hand_syncs_from_ws_cards():
+    """After replaying the midgame capture, ORANGE (the self-player in
+    fort4092) should hold exactly what the final resourceCards snapshot
+    says — no inference, no drift."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.colonist_proto import load_capture
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    assert game.started
+
+    # Walk both captures; track the very last resourceCards snapshot
+    # that carries real ints so we know what ground truth is.
+    resource_ints = {1: "WOOD", 2: "BRICK", 3: "SHEEP",
+                     4: "WHEAT", 5: "ORE"}
+    last_cards: list[int] | None = None
+    last_cid: int | None = None
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+            if payload.get("type") != 91:
+                continue
+            diff = (payload.get("payload") or {}).get("diff") or {}
+            for cid_str, pstate in (diff.get("playerStates") or {}).items():
+                if not isinstance(pstate, dict):
+                    continue
+                rc = pstate.get("resourceCards")
+                if not isinstance(rc, dict):
+                    continue
+                cards = rc.get("cards")
+                if not isinstance(cards, list):
+                    continue
+                if any(int(c) for c in cards if isinstance(c, int)):
+                    last_cards = cards
+                    last_cid = int(cid_str)
+
+    assert last_cards is not None and last_cid is not None
+    expected: dict[str, int] = {}
+    for c in last_cards:
+        res = resource_ints.get(int(c))
+        if res:
+            expected[res] = expected.get(res, 0) + 1
+
+    self_user = game.session.player_names[last_cid]
+    color = game.color_map.get(self_user)
+    hand = game.tracker.hand(color)
+    for res in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"):
+        assert hand.get(res, 0) == expected.get(res, 0), (
+            f"{res}: expected {expected.get(res, 0)}, "
+            f"tracker has {hand.get(res, 0)}; full hand {hand}")
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""
