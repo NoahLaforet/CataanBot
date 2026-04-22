@@ -39,8 +39,12 @@ def test_dev_card_alone_when_only_ywo_ore_sheep_wheat():
     g = _fresh_game_with_red_settle()
     out = recommend_actions(
         g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 1}, top=4)
-    assert len(out) == 1
-    assert out[0]["kind"] == "dev_card"
+    # Only affordable rec is dev_card; planning-ahead recs may also
+    # surface (e.g. settlement 2 cards off), but the act-now slice
+    # should be dev_card only.
+    now = [r for r in out if r.get("when") == "now"]
+    assert len(now) == 1
+    assert now[0]["kind"] == "dev_card"
 
 
 def test_road_affordable_surfaces_edge_suggestion():
@@ -112,9 +116,58 @@ def test_dev_card_score_is_fixed_three():
     g = _fresh_game_with_red_settle()
     out = recommend_actions(
         g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 1}, top=4)
-    assert len(out) == 1
-    assert out[0]["kind"] == "dev_card"
-    assert out[0]["score"] == 3.0
+    now = [r for r in out if r.get("when") == "now"]
+    assert len(now) == 1
+    assert now[0]["kind"] == "dev_card"
+    assert now[0]["score"] == 3.0
+
+
+def test_save_for_settlement_plan_surfaces_when_two_cards_short():
+    """Road-only hand should also surface a "save for settlement" plan,
+    so Noah sees both the now-option and the near-term better option."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    # Extend road net so settlement target exists.
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    # {WOOD:1, BRICK:1} affords road; settlement is 2 cards off (S+Wh).
+    out = recommend_actions(g, "RED", {"WOOD": 1, "BRICK": 1}, top=6)
+    kinds_when = [(r["kind"], r.get("when")) for r in out]
+    assert ("road", "now") in kinds_when
+    # Plan must carry the missing dict and tag when=soon.
+    plan = next((r for r in out
+                 if r["kind"] == "settlement" and r.get("when") == "soon"),
+                None)
+    assert plan is not None, kinds_when
+    assert plan["missing"] == {"SHEEP": 1, "WHEAT": 1}
+    assert "need" in plan["detail"].lower()
+
+
+def test_plan_skipped_when_missing_more_than_two():
+    """Hand 3+ cards from any upgrade shouldn't generate a plan — the
+    noise isn't actionable."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    # Empty hand → 4 cards off settlement, 5 off city, 3 off dev.
+    out = recommend_actions(g, "RED", {}, top=6)
+    assert out == []
+
+
+def test_now_ranks_above_equal_score_soon():
+    """A now-rec and a soon-rec with equal score: the now-rec must
+    appear first so the overlay's top pick is always actionable today."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    # dev_card affordable (3.0, now), dev_card plan not applicable
+    # since affordable. Hand only admits dev_card now — check top is it.
+    out = recommend_actions(
+        g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 1}, top=6)
+    assert out[0]["when"] == "now"
 
 
 def test_city_scores_higher_than_dev_card():

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.1
+// @version      0.8.2
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.1 adds quality-banded 1-10 scoring on recommendations, hand-drift warning, and disconnect-survivable hand resync.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -215,6 +215,10 @@
   .rec .score.strong { background: #1e4d2b; color: #a4ef9c; }
   .rec .score.decent { background: #504620; color: #ffe07a; }
   .rec .score.weak   { background: #2a2a32; color: #999; }
+  .rec .tiles { color: #b8c6d6; font-weight: 500; }
+  .recs-h.plan-h { color: #7aa7d6; margin-top: 4px; }
+  .rec.plan { opacity: 0.85; font-style: italic; }
+  .rec.plan .kind { color: #a0c8f0; }
   .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
   .drift { color: #ff9999; margin: 2px 0; font-size: 11px; }
   .muted { color: #888; }
@@ -310,36 +314,61 @@
                 ? `<div class="afford">→ ${afford}</div>`
                 : `<div class="afford none">→ nothing buildable</div>`);
         }
-        // Recommendations — only shown when it's my turn. This is the
-        // "what should I do" output, not just "what can I build".
+        // Recommendations — only shown when it's my turn. Split into:
+        //   "best moves"      — things affordable right now
+        //   "planning ahead"  — 1-2 cards from a better move; "save for X"
+        // Both groups sorted by score desc within the list the backend sent.
         if (snap.my_turn && (snap.recommendations || []).length) {
-            parts.push('<div class="recs-h">→ best moves</div>');
-            for (let i = 0; i < snap.recommendations.length; i++) {
-                const r = snap.recommendations[i];
-                const topCls = i === 0 ? ' top' : '';
+            const nowRecs = [];
+            const soonRecs = [];
+            for (const r of snap.recommendations) {
+                (r.when === 'soon' ? soonRecs : nowRecs).push(r);
+            }
+            const renderRec = (r, isTop) => {
+                const topCls = isTop ? ' top' : '';
                 const kindLabel = {
                     settlement: 'settle',
                     city: 'city',
                     road: 'road',
                     dev_card: 'dev card',
                 }[r.kind] || r.kind;
-                const loc = r.node_id != null
-                    ? ` @${r.node_id}`
-                    : (r.edge ? ` ${r.edge[0]}→${r.edge[1]}` : '');
-                const tiles = (r.tiles || []).map(t =>
-                    `${(t[0] || '?').slice(0, 3)}${t[1] != null ? t[1] : ''}`
-                ).join(' ');
-                // Color the N/10 score by quality band:
-                //   8-10 green (strong), 5-7 yellow (decent), 1-4 gray (weak)
+                // Tile trio is the human-readable locator — catanatron
+                // node IDs like "@12" mean nothing visually on the board.
+                // Skip desert in the description (pure 0-production noise).
+                const tiles = (r.tiles || [])
+                    .filter(t => t && t[0] !== 'DESERT')
+                    .map(t => {
+                        const abbrev = RES_ABBREV[t[0]]
+                            || (t[0] || '?').slice(0, 3);
+                        return t[1] != null ? `${abbrev}-${t[1]}` : abbrev;
+                    })
+                    .join(' · ');
+                // Roads lead to a landing spot — arrow makes it read as
+                // "this road → these tiles" rather than "on these tiles".
+                const arrow = r.kind === 'road' ? '→ ' : '';
+                const loc = tiles ? ` ${arrow}${tiles}` : '';
                 const s = Number(r.score || 0);
                 const scoreCls = s >= 8 ? 'strong'
                     : (s >= 5 ? 'decent' : 'weak');
-                parts.push(`<div class="rec${topCls}">`
+                const planCls = r.when === 'soon' ? ' plan' : '';
+                parts.push(`<div class="rec${topCls}${planCls}">`
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
-                    + ` <span class="kind">${kindLabel}</span>${loc} `
+                    + ` <span class="kind">${kindLabel}</span>`
+                    + `<span class="tiles">${escapeHtml(loc)}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
-                    + (tiles ? ` · ${escapeHtml(tiles)}` : '')
                     + `</span></div>`);
+            };
+            if (nowRecs.length) {
+                parts.push('<div class="recs-h">→ best moves</div>');
+                nowRecs.forEach((r, i) => renderRec(r, i === 0));
+            } else {
+                parts.push('<div class="turn-hint">your turn — '
+                    + 'nothing affordable</div>');
+            }
+            if (soonRecs.length) {
+                parts.push('<div class="recs-h plan-h">'
+                    + '→ planning ahead</div>');
+                soonRecs.forEach(r => renderRec(r, false));
             }
         } else if (snap.my_turn) {
             parts.push('<div class="turn-hint">your turn — '
