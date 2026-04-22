@@ -630,3 +630,105 @@ def test_colonist_diff_latches_current_turn_color():
     rolls = [e for e in events if getattr(e, "d1", None) is not None]
     assert rolls
     assert rolls[0].player == "Alice"
+
+
+# --- evaluate_incoming_trade -----------------------------------------------
+
+
+def test_trade_decline_when_cant_spare_want():
+    """Offer that demands resources we don't have → auto-decline."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    # We have 1 ORE; offer asks for 2. Can't afford.
+    hand = {"WOOD": 1, "BRICK": 1, "ORE": 1}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"WHEAT": 1}, want={"ORE": 2},
+    )
+    assert verdict["verdict"] == "decline"
+    assert "spare" in verdict["reason"].lower()
+
+
+def test_trade_accept_unlocks_affordable_build():
+    """Swap should accept when it unlocks a buildable settlement."""
+    from catanatron import Color
+
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    # Extend RED's road network so settlements have legal landing spots.
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    # Hand: settlement missing only SHEEP; we have a surplus ORE to offer.
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "ORE": 2}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"SHEEP": 1}, want={"ORE": 1},
+    )
+    assert verdict["verdict"] == "accept", verdict
+    assert verdict["after"] == "settlement"
+    assert verdict["score"] > 0
+
+
+def test_trade_decline_when_opponent_close_to_win():
+    """Even a good-looking swap gets declined when opp is at 8+ VP —
+    the offerer is close enough to closing out the game."""
+    from catanatron import Color
+
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "ORE": 2}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"SHEEP": 1}, want={"ORE": 1},
+        opp_vp=9,
+    )
+    assert verdict["verdict"] == "decline", verdict
+    assert "VP" in verdict["reason"]
+
+
+def test_trade_decline_when_lopsided_neutral():
+    """1-for-2 swap with no build unlock → decline on fairness, not
+    because it blocks anything."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    # Hand can't build anything; swap leaves us in the same state.
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 2}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"ORE": 1}, want={"SHEEP": 2},
+    )
+    assert verdict["verdict"] == "decline"
+    assert "lopsided" in verdict["reason"]
+
+
+def test_trade_consider_neutral_swap():
+    """Same-count swap with no build change → consider (not a reject)."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    hand = {"SHEEP": 1}
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand,
+        give={"WHEAT": 1}, want={"SHEEP": 1},
+    )
+    assert verdict["verdict"] == "consider"
+
+
+def test_trade_decline_when_give_is_empty():
+    """Degenerate offer (they give nothing) → decline."""
+    from cataanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    verdict = evaluate_incoming_trade(
+        g, "RED", {"ORE": 1},
+        give={}, want={"ORE": 1},
+    )
+    assert verdict["verdict"] == "decline"
