@@ -84,7 +84,18 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         legal_nodes_after_picks, score_opening_nodes,
     )
 
-    c = color if isinstance(color, Color) else Color[str(color).upper()]
+    # Color is optional — during round-1 of the opening the bridge calls
+    # in with None because self_color_id hasn't latched yet. The picks
+    # themselves are public board info, so we just skip the round-2 hint.
+    if color is None:
+        c = None
+    elif isinstance(color, Color):
+        c = color
+    else:
+        try:
+            c = Color[str(color).upper()]
+        except KeyError:
+            c = None
     placed = [
         int(nid) for nid, (_col, btype)
         in game.state.board.buildings.items()
@@ -97,7 +108,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     m = game.state.board.map
     recs: list[dict[str, Any]] = []
     # Note whether I already have a settlement down (round-2 context).
-    my_placed = sum(
+    my_placed = 0 if c is None else sum(
         1 for nid, (col, bt) in game.state.board.buildings.items()
         if col == c and bt == "SETTLEMENT"
     )

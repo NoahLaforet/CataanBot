@@ -340,6 +340,28 @@ def test_recommend_opening_is_adaptive_to_placements():
     assert node_ids_after.issubset(legal)
 
 
+def test_recommend_opening_tolerates_none_color():
+    """Bridge calls in with ``color=None`` during round 1 because
+    ``self_color_id`` hasn't latched yet (colonist only reveals it
+    after real resource cards land). Must not crash; must skip the
+    "2nd pick" hint gracefully."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=9,
+    )
+    out = recommend_opening(g, None, top=5)
+    assert len(out) == 5
+    for r in out:
+        assert r["kind"] == "opening_settlement"
+        # No color means no round-2 context, so no "2nd pick" hint
+        # regardless of how many settlements are on the board.
+        assert "2nd pick" not in r["detail"]
+
+
 def test_recommend_opening_flags_second_pick_context():
     """When RED already has one settlement, the detail string should
     signal "2nd pick" so Noah knows to weigh resource-complement."""
