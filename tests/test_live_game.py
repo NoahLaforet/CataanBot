@@ -95,6 +95,35 @@ def test_feed_midgame_capture_builds_and_rolls_apply():
         f"expected at least the 4 initial settlements, got {len(buildings)}")
 
 
+def test_dev_card_buys_emit_for_opponents_only():
+    """Opponent dev-card buys should dispatch so their inferred hand
+    gets debited; the self-player's buy is covered by HandSyncEvent and
+    must not fire a second time."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.events import DevCardBuyEvent
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    assert game.started
+
+    dev_buys: list[str] = []
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            for result in game.feed(payload):
+                if isinstance(result.event, DevCardBuyEvent):
+                    dev_buys.append(game.color_map.get(result.event.player))
+
+    # Self-player in fort4092 is ORANGE (BrickdDaddy, color id 5).
+    assert dev_buys, "expected at least one opponent dev-card buy"
+    assert "ORANGE" not in dev_buys, (
+        f"self-player dev buys should be suppressed, got {dev_buys}")
+
+
 def test_self_player_hand_syncs_from_ws_cards():
     """After replaying the midgame capture, ORANGE (the self-player in
     fort4092) should hold exactly what the final resourceCards snapshot

@@ -36,8 +36,8 @@ from cataanbot.colonist_map import (
     MapMapping, build_mapping, corner_tile_signature, tile_resource,
 )
 from cataanbot.events import (
-    BuildEvent, Event, HandSyncEvent, ProduceEvent, RobberMoveEvent,
-    RollEvent,
+    BuildEvent, DevCardBuyEvent, Event, HandSyncEvent, ProduceEvent,
+    RobberMoveEvent, RollEvent,
 )
 
 # Resource type ints used inside `playerStates.{cid}.resourceCards.cards`.
@@ -79,6 +79,11 @@ class LiveSession:
     # else's cards. Used to gate hand-sync emission to the one player
     # whose snapshot is fully specified.
     self_color_id: int | None = None
+    # cid → last-seen count of development cards held. Dev-card buys
+    # (new int appended to the list) are detected by count growth; we
+    # don't need to know the type, just that a purchase happened and the
+    # hand should be debited 1 WHEAT + 1 SHEEP + 1 ORE.
+    dev_card_counts: dict[int, int] = field(default_factory=dict)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -220,6 +225,10 @@ def events_from_diff(
                     coord=coord,
                 ))
 
+    for ev in _dev_card_buy_events(
+            sess, diff.get("mechanicDevelopmentCardsState") or {}):
+        out.append(ev)
+
     for ev in _hand_sync_events(sess, diff.get("playerStates") or {}):
         out.append(ev)
 
@@ -239,6 +248,49 @@ def events_from_diff(
         out.append(RollEvent(player=player, d1=int(dice["dice1"]),
                              d2=int(dice["dice2"])))
 
+    return out
+
+
+def _dev_card_buy_events(
+    sess: LiveSession, dev_state: dict[str, Any],
+) -> list[DevCardBuyEvent]:
+    """Detect dev-card purchases by watching each player's card-list length.
+
+    Colonist ships every player's full `developmentCards.cards` list
+    when any one of them changes. The list grows when a card is bought
+    (real type for the self-player, placeholder int 10 for opponents)
+    and shrinks when a card is played. We only care about growth here —
+    plays come through `gameLogState` with a known type, which the DOM
+    parser already classifies.
+
+    Emits one DevCardBuyEvent per player whose card count increased
+    compared to our tracked state. Self-player buys are suppressed: the
+    resource debit is already covered by the HandSyncEvent that follows
+    in the same diff.
+    """
+    out: list[DevCardBuyEvent] = []
+    players = dev_state.get("players")
+    if not isinstance(players, dict):
+        return out
+    for cid_str, pstate in players.items():
+        if not isinstance(pstate, dict):
+            continue
+        dev = pstate.get("developmentCards")
+        if not isinstance(dev, dict):
+            continue
+        cards = dev.get("cards")
+        if not isinstance(cards, list):
+            continue
+        try:
+            cid = int(cid_str)
+        except (TypeError, ValueError):
+            continue
+        prev = sess.dev_card_counts.get(cid, 0)
+        new_count = len(cards)
+        sess.dev_card_counts[cid] = new_count
+        if new_count > prev and cid != sess.self_color_id:
+            for _ in range(new_count - prev):
+                out.append(DevCardBuyEvent(player=sess.player_for(cid)))
     return out
 
 
