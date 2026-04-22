@@ -423,12 +423,13 @@ def test_recommend_opening_road_skips_distance_blocked_expansions():
         if road is None:
             continue
         expansion = road["toward_node"]
-        # Fallback when no legal expansion exists lands expansion==far,
-        # which is always a fresh neighbor of the proposed settlement —
-        # not itself a settlement, but could be distance-2 blocked.
-        # That's the degenerate case we ignore.
-        if expansion == road["edge"][1]:
-            continue
+        # Fix: _best_opening_road now returns None when no legal 2-hop
+        # expansion exists, instead of falling back to `far` (which is
+        # distance-1 from our own settlement and therefore always
+        # blocked). So `expansion` must always be a legal settle spot.
+        assert expansion != road["edge"][1], (
+            f"road toward node == far endpoint — that's distance-1 from "
+            f"our own settlement and unsettleable: {r}")
         assert expansion not in blocked, (
             f"road toward node {expansion} but it's distance-2 "
             f"blocked: {r}; blocked={blocked & {expansion}}")
