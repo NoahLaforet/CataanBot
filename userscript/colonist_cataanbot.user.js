@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.4
+// @version      0.8.5
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.1 adds quality-banded 1-10 scoring on recommendations, hand-drift warning, and disconnect-survivable hand resync.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -221,6 +221,9 @@
   .recs-h.plan-h { color: #7aa7d6; margin-top: 4px; }
   .rec.plan { opacity: 0.85; font-style: italic; }
   .rec.plan .kind { color: #a0c8f0; }
+  /* Trade recs wear a distinct color so "spend 4 for 1" reads as
+     something other than a straight build action. */
+  .rec.trade .kind { color: #f0a57a; }
   .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
   .drift { color: #ff9999; margin: 2px 0; font-size: 11px; }
   .muted { color: #888; }
@@ -354,7 +357,8 @@
                 const scoreCls = s >= 8 ? 'strong'
                     : (s >= 5 ? 'decent' : 'weak');
                 const planCls = r.when === 'soon' ? ' plan' : '';
-                parts.push(`<div class="rec${topCls}${planCls}">`
+                const tradeCls = r.kind === 'trade' ? ' trade' : '';
+                parts.push(`<div class="rec${topCls}${planCls}${tradeCls}">`
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
                     + ` <span class="kind">${kindLabel}</span>`
                     + `<span class="tiles">${escapeHtml(loc)}</span> `

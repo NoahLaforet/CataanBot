@@ -203,6 +203,37 @@ def test_no_bank_trade_when_two_cards_short():
     assert not trades, f"no trade expected, got {trades}"
 
 
+def test_port_trade_uses_cheaper_rate_when_available():
+    """A settlement on a specific-resource 2:1 port should let the
+    recommender trade 2-of-that-resource for 1 instead of 4.
+    Uses dev-card as the unlock target so the test doesn't depend on
+    having buildable settlement spots — the cheaper rate is the
+    assertion, not the unlocked kind."""
+    from cataanbot.recommender import recommend_actions
+    from catanatron import Color
+
+    g = _fresh_game_with_red_settle()
+    m = g.state.board.map
+    wood_port_nodes = m.port_nodes.get("WOOD") or set()
+    assert wood_port_nodes, "catanatron map missing WOOD port — seed changed?"
+    # Put a RED settlement on a WOOD 2:1 port.
+    b = g.state.board
+    occupied = set(b.buildings.keys())
+    port_node = next(iter(wood_port_nodes - occupied))
+    b.build_settlement(Color.RED, port_node, initial_build_phase=True)
+    # Dev card cost is SHEEP + WHEAT + ORE. Have SHEEP+WHEAT but no ORE,
+    # and 2 Wood on the port: 2:1 WOOD→ORE should fire.
+    hand = {"WOOD": 2, "SHEEP": 1, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=6)
+    trades = [r for r in out if r["kind"] == "trade"
+              and r.get("get") == {"ORE": 1}]
+    assert trades, f"expected WOOD→ORE trade, got {[r['kind'] for r in out]}"
+    t = trades[0]
+    assert t["give"] == {"WOOD": 2}, t
+    assert "2:1 port" in t["detail"]
+    assert t["unlocks"] == "dev_card"
+
+
 def test_dev_card_trade_has_no_node_id():
     """Trade to unlock a dev card shouldn't leak a misleading node_id
     (dev cards don't go on the board)."""
