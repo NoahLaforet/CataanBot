@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.5.2
-// @description  Streams colonist.io game-log events to the cataanbot FastAPI bridge on localhost:8765. v0.5 adds WebSocket frame capture for topology mapping.
+// @version      0.6.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.6 forwards every captured WS frame to /ws so the live advisor can run.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -17,7 +17,32 @@
     'use strict';
 
     const BRIDGE_URL = 'http://127.0.0.1:8765/log';
+    const BRIDGE_WS_URL = 'http://127.0.0.1:8765/ws';
     const LOG_PREFIX = '[cataanbot]';
+
+    // Fire-and-forget POST. Used by both the DOM log forwarder (/log)
+    // and the WS frame forwarder (/ws). Keeps the userscript quiet even
+    // if the bridge is down so a game session isn't noisy.
+    function postTo(url, payload, { quiet } = {}) {
+        if (typeof GM_xmlhttpRequest === 'function') {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url,
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(payload),
+                onerror: (e) => { if (!quiet)
+                    console.warn(LOG_PREFIX, 'POST failed', e); },
+            });
+        } else {
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                mode: 'cors',
+            }).catch(e => { if (!quiet)
+                console.warn(LOG_PREFIX, 'fetch failed', e); });
+        }
+    }
 
     // WebSocket frame capture. Colonist renders the board on a single
     // <canvas id="game-canvas"> — no per-tile DOM — so the only way to
@@ -126,8 +151,17 @@
                 summary.pings += 1;
                 return;
             }
-            pushFrame({ dir, ts: Date.now() / 1000,
-                wsId, ...describeData(data) });
+            const frame = { dir, ts: Date.now() / 1000,
+                wsId, ...describeData(data) };
+            pushFrame(frame);
+            // Forward inbound-direction frames to the bridge. Outbound
+            // (user actions) aren't needed for the game-state pipe and
+            // would just double traffic. Bridge is local so this is
+            // cheap; keep it quiet if the bridge is down so nobody sees
+            // failure spam mid-game.
+            if (dir === 'in' && (frame.b64 || frame.data)) {
+                postTo(BRIDGE_WS_URL, frame, { quiet: true });
+            }
         }
 
         function PatchedWebSocket(url, protocols) {
@@ -187,8 +221,9 @@
             return a.download;
         };
 
-        console.log(LOG_PREFIX, 'WS interceptor v0.5.2 installed on',
-            tgt === window ? 'window' : 'unsafeWindow');
+        console.log(LOG_PREFIX, 'WS interceptor v0.6.0 installed on',
+            tgt === window ? 'window' : 'unsafeWindow',
+            '(forwarding to', BRIDGE_WS_URL + ')');
     })();
 
     // Selectors captured from DOM recon (COLONIST_RECON.md). Class
@@ -330,22 +365,7 @@
     }
 
     function post(payload) {
-        if (typeof GM_xmlhttpRequest === 'function') {
-            GM_xmlhttpRequest({
-                method: 'POST',
-                url: BRIDGE_URL,
-                headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify(payload),
-                onerror: (e) => console.warn(LOG_PREFIX, 'POST failed', e),
-            });
-        } else {
-            fetch(BRIDGE_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                mode: 'cors',
-            }).catch(e => console.warn(LOG_PREFIX, 'fetch failed', e));
-        }
+        postTo(BRIDGE_URL, payload);
     }
 
     function processEntry(el) {
