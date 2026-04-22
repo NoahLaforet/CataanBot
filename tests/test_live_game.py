@@ -124,6 +124,55 @@ def test_dev_card_buys_emit_for_opponents_only():
         f"self-player dev buys should be suppressed, got {dev_buys}")
 
 
+def test_second_settlement_credits_opponent_starting_resources():
+    """Opponents' 2nd settlements immediately grant the 3 adjacent-tile
+    resources. Colonist never ships this as a dice-roll payout, and
+    without the synthetic ProduceEvent the opponent's tracker hand
+    stays empty until their first roll. We should see every opponent
+    holding ~3 cards worth of known resources by the time setup wraps,
+    not zeros."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    # Replay only the early capture — its tail covers the 2nd-settlement
+    # round and the first couple turns. No need to walk into midgame.
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    assert game.started
+
+    # Every opponent who has placed 2 settlements by now should have
+    # *some* known cards from the synthetic 2nd-settlement yield. The
+    # capture may not cover the self-player's 2nd drop, so we gate on
+    # "this opp is past their 2nd settlement" per-color.
+    buildings = game.tracker.game.state.board.buildings
+    per_color_settlements: dict[str, int] = {}
+    for _nid, (col, btype) in buildings.items():
+        if btype in ("SETTLEMENT", "CITY"):
+            key = col.name if hasattr(col, "name") else str(col)
+            per_color_settlements[key] = (
+                per_color_settlements.get(key, 0) + 1)
+    sess = game.session
+    opps_with_2nd = [
+        (cid, user) for cid, user in sess.player_names.items()
+        if cid != sess.self_color_id
+        and game.color_map.has(user)
+        and per_color_settlements.get(
+            game.color_map.get(user), 0) >= 2
+    ]
+    assert opps_with_2nd, (
+        f"capture didn't cover any opponent's 2nd settlement: "
+        f"{per_color_settlements}")
+    for _cid, user in opps_with_2nd:
+        color = game.color_map.get(user)
+        hand = game.tracker.hand(color)
+        assert sum(hand.values()) > 0, (
+            f"opp {user} ({color}) has no known cards despite "
+            f"having placed a 2nd settlement — synthetic "
+            f"ProduceEvent isn't firing. hand={hand}")
+
+
 def test_self_player_hand_syncs_from_ws_cards():
     """After replaying the midgame capture, ORANGE (the self-player in
     fort4092) should hold exactly what the final resourceCards snapshot
