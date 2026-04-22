@@ -52,6 +52,7 @@ def render_postmortem_html(
     if jsonl_path:
         title = f"CataanBot postmortem — {Path(jsonl_path).name}"
 
+    from cataanbot.config import VP_TARGET
     html = _HTML_TEMPLATE.format(
         title=_html.escape(title),
         jsonl_path=_html.escape(jsonl_path or "(unknown source)"),
@@ -60,6 +61,7 @@ def render_postmortem_html(
         prod_src=_data_uri(prod_png),
         dice_src=_data_uri(dice_png),
         hand_src=_data_uri(hand_png),
+        vp_target=VP_TARGET,
     )
     out_path.write_text(html)
     return out_path
@@ -210,7 +212,7 @@ _HTML_TEMPLATE = """<!doctype html>
 <h2>Charts</h2>
 <figure>
   <img src="{vp_src}" alt="VP over time">
-  <figcaption>Public VP over time. Dashed line is the 10-VP win threshold.</figcaption>
+  <figcaption>Public VP over time. Dashed line is the {vp_target}-VP win threshold.</figcaption>
 </figure>
 <figure>
   <img src="{prod_src}" alt="Cards received from rolls">

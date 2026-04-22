@@ -229,13 +229,19 @@ class RobberScore:
     score: float               # weighted_opponent_blocked - own_blocked
 
 
-def _vp_weight(vp: int) -> float:
+def _vp_weight(vp: int, vp_target: int | None = None) -> float:
     """Scale blocking value by how close the victim is to winning.
 
-    3 VP → 1.0 (baseline early game), 6 → 2.2, 9 → 3.4. Linear above 3
-    is simple and matches the intuition that each extra VP past the
-    opening phase makes the player more urgent to stop."""
-    return 1.0 + 0.4 * max(0, vp - 3)
+    At vp = early-game baseline (~30% of target) the weight is 1.0.
+    Above that the weight ramps by 0.4 per VP, so in a 10 VP game:
+    3 → 1.0, 6 → 2.2, 9 → 3.4 — the old calibration. For a 12 VP game
+    the baseline shifts to 4 VP, so 4 → 1.0, 7 → 2.2, etc. Linear
+    above baseline is simple and matches the intuition that each extra
+    VP past the opening phase makes the player more urgent to stop."""
+    from cataanbot.config import early_game_baseline_vp
+    baseline = early_game_baseline_vp(vp_target) if vp_target else \
+        early_game_baseline_vp()
+    return 1.0 + 0.4 * max(0, vp - baseline)
 
 
 def score_robber_targets(

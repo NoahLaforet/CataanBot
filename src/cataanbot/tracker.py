@@ -615,7 +615,8 @@ class Tracker:
         """Snapshot of public VP per color plus a callout for near-winners.
 
         `callout` is one of: "winner", "one_away", "two_away", "leader",
-        or None when the race is still wide open (all < 6 VP).
+        or None when the race is still wide open (all below the mid-late
+        threshold). Thresholds scale with the configured VP target.
         `leaders` is the list of color names tied for the top score."""
         state = self.game.state
         per_color: dict[str, int] = {}
@@ -628,15 +629,16 @@ class Tracker:
             )
         if not per_color:
             return {"per_color": {}, "leaders": [], "top": 0, "callout": None}
+        from cataanbot.config import VP_TARGET, mid_late_vp
         top = max(per_color.values())
         leaders = [c for c, v in per_color.items() if v == top]
-        if top >= 10:
+        if top >= VP_TARGET:
             callout = "winner"
-        elif top >= 9:
+        elif top >= VP_TARGET - 1:
             callout = "one_away"
-        elif top >= 8:
+        elif top >= VP_TARGET - 2:
             callout = "two_away"
-        elif top >= 6:
+        elif top >= mid_late_vp():
             callout = "leader"
         else:
             callout = None

@@ -908,7 +908,8 @@ def evaluate_incoming_trade(
     Then we compare what's buildable this turn before and after the swap.
     A build unlocked → accept; a build lost → decline. Neutral deltas
     fall to a fairness check (giving more cards than we get) and an
-    opp-close-to-win guard (VP≥8) before landing on "consider".
+    opp-close-to-win guard (VP ≥ ``close_to_win_vp()``) before landing
+    on "consider".
 
     ``_allow_counter`` gates the counter-offer search; internal recursion
     (from ``_suggest_counter_offer``) sets it False to avoid infinite
@@ -959,7 +960,8 @@ def evaluate_incoming_trade(
     after_kind = after.get("kind") if after else None
     give_total = sum(int(n) for n in give.values())
     want_total = sum(int(n) for n in want.values())
-    _CLOSE_TO_WIN_VP = 8
+    from cataanbot.config import close_to_win_vp
+    _CLOSE_TO_WIN_VP = close_to_win_vp()
     # Rank of build types so we can detect a kind upgrade. Score deltas
     # alone undersell e.g. "road → settlement" (raw gap is only ~0.5)
     # even though it's a real upgrade in the type of move available.
