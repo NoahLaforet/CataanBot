@@ -260,10 +260,19 @@ def _harvest_display_colors(st, payload: dict[str, Any]) -> None:
             continue
         name = entry.get("name")
         color = entry.get("color")
-        if (isinstance(name, str) and name
-                and isinstance(color, str) and color.strip()
+        # Fall back to the chat pill's background color when text color
+        # is missing — colonist ships WHITE-player names without inline
+        # color styles (would be invisible on white chat bg) and instead
+        # uses a colored background.
+        bg = entry.get("bg")
+        picked = None
+        if isinstance(color, str) and color.strip():
+            picked = color.strip()
+        elif isinstance(bg, str) and bg.strip():
+            picked = bg.strip()
+        if (isinstance(name, str) and name and picked
                 and name not in st["display_colors"]):
-            st["display_colors"][name] = color.strip()
+            st["display_colors"][name] = picked
 
 
 def _feed_postmortem(st, payload: dict[str, Any]) -> None:
@@ -483,7 +492,29 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     if not game.started:
         return snap
     sess = game.session
-    if sess is None or sess.self_color_id is None:
+    if sess is None:
+        return snap
+    # Opening picks don't need a latched self-color — they're a
+    # board-level ranking of the top remaining spots. self_color_id
+    # stays None until colonist ships a resourceCards frame with real
+    # (non-zero) values, which only happens once resources land. So we
+    # evaluate setup_phase here, before the self-color gate, so Noah
+    # sees opening picks from the first frame rather than after his
+    # 2nd settlement drops resources.
+    cat_game = game.tracker.game
+    is_setup = bool(getattr(cat_game.state, "is_initial_build_phase",
+                            False))
+    snap["setup_phase"] = is_setup
+    if is_setup:
+        try:
+            from cataanbot.recommender import recommend_opening
+            # None is fine — recommend_opening only uses color for the
+            # "2nd pick" hint, which gracefully degrades.
+            snap["recommendations"] = recommend_opening(
+                cat_game, None, top=5)
+        except Exception:  # noqa: BLE001
+            snap["recommendations"] = []
+    if sess.self_color_id is None:
         return snap
     username = sess.player_names.get(sess.self_color_id)
     if not username:

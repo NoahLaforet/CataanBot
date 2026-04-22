@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.6
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.6 surfaces adaptive opening-placement picks during the initial build phase (shrinks as opponents take spots).
+// @version      0.8.7
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.7 surfaces opening picks before self-color latches and captures chat-pill colors for WHITE players via computed style + background-color fallback.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -759,17 +759,36 @@
                 });
                 return;
             }
-            // Player name pill: inline colored span. If we match one,
-            // don't recurse — emit as a single token.
+            // Player name pill: colored span. Inline `color:` is the
+            // happy path, but some colonist builds use CSS classes or
+            // background pills (e.g. WHITE players whose text color
+            // isn't readable on a white chat bg). Fall back to computed
+            // style so we don't drop the name entirely when the color
+            // isn't inline.
             const style = el.getAttribute?.('style') || '';
-            if (el.tagName === 'SPAN' && /color\s*:/i.test(style)) {
+            const hasInlineColor = /(^|[^-])color\s*:/i.test(style);
+            const hasInlineBg = /background(-color)?\s*:/i.test(style);
+            if (el.tagName === 'SPAN' && (hasInlineColor || hasInlineBg)) {
                 const name = (el.innerText || '').trim();
                 if (name) {
-                    parts.push({
-                        kind: 'name',
-                        name,
-                        color: el.style.color || '',
-                    });
+                    let color = el.style.color || '';
+                    if (!color) {
+                        try {
+                            const cs = window.getComputedStyle(el);
+                            color = cs.color || '';
+                        } catch (_) { /* ignore */ }
+                    }
+                    // Some colonist variants pill names with a tinted
+                    // background; expose that too so the bridge can
+                    // fall back to it when text color is unusable.
+                    let bg = el.style.backgroundColor || '';
+                    if (!bg && hasInlineBg) {
+                        try {
+                            bg = window.getComputedStyle(el)
+                                .backgroundColor || '';
+                        } catch (_) { /* ignore */ }
+                    }
+                    parts.push({ kind: 'name', name, color, bg });
                 }
                 return;
             }
