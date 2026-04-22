@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.7
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.7 surfaces opening picks before self-color latches and captures chat-pill colors for WHITE players via computed style + background-color fallback.
+// @version      0.8.8
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.8 shows which direction to point your opening road (best 2-hop expansion) and hides opening picks once every seat has 2 settlements down.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -221,6 +221,9 @@
   .recs-h.plan-h { color: #7aa7d6; margin-top: 4px; }
   .rec.plan { opacity: 0.85; font-style: italic; }
   .rec.plan .kind { color: #a0c8f0; }
+  /* Road-direction hint under an opening-settlement pick. */
+  .rec-sub { color: #9ad0b5; font-size: 11px; padding: 0 8px 3px 8px;
+             opacity: 0.95; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
@@ -335,6 +338,14 @@
             for (const r of snap.recommendations) {
                 (r.when === 'soon' ? soonRecs : nowRecs).push(r);
             }
+            const tilesToStr = (arr) => (arr || [])
+                .filter(t => t && t[0] !== 'DESERT')
+                .map(t => {
+                    const abbrev = RES_ABBREV[t[0]]
+                        || (t[0] || '?').slice(0, 3);
+                    return t[1] != null ? `${abbrev}-${t[1]}` : abbrev;
+                })
+                .join(' · ');
             const renderRec = (r, isTop) => {
                 const topCls = isTop ? ' top' : '';
                 const kindLabel = {
@@ -345,17 +356,7 @@
                     trade: 'trade',
                     opening_settlement: 'open',
                 }[r.kind] || r.kind;
-                // Tile trio is the human-readable locator — catanatron
-                // node IDs like "@12" mean nothing visually on the board.
-                // Skip desert in the description (pure 0-production noise).
-                const tiles = (r.tiles || [])
-                    .filter(t => t && t[0] !== 'DESERT')
-                    .map(t => {
-                        const abbrev = RES_ABBREV[t[0]]
-                            || (t[0] || '?').slice(0, 3);
-                        return t[1] != null ? `${abbrev}-${t[1]}` : abbrev;
-                    })
-                    .join(' · ');
+                const tiles = tilesToStr(r.tiles);
                 // Roads lead to a landing spot — arrow makes it read as
                 // "this road → these tiles" rather than "on these tiles".
                 const arrow = r.kind === 'road' ? '→ ' : '';
@@ -371,6 +372,18 @@
                     + `<span class="tiles">${escapeHtml(loc)}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
                     + `</span></div>`);
+                // Opening-settlement picks include a nested road hint:
+                // "which direction to lay your road so it extends toward
+                // the best 2-hop expansion spot." Render as a sub-line.
+                if (r.kind === 'opening_settlement' && r.road
+                        && r.road.toward_tiles) {
+                    const towardTiles = tilesToStr(r.road.toward_tiles);
+                    if (towardTiles) {
+                        parts.push('<div class="rec-sub">'
+                            + `   ↳ road toward ${escapeHtml(towardTiles)}`
+                            + '</div>');
+                    }
+                }
             };
             if (nowRecs.length) {
                 const header = isSetup

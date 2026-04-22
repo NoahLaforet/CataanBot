@@ -81,7 +81,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     """
     from catanatron import Color
     from cataanbot.advisor import (
-        legal_nodes_after_picks, score_opening_nodes,
+        _build_node_neighbors, legal_nodes_after_picks, score_opening_nodes,
     )
 
     # Color is optional — during round-1 of the opening the bridge calls
@@ -106,6 +106,13 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         return []
     scored = score_opening_nodes(game, legal_nodes=legal)
     m = game.state.board.map
+    neighbors = _build_node_neighbors(m)
+    # Opening-road scoring reuses the settlement scores: the best road
+    # points toward an expansion corridor. Score per-node via the full
+    # board (not restricted to `legal`) so we can weigh the 2-hop
+    # reachable node even when it's currently blocked by the proposed
+    # settlement's distance rule — it'll reopen once someone moves.
+    full_scored = {ns.node_id: ns for ns in score_opening_nodes(game)}
     recs: list[dict[str, Any]] = []
     # Note whether I already have a settlement down (round-2 context).
     my_placed = 0 if c is None else sum(
@@ -117,8 +124,13 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         if s.port:
             detail_parts.append(f"port {s.port}")
         if my_placed == 1:
-            # Round-2 context: hint at resource complement of first settle.
             detail_parts.append("2nd pick")
+        road = _best_opening_road(
+            settlement=int(s.node_id),
+            neighbors=neighbors,
+            scored_by_node=full_scored,
+            m=m,
+        )
         recs.append({
             "kind": "opening_settlement",
             "when": "now",
@@ -127,8 +139,50 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             "detail": " · ".join(detail_parts),
             "tiles": s.tiles,
             "port": s.port,
+            "road": road,
         })
     return recs
+
+
+def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
+                       m) -> dict[str, Any] | None:
+    """For a proposed opening settlement, pick the best adjacent edge.
+
+    "Best" = the edge whose far-end leads toward the highest-scoring
+    legal 2-hop expansion spot. The road itself doesn't collect
+    resources; it's a commitment to where your settlement network
+    extends. Tiebreaker is the far-node's own pip production — a road
+    toward a 6/8 tile is better than toward a 3/4 corner at equal
+    2-hop target.
+    """
+    adj = neighbors.get(settlement, set())
+    best: tuple[float, int, int] | None = None  # (score, far, expansion)
+    for far in adj:
+        # Best reachable 2-hop settlement spot via (settlement -> far -> x).
+        exp_score = 0.0
+        exp_node: int | None = None
+        for x in neighbors.get(far, set()):
+            if x == settlement:
+                continue
+            ns = scored_by_node.get(x)
+            if ns is None:
+                continue
+            if ns.score > exp_score:
+                exp_score = ns.score
+                exp_node = x
+        # Tiebreaker: far-node's own pip production.
+        far_prod = _node_pip_production(m, far)
+        combined = exp_score * 100.0 + far_prod
+        if best is None or combined > best[0]:
+            best = (combined, far, exp_node or far)
+    if best is None:
+        return None
+    _, far, expansion = best
+    return {
+        "edge": [int(settlement), int(far)],
+        "toward_node": int(expansion),
+        "toward_tiles": _tile_label(m, expansion),
+    }
 
 def _sell_rate(resource: str, owned_nodes: set[int], port_nodes) -> int:
     """Cheapest rate at which the player can SELL this resource. A
