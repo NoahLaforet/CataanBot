@@ -340,6 +340,32 @@ def test_recommend_opening_is_adaptive_to_placements():
     assert node_ids_after.issubset(legal)
 
 
+def test_recommend_opening_attaches_road_direction():
+    """Every opening-settlement pick should also carry a `road` hint
+    pointing at the best adjacent edge (the direction to lay the
+    opening road toward future expansion)."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=5,
+    )
+    out = recommend_opening(g, None, top=5)
+    assert out
+    for r in out:
+        road = r["road"]
+        assert road is not None, r
+        edge = road["edge"]
+        assert edge[0] == r["node_id"], f"road must start at settlement: {r}"
+        assert edge[1] != edge[0]
+        assert isinstance(road["toward_node"], int)
+        # Tile list may be empty if the landing spot is pure-desert,
+        # but in practice the best expansion spot has production.
+        assert isinstance(road["toward_tiles"], list)
+
+
 def test_recommend_opening_tolerates_none_color():
     """Bridge calls in with ``color=None`` during round 1 because
     ``self_color_id`` hasn't latched yet (colonist only reveals it

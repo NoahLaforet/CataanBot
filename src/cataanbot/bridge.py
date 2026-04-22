@@ -501,9 +501,24 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # evaluate setup_phase here, before the self-color gate, so Noah
     # sees opening picks from the first frame rather than after his
     # 2nd settlement drops resources.
+    #
+    # We count settlements per seat directly rather than trusting
+    # catanatron's ``is_initial_build_phase`` flag — that only flips
+    # when catanatron's own turn machinery transitions into mid-game,
+    # and our event-driven dispatch doesn't always trigger that.
     cat_game = game.tracker.game
-    is_setup = bool(getattr(cat_game.state, "is_initial_build_phase",
-                            False))
+    num_players = len(sess.player_names) if sess.player_names else 0
+    settlements_per_color: dict[Any, int] = {}
+    for _nid, (col, btype) in cat_game.state.board.buildings.items():
+        if btype == "SETTLEMENT":
+            settlements_per_color[col] = (
+                settlements_per_color.get(col, 0) + 1)
+    opening_complete = (
+        num_players > 0
+        and len(settlements_per_color) >= num_players
+        and min(settlements_per_color.values()) >= 2
+    )
+    is_setup = not opening_complete
     snap["setup_phase"] = is_setup
     if is_setup:
         from cataanbot.recommender import recommend_opening
@@ -513,8 +528,6 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             snap["recommendations"] = recommend_opening(
                 cat_game, None, top=5)
         except Exception as e:  # noqa: BLE001
-            # Log so the bridge console shows the real error instead of
-            # silently empty recs in the overlay.
             print(f"[advisor] recommend_opening failed: {e!r}",
                   flush=True)
             snap["recommendations"] = []
@@ -566,29 +579,16 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     my_cid = sess.self_color_id
     snap["my_turn"] = (sess.current_turn_color_id is not None
                        and sess.current_turn_color_id == my_cid)
-    # Setup-phase detection: catanatron flips this bit off the moment
-    # the second-round roads are down. During setup we surface opening
-    # settlement spots (adaptive — they shrink as each pick lands)
-    # instead of mid-game build recs, which would only ever return [].
-    cat_game = game.tracker.game
-    is_setup = bool(getattr(cat_game.state, "is_initial_build_phase",
-                            False))
-    snap["setup_phase"] = is_setup
-    if is_setup:
-        # Show opening picks unconditionally during setup — they're
-        # useful to plan around even when it's not yet my turn.
-        try:
-            from cataanbot.recommender import recommend_opening
-            snap["recommendations"] = recommend_opening(
-                cat_game, self_color, top=5)
-        except Exception:  # noqa: BLE001
-            snap["recommendations"] = []
-    elif snap["my_turn"]:
+    # Mid-game recs: only when it's actually my turn. During setup the
+    # opening picks were already populated above, so skip here.
+    if not is_setup and snap["my_turn"]:
         try:
             from cataanbot.recommender import recommend_actions
             snap["recommendations"] = recommend_actions(
                 cat_game, self_color, hand, top=4)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            print(f"[advisor] recommend_actions failed: {e!r}",
+                  flush=True)
             snap["recommendations"] = []
     for cid, count in sorted(sess.hand_card_counts.items()):
         if cid == sess.self_color_id:
