@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.12.0
+// @version      0.12.1
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -239,6 +239,13 @@
   .rec-sub.plan-second .arrow { color: #7a9ab8; }
   .rec-sub.plan-second .cov { color: #8fb0d8; margin-left: 6px;
                               font-variant: tabular-nums; }
+  /* Strategy-archetype tag (balanced / wood-first / ore-city / port). */
+  .rec-sub.plan-second .arch { background: rgba(160, 192, 232, 0.18);
+                               color: #d0e0f5; border-radius: 6px;
+                               padding: 1px 6px; margin-left: 6px;
+                               font-size: 11px; font-weight: 500;
+                               text-transform: lowercase;
+                               letter-spacing: 0.02em; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
@@ -486,9 +493,13 @@
                     const cov = planSecond.covers
                         ? `<span class="cov">cov ${planSecond.covers}/5</span>`
                         : '';
+                    const arch = r.plan.archetype
+                        ? ` <span class="arch">${escapeHtml(
+                            r.plan.archetype)}</span>`
+                        : '';
                     parts.push('<div class="rec-sub plan-second">'
                         + '<span class="arrow">↳ 2nd:</span> '
-                        + planHtml + cov
+                        + planHtml + cov + arch
                         + '</div>');
                 }
             };
