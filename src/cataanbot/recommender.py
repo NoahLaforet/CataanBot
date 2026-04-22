@@ -53,6 +53,72 @@ def _score_road(landing_prod: float) -> float:
 
 _DEV_CARD_SCORE = 3.0
 
+
+def _score_opening(raw_score: float) -> float:
+    """Opening-settlement 1-10 calibration. base_score+denial+blocking
+    typically lives in [0.0, 0.6] — a ~0.5 top-of-board spot pins near
+    10, a ~0.1 leftover lands around 3.5."""
+    return round(_clip(raw_score * 15.0 + 2.0, 2.0, 10.0), 1)
+
+
+def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
+    """Rank remaining opening settlement spots during the setup phase.
+
+    Adaptive by construction: each call re-reads the current buildings
+    and re-filters ``legal_nodes_after_picks``, so the ranking shifts
+    automatically as opponents place. Tied into the live bridge, this
+    means the overlay's opening picks update on every WS frame without
+    any state of its own.
+
+    Returns up to ``top`` dicts with the normal rec shape
+    (``kind="opening_settlement"``, ``score``, ``detail``, ``node_id``,
+    ``tiles``) so the overlay renders them through the same path as
+    mid-game recs.
+
+    Callers are expected to only invoke this during setup — passing a
+    mid-game state just returns an empty list because buildable_node_ids
+    plus distance-2 already rules out every "opening" spot by then.
+    """
+    from catanatron import Color
+    from cataanbot.advisor import (
+        legal_nodes_after_picks, score_opening_nodes,
+    )
+
+    c = color if isinstance(color, Color) else Color[str(color).upper()]
+    placed = [
+        int(nid) for nid, (_col, btype)
+        in game.state.board.buildings.items()
+        if btype == "SETTLEMENT"
+    ]
+    legal = legal_nodes_after_picks(game, placed)
+    if not legal:
+        return []
+    scored = score_opening_nodes(game, legal_nodes=legal)
+    m = game.state.board.map
+    recs: list[dict[str, Any]] = []
+    # Note whether I already have a settlement down (round-2 context).
+    my_placed = sum(
+        1 for nid, (col, bt) in game.state.board.buildings.items()
+        if col == c and bt == "SETTLEMENT"
+    )
+    for s in scored[:top]:
+        detail_parts = [f"pip {s.raw_production:.2f}/roll"]
+        if s.port:
+            detail_parts.append(f"port {s.port}")
+        if my_placed == 1:
+            # Round-2 context: hint at resource complement of first settle.
+            detail_parts.append("2nd pick")
+        recs.append({
+            "kind": "opening_settlement",
+            "when": "now",
+            "node_id": int(s.node_id),
+            "score": _score_opening(s.score),
+            "detail": " · ".join(detail_parts),
+            "tiles": s.tiles,
+            "port": s.port,
+        })
+    return recs
+
 def _sell_rate(resource: str, owned_nodes: set[int], port_nodes) -> int:
     """Cheapest rate at which the player can SELL this resource. A
     settlement on a matching 2:1 port returns 2; on any 3:1 generic

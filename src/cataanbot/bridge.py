@@ -531,11 +531,28 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     my_cid = sess.self_color_id
     snap["my_turn"] = (sess.current_turn_color_id is not None
                        and sess.current_turn_color_id == my_cid)
-    if snap["my_turn"]:
+    # Setup-phase detection: catanatron flips this bit off the moment
+    # the second-round roads are down. During setup we surface opening
+    # settlement spots (adaptive — they shrink as each pick lands)
+    # instead of mid-game build recs, which would only ever return [].
+    cat_game = game.tracker.game
+    is_setup = bool(getattr(cat_game.state, "is_initial_build_phase",
+                            False))
+    snap["setup_phase"] = is_setup
+    if is_setup:
+        # Show opening picks unconditionally during setup — they're
+        # useful to plan around even when it's not yet my turn.
+        try:
+            from cataanbot.recommender import recommend_opening
+            snap["recommendations"] = recommend_opening(
+                cat_game, self_color, top=5)
+        except Exception:  # noqa: BLE001
+            snap["recommendations"] = []
+    elif snap["my_turn"]:
         try:
             from cataanbot.recommender import recommend_actions
             snap["recommendations"] = recommend_actions(
-                game.tracker.game, self_color, hand, top=4)
+                cat_game, self_color, hand, top=4)
         except Exception:  # noqa: BLE001
             snap["recommendations"] = []
     for cid, count in sorted(sess.hand_card_counts.items()):

@@ -282,6 +282,85 @@ def test_city_scores_higher_than_dev_card():
     assert city["score"] > dev["score"]
 
 
+def test_recommend_opening_on_fresh_game_returns_top_picks():
+    """A fresh catanatron game has every land node legal — the opening
+    advisor should return exactly ``top`` suggestions, all in the
+    opening_settlement shape."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=7,
+    )
+    out = recommend_opening(g, "RED", top=5)
+    assert len(out) == 5
+    for r in out:
+        assert r["kind"] == "opening_settlement"
+        assert r["when"] == "now"
+        assert isinstance(r["node_id"], int)
+        assert 2.0 <= float(r["score"]) <= 10.0
+        assert "pip" in r["detail"]
+    # Scores must be monotonically non-increasing — top pick first.
+    scores = [r["score"] for r in out]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_recommend_opening_is_adaptive_to_placements():
+    """Placing a settlement should remove that node AND its distance-1
+    neighbors from the next call's legal set — the ranking shifts as
+    the board fills."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=11,
+    )
+    before = recommend_opening(g, "RED", top=5)
+    assert before
+    # Take BLUE's pick on what RED would have wanted most. Then rerun.
+    top_pick = before[0]["node_id"]
+    g.state.board.build_settlement(
+        Color.BLUE, top_pick, initial_build_phase=True)
+    after = recommend_opening(g, "RED", top=5)
+    node_ids_after = {r["node_id"] for r in after}
+    assert top_pick not in node_ids_after, (
+        "top pick was taken by BLUE — must not resurface")
+    # Neighbors of top_pick (distance-1) are also illegal via Catan's
+    # distance rule, so they should be gone too.
+    neighbors = set()
+    for e in g.state.board.map.land_nodes:
+        pass  # placeholder; actual neighbor check via buildable filter
+    # Re-derive via the advisor's helper for a stricter invariant.
+    from cataanbot.advisor import legal_nodes_after_picks
+    legal = legal_nodes_after_picks(g, [top_pick])
+    assert node_ids_after.issubset(legal)
+
+
+def test_recommend_opening_flags_second_pick_context():
+    """When RED already has one settlement, the detail string should
+    signal "2nd pick" so Noah knows to weigh resource-complement."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=13,
+    )
+    # Place RED's first settlement on any node; rank the round-2 spots.
+    first = next(iter(g.state.board.map.land_nodes))
+    g.state.board.build_settlement(
+        Color.RED, first, initial_build_phase=True)
+    out = recommend_opening(g, "RED", top=3)
+    assert out
+    for r in out:
+        assert "2nd pick" in r["detail"]
+
+
 def test_live_game_resyncs_hand_on_reconnect_type4():
     """A second type=4 frame on an already-booted LiveGame should
     re-sync the self-hand from the replay's playerStates rather than

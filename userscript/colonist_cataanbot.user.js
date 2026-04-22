@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.5
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.1 adds quality-banded 1-10 scoring on recommendations, hand-drift warning, and disconnect-survivable hand resync.
+// @version      0.8.6
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.6 surfaces adaptive opening-placement picks during the initial build phase (shrinks as opponents take spots).
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -319,11 +319,17 @@
                 ? `<div class="afford">→ ${afford}</div>`
                 : `<div class="afford none">→ nothing buildable</div>`);
         }
-        // Recommendations — only shown when it's my turn. Split into:
+        // Setup-phase opening picks render unconditionally — it's
+        // useful to plan around them even off-turn so you know what to
+        // grab when your slot comes up.
+        const isSetup = !!snap.setup_phase;
+        // Recommendations — only shown when it's my turn (mid-game) or
+        // during setup (always useful). Split into:
         //   "best moves"      — things affordable right now
         //   "planning ahead"  — 1-2 cards from a better move; "save for X"
         // Both groups sorted by score desc within the list the backend sent.
-        if (snap.my_turn && (snap.recommendations || []).length) {
+        if ((snap.my_turn || isSetup)
+                && (snap.recommendations || []).length) {
             const nowRecs = [];
             const soonRecs = [];
             for (const r of snap.recommendations) {
@@ -337,6 +343,7 @@
                     road: 'road',
                     dev_card: 'dev card',
                     trade: 'trade',
+                    opening_settlement: 'open',
                 }[r.kind] || r.kind;
                 // Tile trio is the human-readable locator — catanatron
                 // node IDs like "@12" mean nothing visually on the board.
@@ -366,9 +373,12 @@
                     + `</span></div>`);
             };
             if (nowRecs.length) {
-                parts.push('<div class="recs-h">→ best moves</div>');
+                const header = isSetup
+                    ? '→ opening picks'
+                    : '→ best moves';
+                parts.push(`<div class="recs-h">${header}</div>`);
                 nowRecs.forEach((r, i) => renderRec(r, i === 0));
-            } else {
+            } else if (!isSetup) {
                 parts.push('<div class="turn-hint">your turn — '
                     + 'nothing affordable</div>');
             }
