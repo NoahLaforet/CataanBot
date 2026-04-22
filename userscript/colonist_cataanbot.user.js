@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.14.0
+// @version      0.15.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -160,16 +160,46 @@
         root.innerHTML = `
 <style>
   :host, * { box-sizing: border-box; }
+  /* --panel-w / --panel-h / --font-scale are mutated by the resize
+     handle. Font size scales with width so "bigger HUD" means bigger
+     text, not just spread-out text. Every font declaration below uses
+     calc(base * var(--font-scale)) so one knob controls everything. */
   .panel {
-    font: 14px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    --panel-w: 340px;
+    --panel-h: auto;
+    --font-scale: 1;
+    font: calc(14px * var(--font-scale))/1.4 ui-monospace, Menlo, Consolas, monospace;
     color: #e8e8e8;
     background: rgba(18, 18, 22, 0.94);
     border: 1px solid #2a2a32;
     border-radius: 6px;
-    width: 340px;
+    width: var(--panel-w);
+    height: var(--panel-h);
     box-shadow: 0 6px 24px rgba(0,0,0,0.45);
     user-select: none;
+    position: relative;
   }
+  /* Resize handle in the bottom-right corner. Diagonal ticks hint at
+     drag-to-resize. Pointer-events are only enabled on the handle so
+     text selection inside the panel still works. */
+  .resize-handle {
+    position: absolute; right: 0; bottom: 0;
+    width: 14px; height: 14px;
+    cursor: nwse-resize;
+    background:
+      linear-gradient(135deg,
+        transparent 0%, transparent 45%,
+        #4a4a55 45%, #4a4a55 50%,
+        transparent 50%, transparent 65%,
+        #4a4a55 65%, #4a4a55 70%,
+        transparent 70%);
+    border-bottom-right-radius: 6px;
+    opacity: 0.6;
+  }
+  .resize-handle:hover { opacity: 1; }
+  /* If the body is scrollable (user made the panel short), let it
+     scroll rather than overflow the panel container. */
+  .body.scrollable { overflow-y: auto; }
   .header {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 8px;
@@ -203,7 +233,7 @@
   .afford.none { color: #888; }
   .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
   .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
-  .opp { color: #ccc; font-size: 13px; }
+  .opp { color: #ccc; font-size: calc(13px * var(--font-scale)); }
   .opp-hand { color: #b5c4d0; font-variant-numeric: tabular-nums; }
   .opp.tracked .opp-hand { color: #a4ef9c; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
@@ -240,7 +270,7 @@
   .rec.plan { opacity: 0.85; font-style: italic; }
   .rec.plan .kind { color: #a0c8f0; }
   /* Road-direction hint under an opening-settlement pick. */
-  .rec-sub { color: #9ad0b5; font-size: 13px;
+  .rec-sub { color: #9ad0b5; font-size: calc(13px * var(--font-scale));
              padding: 0 8px 3px 62px; opacity: 0.95; }
   .rec-sub .warn { color: #f0a57a; font-weight: 500; }
   .rec-sub .arrow { color: #7a9aa8; margin-right: 4px; }
@@ -254,7 +284,7 @@
   .rec-sub.plan-second .arch { background: rgba(160, 192, 232, 0.18);
                                color: #d0e0f5; border-radius: 6px;
                                padding: 1px 6px; margin-left: 6px;
-                               font-size: 11px; font-weight: 500;
+                               font-size: calc(11px * var(--font-scale)); font-weight: 500;
                                text-transform: lowercase;
                                letter-spacing: 0.02em; }
   /* Option letter (A/B/C/D) shown before round-1 picks so Noah can
@@ -262,13 +292,13 @@
   .rec .opt { display: inline-block; min-width: 22px; margin-right: 6px;
               padding: 1px 6px; border-radius: 4px;
               background: rgba(255, 222, 122, 0.16); color: #ffde7a;
-              font-weight: 600; font-size: 12px;
+              font-weight: 600; font-size: calc(12px * var(--font-scale));
               font-variant: tabular-nums; text-align: center; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
   .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
-  .drift { color: #ff9999; margin: 2px 0; font-size: 13px; }
+  .drift { color: #ff9999; margin: 2px 0; font-size: calc(13px * var(--font-scale)); }
   /* Incoming trade panel — pops up when an opponent makes an offer and
      vanishes on the next roll/commit. Verdict pill color signals the
      advice at a glance (green=accept, red=decline, muted=consider). */
@@ -279,9 +309,9 @@
   }
   .trade-offer .trade-h { color: #f0a57a; font-weight: 600;
                           margin-bottom: 2px; }
-  .trade-offer .trade-body { color: #d8d8d8; font-size: 13px;
+  .trade-offer .trade-body { color: #d8d8d8; font-size: calc(13px * var(--font-scale));
                              margin: 1px 0; }
-  .trade-offer .trade-reason { color: #aaa; font-size: 13px;
+  .trade-offer .trade-reason { color: #aaa; font-size: calc(13px * var(--font-scale));
                                font-style: italic; margin-top: 2px; }
   .trade-offer .verdict {
     display: inline-block; padding: 1px 6px; border-radius: 3px;
@@ -295,7 +325,7 @@
   .trade-offer .counter {
     margin-top: 4px; padding: 3px 6px; border-radius: 3px;
     background: #1c2b34; border-left: 2px solid #7ac7e8;
-    font-size: 13px; color: #c8dde8;
+    font-size: calc(13px * var(--font-scale)); color: #c8dde8;
   }
   .trade-offer .counter .counter-h {
     color: #7ac7e8; font-weight: 600; margin-right: 4px;
@@ -313,7 +343,7 @@
     color: #ffd36e; font-weight: 600; margin-bottom: 2px;
   }
   .knight-hint .kh-reason {
-    color: #d8d8d8; font-size: 13px; margin: 1px 0;
+    color: #d8d8d8; font-size: calc(13px * var(--font-scale)); margin: 1px 0;
   }
   .knight-hint .kh-verdict {
     display: inline-block; padding: 1px 6px; border-radius: 3px;
@@ -333,6 +363,7 @@
   <div class="body" id="body">
     <div id="content"><span class="muted">waiting for bridge…</span></div>
   </div>
+  <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
 </div>`;
 
         document.body.appendChild(host);
@@ -370,6 +401,49 @@
                 (dragging.hostTop + e.clientY - dragging.startY) + 'px';
         });
         window.addEventListener('mouseup', () => { dragging = null; });
+
+        // Resize handle: drag mutates --panel-w and --font-scale so the
+        // HUD grows proportionally (text and spacing scale together).
+        // Width is the primary knob; font-scale follows a linear fit
+        // from base 340px → 1.0 up to 640px → 1.5. Persisted to
+        // localStorage so the size survives reloads.
+        const PANEL_W_MIN = 260, PANEL_W_MAX = 720;
+        const BASE_W = 340;
+        function scaleForWidth(w) {
+            // 340→1.0, 640→1.5 — linear, clamped to [0.85, 1.6].
+            const s = 1.0 + (w - BASE_W) * 0.5 / 300;
+            return Math.max(0.85, Math.min(1.6, s));
+        }
+        function applySize(w) {
+            const clamped = Math.max(PANEL_W_MIN, Math.min(PANEL_W_MAX, w));
+            panel.style.setProperty('--panel-w', clamped + 'px');
+            panel.style.setProperty('--font-scale',
+                                    scaleForWidth(clamped).toFixed(3));
+            try { localStorage.setItem('cataanbot.hudWidth', String(clamped)); }
+            catch (_) { /* private mode, storage blocked — fine */ }
+        }
+        // Restore saved width on boot.
+        try {
+            const saved = parseInt(
+                localStorage.getItem('cataanbot.hudWidth') || '', 10);
+            if (Number.isFinite(saved)) applySize(saved);
+        } catch (_) { /* storage unavailable */ }
+
+        const handle = root.getElementById('resize-handle');
+        let resizing = null;
+        handle.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            resizing = {
+                startX: e.clientX,
+                startW: panel.getBoundingClientRect().width,
+            };
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!resizing) return;
+            applySize(resizing.startW + (e.clientX - resizing.startX));
+        });
+        window.addEventListener('mouseup', () => { resizing = null; });
 
         return { host, panel, body, content, dot };
     }
@@ -460,8 +534,10 @@
                     dev_card: 'dev card',
                     trade: 'trade',
                     propose_trade: 'propose',
+                    bank_trade: 'port/bank',
+                    discard: 'discard',
                     opening_settlement: 'settle',
-                }[r.kind] || r.kind;
+                }[r.kind] || r.kind.replace(/_/g, ' ');
                 const tilesHtml = tilesToHtml(r.tiles);
                 // Roads lead to a landing spot — arrow makes it read as
                 // "this road → these tiles" rather than "on these tiles".
@@ -692,7 +768,7 @@
                     const fg = contrastText(bg);
                     const star = v.suggested ? '★' : '';
                     const pill = `<span class="color-pill" style="background:${bg};`
-                        + `color:${fg};font-size:10px;${
+                        + `color:${fg};font-size:calc(10px * var(--font-scale));${
                             v.suggested ? 'outline:2px solid #ffd36e;' : ''
                         }">${escapeHtml((v.color || '?').slice(0, 1))}</span>`;
                     const label = `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
