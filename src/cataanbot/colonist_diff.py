@@ -49,6 +49,15 @@ _CARD_RESOURCE = {
 }
 
 
+# Weights applied to keys in colonist's victoryPointsState dicts so we
+# can sum them into a display VP total. Key 0 = settlements (1 VP each),
+# key 1 = cities (2 VPs each), key 2 = VP dev cards held (self only, 1
+# each), key 4 = has-longest-road flag (2 VPs), key 5 = has-largest-army
+# flag (2 VPs). Anything else we haven't seen defaults to 0 so an
+# unexpected tracking key doesn't inflate the total.
+_VP_WEIGHTS: dict[int, int] = {0: 1, 1: 2, 2: 1, 4: 2, 5: 2}
+
+
 class LiveSessionError(RuntimeError):
     pass
 
@@ -108,6 +117,15 @@ class LiveSession:
     # handshake the VP bonus never lands on the HUD.
     has_longest_road_cid: int | None = None
     has_largest_army_cid: int | None = None
+    # Colonist's authoritative VP breakdown per color. Keys are int
+    # source-ids (0=settle count, 1=city count, 2=held VP cards for
+    # self, 4=has-longest-road flag, 5=has-largest-army flag) and
+    # values are counts. Summing with ``_VP_WEIGHTS`` yields the same
+    # total colonist displays above each player's name — more robust
+    # than recomputing from our internal building tracker, which can
+    # drift across reconnects or dropped diffs.
+    victory_points_state: dict[int, dict[int, int]] = field(
+        default_factory=dict)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -178,6 +196,23 @@ class LiveSession:
         if isinstance(robber, dict) and "locationTileIndex" in robber:
             sess.robber_tile_id = int(robber["locationTileIndex"])
 
+        # Seed per-color VP breakdown from colonist's playerStates. On
+        # a mid-game reconnect this ships the full current VP state for
+        # every player, so we're immediately in sync with what the UI
+        # shows — no catch-up needed from rebuilding history.
+        player_states = game_state.get("playerStates") or {}
+        if isinstance(player_states, dict):
+            for cid_str, pstate in player_states.items():
+                if not isinstance(pstate, dict):
+                    continue
+                try:
+                    cid = int(cid_str)
+                except (TypeError, ValueError):
+                    continue
+                vps = pstate.get("victoryPointsState")
+                if isinstance(vps, dict):
+                    sess.victory_points_state[cid] = _parse_vp_state(vps)
+
         # Seed bonus-holder cids from the full game state so a mid-game
         # reconnect doesn't re-award the card on the next diff that
         # happens to re-ship `hasLongestRoad: true`.
@@ -202,6 +237,38 @@ class LiveSession:
         if color_id is None:
             return ""
         return self.player_names.get(int(color_id), f"player{int(color_id)}")
+
+    def vp_total(self, color_id: int | None) -> int:
+        """Weighted sum of colonist's victoryPointsState for a color.
+
+        Returns 0 when we haven't seen a vp snapshot for this color yet
+        (pre-first-diff, or a cid we don't recognize). Uses _VP_WEIGHTS
+        to translate source-id counts into VP — so a state of
+        ``{0: 2, 1: 1, 4: 1}`` means 2 settles + 1 city + longest road
+        = 2*1 + 1*2 + 1*2 = 6 VPs, matching what colonist's UI shows.
+        """
+        if color_id is None:
+            return 0
+        state = self.victory_points_state.get(int(color_id))
+        if not state:
+            return 0
+        return sum(_VP_WEIGHTS.get(k, 0) * v for k, v in state.items())
+
+
+def _parse_vp_state(vps: dict[Any, Any]) -> dict[int, int]:
+    """Convert colonist's string-keyed victoryPointsState to ints.
+
+    Colonist ships keys as strings ('0', '1', '4', ...) in its msgpack
+    payload — coerce them to ints so they match _VP_WEIGHTS keys.
+    Silently drops entries with unparseable keys or values.
+    """
+    out: dict[int, int] = {}
+    for k, v in vps.items():
+        try:
+            out[int(k)] = int(v)
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def events_from_diff(
@@ -325,6 +392,8 @@ def events_from_diff(
     for ev in _hand_sync_events(sess, diff.get("playerStates") or {}):
         out.append(ev)
 
+    _merge_vp_state(sess, diff.get("playerStates") or {})
+
     for ev in _bonus_vp_events(sess, diff):
         out.append(ev)
 
@@ -353,6 +422,32 @@ def events_from_diff(
                              d2=int(dice["dice2"])))
 
     return out
+
+
+def _merge_vp_state(
+    sess: LiveSession, player_states: dict[str, Any],
+) -> None:
+    """Update the session's per-color victoryPointsState from a diff.
+
+    Colonist only ships the *changed* entries in a diff — e.g. a
+    settlement build sends ``{'0': 2}`` to overwrite the old settlement
+    count. Merge these onto the running state per color so the full
+    breakdown stays current and ``vp_total`` reflects what the UI shows.
+    """
+    if not isinstance(player_states, dict):
+        return
+    for cid_str, pstate in player_states.items():
+        if not isinstance(pstate, dict):
+            continue
+        vps = pstate.get("victoryPointsState")
+        if not isinstance(vps, dict):
+            continue
+        try:
+            cid = int(cid_str)
+        except (TypeError, ValueError):
+            continue
+        current = sess.victory_points_state.setdefault(cid, {})
+        current.update(_parse_vp_state(vps))
 
 
 def _dev_card_buy_events(

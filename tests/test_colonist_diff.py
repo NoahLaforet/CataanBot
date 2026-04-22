@@ -510,6 +510,74 @@ def test_diff_vpevent_wires_into_tracker_vp_with_bonus():
         f"{state.player_state[f'P{idx}_VICTORY_POINTS']}")
 
 
+def test_vp_total_sums_colonist_victory_points_state():
+    """``sess.vp_total`` must match the display VP colonist shows above
+    a player's name: settlements*1 + cities*2 + VP-cards-held*1 +
+    longest-road-flag*2 + largest-army-flag*2. Regression for the HUD
+    showing VPs off-by-one against colonist's counter."""
+    sess = _minimal_session()
+    # 2 settles + 1 city + holds longest road = 2 + 2 + 2 = 6 VP.
+    sess.victory_points_state[1] = {0: 2, 1: 1, 4: 1}
+    assert sess.vp_total(1) == 6
+    # Self-player adds a hidden VP card on top.
+    sess.victory_points_state[5] = {0: 3, 1: 1, 2: 1}
+    assert sess.vp_total(5) == 3 + 2 + 1  # 3 settles, 1 city, 1 VP card
+    # Unknown color → 0.
+    assert sess.vp_total(99) == 0
+    assert sess.vp_total(None) == 0
+
+
+def test_vp_total_updates_from_diff_playerstates():
+    """A diff that reships ``victoryPointsState`` for a color must get
+    merged onto the running state (not replace it wholesale — colonist
+    only sends changed keys), so ``vp_total`` reflects the new award."""
+    sess = _minimal_session()
+    sess.victory_points_state[1] = {0: 3, 1: 1}  # 3 settles, 1 city = 5
+    diff = {
+        "playerStates": {
+            "1": {"victoryPointsState": {"4": 1}},  # now also has longest road
+        },
+    }
+    events_from_diff(sess, diff)
+    assert sess.victory_points_state[1] == {0: 3, 1: 1, 4: 1}
+    assert sess.vp_total(1) == 3 + 2 + 2  # 3 settles + 1 city + longest road
+
+
+def test_vp_total_seeds_from_game_start_playerstates():
+    """On a mid-game reconnect, GameStart ships each player's current
+    victoryPointsState. from_game_start must seed LiveSession with
+    these so the first advisor snapshot already shows authoritative VPs
+    — no waiting for further diffs to catch up."""
+    body = {
+        "gameState": {
+            "mapState": _minimal_session().mapping.map_state_raw
+            if hasattr(_minimal_session().mapping, "map_state_raw")
+            else _game_start_body(CAPTURE_EARLY)["gameState"]["mapState"],
+            "playerStates": {
+                "1": {
+                    "color": 1,
+                    "victoryPointsState": {"0": 2, "1": 1, "4": 1},
+                },
+                "5": {
+                    "color": 5,
+                    "victoryPointsState": {"0": 1, "1": 2, "2": 1},
+                },
+            },
+        },
+        "playerColor": 5,
+        "playerUserStates": [
+            {"selectedColor": 1, "username": "Elissa", "isBot": False},
+            {"selectedColor": 5, "username": "Me", "userId": 42,
+             "isBot": False},
+        ],
+    }
+    sess = LiveSession.from_game_start(body)
+    # Elissa: 2 settles + 1 city + longest road = 2 + 2 + 2 = 6
+    assert sess.vp_total(1) == 6
+    # Me: 1 settle + 2 cities + 1 VP card = 1 + 4 + 1 = 6
+    assert sess.vp_total(5) == 6
+
+
 def test_tracker_recompute_longest_road_does_not_strip_without_displacer():
     """Regression for the stripping bug: if a color holds HAS_ROAD (set
     via VPEvent) and our internal road count is 0 (missed road diffs),

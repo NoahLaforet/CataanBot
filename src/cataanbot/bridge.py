@@ -934,7 +934,29 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
 
 
 def _get_vp(game, color: str) -> int:
-    """Public VP for `color` from catanatron's state."""
+    """VP for `color` — prefer colonist's authoritative state.
+
+    Colonist's victoryPointsState per color is what its UI displays
+    (settles + cities + held VP cards + longest-road/largest-army
+    flags). Using it directly avoids drift that would otherwise creep
+    in when BuildEvents are missed on reconnect or when a knight-play
+    doesn't reach our tracker. Falls back to catanatron's internal
+    VICTORY_POINTS when we can't resolve the color to a colonist cid
+    (e.g. ws-replay fixtures without a LiveSession).
+    """
+    try:
+        color_map = getattr(game, "color_map", None)
+        sess = getattr(game, "session", None)
+        if sess is not None and color_map is not None:
+            username = color_map.reverse(color)
+            if username is not None:
+                for cid, name in sess.player_names.items():
+                    if name == username:
+                        if sess.victory_points_state.get(cid):
+                            return sess.vp_total(cid)
+                        break
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from catanatron import Color
         c = Color[color.upper()]
