@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.12.1
+// @version      0.13.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -87,6 +87,16 @@
     const RES_ABBREV = {
         WOOD: 'Wd', BRICK: 'Br', SHEEP: 'Sh', WHEAT: 'Wh', ORE: 'Or',
     };
+    // Emoji icons render at a glance vs. letter abbrevs — on a dense
+    // HUD, 🌲 is faster to parse than "Wd". Kept the abbrev map as a
+    // fallback for callers that want text, but the main renderers use
+    // icons.
+    const RES_ICON = {
+        WOOD: '🌲', BRICK: '🧱', SHEEP: '🐑',
+        WHEAT: '🌾', ORE: '⛰️',
+    };
+    const iconFor = (res) => RES_ICON[res]
+        || RES_ABBREV[res] || (res || '?').slice(0, 2);
 
     // Pick the best available pill color. Prefer the CSS color the
     // chat-pill shipped (true colonist UI color, including premium
@@ -377,10 +387,10 @@
                 + `color:${fg};">${escapeHtml(me.username)}</span>`;
             parts.push(`<div class="you">${pill}`
                 + ` <span class="muted">${me.cards}c · ${me.vp} VP</span></div>`);
-            // Space between count and abbrev so "1Or" doesn't read as "10r".
+            // Icons scan faster than letter abbrevs on a dense HUD.
             const hand = Object.entries(me.hand || {})
                 .filter(([, n]) => n > 0)
-                .map(([r, n]) => `${n} ${RES_ABBREV[r] || r.slice(0, 2)}`)
+                .map(([r, n]) => `${n} ${iconFor(r)}`)
                 .join('  ') || '<span class="muted">∅</span>';
             parts.push(`<div class="hand">${hand}</div>`);
             // Hand-drift warning. Tracker's event-reconstructed breakdown
@@ -418,19 +428,18 @@
             const tilesToHtml = (arr) => (arr || [])
                 .filter(t => t && t[0] !== 'DESERT')
                 .map(t => {
-                    const abbrev = RES_ABBREV[t[0]]
-                        || (t[0] || '?').slice(0, 3);
+                    const icon = iconFor(t[0]);
                     const num = t[1];
                     if (num == null) {
                         return `<span class="tile-chip">`
-                            + `<span class="tile-res">${escapeHtml(abbrev)}`
+                            + `<span class="tile-res">${icon}`
                             + `</span></span>`;
                     }
                     const hot = (num === 6 || num === 8);
                     const cls = hot ? 'tile-num hot' : 'tile-num';
                     return `<span class="tile-chip">`
                         + `<span class="${cls}">${num}</span>`
-                        + `<span class="tile-res">${escapeHtml(abbrev)}`
+                        + `<span class="tile-res">${icon}`
                         + `</span></span>`;
                 })
                 .join('');
@@ -540,8 +549,7 @@
                 const hand = o.hand || {};
                 for (const [res, n] of Object.entries(hand)) {
                     if (n > 0) {
-                        handParts.push(
-                            `${n} ${RES_ABBREV[res] || res.slice(0, 2)}`);
+                        handParts.push(`${n} ${iconFor(res)}`);
                     }
                 }
                 if ((o.unknown || 0) > 0) {
@@ -567,13 +575,13 @@
                 ? `<span class="color-pill" style="background:${bg};`
                     + `color:${fg};">${escapeHtml(t.offerer)}</span> `
                 : '';
-            // Pack -> "1 Ore, 2 Sheep" for both sides of the swap.
+            // Pack -> "1 🧱 2 🐑" for both sides of the swap.
             const fmtSide = (pack) => {
                 const keys = Object.keys(pack || {});
                 if (!keys.length) return '∅';
                 return keys
                     .filter(r => pack[r] > 0)
-                    .map(r => `${pack[r]} ${RES_ABBREV[r] || r.slice(0, 2)}`)
+                    .map(r => `${pack[r]} ${iconFor(r)}`)
                     .join(' ');
             };
             const verdictCls = ['accept', 'decline', 'consider']
