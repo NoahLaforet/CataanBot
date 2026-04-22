@@ -79,9 +79,15 @@ class Tracker:
     succeeds, so failed commands don't corrupt the replay log.
     """
 
-    def __init__(self, seed: int | None = None) -> None:
+    def __init__(self, seed: int | None = None, *,
+                 catan_map: Any = None) -> None:
         self.seed: int = seed if seed is not None else secrets.randbits(63)
         self.history: list[dict[str, Any]] = []
+        # When set, every game re-created from this Tracker (reset, undo,
+        # load) uses this fixed map instead of rolling a random layout.
+        # Intended for live colonist sessions where we mirror the real
+        # board so advisor rendering and yield_resources line up.
+        self.catan_map = catan_map
         self.game = self._new_game(self.seed)
 
     # --- lifecycle -------------------------------------------------------
@@ -91,13 +97,13 @@ class Tracker:
         self.history = []
         self.game = self._new_game(self.seed)
 
-    @staticmethod
-    def _new_game(seed: int) -> "Game":
+    def _new_game(self, seed: int) -> "Game":
         from catanatron import Color, Game, RandomPlayer
         return Game(
             [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
                                        Color.WHITE, Color.ORANGE)],
             seed=seed,
+            catan_map=self.catan_map,
         )
 
     # --- color / node validation ----------------------------------------

@@ -11,6 +11,7 @@ import pytest
 from cataanbot.colonist_map import (
     COLONIST_PORT_RESOURCE, COLONIST_TILE_RESOURCE,
     MapMapping, MapMappingError, axial_to_cube,
+    build_catanatron_map_from_colonist,
     build_mapping, corner_tile_signature, edge_endpoint_signatures,
     port_resource, tile_resource,
 )
@@ -366,3 +367,159 @@ def test_build_mapping_rejects_corner_off_board():
     corrupt["tileCornerStates"]["0"] = {"x": 99, "y": 99, "z": 0}
     with pytest.raises(MapMappingError):
         build_mapping(corrupt)
+
+
+# ---- build_catanatron_map_from_colonist ------------------------------------
+
+def test_colonist_built_map_preserves_mapping_node_ids():
+    """Node IDs from ``build_mapping`` must remain valid on the custom
+    map, otherwise every WS build would write to the wrong node."""
+    ms = _load_fort4092_map_state()
+    mapping = build_mapping(ms)
+    cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
+    # Every colonist corner's catanatron node id must be an actual land node.
+    for nid in mapping.node_id.values():
+        assert nid in cm.land_nodes
+
+
+def test_colonist_built_map_resource_and_dice_per_tile():
+    """Each land tile's (resource, number) on the catanatron side matches
+    the colonist tile sitting at the same cube coord."""
+    ms = _load_fort4092_map_state()
+    mapping = build_mapping(ms)
+    cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
+    hex_states = ms["tileHexStates"]
+    for tid_str, t in hex_states.items():
+        cube = axial_to_cube(t["x"], t["y"])
+        land = cm.land_tiles[cube]
+        assert land.resource == tile_resource(int(t["type"]))
+        dice = int(t.get("diceNumber", 0))
+        expected_num = dice if dice else None
+        assert land.number == expected_num
+
+
+def test_colonist_built_map_desert_has_no_resource_or_number():
+    ms = _load_fort4092_map_state()
+    cm = build_catanatron_map_from_colonist(ms)
+    deserts = [t for t in cm.land_tiles.values() if t.resource is None]
+    assert len(deserts) == 1
+    assert deserts[0].number is None
+
+
+def test_colonist_built_map_port_resources_match_mapping():
+    """Each port's resource on the catanatron side matches what the
+    colonist port type integer translates to via ``port_resource``."""
+    from catanatron.models.map import PORT_DIRECTION_TO_NODEREFS, Port
+    ms = _load_fort4092_map_state()
+    mapping = build_mapping(ms)
+    cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
+    pair_to_pid = {pair: pid for pid, pair in mapping.port_edges.items()}
+    seen = 0
+    for _coord, tile in cm.tiles.items():
+        if not isinstance(tile, Port):
+            continue
+        a_ref, b_ref = PORT_DIRECTION_TO_NODEREFS[tile.direction]
+        pair = frozenset({tile.nodes[a_ref], tile.nodes[b_ref]})
+        pid = pair_to_pid[pair]
+        assert tile.resource == port_resource(mapping.port_types[pid])
+        seen += 1
+    assert seen == 9
+
+
+def test_colonist_built_map_has_base_catan_resource_histogram():
+    """A sanity check: the custom map's resource/number layout must
+    match what base Catan actually produced in the capture."""
+    from collections import Counter
+    ms = _load_fort4092_map_state()
+    cm = build_catanatron_map_from_colonist(ms)
+    res_hist = Counter(t.resource for t in cm.land_tiles.values())
+    num_hist = Counter(t.number for t in cm.land_tiles.values()
+                       if t.number is not None)
+    assert res_hist == {
+        None: 1, "WOOD": 4, "BRICK": 3, "SHEEP": 4, "WHEAT": 4, "ORE": 3}
+    # 18 non-desert tiles covering 2..12 with expected pair counts.
+    assert sum(num_hist.values()) == 18
+    for n in (2, 12):
+        assert num_hist[n] == 1
+    for n in (3, 4, 5, 6, 8, 9, 10, 11):
+        assert num_hist[n] == 2
+
+
+def test_tracker_with_colonist_map_uses_ws_node_ids():
+    """End-to-end: build the custom map, hand it to the Tracker, then
+    run settle/city/road/move_robber at IDs supplied by ``MapMapping``.
+    This is the exact path the live dispatcher takes."""
+    from cataanbot.tracker import Tracker
+    ms = _load_fort4092_map_state()
+    mapping = build_mapping(ms)
+    cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
+
+    tracker = Tracker(seed=1, catan_map=cm)
+
+    # Grab a corner + one of its adjacent edges.
+    cid = next(iter(mapping.node_id))
+    node_id = mapping.node_id[cid]
+    # Find an edge containing node_id.
+    eid, edge_pair = next((eid, pair) for eid, pair in mapping.edge_nodes.items()
+                          if node_id in pair)
+    other = next(n for n in edge_pair if n != node_id)
+
+    tracker.settle("RED", node_id)
+    tracker.city("RED", node_id)
+    tracker.road("RED", node_id, other)
+
+    board = tracker.game.state.board
+    owner, kind = board.buildings[node_id]
+    assert kind == "CITY" and owner.name == "RED"
+    assert board.roads[(node_id, other)].name == "RED"
+
+    # Robber at a known tile.
+    tid = next(iter(mapping.tile_coord))
+    coord = mapping.tile_coord[tid]
+    tracker.move_robber(coord)
+    assert board.robber_coordinate == coord
+
+
+def test_tracker_with_colonist_map_roll_yields_real_resources():
+    """With the real layout loaded, tracker.roll(N) distributes exactly
+    what the live colonist game would pay out — no more random-map hack."""
+    from cataanbot.tracker import Tracker
+    ms = _load_fort4092_map_state()
+    mapping = build_mapping(ms)
+    cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
+
+    tracker = Tracker(seed=1, catan_map=cm)
+
+    # Pick a tile with a real number, settle its NORTH corner, then roll.
+    tid, coord = next(
+        (tid, c) for tid, c in mapping.tile_coord.items()
+        if mapping.tile_dice.get(tid))
+    dice = mapping.tile_dice[tid]
+    resource = tile_resource(mapping.tile_types[tid])
+
+    # Find a colonist corner touching this tile (via tile_corners).
+    cid = next(iter(mapping.tile_corners[tid]))
+    node_id = mapping.node_id[cid]
+
+    tracker.settle("BLUE", node_id)
+    # Robber defaults to the desert, so the rolled tile pays out.
+    payout = tracker.roll(dice)
+    assert payout.get("BLUE", {}).get(resource, 0) >= 1
+
+
+def test_tracker_with_colonist_map_survives_reset():
+    """``reset`` should reuse the custom map — same node IDs, same layout."""
+    from cataanbot.tracker import Tracker
+    ms = _load_fort4092_map_state()
+    mapping = build_mapping(ms)
+    cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
+
+    tracker = Tracker(seed=1, catan_map=cm)
+    cid = next(iter(mapping.node_id))
+    node_id = mapping.node_id[cid]
+    tracker.settle("WHITE", node_id)
+    tracker.reset()
+    # After reset the custom map is still in effect — the same node id
+    # is a land node and a fresh settle succeeds on it.
+    assert node_id in tracker.game.state.board.map.land_nodes
+    tracker.settle("WHITE", node_id)
