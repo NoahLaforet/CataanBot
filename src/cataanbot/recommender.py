@@ -832,10 +832,14 @@ def recommend_actions(
         # wins by virtue of being considered first.
         break
 
-    # Sort by score descending. Ties break with "now" before "soon" so the
-    # act-now option ranks above an equally-scored plan.
-    recs.sort(key=lambda r: (-float(r.get("score", 0)),
-                             0 if r.get("when") == "now" else 1))
+    # 1-ply search rerank: for each affordable build, simulate executing
+    # it on a game copy and score the resulting state. The rec with the
+    # best post-action evaluation wins — actual lookahead value, not just
+    # the per-kind heuristic. Falls back to heuristic score for recs that
+    # can't be simulated (propose_trade, soon-plans) or if the engine
+    # state is malformed. See eval.py for the state evaluator.
+    from cataanbot.eval import search_rerank
+    search_rerank(game, c, recs)
     return recs[:top]
 
 
