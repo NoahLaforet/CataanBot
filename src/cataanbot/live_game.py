@@ -18,15 +18,23 @@ capture file" stay byte-for-byte identical.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from cataanbot.colonist_diff import (
     LiveSession, LiveSessionError, events_from_frame_payload,
 )
 from cataanbot.colonist_map import build_catanatron_map_from_colonist
+from cataanbot.events import BuildEvent
 from cataanbot.live import ColorMap, DispatchResult, apply_event
-from cataanbot.tracker import Tracker
+from cataanbot.tracker import Tracker, TrackerError
+
+# Standard Catan build costs. WS diffs don't carry the resource deltas
+# that accompany a build (only the board state changed), so LiveGame
+# debits the cost itself when a placement succeeds.
+_SETTLEMENT_COST = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1}
+_CITY_COST = {"WHEAT": 2, "ORE": 3}
+_ROAD_COST = {"WOOD": 1, "BRICK": 1}
 
 
 @dataclass
@@ -41,6 +49,10 @@ class LiveGame:
     session: LiveSession | None = None
     tracker: Tracker | None = None
     color_map: ColorMap | None = None
+    # Per-color tally of applied {settlement,city,road} placements. First
+    # 2 settlements and 2 roads each are free (setup phase); everything
+    # else is a paid build and gets cost-debited in ``_debit_build``.
+    build_counts: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @property
     def started(self) -> bool:
@@ -91,4 +103,42 @@ class LiveGame:
             return []
 
         events = events_from_frame_payload(self.session, payload)
-        return [apply_event(self.tracker, self.color_map, ev) for ev in events]
+        results = [
+            apply_event(self.tracker, self.color_map, ev) for ev in events
+        ]
+        for result in results:
+            if (result.status == "applied"
+                    and isinstance(result.event, BuildEvent)):
+                self._debit_build(result.event)
+        return results
+
+    def _debit_build(self, event: BuildEvent) -> None:
+        """Charge the standard cost for a placement, if it wasn't free.
+
+        Setup-phase builds (each color's first 2 settlements and first
+        2 roads) are free, as are road-building dev-card roads. We can't
+        see that distinction from the WS diff alone, so we infer it from
+        the running per-color count of applied placements.
+
+        Cost debits are best-effort: if a color's inferred hand lacks
+        the resource, we swallow the error rather than crashing the
+        feed. Missing card context is expected in beta — trades with
+        hidden resources and third-party steals will leave gaps.
+        """
+        color = self.color_map.get(event.player)
+        tally = self.build_counts.setdefault(
+            color, {"settlement": 0, "city": 0, "road": 0})
+        tally[event.piece] += 1
+        if event.piece == "settlement" and tally["settlement"] > 2:
+            cost = _SETTLEMENT_COST
+        elif event.piece == "city":
+            cost = _CITY_COST
+        elif event.piece == "road" and tally["road"] > 2:
+            cost = _ROAD_COST
+        else:
+            return
+        for resource, amount in cost.items():
+            try:
+                self.tracker.take(color, amount, resource)
+            except TrackerError:
+                pass
