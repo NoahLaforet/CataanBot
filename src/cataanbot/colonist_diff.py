@@ -126,6 +126,20 @@ class LiveSession:
             raise LiveSessionError("gameState has no mapState")
         mapping = build_mapping(map_state)
 
+        # Self detection: GameStart ships ``playerColor`` at the top
+        # level = the local seat's color — the most direct signal.
+        # Fallback: only the local client's playerUserStates entry has
+        # a real integer ``userId`` (bots have userId=null). Latching
+        # before any resource frames land lets round-2 opening picks
+        # (complement-aware ranking against my placed settlement) fire
+        # as soon as the first settlement is down, instead of waiting
+        # a full round for the 2nd-settle resource arrival to reveal
+        # self.
+        self_cid: int | None = None
+        raw_self = body.get("playerColor")
+        if isinstance(raw_self, int):
+            self_cid = raw_self
+
         names: dict[int, str] = {}
         for entry in body.get("playerUserStates", []) or []:
             if not isinstance(entry, dict):
@@ -135,8 +149,14 @@ class LiveSession:
             if color is None or not user:
                 continue
             names[int(color)] = str(user)
+            # Fallback: infer self from the entry with a real userId.
+            if (self_cid is None and entry.get("userId") is not None
+                    and not entry.get("isBot")):
+                self_cid = int(color)
 
         sess = cls(mapping=mapping, player_names=names)
+        if self_cid is not None:
+            sess.self_color_id = self_cid
 
         # Seed known_corners / known_edges from the starting map state so
         # our first diff after GameStart doesn't replay every existing

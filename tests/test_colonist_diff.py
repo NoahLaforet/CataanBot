@@ -71,6 +71,29 @@ def test_from_game_start_seeds_existing_placements():
     assert events == []
 
 
+def test_from_game_start_latches_self_color_from_playerColor():
+    """fort4092 capture was from BrickdDaddy (color 5) — ``playerColor``
+    at the GameStart root directly names self's color, so
+    ``self_color_id`` must latch to 5 immediately. This is the signal
+    the round-2 opening picks depend on — without it, recommend_opening
+    can't do complement-aware ranking against my placed settlement."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    assert sess.self_color_id == 5
+
+
+def test_from_game_start_fallback_to_userId_when_playerColor_missing():
+    """Belt-and-suspenders: if a future colonist variant drops
+    ``playerColor``, the non-bot entry's ``userId`` is the fallback.
+    Only bots have userId=null — the real client is always someone."""
+    body = _game_start_body(CAPTURE_EARLY)
+    body = {**body}
+    body.pop("playerColor", None)
+    sess = LiveSession.from_game_start(body)
+    # The capture's non-bot entry (BrickdDaddy, userId=100859728) is at
+    # selectedColor=5 — fallback must still land on 5.
+    assert sess.self_color_id == 5
+
+
 # ---------------------------------------------------------------------------
 # Diff → Event translation
 # ---------------------------------------------------------------------------
@@ -174,14 +197,17 @@ def test_diff_without_fresh_dice_emits_no_roll():
 def test_produce_events_for_roll_skips_robber_tile():
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
     # Put a settlement on the first corner of some tile that rolls on 6.
+    # Owner = Elissa (color 1) — produce_events_for_roll skips the self
+    # player (BrickdDaddy / color 5) since their hand is synced via
+    # resourceCards instead.
     six_tid = next(tid for tid, d in sess.mapping.tile_dice.items()
                    if d == 6)
     any_cid = next(iter(sess.mapping.tile_corners[six_tid]))
     sess.known_corners[any_cid] = 1
-    sess.corner_owners[any_cid] = 5
+    sess.corner_owners[any_cid] = 1
 
     got = produce_events_for_roll(sess, 6)
-    assert got and got[0].player == "BrickdDaddy"
+    assert got and got[0].player == "Elissa"
 
     sess.robber_tile_id = six_tid
     # With the robber on the only 6-tile that corner touches, yields may
