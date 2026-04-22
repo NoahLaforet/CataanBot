@@ -176,6 +176,31 @@ def test_produce_events_for_roll_handles_seven():
     assert produce_events_for_roll(sess, 7) == []
 
 
+def test_produce_events_for_roll_skips_self_player():
+    """Once we've latched onto the self-player's color id, their yield
+    must NOT be emitted as a ProduceEvent — HandSync from the resource-
+    cards snapshot already captures it absolutely, so a delta on top
+    would double-count. Opponents still get their deltas."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    six_tid = next(tid for tid, d in sess.mapping.tile_dice.items()
+                   if d == 6)
+    corners = list(sess.mapping.tile_corners[six_tid])
+    # Self player's corner (latched below).
+    sess.known_corners[corners[0]] = 1
+    sess.corner_owners[corners[0]] = 5  # BrickdDaddy
+    # Opponent's corner on the same tile.
+    sess.known_corners[corners[1]] = 1
+    sess.corner_owners[corners[1]] = 1  # Elissa
+
+    sess.self_color_id = 5
+    events = produce_events_for_roll(sess, 6)
+    players = {ev.player for ev in events}
+    assert "BrickdDaddy" not in players, (
+        f"self-player leaked into produce events: {players}")
+    assert "Elissa" in players, (
+        "opponent yield should still be emitted")
+
+
 def test_events_from_frame_payload_emits_roll_plus_produce():
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
     six_tid = next(tid for tid, d in sess.mapping.tile_dice.items() if d == 6)

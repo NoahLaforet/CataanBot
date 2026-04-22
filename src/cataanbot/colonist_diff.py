@@ -368,6 +368,13 @@ def produce_events_for_roll(
             owner = sess.corner_owners.get(cid)
             if owner is None:
                 continue
+            # Skip the self-player. Their post-roll hand is covered by
+            # the HandSyncEvent we emit from playerStates.resourceCards,
+            # which is an ABSOLUTE snapshot of their post-roll cards.
+            # Adding this delta on top would double-count the yield.
+            if (sess.self_color_id is not None
+                    and int(owner) == sess.self_color_id):
+                continue
             bt = sess.known_corners.get(cid, 0)
             if bt not in (1, 2):
                 continue

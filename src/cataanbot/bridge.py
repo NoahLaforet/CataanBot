@@ -250,7 +250,13 @@ def _print_self_advisor(game) -> None:
     if (hand.get("WHEAT", 0) >= 1 and hand.get("SHEEP", 0) >= 1
             and hand.get("ORE", 0) >= 1):
         afford.append("dev card")
-    hand_str = " ".join(f"{n}{r[0]}" for r, n in hand.items() if n) or "∅"
+    # Two-letter abbreviations so Wood and Wheat don't collide.
+    abbrev = {"WOOD": "Wd", "BRICK": "Br", "SHEEP": "Sh",
+              "WHEAT": "Wh", "ORE": "Or"}
+    hand_str = " ".join(
+        f"{n}{abbrev.get(r, r[:2])}"
+        for r, n in hand.items() if n
+    ) or "∅"
     buildable = ", ".join(afford) if afford else "nothing"
     print(f"    [you] {color} {cards}c ({hand_str}) → can build: "
           f"{buildable}", flush=True)
