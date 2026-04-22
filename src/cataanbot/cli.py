@@ -241,12 +241,14 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
 
 
 def cmd_bridge(host: str, port: int, jsonl: str | None,
-               ws_jsonl: str | None = None, advisor: bool = False) -> int:
+               ws_jsonl: str | None = None, advisor: bool = False,
+               postmortem_dir: str | None = None) -> int:
     """Run the FastAPI bridge that receives colonist.io log events and
     WebSocket frames from the Tampermonkey userscript."""
     from cataanbot.bridge import serve
     return serve(host=host, port=port, jsonl=jsonl,
-                 ws_jsonl=ws_jsonl, advisor=advisor)
+                 ws_jsonl=ws_jsonl, advisor=advisor,
+                 postmortem_dir=postmortem_dir)
 
 
 def cmd_replay(jsonl_path: str, player_args: list[str] | None,
@@ -696,6 +698,11 @@ def main(argv: list[str] | None = None) -> int:
     p_bridge.add_argument("--advisor", action="store_true",
                           help="Print an advisor line after each hand/roll "
                                "update (what you can afford to build).")
+    p_bridge.add_argument(
+        "--postmortem-dir", dest="postmortem_dir", default=None,
+        help="Directory to write auto-postmortem HTML files to when a "
+             "GameOverEvent lands (default: ~/Desktop/CataanBot/"
+             "postmortems/). Pass an empty string to disable.")
 
     p_live = sub.add_parser(
         "live",
@@ -710,6 +717,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="Mirror /log events to this .jsonl file.")
     p_live.add_argument("--ws-jsonl", dest="ws_jsonl", default=None,
                         help="Mirror /ws frames to this .jsonl file.")
+    p_live.add_argument(
+        "--postmortem-dir", dest="postmortem_dir", default=None,
+        help="Directory to write auto-postmortem HTML files to when a "
+             "GameOverEvent lands (default: ~/Desktop/CataanBot/"
+             "postmortems/). Pass an empty string to disable.")
 
     p_ws_replay = sub.add_parser(
         "ws-replay",
@@ -831,10 +843,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hands(args.save)
     if args.cmd == "bridge":
         return cmd_bridge(args.host, args.port, args.jsonl,
-                          ws_jsonl=args.ws_jsonl, advisor=args.advisor)
+                          ws_jsonl=args.ws_jsonl, advisor=args.advisor,
+                          postmortem_dir=args.postmortem_dir)
     if args.cmd == "live":
         return cmd_bridge(args.host, args.port, args.jsonl,
-                          ws_jsonl=args.ws_jsonl, advisor=True)
+                          ws_jsonl=args.ws_jsonl, advisor=True,
+                          postmortem_dir=args.postmortem_dir)
     if args.cmd == "replay":
         return cmd_replay(args.jsonl, args.player, args.verbose,
                           args.save_to, args.render_to, args.hex_size,

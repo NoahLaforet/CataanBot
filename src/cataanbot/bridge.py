@@ -55,13 +55,16 @@ from typing import Any
 
 def _build_app(jsonl_path: Path | None = None,
                ws_jsonl_path: Path | None = None,
-               advisor: bool = False):
+               advisor: bool = False,
+               postmortem_dir: Path | None = None):
     """Construct the FastAPI app. Imports kept lazy so the rest of the
     package doesn't require fastapi just to import cli.py."""
     from fastapi import Body, FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
+    from cataanbot.live import ColorMap
     from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
 
     app = FastAPI(title="cataanbot bridge", version="0.2")
 
@@ -85,6 +88,16 @@ def _build_app(jsonl_path: Path | None = None,
         "last_roll": None,        # {"player","color","total","is_you"}
         "robber_pending": False,  # self rolled 7, hasn't placed robber yet
         "robber_snapshot": None,  # cached score_robber_targets payload
+        # Auto-postmortem buffers. Fed from the /log path so the output
+        # shape matches `cataanbot replay --postmortem`. Independent from
+        # LiveGame's WS tracker — the two pipelines never cross.
+        "pm_tracker": Tracker(),
+        "pm_color_map": ColorMap(),
+        "pm_events": [],
+        "pm_results": [],
+        "pm_timestamps": [],
+        "pm_written": False,
+        "pm_dir": postmortem_dir,
     }
 
     @app.get("/")
@@ -108,6 +121,7 @@ def _build_app(jsonl_path: Path | None = None,
         if jsonl_path is not None:
             with jsonl_path.open("a") as f:
                 f.write(json.dumps(payload) + "\n")
+        _feed_postmortem(st, payload)
         return {"ok": True, "received": st["log_count"]}
 
     @app.get("/advisor")
@@ -153,6 +167,12 @@ def _build_app(jsonl_path: Path | None = None,
         st["last_roll"] = None
         st["robber_pending"] = False
         st["robber_snapshot"] = None
+        st["pm_tracker"] = Tracker()
+        st["pm_color_map"] = ColorMap()
+        st["pm_events"] = []
+        st["pm_results"] = []
+        st["pm_timestamps"] = []
+        st["pm_written"] = False
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -214,6 +234,87 @@ def _print_game_start(game) -> None:
     print(f"    map: {len(board.map.land_tiles)} land tiles, "
           f"robber at {board.robber_coordinate}", flush=True)
     print()
+
+
+def _feed_postmortem(st, payload: dict[str, Any]) -> None:
+    """Mirror the /log payload into the postmortem-collector pipeline.
+
+    Parses the DOM-log payload, dispatches through a dedicated Tracker +
+    ColorMap, and appends the (event, result, timestamp) triple. When a
+    GameOverEvent lands we render a self-contained HTML postmortem once
+    and flip ``pm_written`` so reruns (log virtualization echoes) don't
+    stomp the file.
+    """
+    from cataanbot.events import GameOverEvent
+    from cataanbot.live import apply_event
+    from cataanbot.parser import parse_event
+
+    try:
+        event = parse_event(payload)
+    except Exception as e:  # noqa: BLE001
+        print(f"[pm] parse error: {e}", flush=True)
+        return
+    try:
+        result = apply_event(st["pm_tracker"], st["pm_color_map"], event)
+    except Exception as e:  # noqa: BLE001
+        print(f"[pm] dispatch error: {e}", flush=True)
+        return
+
+    ts = payload.get("ts")
+    ts_f = float(ts) if isinstance(ts, (int, float)) else None
+
+    st["pm_events"].append(event)
+    st["pm_results"].append(result)
+    st["pm_timestamps"].append(ts_f)
+
+    if isinstance(event, GameOverEvent) and not st["pm_written"]:
+        _write_postmortem(st, event)
+
+
+def _write_postmortem(st, game_over) -> None:
+    """Render the HTML postmortem to ``st['pm_dir']`` (or the default)."""
+    import time as _time
+    from pathlib import Path as _Path
+
+    from cataanbot.postmortem import render_postmortem_html
+
+    out_dir = st.get("pm_dir")
+    if out_dir is None:
+        out_dir = _Path.home() / "Desktop" / "CataanBot" / "postmortems"
+    out_dir = _Path(out_dir)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"[pm] could not create {out_dir}: {e}", flush=True)
+        return
+
+    stamp = _time.strftime("%Y-%m-%d_%H%M%S")
+    winner = (getattr(game_over, "winner", "") or "game").strip() or "game"
+    safe_winner = "".join(
+        c if c.isalnum() or c in ("-", "_") else "_" for c in winner)
+    out_path = out_dir / f"{stamp}_{safe_winner}.html"
+
+    try:
+        final_vp = st["pm_tracker"].vp_status()["per_color"]
+    except Exception:  # noqa: BLE001
+        final_vp = {}
+
+    try:
+        path = render_postmortem_html(
+            events=st["pm_events"],
+            dispatch_results=st["pm_results"],
+            timestamps=st["pm_timestamps"],
+            color_map=st["pm_color_map"],
+            final_vp=final_vp,
+            out_path=out_path,
+            jsonl_path=None,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[pm] render failed: {e}", flush=True)
+        return
+
+    st["pm_written"] = True
+    print(f"\n=== postmortem written → {path} ===\n", flush=True)
 
 
 def _track_overlay_state(st, results) -> None:
@@ -649,7 +750,8 @@ def _fmt_res(resources: dict[str, int]) -> str:
 def serve(host: str = "127.0.0.1", port: int = 8765,
           jsonl: str | None = None,
           ws_jsonl: str | None = None,
-          advisor: bool = False) -> int:
+          advisor: bool = False,
+          postmortem_dir: str | None = None) -> int:
     """Run the bridge with uvicorn. Blocks until Ctrl-C."""
     try:
         import uvicorn
@@ -668,13 +770,24 @@ def serve(host: str = "127.0.0.1", port: int = 8765,
         ws_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         print(f"mirroring WS frames to {ws_jsonl_path}")
 
+    pm_dir: Path | None
+    if postmortem_dir is None:
+        pm_dir = Path.home() / "Desktop" / "CataanBot" / "postmortems"
+    elif postmortem_dir == "":
+        pm_dir = None  # explicit opt-out
+    else:
+        pm_dir = Path(postmortem_dir).expanduser()
+    if pm_dir is not None:
+        print(f"auto-postmortem will write to {pm_dir}/")
+
     app = _build_app(jsonl_path=jsonl_path, ws_jsonl_path=ws_jsonl_path,
-                     advisor=advisor)
+                     advisor=advisor, postmortem_dir=pm_dir)
     print(f"cataanbot bridge listening on http://{host}:{port}")
-    print("POST  /log    — userscript DOM log events")
-    print("POST  /ws     — userscript WebSocket frames")
-    print("GET   /       — health + counters + game state")
-    print("POST  /reset  — clear game state and counters")
+    print("POST  /log      — userscript DOM log events")
+    print("POST  /ws       — userscript WebSocket frames")
+    print("GET   /         — health + counters + game state")
+    print("GET   /advisor  — compact advisor snapshot (for the overlay)")
+    print("POST  /reset    — clear game state and counters")
     if advisor:
         print("advisor output: ON")
     print("Ctrl-C to stop.\n")
