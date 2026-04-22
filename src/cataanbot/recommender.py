@@ -61,6 +61,31 @@ def _score_opening(raw_score: float) -> float:
     return round(_clip(raw_score * 15.0 + 2.0, 2.0, 10.0), 1)
 
 
+def _score_second_settle(raw_score: float) -> float:
+    """Round-2 pick 1-10 calibration. complement + diversity + port for
+    the top paired candidate typically sits in [0.3, 1.5] — a strong
+    complement pairs toward 10, a meh filler lands around 3."""
+    return round(_clip(raw_score * 6.0 + 1.5, 2.0, 10.0), 1)
+
+
+def _resources_covered(*prod_maps: dict[str, float]) -> set[str]:
+    """Union of resource names with positive production across inputs."""
+    out: set[str] = set()
+    for pm in prod_maps:
+        for r, v in pm.items():
+            if v > 0.0:
+                out.add(r)
+    return out
+
+
+def _resources_added(base: dict[str, float],
+                     addend: dict[str, float]) -> list[str]:
+    """Resources ``addend`` produces that ``base`` doesn't cover yet."""
+    base_covered = {r for r, v in base.items() if v > 0.0}
+    return [r for r, v in addend.items()
+            if v > 0.0 and r not in base_covered]
+
+
 def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     """Rank remaining opening settlement spots during the setup phase.
 
@@ -80,8 +105,10 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     plus distance-2 already rules out every "opening" spot by then.
     """
     from catanatron import Color
+    from catanatron.state import RESOURCES
     from cataanbot.advisor import (
-        _build_node_neighbors, legal_nodes_after_picks, score_opening_nodes,
+        _build_node_neighbors, legal_nodes_after_picks,
+        score_opening_nodes, score_second_settlements,
     )
 
     # Color is optional — during round-1 of the opening the bridge calls
@@ -115,11 +142,6 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     # reachable node even when it's currently blocked by the proposed
     # settlement's distance rule — it'll reopen once someone moves.
     full_scored = {ns.node_id: ns for ns in score_opening_nodes(game)}
-    # If every color has already placed both opening settlements, the
-    # pick loop is moot — distance-2 legal nodes may still exist on
-    # paper but colonist won't let anyone drop another opening
-    # settlement. Skip straight to the road-followup so the overlay
-    # surfaces the "finish your road" hint instead of stale picks.
     if len(placed) >= 2 * num_players:
         if c is None:
             return []
@@ -127,22 +149,100 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             game=game, c=c, neighbors=neighbors,
             scored_by_node=full_scored, m=m,
         )
-    legal = legal_nodes_after_picks(game, placed)
-    if not legal:
-        return []
-    scored = score_opening_nodes(game, legal_nodes=legal)
-    recs: list[dict[str, Any]] = []
     # Note whether I already have a settlement down (round-2 context).
     my_placed = 0 if c is None else sum(
         1 for nid, (col, bt) in game.state.board.buildings.items()
         if col == c and bt == "SETTLEMENT"
     )
+    recs: list[dict[str, Any]] = []
+
+    # --- Round 2: complement-aware ranking against my placed F -----------
+    # Once my first settlement is down, "best 2nd pick" isn't about pips
+    # in isolation — it's about what F is missing. Defer to the paired
+    # scorer so a sheep/ore corner edges out a higher-pip but overlapping
+    # wheat pick.
+    if my_placed == 1 and c is not None:
+        my_first = next(
+            int(nid) for nid, (col, bt)
+            in game.state.board.buildings.items()
+            if col == c and bt == "SETTLEMENT"
+        )
+        F_prod = {r: float(m.node_production.get(my_first, {}).get(r, 0.0))
+                  for r in RESOURCES}
+        pair_scored = score_second_settlements(game, my_first, color=c.name)
+        for s in pair_scored[:top]:
+            new_res = _resources_added(F_prod, s.resources)
+            coverage = len(_resources_covered(F_prod, s.resources))
+            detail_parts = [f"pip {s.raw_production:.2f}/roll"]
+            if new_res:
+                added_abbrev = "+".join(r[:3].lower() for r in new_res)
+                detail_parts.append(f"adds {added_abbrev}")
+            detail_parts.append(f"covers {coverage}/5")
+            if s.port:
+                detail_parts.append(f"port {s.port}")
+            detail_parts.append("2nd pick")
+            road: dict[str, Any] | None = None
+            if (s.best_road is not None
+                    and s.best_road.landing_node is not None):
+                road = {
+                    "edge": [int(s.node_id), int(s.best_road.far_node)],
+                    "toward_node": int(s.best_road.landing_node),
+                    "toward_tiles": s.best_road.landing_tiles,
+                }
+            recs.append({
+                "kind": "opening_settlement",
+                "when": "now",
+                "node_id": int(s.node_id),
+                "score": _score_second_settle(s.score),
+                "detail": " · ".join(detail_parts),
+                "tiles": s.tiles,
+                "port": s.port,
+                "road": road,
+            })
+        if not recs:
+            recs.extend(_opening_road_followup(
+                game=game, c=c, neighbors=neighbors,
+                scored_by_node=full_scored, m=m,
+            ))
+        return recs
+
+    # --- Round 1: rank F, attach best paired N as plan.second ------------
+    legal = legal_nodes_after_picks(game, placed)
+    if not legal:
+        return []
+    scored = score_opening_nodes(game, legal_nodes=legal)
+    pair_color = c.name if c is not None else "RED"
     for s in scored[:top]:
         detail_parts = [f"pip {s.raw_production:.2f}/roll"]
         if s.port:
             detail_parts.append(f"port {s.port}")
-        if my_placed == 1:
-            detail_parts.append("2nd pick")
+        F_prod = {r: s.resources.get(r, 0.0) for r in RESOURCES}
+        # Best hypothetical 2nd settle paired with this F. The legality
+        # override tells score_second_settlements to pretend F is placed
+        # even though the board is still empty at this point in round 1.
+        legal_after_f = legal_nodes_after_picks(
+            game, placed + [int(s.node_id)])
+        pair_scored = score_second_settlements(
+            game, int(s.node_id), color=pair_color,
+            legal_nodes=legal_after_f,
+        )
+        plan_second: dict[str, Any] | None = None
+        n_neighbors: set[int] = set()
+        if pair_scored:
+            n = pair_scored[0]
+            new_res = _resources_added(F_prod, n.resources)
+            coverage = len(_resources_covered(F_prod, n.resources))
+            plan_second = {
+                "node_id": int(n.node_id),
+                "tiles": n.tiles,
+                "port": n.port,
+                "covers": coverage,
+                "adds": new_res,
+            }
+            n_neighbors = (neighbors.get(int(n.node_id), set())
+                           | {int(n.node_id)})
+            # The overlay renders plan.second as its own sub-line, so
+            # the detail string stays terse — just pips + port.
         road = _best_opening_road(
             settlement=int(s.node_id),
             neighbors=neighbors,
@@ -150,8 +250,9 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             m=m,
             game=game,
             my_color=c,
+            planned_blocked=n_neighbors,
         )
-        recs.append({
+        rec: dict[str, Any] = {
             "kind": "opening_settlement",
             "when": "now",
             "node_id": int(s.node_id),
@@ -160,7 +261,10 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             "tiles": s.tiles,
             "port": s.port,
             "road": road,
-        })
+        }
+        if plan_second is not None:
+            rec["plan"] = {"second": plan_second}
+        recs.append(rec)
     # All opening settlements placed but self still owes a matching road?
     # Emit a "finish the road" rec so the overlay doesn't go blank during
     # that window. Fires only when we know self's color — otherwise we
@@ -225,8 +329,9 @@ def _opening_road_followup(*, game, c, neighbors, scored_by_node, m):
 
 
 def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
-                       m, game=None,
-                       my_color=None) -> dict[str, Any] | None:
+                       m, game=None, my_color=None,
+                       planned_blocked: set[int] | None = None,
+                       ) -> dict[str, Any] | None:
     """For a proposed opening settlement, pick the best adjacent edge.
 
     "Best" = the edge whose far-end leads toward the highest-scoring
@@ -242,6 +347,11 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     outright — the opp has already sealed the corridor, so pointing our
     road at it is wasted. When ``game`` isn't given we skip these
     checks (the unit tests hit the no-board path).
+
+    ``planned_blocked`` (optional) treats extra nodes as distance-blocked
+    even though they aren't built yet — used in round-1 to reserve the
+    planned 2nd-settlement and its neighbors so the round-1 road doesn't
+    aim at a corridor that will be sealed once N is placed.
     """
     # Precompute the danger set from the live game: distance-2 blocks
     # from any settlement/city, and opponent-owned edges we can't cross.
@@ -258,6 +368,8 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
                 continue
             a, b = edge
             opp_edges.add(frozenset((int(a), int(b))))
+    if planned_blocked:
+        blocked_nodes |= {int(n) for n in planned_blocked}
     adj = neighbors.get(settlement, set())
     best: tuple[float, int, int, bool] | None = None
     # (score, far, expansion, contested)

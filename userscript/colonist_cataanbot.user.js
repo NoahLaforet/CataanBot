@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.11.2
+// @version      0.12.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -234,6 +234,11 @@
              padding: 0 8px 3px 62px; opacity: 0.95; }
   .rec-sub .warn { color: #f0a57a; font-weight: 500; }
   .rec-sub .arrow { color: #7a9aa8; margin-right: 4px; }
+  /* Paired-2nd-settlement hint — blue accent to distinguish from road. */
+  .rec-sub.plan-second { color: #a0c0e8; }
+  .rec-sub.plan-second .arrow { color: #7a9ab8; }
+  .rec-sub.plan-second .cov { color: #8fb0d8; margin-left: 6px;
+                              font-variant: tabular-nums; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
@@ -470,6 +475,21 @@
                             + warn
                             + '</div>');
                     }
+                }
+                // Round-1 picks also carry plan.second — the best paired
+                // 2nd-settlement for this F. Render it as its own sub-line
+                // so Noah reads each F pick as a coordinated 2-settle plan.
+                const planSecond = r.plan && r.plan.second;
+                if (planSecond && planSecond.tiles
+                        && planSecond.tiles.length) {
+                    const planHtml = tilesToHtml(planSecond.tiles);
+                    const cov = planSecond.covers
+                        ? `<span class="cov">cov ${planSecond.covers}/5</span>`
+                        : '';
+                    parts.push('<div class="rec-sub plan-second">'
+                        + '<span class="arrow">↳ 2nd:</span> '
+                        + planHtml + cov
+                        + '</div>');
                 }
             };
             if (nowRecs.length) {

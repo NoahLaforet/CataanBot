@@ -475,6 +475,7 @@ def _best_opening_road(
 
 def score_second_settlements(
     game: "Game", first_node_id: int, color: str = "RED",
+    legal_nodes: set[int] | None = None,
 ) -> list[SecondSettleScore]:
     """Rank legal second-settlement nodes given first settlement at `first_node_id`.
 
@@ -488,7 +489,12 @@ def score_second_settlements(
     combined F+N production of the ported resource is high, since excess is
     what feeds maritime trades.
 
-    Only nodes legal under the distance rule are returned."""
+    Only nodes legal under the distance rule are returned. ``legal_nodes``
+    overrides the default (catanatron's ``buildable_node_ids``), so callers
+    can score a hypothetical pairing on a board where ``first_node_id``
+    hasn't actually been placed yet — e.g. the round-1 overlay wanting to
+    preview "if I settle here, my best round-2 N would be..." before any
+    settlement exists."""
     from catanatron import Color
     from catanatron.state import RESOURCES
 
@@ -498,7 +504,10 @@ def score_second_settlements(
         raise ValueError(f"node {first_node_id} is not a land node")
 
     c = Color[color.upper()]
-    legal = set(b.buildable_node_ids(c, initial_build_phase=True))
+    if legal_nodes is None:
+        legal = set(b.buildable_node_ids(c, initial_build_phase=True))
+    else:
+        legal = set(legal_nodes)
     node_to_port = _build_node_port_labels(m)
     neighbors = _build_node_neighbors(m)
     land_nodes = set(m.land_nodes)
