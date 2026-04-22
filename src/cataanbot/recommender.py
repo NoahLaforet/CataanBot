@@ -130,6 +130,8 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             neighbors=neighbors,
             scored_by_node=full_scored,
             m=m,
+            game=game,
+            my_color=c,
         )
         recs.append({
             "kind": "opening_settlement",
@@ -145,7 +147,8 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
 
 
 def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
-                       m) -> dict[str, Any] | None:
+                       m, game=None,
+                       my_color=None) -> dict[str, Any] | None:
     """For a proposed opening settlement, pick the best adjacent edge.
 
     "Best" = the edge whose far-end leads toward the highest-scoring
@@ -154,35 +157,80 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     extends. Tiebreaker is the far-node's own pip production — a road
     toward a 6/8 tile is better than toward a 3/4 corner at equal
     2-hop target.
+
+    Blocking-risk filter: expansion candidates that are already
+    distance-2 blocked by any existing building get dropped, and the
+    edge `(far, x)` being owned by an opponent road drops that branch
+    outright — the opp has already sealed the corridor, so pointing our
+    road at it is wasted. When ``game`` isn't given we skip these
+    checks (the unit tests hit the no-board path).
     """
+    # Precompute the danger set from the live game: distance-2 blocks
+    # from any settlement/city, and opponent-owned edges we can't cross.
+    blocked_nodes: set[int] = set()
+    opp_edges: set[frozenset[int]] = set()
+    if game is not None:
+        for nid, (col, btype) in game.state.board.buildings.items():
+            if btype not in ("SETTLEMENT", "CITY"):
+                continue
+            blocked_nodes.add(int(nid))
+            blocked_nodes |= {int(n) for n in neighbors.get(int(nid), set())}
+        for edge, col in game.state.board.roads.items():
+            if col == my_color:
+                continue
+            a, b = edge
+            opp_edges.add(frozenset((int(a), int(b))))
     adj = neighbors.get(settlement, set())
-    best: tuple[float, int, int] | None = None  # (score, far, expansion)
+    best: tuple[float, int, int, bool] | None = None
+    # (score, far, expansion, contested)
     for far in adj:
         # Best reachable 2-hop settlement spot via (settlement -> far -> x).
         exp_score = 0.0
         exp_node: int | None = None
+        exp_contested = False
         for x in neighbors.get(far, set()):
             if x == settlement:
+                continue
+            # Skip expansions already sealed by distance-2 rule.
+            if x in blocked_nodes:
                 continue
             ns = scored_by_node.get(x)
             if ns is None:
                 continue
+            # Opp road on (far, x) — physically blocks the extension.
+            # Drop it from consideration rather than soft-penalize;
+            # a sealed corridor is worse than pointing elsewhere.
+            if frozenset((far, x)) in opp_edges:
+                continue
+            # Soft contested signal: opp pieces already close to the
+            # expansion target. Doesn't filter the edge, just flags it
+            # so the overlay can warn.
+            contested = False
+            if game is not None:
+                for nb in neighbors.get(x, set()):
+                    if nb in blocked_nodes and nb != settlement:
+                        contested = True
+                        break
             if ns.score > exp_score:
                 exp_score = ns.score
                 exp_node = x
+                exp_contested = contested
         # Tiebreaker: far-node's own pip production.
         far_prod = _node_pip_production(m, far)
         combined = exp_score * 100.0 + far_prod
         if best is None or combined > best[0]:
-            best = (combined, far, exp_node or far)
+            best = (combined, far, exp_node or far, exp_contested)
     if best is None:
         return None
-    _, far, expansion = best
-    return {
+    _, far, expansion, contested = best
+    out: dict[str, Any] = {
         "edge": [int(settlement), int(far)],
         "toward_node": int(expansion),
         "toward_tiles": _tile_label(m, expansion),
     }
+    if contested:
+        out["contested"] = True
+    return out
 
 def _sell_rate(resource: str, owned_nodes: set[int], port_nodes) -> int:
     """Cheapest rate at which the player can SELL this resource. A
