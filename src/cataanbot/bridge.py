@@ -506,13 +506,17 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                             False))
     snap["setup_phase"] = is_setup
     if is_setup:
+        from cataanbot.recommender import recommend_opening
         try:
-            from cataanbot.recommender import recommend_opening
             # None is fine — recommend_opening only uses color for the
             # "2nd pick" hint, which gracefully degrades.
             snap["recommendations"] = recommend_opening(
                 cat_game, None, top=5)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            # Log so the bridge console shows the real error instead of
+            # silently empty recs in the overlay.
+            print(f"[advisor] recommend_opening failed: {e!r}",
+                  flush=True)
             snap["recommendations"] = []
     if sess.self_color_id is None:
         return snap
