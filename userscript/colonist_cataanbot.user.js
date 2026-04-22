@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.9
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.9 filters opening-road expansions that are distance-2 blocked or edge-sealed by opp roads, and flags contested corridors.
+// @version      0.9.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.9.0 reworks opening-pick rendering as number-first tile chips with hot-pip (6/8) highlighting.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -218,13 +218,22 @@
   .rec .score.decent { background: #504620; color: #ffe07a; }
   .rec .score.weak   { background: #2a2a32; color: #999; }
   .rec .tiles { color: #b8c6d6; font-weight: 500; }
+  /* Tile chips: number-first so 6/8 "red pip" rolls pop visually.
+     Resource abbrev follows in a softer color; chips space out for
+     easier scan than dot-separated tokens. */
+  .tile-chip { display: inline-block; margin-right: 6px;
+               font-variant-numeric: tabular-nums; }
+  .tile-num { color: #ffd36e; font-weight: 700; }
+  .tile-num.hot { color: #ff7b7b; }
+  .tile-res { color: #b8c6d6; font-weight: 500; margin-left: 2px; }
   .recs-h.plan-h { color: #7aa7d6; margin-top: 4px; }
   .rec.plan { opacity: 0.85; font-style: italic; }
   .rec.plan .kind { color: #a0c8f0; }
   /* Road-direction hint under an opening-settlement pick. */
-  .rec-sub { color: #9ad0b5; font-size: 11px; padding: 0 8px 3px 8px;
-             opacity: 0.95; }
+  .rec-sub { color: #9ad0b5; font-size: 11px;
+             padding: 0 8px 3px 62px; opacity: 0.95; }
   .rec-sub .warn { color: #f0a57a; font-weight: 500; }
+  .rec-sub .arrow { color: #7a9aa8; margin-right: 4px; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
@@ -339,14 +348,28 @@
             for (const r of snap.recommendations) {
                 (r.when === 'soon' ? soonRecs : nowRecs).push(r);
             }
-            const tilesToStr = (arr) => (arr || [])
+            // Tile chips: one span per producing tile, number-first so
+            // 6/8 (red-pip rolls) jump out. Returns a string of HTML
+            // fragments joined without separators — spacing is CSS.
+            const tilesToHtml = (arr) => (arr || [])
                 .filter(t => t && t[0] !== 'DESERT')
                 .map(t => {
                     const abbrev = RES_ABBREV[t[0]]
                         || (t[0] || '?').slice(0, 3);
-                    return t[1] != null ? `${abbrev}-${t[1]}` : abbrev;
+                    const num = t[1];
+                    if (num == null) {
+                        return `<span class="tile-chip">`
+                            + `<span class="tile-res">${escapeHtml(abbrev)}`
+                            + `</span></span>`;
+                    }
+                    const hot = (num === 6 || num === 8);
+                    const cls = hot ? 'tile-num hot' : 'tile-num';
+                    return `<span class="tile-chip">`
+                        + `<span class="${cls}">${num}</span>`
+                        + `<span class="tile-res">${escapeHtml(abbrev)}`
+                        + `</span></span>`;
                 })
-                .join(' · ');
+                .join('');
             const renderRec = (r, isTop) => {
                 const topCls = isTop ? ' top' : '';
                 const kindLabel = {
@@ -355,13 +378,17 @@
                     road: 'road',
                     dev_card: 'dev card',
                     trade: 'trade',
-                    opening_settlement: 'open',
+                    opening_settlement: 'settle',
                 }[r.kind] || r.kind;
-                const tiles = tilesToStr(r.tiles);
+                const tilesHtml = tilesToHtml(r.tiles);
                 // Roads lead to a landing spot — arrow makes it read as
                 // "this road → these tiles" rather than "on these tiles".
-                const arrow = r.kind === 'road' ? '→ ' : '';
-                const loc = tiles ? ` ${arrow}${tiles}` : '';
+                const arrowHtml = r.kind === 'road'
+                    ? '<span class="arrow">→</span> '
+                    : '';
+                const loc = tilesHtml
+                    ? ` ${arrowHtml}${tilesHtml}`
+                    : '';
                 const s = Number(r.score || 0);
                 const scoreCls = s >= 8 ? 'strong'
                     : (s >= 5 ? 'decent' : 'weak');
@@ -370,7 +397,7 @@
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}">`
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
                     + ` <span class="kind">${kindLabel}</span>`
-                    + `<span class="tiles">${escapeHtml(loc)}</span> `
+                    + `<span class="tiles">${loc}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
                     + `</span></div>`);
                 // Opening-settlement picks include a nested road hint:
@@ -378,13 +405,14 @@
                 // the best 2-hop expansion spot." Render as a sub-line.
                 if (r.kind === 'opening_settlement' && r.road
                         && r.road.toward_tiles) {
-                    const towardTiles = tilesToStr(r.road.toward_tiles);
-                    if (towardTiles) {
+                    const towardHtml = tilesToHtml(r.road.toward_tiles);
+                    if (towardHtml) {
                         const warn = r.road.contested
                             ? ' <span class="warn">⚠ contested</span>'
                             : '';
                         parts.push('<div class="rec-sub">'
-                            + `   ↳ road toward ${escapeHtml(towardTiles)}`
+                            + '<span class="arrow">↳ road →</span> '
+                            + towardHtml
                             + warn
                             + '</div>');
                     }
