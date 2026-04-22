@@ -240,11 +240,13 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
     return 0
 
 
-def cmd_bridge(host: str, port: int, jsonl: str | None) -> int:
-    """Run the FastAPI bridge that receives colonist.io log events
-    from the Tampermonkey userscript."""
+def cmd_bridge(host: str, port: int, jsonl: str | None,
+               ws_jsonl: str | None = None, advisor: bool = False) -> int:
+    """Run the FastAPI bridge that receives colonist.io log events and
+    WebSocket frames from the Tampermonkey userscript."""
     from cataanbot.bridge import serve
-    return serve(host=host, port=port, jsonl=jsonl)
+    return serve(host=host, port=port, jsonl=jsonl,
+                 ws_jsonl=ws_jsonl, advisor=advisor)
 
 
 def cmd_replay(jsonl_path: str, player_args: list[str] | None,
@@ -679,15 +681,35 @@ def main(argv: list[str] | None = None) -> int:
     p_bridge = sub.add_parser(
         "bridge",
         help="Run the FastAPI bridge that ingests colonist.io log events "
-             "from the Tampermonkey userscript.",
+             "and WebSocket frames from the Tampermonkey userscript.",
     )
     p_bridge.add_argument("--host", default="127.0.0.1",
                           help="Bind host (default: 127.0.0.1).")
     p_bridge.add_argument("--port", type=int, default=8765,
                           help="Bind port (default: 8765).")
     p_bridge.add_argument("--jsonl", default=None,
-                          help="Also mirror every event to this .jsonl file "
+                          help="Mirror every /log event to this .jsonl file "
                                "(one JSON object per line).")
+    p_bridge.add_argument("--ws-jsonl", dest="ws_jsonl", default=None,
+                          help="Mirror every /ws frame to this .jsonl file "
+                               "so you can re-run offline via ws-replay.")
+    p_bridge.add_argument("--advisor", action="store_true",
+                          help="Print an advisor line after each hand/roll "
+                               "update (what you can afford to build).")
+
+    p_live = sub.add_parser(
+        "live",
+        help="Run the bridge with the live advisor on — the watch-a-game "
+             "mode. Same as `bridge --advisor`.",
+    )
+    p_live.add_argument("--host", default="127.0.0.1",
+                        help="Bind host (default: 127.0.0.1).")
+    p_live.add_argument("--port", type=int, default=8765,
+                        help="Bind port (default: 8765).")
+    p_live.add_argument("--jsonl", default=None,
+                        help="Mirror /log events to this .jsonl file.")
+    p_live.add_argument("--ws-jsonl", dest="ws_jsonl", default=None,
+                        help="Mirror /ws frames to this .jsonl file.")
 
     p_ws_replay = sub.add_parser(
         "ws-replay",
@@ -808,7 +830,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "hands":
         return cmd_hands(args.save)
     if args.cmd == "bridge":
-        return cmd_bridge(args.host, args.port, args.jsonl)
+        return cmd_bridge(args.host, args.port, args.jsonl,
+                          ws_jsonl=args.ws_jsonl, advisor=args.advisor)
+    if args.cmd == "live":
+        return cmd_bridge(args.host, args.port, args.jsonl,
+                          ws_jsonl=args.ws_jsonl, advisor=True)
     if args.cmd == "replay":
         return cmd_replay(args.jsonl, args.player, args.verbose,
                           args.save_to, args.render_to, args.hex_size,
