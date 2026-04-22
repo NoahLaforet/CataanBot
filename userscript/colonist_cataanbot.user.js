@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.7.2
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.7 adds an in-page advisor overlay that polls /advisor for self hand + buildability + robber rankings.
+// @version      0.8.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8 adds turn-aware action recommendations (best settlement/city/road/dev spot) when it's your turn. Also fixes hand-abbrev spacing and roller-name fallback.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -199,6 +199,14 @@
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
+  .recs-h { color: #7ac74f; font-weight: 600; margin: 6px 0 2px; }
+  .rec { color: #d8d8d8; margin: 1px 0; }
+  .rec .kind {
+    display: inline-block; min-width: 70px; color: #ffde7a; font-weight: 600;
+  }
+  .rec.top { color: #fff; font-weight: 600; }
+  .rec .detail { color: #aaa; font-weight: 400; }
+  .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
   .muted { color: #888; }
   .err { color: #ff9999; }
 </style>
@@ -273,15 +281,45 @@
                 + `color:${fg};">${escapeHtml(me.username)}</span>`;
             parts.push(`<div class="you">${pill}`
                 + ` <span class="muted">${me.cards}c · ${me.vp} VP</span></div>`);
+            // Space between count and abbrev so "1Or" doesn't read as "10r".
             const hand = Object.entries(me.hand || {})
                 .filter(([, n]) => n > 0)
-                .map(([r, n]) => `${n}${RES_ABBREV[r] || r.slice(0, 2)}`)
-                .join(' ') || '<span class="muted">∅</span>';
+                .map(([r, n]) => `${n} ${RES_ABBREV[r] || r.slice(0, 2)}`)
+                .join('  ') || '<span class="muted">∅</span>';
             parts.push(`<div class="hand">${hand}</div>`);
             const afford = (me.afford || []).join(' · ');
             parts.push(afford
                 ? `<div class="afford">→ ${afford}</div>`
                 : `<div class="afford none">→ nothing buildable</div>`);
+        }
+        // Recommendations — only shown when it's my turn. This is the
+        // "what should I do" output, not just "what can I build".
+        if (snap.my_turn && (snap.recommendations || []).length) {
+            parts.push('<div class="recs-h">→ best moves</div>');
+            for (let i = 0; i < snap.recommendations.length; i++) {
+                const r = snap.recommendations[i];
+                const topCls = i === 0 ? ' top' : '';
+                const kindLabel = {
+                    settlement: 'settle',
+                    city: 'city',
+                    road: 'road',
+                    dev_card: 'dev card',
+                }[r.kind] || r.kind;
+                const loc = r.node_id != null
+                    ? ` @${r.node_id}`
+                    : (r.edge ? ` ${r.edge[0]}→${r.edge[1]}` : '');
+                const tiles = (r.tiles || []).map(t =>
+                    `${(t[0] || '?').slice(0, 3)}${t[1] != null ? t[1] : ''}`
+                ).join(' ');
+                parts.push(`<div class="rec${topCls}">`
+                    + `<span class="kind">${kindLabel}</span>${loc} `
+                    + `<span class="detail">${escapeHtml(r.detail || '')}`
+                    + (tiles ? ` · ${escapeHtml(tiles)}` : '')
+                    + ` (${r.score})</span></div>`);
+            }
+        } else if (snap.my_turn) {
+            parts.push('<div class="turn-hint">your turn — '
+                + 'nothing affordable</div>');
         }
         if ((snap.opps || []).length) {
             parts.push('<div class="hr"></div>');
@@ -298,9 +336,16 @@
         }
         if (snap.last_roll) {
             const lr = snap.last_roll;
-            const who = lr.is_you
-                ? `you rolled <b>${lr.total}</b>`
-                : `${escapeHtml(lr.player || lr.color || '?')} rolled ${lr.total}`;
+            let who;
+            if (lr.is_you) {
+                who = `you rolled <b>${lr.total}</b>`;
+            } else if (lr.player) {
+                who = `${escapeHtml(lr.player)} rolled ${lr.total}`;
+            } else if (lr.color) {
+                who = `${escapeHtml(lr.color.toLowerCase())} rolled ${lr.total}`;
+            } else {
+                who = `rolled <b>${lr.total}</b>`;
+            }
             parts.push(`<div class="roll ${lr.is_you ? 'you-rolled' : ''}">`
                 + `${who}</div>`);
         }

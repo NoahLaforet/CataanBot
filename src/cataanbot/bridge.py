@@ -477,6 +477,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "last_roll": st.get("last_roll"),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
+        "my_turn": False,
+        "recommendations": [],
     }
     if not game.started:
         return snap
@@ -513,6 +515,19 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "afford": afford,
         "vp": vp,
     }
+    # "My turn" is derived from colonist's currentTurnPlayerColor cache.
+    # Recommendations only fire when it's actually my turn — off-turn
+    # suggestions would just be noise.
+    my_cid = sess.self_color_id
+    snap["my_turn"] = (sess.current_turn_color_id is not None
+                       and sess.current_turn_color_id == my_cid)
+    if snap["my_turn"]:
+        try:
+            from cataanbot.recommender import recommend_actions
+            snap["recommendations"] = recommend_actions(
+                game.tracker.game, self_color, hand, top=4)
+        except Exception:  # noqa: BLE001
+            snap["recommendations"] = []
     for cid, count in sorted(sess.hand_card_counts.items()):
         if cid == sess.self_color_id:
             continue
