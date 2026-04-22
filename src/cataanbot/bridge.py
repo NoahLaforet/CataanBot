@@ -74,11 +74,17 @@ def _build_app(jsonl_path: Path | None = None,
 
     # Mutable state kept in a dict so closures can rebind the LiveGame
     # when a fresh game starts (a new type=4 frame after a match ends).
+    # `seq` bumps on every ingested WS frame/log event so the overlay
+    # knows whether a fresh poll would return new data.
     st = {
         "log_count": 0,
         "ws_count": 0,
         "ws_errors": 0,
         "game": LiveGame(),
+        "seq": 0,
+        "last_roll": None,        # {"player","color","total","is_you"}
+        "robber_pending": False,  # self rolled 7, hasn't placed robber yet
+        "robber_snapshot": None,  # cached score_robber_targets payload
     }
 
     @app.get("/")
@@ -97,15 +103,21 @@ def _build_app(jsonl_path: Path | None = None,
     @app.post("/log")
     def log(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         st["log_count"] += 1
+        st["seq"] += 1
         _print_event(payload, st["log_count"])
         if jsonl_path is not None:
             with jsonl_path.open("a") as f:
                 f.write(json.dumps(payload) + "\n")
         return {"ok": True, "received": st["log_count"]}
 
+    @app.get("/advisor")
+    def advisor_snapshot() -> dict[str, Any]:
+        return _build_advisor_snapshot(st)
+
     @app.post("/ws")
     def ws_frame(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         st["ws_count"] += 1
+        st["seq"] += 1
         if ws_jsonl_path is not None:
             with ws_jsonl_path.open("a") as f:
                 f.write(json.dumps(payload) + "\n")
@@ -126,6 +138,7 @@ def _build_app(jsonl_path: Path | None = None,
                     "players": game.color_map.as_dict()}
 
         if results:
+            _track_overlay_state(st, results)
             _print_dispatch_results(
                 game, results, st["ws_count"], advisor=advisor)
         return {"ok": True, "results": len(results or [])}
@@ -136,6 +149,10 @@ def _build_app(jsonl_path: Path | None = None,
         st["ws_count"] = 0
         st["ws_errors"] = 0
         st["game"] = LiveGame()
+        st["seq"] = 0
+        st["last_roll"] = None
+        st["robber_pending"] = False
+        st["robber_snapshot"] = None
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -199,6 +216,190 @@ def _print_game_start(game) -> None:
     print()
 
 
+def _track_overlay_state(st, results) -> None:
+    """Maintain the overlay's tiny FSM alongside dispatch.
+
+    Two bits of state that the overlay wants to show but the tracker
+    doesn't expose on its own:
+
+    * last_roll — the most recent RollEvent. The overlay highlights it
+      so you can see at a glance whether your pips just fired.
+    * robber_pending — True between the moment *you* roll a 7 and the
+      moment a RobberMoveEvent lands. While pending, /advisor ships the
+      top-N robber target ranking so the overlay can surface it inline.
+    """
+    from cataanbot.events import RobberMoveEvent, RollEvent
+
+    game = st["game"]
+    for r in results:
+        if r.status not in ("applied", "skipped"):
+            continue
+        if isinstance(r.event, RollEvent):
+            is_you = _is_self_player(game, r.event.player)
+            color = None
+            if r.event.player:
+                try:
+                    color = game.color_map.get(r.event.player)
+                except Exception:  # noqa: BLE001
+                    color = None
+            st["last_roll"] = {
+                "player": r.event.player,
+                "color": color,
+                "total": r.event.total,
+                "is_you": bool(is_you),
+            }
+            if r.event.total == 7 and is_you:
+                st["robber_pending"] = True
+                st["robber_snapshot"] = _compute_robber_snapshot(game)
+            elif r.event.total == 7:
+                # Opponent rolled 7 — you don't pick, clear any stale
+                # overlay ranking from a prior self-roll if somehow still set.
+                st["robber_pending"] = False
+                st["robber_snapshot"] = None
+        elif isinstance(r.event, RobberMoveEvent):
+            # Any robber move clears pending — once the robber lands the
+            # overlay's ranking is stale.
+            st["robber_pending"] = False
+            st["robber_snapshot"] = None
+
+
+def _compute_robber_snapshot(game, top: int = 5) -> list[dict[str, Any]] | None:
+    """Snapshot the top-N robber rankings for the overlay."""
+    from cataanbot.advisor import score_robber_targets
+
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return None
+    username = sess.player_names.get(sess.self_color_id)
+    if not username:
+        return None
+    try:
+        color = game.color_map.get(username)
+    except Exception:  # noqa: BLE001
+        return None
+    hand_size_override: dict[str, int] = {}
+    for cid, count in sess.hand_card_counts.items():
+        user = sess.player_names.get(cid)
+        if not user:
+            continue
+        try:
+            c = game.color_map.get(user)
+        except Exception:  # noqa: BLE001
+            continue
+        hand_size_override[c] = int(count)
+    try:
+        scores = score_robber_targets(
+            game.tracker.game, color,
+            hand_size_override=hand_size_override or None,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return [
+        {
+            "coord": list(s.coord),
+            "resource": s.resource,
+            "number": s.number,
+            "score": round(s.score, 2),
+            "victims": [
+                {
+                    "color": c,
+                    "pips": pips,
+                    "vp": s.victim_vp.get(c, 0),
+                    "cards": s.opponent_hand_size.get(c, 0),
+                }
+                for c, pips in sorted(
+                    s.victims.items(), key=lambda kv: -kv[1])
+            ],
+        }
+        for s in scores[:top]
+    ]
+
+
+def _build_advisor_snapshot(st) -> dict[str, Any]:
+    """JSON payload for the userscript overlay.
+
+    Poll-friendly: callers diff on `seq` to detect change, but can
+    unconditionally re-render if they prefer. All fields are safe to
+    render even before a game has booted — `self` is None until then."""
+    game = st["game"]
+    snap: dict[str, Any] = {
+        "seq": st["seq"],
+        "game_started": game.started,
+        "ws_frames": st["ws_count"],
+        "log_events": st["log_count"],
+        "self": None,
+        "opps": [],
+        "last_roll": st.get("last_roll"),
+        "robber_pending": bool(st.get("robber_pending")),
+        "robber_targets": st.get("robber_snapshot") or [],
+    }
+    if not game.started:
+        return snap
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return snap
+    username = sess.player_names.get(sess.self_color_id)
+    if not username:
+        return snap
+    try:
+        self_color = game.color_map.get(username)
+    except Exception:  # noqa: BLE001
+        return snap
+    hand = dict(game.tracker.hand(self_color))
+    cards = sum(hand.values())
+    afford = []
+    if all(hand.get(r, 0) >= n for r, n in
+           (("WOOD", 1), ("BRICK", 1), ("SHEEP", 1), ("WHEAT", 1))):
+        afford.append("settlement")
+    if hand.get("WHEAT", 0) >= 2 and hand.get("ORE", 0) >= 3:
+        afford.append("city")
+    if hand.get("WOOD", 0) >= 1 and hand.get("BRICK", 0) >= 1:
+        afford.append("road")
+    if (hand.get("WHEAT", 0) >= 1 and hand.get("SHEEP", 0) >= 1
+            and hand.get("ORE", 0) >= 1):
+        afford.append("dev card")
+    vp = _get_vp(game, self_color)
+    snap["self"] = {
+        "username": username,
+        "color": self_color,
+        "hand": hand,
+        "cards": cards,
+        "afford": afford,
+        "vp": vp,
+    }
+    for cid, count in sorted(sess.hand_card_counts.items()):
+        if cid == sess.self_color_id:
+            continue
+        user = sess.player_names.get(cid)
+        if not user:
+            continue
+        try:
+            c = game.color_map.get(user)
+        except Exception:  # noqa: BLE001
+            continue
+        snap["opps"].append({
+            "username": user,
+            "color": c,
+            "cards": int(count),
+            "vp": _get_vp(game, c),
+        })
+    return snap
+
+
+def _get_vp(game, color: str) -> int:
+    """Public VP for `color` from catanatron's state."""
+    try:
+        from catanatron import Color
+        c = Color[color.upper()]
+        idx = game.tracker.game.state.color_to_index.get(c)
+        if idx is None:
+            return 0
+        return int(game.tracker.game.state.player_state.get(
+            f"P{idx}_VICTORY_POINTS", 0))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def _print_dispatch_results(game, results, seq: int,
                             advisor: bool = False) -> None:
     from cataanbot.events import (
@@ -257,8 +458,24 @@ def _print_robber_targets(game, top: int = 5) -> None:
     if not username:
         return
     color = game.color_map.get(username)
+    # Ground-truth opponent hand sizes from the WS snapshot. Falls back
+    # to catanatron's per-resource tracking for any seat we haven't seen
+    # a resourceCards entry for yet.
+    hand_size_override: dict[str, int] = {}
+    for cid, count in sess.hand_card_counts.items():
+        user = sess.player_names.get(cid)
+        if not user:
+            continue
+        try:
+            c = game.color_map.get(user)
+        except Exception:  # noqa: BLE001
+            continue
+        hand_size_override[c] = int(count)
     try:
-        scores = score_robber_targets(game.tracker.game, color)
+        scores = score_robber_targets(
+            game.tracker.game, color,
+            hand_size_override=hand_size_override or None,
+        )
     except Exception as e:  # noqa: BLE001
         print(f"    [robber] ranking failed: {e}", flush=True)
         return
@@ -317,6 +534,24 @@ def _print_self_advisor(game) -> None:
     buildable = ", ".join(afford) if afford else "nothing"
     print(f"    [you] {color} {cards}c ({hand_str}) → can build: "
           f"{buildable}", flush=True)
+
+    # Opponent hand sizes in a second line — just counts, since per-
+    # resource breakdowns are hidden. Helpful context for trade and
+    # robber decisions even when no 7 has rolled yet.
+    opp_parts = []
+    for cid, count in sorted(sess.hand_card_counts.items()):
+        if cid == sess.self_color_id:
+            continue
+        user = sess.player_names.get(cid)
+        if not user:
+            continue
+        try:
+            c = game.color_map.get(user)
+        except Exception:  # noqa: BLE001
+            continue
+        opp_parts.append(f"{c} {count}c")
+    if opp_parts:
+        print(f"    [opp] {' · '.join(opp_parts)}", flush=True)
 
 
 def _print_event(payload: dict[str, Any], n: int) -> None:

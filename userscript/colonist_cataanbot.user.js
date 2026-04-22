@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.6.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.6 forwards every captured WS frame to /ws so the live advisor can run.
+// @version      0.7.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.7 adds an in-page advisor overlay that polls /advisor for self hand + buildability + robber rankings.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -18,6 +18,8 @@
 
     const BRIDGE_URL = 'http://127.0.0.1:8765/log';
     const BRIDGE_WS_URL = 'http://127.0.0.1:8765/ws';
+    const BRIDGE_ADVISOR_URL = 'http://127.0.0.1:8765/advisor';
+    const ADVISOR_POLL_MS = 1000;
     const LOG_PREFIX = '[cataanbot]';
 
     // Fire-and-forget POST. Used by both the DOM log forwarder (/log)
@@ -42,6 +44,266 @@
             }).catch(e => { if (!quiet)
                 console.warn(LOG_PREFIX, 'fetch failed', e); });
         }
+    }
+
+    // Advisor overlay — small draggable panel in the top-right showing
+    // the self hand, what's affordable, opponent card counts, and (while
+    // you owe a robber move after rolling a 7) the top-N target ranking.
+    // Polls GET /advisor once a second; diffs on seq so re-renders are
+    // cheap. The panel survives a page nav because document-start mounts
+    // it as soon as <body> exists.
+    //
+    // Intentionally framework-free DOM: no React/Vue, just <div> + inline
+    // styles in a shadow root. The shadow isolates us from colonist's
+    // stylesheets (which aggressively style class-less descendants) while
+    // letting us keep the mount point inside <body> so the whole page
+    // isn't frozen under a fixed-overlay host.
+    function getJson(url) {
+        return new Promise((resolve, reject) => {
+            if (typeof GM_xmlhttpRequest === 'function') {
+                GM_xmlhttpRequest({
+                    method: 'GET', url,
+                    onload: (r) => {
+                        try { resolve(JSON.parse(r.responseText)); }
+                        catch (e) { reject(e); }
+                    },
+                    onerror: (e) => reject(e),
+                });
+            } else {
+                fetch(url, { mode: 'cors' })
+                    .then(r => r.json()).then(resolve, reject);
+            }
+        });
+    }
+
+    const COLOR_HEX = {
+        RED: '#e8715f', BLUE: '#4aa7d4', ORANGE: '#e29a4a',
+        WHITE: '#f0f0f0', GREEN: '#7ac74f', BROWN: '#a07045',
+    };
+    const RES_ABBREV = {
+        WOOD: 'Wd', BRICK: 'Br', SHEEP: 'Sh', WHEAT: 'Wh', ORE: 'Or',
+    };
+
+    function mountOverlay() {
+        if (document.getElementById('cataanbot-overlay-host')) return;
+        if (!document.body) {
+            window.addEventListener(
+                'DOMContentLoaded', mountOverlay, { once: true });
+            return;
+        }
+        const host = document.createElement('div');
+        host.id = 'cataanbot-overlay-host';
+        host.style.cssText = 'position:fixed;top:12px;right:12px;'
+            + 'z-index:2147483647;pointer-events:auto;';
+        const root = host.attachShadow({ mode: 'open' });
+        root.innerHTML = `
+<style>
+  :host, * { box-sizing: border-box; }
+  .panel {
+    font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace;
+    color: #e8e8e8;
+    background: rgba(18, 18, 22, 0.94);
+    border: 1px solid #2a2a32;
+    border-radius: 6px;
+    width: 280px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+    user-select: none;
+  }
+  .header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px;
+    cursor: move;
+    border-bottom: 1px solid #2a2a32;
+    background: linear-gradient(180deg, #23232a, #1a1a20);
+    border-radius: 6px 6px 0 0;
+  }
+  .title { font-weight: 600; flex: 1; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+  .dot.live { background: #7ac74f; }
+  .btn {
+    cursor: pointer; padding: 0 6px; color: #aaa;
+    border: 1px solid #2a2a32; border-radius: 3px;
+    background: transparent;
+  }
+  .btn:hover { color: #fff; border-color: #444; }
+  .body { padding: 8px; }
+  .body.collapsed { display: none; }
+  .you {
+    display: flex; align-items: baseline; gap: 6px;
+    margin-bottom: 2px;
+  }
+  .color-pill {
+    display: inline-block;
+    padding: 1px 6px; border-radius: 3px;
+    color: #111; font-weight: 700;
+  }
+  .hand { color: #d0d0d0; margin: 2px 0; }
+  .afford { color: #b8e8b8; margin: 0 0 6px; }
+  .afford.none { color: #888; }
+  .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
+  .opps { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+  .opp { color: #ccc; }
+  .roll { margin: 4px 0 2px; color: #d8d8d8; }
+  .roll.you-rolled { color: #ffde7a; }
+  .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
+  table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
+  table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
+  .muted { color: #888; }
+  .err { color: #ff9999; }
+</style>
+<div class="panel" id="panel">
+  <div class="header" id="header">
+    <span class="dot" id="dot"></span>
+    <span class="title">CataanBot</span>
+    <button class="btn" id="toggle" title="collapse/expand">_</button>
+  </div>
+  <div class="body" id="body">
+    <div id="content"><span class="muted">waiting for bridge…</span></div>
+  </div>
+</div>`;
+
+        document.body.appendChild(host);
+
+        const panel = root.getElementById('panel');
+        const body = root.getElementById('body');
+        const content = root.getElementById('content');
+        const header = root.getElementById('header');
+        const dot = root.getElementById('dot');
+        root.getElementById('toggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            body.classList.toggle('collapsed');
+        });
+
+        // Simple drag: on mousedown in the header, track pointer and move
+        // the host element. Panel uses top/right by default; once the user
+        // drags we switch to top/left for positional stability.
+        let dragging = null;
+        header.addEventListener('mousedown', (e) => {
+            dragging = {
+                startX: e.clientX, startY: e.clientY,
+                hostLeft: host.getBoundingClientRect().left,
+                hostTop: host.getBoundingClientRect().top,
+            };
+            host.style.right = 'auto';
+            host.style.left = dragging.hostLeft + 'px';
+            host.style.top = dragging.hostTop + 'px';
+            e.preventDefault();
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            host.style.left =
+                (dragging.hostLeft + e.clientX - dragging.startX) + 'px';
+            host.style.top =
+                (dragging.hostTop + e.clientY - dragging.startY) + 'px';
+        });
+        window.addEventListener('mouseup', () => { dragging = null; });
+
+        return { host, panel, body, content, dot };
+    }
+
+    function renderOverlay(ui, snap, live) {
+        ui.dot.classList.toggle('live', !!live);
+        if (!snap) {
+            ui.content.innerHTML =
+                '<span class="err">bridge unreachable</span>';
+            return;
+        }
+        if (!snap.game_started) {
+            ui.content.innerHTML =
+                '<span class="muted">waiting for game start…</span>';
+            return;
+        }
+        const parts = [];
+        const me = snap.self;
+        if (me) {
+            const pill = `<span class="color-pill" style="background:${
+                COLOR_HEX[me.color] || '#888'};">${me.color}</span>`;
+            parts.push(`<div class="you">${pill}`
+                + ` <b>${escapeHtml(me.username)}</b>`
+                + ` <span class="muted">${me.cards}c · ${me.vp} VP</span></div>`);
+            const hand = Object.entries(me.hand || {})
+                .filter(([, n]) => n > 0)
+                .map(([r, n]) => `${n}${RES_ABBREV[r] || r.slice(0, 2)}`)
+                .join(' ') || '<span class="muted">∅</span>';
+            parts.push(`<div class="hand">${hand}</div>`);
+            const afford = (me.afford || []).join(' · ');
+            parts.push(afford
+                ? `<div class="afford">→ ${afford}</div>`
+                : `<div class="afford none">→ nothing buildable</div>`);
+        }
+        if ((snap.opps || []).length) {
+            parts.push('<div class="hr"></div>');
+            parts.push('<div class="opps">');
+            for (const o of snap.opps) {
+                const pill = `<span class="color-pill" style="background:${
+                    COLOR_HEX[o.color] || '#888'};">${o.color}</span>`;
+                parts.push(`<div class="opp">${pill}`
+                    + ` ${o.cards}c · ${o.vp}VP</div>`);
+            }
+            parts.push('</div>');
+        }
+        if (snap.last_roll) {
+            const lr = snap.last_roll;
+            const who = lr.is_you
+                ? `you rolled <b>${lr.total}</b>`
+                : `${escapeHtml(lr.player || lr.color || '?')} rolled ${lr.total}`;
+            parts.push(`<div class="roll ${lr.is_you ? 'you-rolled' : ''}">`
+                + `${who}</div>`);
+        }
+        if (snap.robber_pending && (snap.robber_targets || []).length) {
+            parts.push('<div class="robber-h">robber targets</div>');
+            parts.push('<table class="robber">');
+            for (let i = 0; i < snap.robber_targets.length; i++) {
+                const t = snap.robber_targets[i];
+                const tile = t.resource
+                    ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
+                    : 'DES';
+                const victims = (t.victims || []).map(v => {
+                    const pill = `<span class="color-pill" style="background:${
+                        COLOR_HEX[v.color] || '#888'};font-size:10px;">${
+                        v.color.slice(0, 1)}</span>`;
+                    return `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
+                }).join(' ') || '<span class="muted">—</span>';
+                parts.push(`<tr>`
+                    + `<td>${i + 1}.</td>`
+                    + `<td>${tile}</td>`
+                    + `<td>${t.score > 0 ? '+' : ''}${t.score}</td>`
+                    + `<td>${victims}</td></tr>`);
+            }
+            parts.push('</table>');
+        }
+        ui.content.innerHTML = parts.join('');
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function startAdvisorPoll() {
+        const ui = mountOverlay();
+        if (!ui) {
+            setTimeout(startAdvisorPoll, 500);
+            return;
+        }
+        let lastSeq = -1;
+        let lastSnap = null;
+        const tick = () => {
+            getJson(BRIDGE_ADVISOR_URL).then((snap) => {
+                if (snap && snap.seq !== lastSeq) {
+                    lastSeq = snap.seq;
+                    lastSnap = snap;
+                    renderOverlay(ui, snap, true);
+                } else if (!lastSnap) {
+                    renderOverlay(ui, snap, true);
+                }
+            }).catch(() => {
+                renderOverlay(ui, lastSnap, false);
+            });
+        };
+        tick();
+        setInterval(tick, ADVISOR_POLL_MS);
     }
 
     // WebSocket frame capture. Colonist renders the board on a single
@@ -440,4 +702,5 @@
 
     console.log(LOG_PREFIX, 'loaded — waiting for a game to open');
     waitForScroller();
+    startAdvisorPoll();
 })();
