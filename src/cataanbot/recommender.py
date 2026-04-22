@@ -93,13 +93,16 @@ def _label_archetype(tiles_f: list, tiles_n: list,
 
     Labels are based on tile-count across F ∪ N (not production magnitude —
     count mirrors how players pick, e.g. "I have 2 ore tiles so I'm going
-    ore-city"). Returns one of "ore-city", "wood-first", "balanced",
-    "port", or ``None`` if the combo doesn't fit a distinctive profile.
+    ore-city"). Returns one of "ore-city", "wood-first", "dev-card",
+    "balanced", "port", or ``None`` if the combo doesn't fit a profile.
 
     Priority: a 2:1 port on a produced resource trumps other labels, since
     it reshapes how you'll convert surplus across the whole game. Then
     ore-city (2+ ore + wheat), wood-first (heavy wood/brick), balanced
-    (4+ distinct resources).
+    (4+ distinct resources), dev-card (the three dev-buy resources
+    sheep+wheat+ore all present without enough wood/brick to road-spam
+    or ore to city-rush — the fallback "pivot to knights + VP cards"
+    path when a more aggressive archetype isn't available).
     """
     counts: dict[str, int] = {}
     for res, _num in list(tiles_f) + list(tiles_n):
@@ -116,12 +119,21 @@ def _label_archetype(tiles_f: list, tiles_n: list,
     wheat = counts.get("WHEAT", 0)
     wood = counts.get("WOOD", 0)
     brick = counts.get("BRICK", 0)
+    sheep = counts.get("SHEEP", 0)
     if ore >= 2 and wheat >= 1:
         return "ore-city"
     if (wood + brick) >= 3 or (wood >= 2 and brick >= 1):
         return "wood-first"
     if len(counts) >= 4:
         return "balanced"
+    # Dev-card pivot: all three dev-card ingredients produced, but not
+    # enough wood/brick to road-spam, not enough ore to city-rush, and
+    # coverage too narrow to call balanced. The "mediocre settlement,
+    # best option is dev cards" fork — a deliberate fallback rather than
+    # a first pick.
+    if (sheep >= 1 and wheat >= 1 and ore >= 1
+            and (wood + brick) <= 2 and ore < 2):
+        return "dev-card"
     return None
 
 

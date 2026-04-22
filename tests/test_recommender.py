@@ -782,9 +782,45 @@ def test_recommend_opening_attaches_archetype_to_plan():
         "no archetype label surfaced — at least one top-5 pick should "
         "fit balanced/wood-first/ore-city/port on a fresh board")
     # And any label that does appear must be one of the allowed values.
-    allowed = {"balanced", "wood-first", "ore-city", "port"}
+    allowed = {"balanced", "wood-first", "ore-city", "port", "dev-card"}
     for r in labeled:
         assert r["plan"]["archetype"] in allowed, r
+
+
+def test_archetype_dev_card_when_sheep_wheat_ore_but_light_on_wood():
+    """Sheep + wheat + ore produced, but not enough wood/brick to
+    road-spam, not enough ore to city-rush, and coverage too narrow
+    for balanced — the pivot to dev cards is the best path. This
+    scenario used to return None; now it flags dev-card."""
+    from cataanbot.recommender import _label_archetype
+
+    # Exactly 3 resources: SHEEP, WHEAT, ORE. Missing wood AND brick.
+    # 1 ore (can't city-rush), 0 wood+brick (can't road-spam), 3 distinct
+    # (not balanced). Perfect dev-card scenario.
+    tiles_f = [("SHEEP", 6), ("WHEAT", 8), ("DESERT", None)]
+    tiles_n = [("ORE", 9), ("WHEAT", 4), ("SHEEP", 3)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) == "dev-card"
+
+
+def test_archetype_dev_card_loses_to_ore_city_when_two_ore():
+    """Two ore + wheat → ore-city wins over dev-card (dev-card is the
+    fallback when city rush isn't available)."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("ORE", 6), ("WHEAT", 8), ("SHEEP", 3)]
+    tiles_n = [("ORE", 9), ("BRICK", 4), ("DESERT", None)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) == "ore-city"
+
+
+def test_archetype_dev_card_loses_to_wood_first_on_heavy_wood():
+    """Wood-first still wins when wood/brick is heavy, even if the
+    dev-card ingredients are also present (road-spam + settlements is
+    usually stronger than a pure dev-card pivot)."""
+    from cataanbot.recommender import _label_archetype
+
+    tiles_f = [("WOOD", 6), ("BRICK", 8), ("SHEEP", 3)]
+    tiles_n = [("WOOD", 9), ("WHEAT", 4), ("ORE", 10)]
+    assert _label_archetype(tiles_f, tiles_n, None, None) == "wood-first"
 
 
 def test_recommend_opening_round_two_uses_complement_ranking():
