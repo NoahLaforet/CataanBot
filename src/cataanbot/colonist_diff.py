@@ -36,8 +36,17 @@ from cataanbot.colonist_map import (
     MapMapping, build_mapping, corner_tile_signature, tile_resource,
 )
 from cataanbot.events import (
-    BuildEvent, Event, ProduceEvent, RobberMoveEvent, RollEvent,
+    BuildEvent, Event, HandSyncEvent, ProduceEvent, RobberMoveEvent,
+    RollEvent,
 )
+
+# Resource type ints used inside `playerStates.{cid}.resourceCards.cards`.
+# 0 is a placeholder opponents see in place of your real cards — if any
+# slot is non-zero, the snapshot belongs to the self-player whose tab
+# owns the WS session. Same mapping as the tile-type ints.
+_CARD_RESOURCE = {
+    1: "WOOD", 2: "BRICK", 3: "SHEEP", 4: "WHEAT", 5: "ORE",
+}
 
 
 class LiveSessionError(RuntimeError):
@@ -64,6 +73,12 @@ class LiveSession:
     # Colonist tile id of the robber's current location. None until a
     # mechanicRobberState diff lands.
     robber_tile_id: int | None = None
+    # Colonist color id whose WS session we're observing. Identified the
+    # first time we see a non-zero resourceCards entry: colonist ships
+    # real resource type ints for the viewer and zero-fills everyone
+    # else's cards. Used to gate hand-sync emission to the one player
+    # whose snapshot is fully specified.
+    self_color_id: int | None = None
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -205,6 +220,9 @@ def events_from_diff(
                     coord=coord,
                 ))
 
+    for ev in _hand_sync_events(sess, diff.get("playerStates") or {}):
+        out.append(ev)
+
     dice = diff.get("diceState") or {}
     # A fresh roll always carries both dice1 and dice2 in the diff. A
     # "diceThrown: False" frame on its own only signals the roll has
@@ -221,6 +239,53 @@ def events_from_diff(
         out.append(RollEvent(player=player, d1=int(dice["dice1"]),
                              d2=int(dice["dice2"])))
 
+    return out
+
+
+def _hand_sync_events(
+    sess: LiveSession, player_states: dict[str, Any],
+) -> list[HandSyncEvent]:
+    """Emit HandSyncEvents for each player whose resource cards appear
+    in this diff with real resource type ints.
+
+    Colonist ships the viewer's cards as real resource ints (1..5) and
+    zero-fills everyone else's. We latch onto the first colorId that
+    reveals non-zero ints and treat subsequent snapshots from that id
+    as authoritative hand state. Opponent zero-fill entries are skipped
+    here — those are count-only signals handled by the opponent hand
+    inference pass.
+    """
+    out: list[HandSyncEvent] = []
+    for cid_str, pstate in player_states.items():
+        if not isinstance(pstate, dict):
+            continue
+        rc = pstate.get("resourceCards")
+        if not isinstance(rc, dict):
+            continue
+        cards = rc.get("cards")
+        if not isinstance(cards, list):
+            continue
+        try:
+            cid = int(cid_str)
+        except (TypeError, ValueError):
+            continue
+        has_real = any(int(c) != 0 for c in cards if isinstance(c, int))
+        if has_real and sess.self_color_id is None:
+            sess.self_color_id = cid
+        if cid != sess.self_color_id:
+            continue
+        bag: dict[str, int] = {}
+        for c in cards:
+            if not isinstance(c, int):
+                continue
+            resource = _CARD_RESOURCE.get(c)
+            if resource is None:
+                continue
+            bag[resource] = bag.get(resource, 0) + 1
+        out.append(HandSyncEvent(
+            player=sess.player_for(cid),
+            resources=bag,
+        ))
     return out
 
 
