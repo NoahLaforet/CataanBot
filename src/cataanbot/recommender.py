@@ -101,10 +101,12 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         in game.state.board.buildings.items()
         if btype == "SETTLEMENT"
     ]
-    legal = legal_nodes_after_picks(game, placed)
-    if not legal:
-        return []
-    scored = score_opening_nodes(game, legal_nodes=legal)
+    # If every color has already placed both opening settlements, the
+    # pick loop is moot — distance-2 legal nodes may still exist on
+    # paper but colonist won't let anyone drop another opening
+    # settlement. Skip straight to the road-followup so the overlay
+    # surfaces the "finish your road" hint instead of stale picks.
+    num_players = len(game.state.colors)
     m = game.state.board.map
     neighbors = _build_node_neighbors(m)
     # Opening-road scoring reuses the settlement scores: the best road
@@ -113,6 +115,22 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     # reachable node even when it's currently blocked by the proposed
     # settlement's distance rule — it'll reopen once someone moves.
     full_scored = {ns.node_id: ns for ns in score_opening_nodes(game)}
+    # If every color has already placed both opening settlements, the
+    # pick loop is moot — distance-2 legal nodes may still exist on
+    # paper but colonist won't let anyone drop another opening
+    # settlement. Skip straight to the road-followup so the overlay
+    # surfaces the "finish your road" hint instead of stale picks.
+    if len(placed) >= 2 * num_players:
+        if c is None:
+            return []
+        return _opening_road_followup(
+            game=game, c=c, neighbors=neighbors,
+            scored_by_node=full_scored, m=m,
+        )
+    legal = legal_nodes_after_picks(game, placed)
+    if not legal:
+        return []
+    scored = score_opening_nodes(game, legal_nodes=legal)
     recs: list[dict[str, Any]] = []
     # Note whether I already have a settlement down (round-2 context).
     my_placed = 0 if c is None else sum(

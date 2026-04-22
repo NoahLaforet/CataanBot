@@ -479,6 +479,46 @@ def test_recommend_opening_tolerates_none_color():
         assert "2nd pick" not in r["detail"]
 
 
+def test_recommend_opening_short_circuits_to_road_when_all_settlements_placed():
+    """When every player has placed both opening settlements, the main
+    pick loop is moot — colonist won't let anyone drop another. Verify
+    ``recommend_opening`` short-circuits straight to the road-followup
+    and returns a rec whose ``detail`` mentions the road."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=31,
+    )
+    # Snake draft — re-score per placement so distance-2 stays legal.
+    order = [Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE,
+             Color.ORANGE, Color.WHITE, Color.BLUE, Color.RED]
+    red_second_settlement: int | None = None
+    for i, col in enumerate(order):
+        picks = recommend_opening(g, col.name, top=1)
+        assert picks, f"no legal pick for {col} at step {i}"
+        nid = picks[0]["node_id"]
+        g.state.board.build_settlement(
+            col, nid, initial_build_phase=True)
+        # Place a matching road for every color EXCEPT RED's 2nd drop.
+        if not (col == Color.RED and i == 7):
+            far = picks[0]["road"]["edge"][1]
+            g.state.board.build_road(col, (nid, far))
+        else:
+            red_second_settlement = nid
+
+    # All 8 settlements are placed; RED's 2nd road is missing.
+    out = recommend_opening(g, "RED", top=5)
+    assert out, "short-circuit must return a rec when all settlements placed"
+    rec = out[0]
+    assert rec["kind"] == "opening_settlement"
+    assert rec["node_id"] == red_second_settlement
+    assert rec["road"] is not None
+    assert "road" in rec["detail"].lower()
+
+
 def test_opening_road_followup_targets_red_settlement_without_road():
     """Helper that fires when the main opening rec list is empty and
     self still owes a road. Places two RED settlements and exactly one
