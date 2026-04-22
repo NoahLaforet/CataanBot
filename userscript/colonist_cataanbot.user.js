@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.8.8
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.8 shows which direction to point your opening road (best 2-hop expansion) and hides opening picks once every seat has 2 settlements down.
+// @version      0.8.9
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.8.9 filters opening-road expansions that are distance-2 blocked or edge-sealed by opp roads, and flags contested corridors.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -224,6 +224,7 @@
   /* Road-direction hint under an opening-settlement pick. */
   .rec-sub { color: #9ad0b5; font-size: 11px; padding: 0 8px 3px 8px;
              opacity: 0.95; }
+  .rec-sub .warn { color: #f0a57a; font-weight: 500; }
   /* Trade recs wear a distinct color so "spend 4 for 1" reads as
      something other than a straight build action. */
   .rec.trade .kind { color: #f0a57a; }
@@ -379,8 +380,12 @@
                         && r.road.toward_tiles) {
                     const towardTiles = tilesToStr(r.road.toward_tiles);
                     if (towardTiles) {
+                        const warn = r.road.contested
+                            ? ' <span class="warn">⚠ contested</span>'
+                            : '';
                         parts.push('<div class="rec-sub">'
                             + `   ↳ road toward ${escapeHtml(towardTiles)}`
+                            + warn
                             + '</div>');
                     }
                 }

@@ -366,6 +366,97 @@ def test_recommend_opening_attaches_road_direction():
         assert isinstance(road["toward_tiles"], list)
 
 
+def test_recommend_opening_road_skips_distance_blocked_expansions():
+    """The road hint's ``toward_node`` must never be a corner that's
+    already distance-2 blocked by an existing settlement — that spot
+    is permanently off the table, so pointing a road at it is wasted
+    advice. Regression for the dangerous-road complaint."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import _build_node_neighbors
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=13,
+    )
+    # Plant a few opp settlements to create distance-2 exclusions.
+    # Re-derive picks after each placement to respect distance rule.
+    for col in (Color.BLUE, Color.WHITE, Color.ORANGE):
+        picks = recommend_opening(g, col.name, top=1)
+        assert picks, f"ran out of legal picks placing {col}"
+        g.state.board.build_settlement(
+            col, picks[0]["node_id"], initial_build_phase=True)
+
+    out = recommend_opening(g, "RED", top=5)
+    assert out
+    neighbors = _build_node_neighbors(g.state.board.map)
+    blocked: set[int] = set()
+    for nid, (_col, bt) in g.state.board.buildings.items():
+        if bt in ("SETTLEMENT", "CITY"):
+            blocked.add(int(nid))
+            blocked |= {int(n) for n in neighbors.get(int(nid), set())}
+
+    for r in out:
+        road = r["road"]
+        if road is None:
+            continue
+        expansion = road["toward_node"]
+        # Fallback when no legal expansion exists lands expansion==far,
+        # which is always a fresh neighbor of the proposed settlement —
+        # not itself a settlement, but could be distance-2 blocked.
+        # That's the degenerate case we ignore.
+        if expansion == road["edge"][1]:
+            continue
+        assert expansion not in blocked, (
+            f"road toward node {expansion} but it's distance-2 "
+            f"blocked: {r}; blocked={blocked & {expansion}}")
+
+
+def test_recommend_opening_road_skips_opp_sealed_edge():
+    """If an opp has already placed a road on the (far, x) edge, that
+    expansion path is sealed — the road hint must not recommend going
+    through that edge."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import _build_node_neighbors
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=21,
+    )
+    picks = recommend_opening(g, "RED", top=5)
+    assert picks
+    top = picks[0]
+    # Seal the suggested road's far→expansion edge with an opp road
+    # of a different color, so the recommender has to route around.
+    far = top["road"]["edge"][1]
+    expansion = top["road"]["toward_node"]
+    if expansion == far:
+        pytest.skip("degenerate road hint — no 2-hop expansion to seal")
+    # Plant BLUE at `expansion` (not `far` — that would distance-2
+    # block our top pick and defeat the test). An initial-phase road
+    # must touch the same color's settlement, so BLUE at `expansion`
+    # anchors the (far, expansion) road legally.
+    g.state.board.build_settlement(
+        Color.BLUE, expansion, initial_build_phase=True)
+    g.state.board.build_road(Color.BLUE, (far, expansion))
+
+    out = recommend_opening(g, "RED", top=5)
+    match = next((r for r in out if r["node_id"] == top["node_id"]), None)
+    assert match is not None, "top pick should still be legal for RED"
+    road = match["road"]
+    assert road is not None
+    # After sealing, the road must not route into the now-claimed
+    # expansion through the opp-sealed edge.
+    sealed = (road["edge"][1] == far
+              and road["toward_node"] == expansion)
+    assert not sealed, (
+        f"recommender still routes into sealed edge {far}→{expansion}: "
+        f"{road}")
+
+
 def test_recommend_opening_tolerates_none_color():
     """Bridge calls in with ``color=None`` during round 1 because
     ``self_color_id`` hasn't latched yet (colonist only reveals it
