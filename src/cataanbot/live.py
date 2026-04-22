@@ -202,15 +202,23 @@ def _dispatch(
 
     if isinstance(event, DevCardBuyEvent):
         color = color_map.get(event.player)
-        # Debit the cost. Colonist doesn't reveal the card type on buy,
-        # only on play, so we intentionally don't record a specific
-        # {TYPE}_IN_HAND counter yet.
+        # Debit the cost per-resource. Colonist doesn't reveal the card
+        # type on buy (we don't increment a specific {TYPE}_IN_HAND
+        # counter) and opponent hands are inferred, so the inferred
+        # balance can legitimately be too low in one of the three
+        # resources — swallow per-resource underflow rather than
+        # erroring the whole frame.
+        debited = []
         for res in ("WHEAT", "SHEEP", "ORE"):
-            tracker.take(color, 1, res)
+            try:
+                tracker.take(color, 1, res)
+                debited.append(res)
+            except TrackerError:
+                pass
         return DispatchResult(
             event, "applied",
-            f"{color} bought dev card (cost debited; type unknown "
-            f"until play)",
+            f"{color} bought dev card "
+            f"(debited {','.join(debited) if debited else '∅'})",
         )
 
     if isinstance(event, DevCardPlayEvent):
