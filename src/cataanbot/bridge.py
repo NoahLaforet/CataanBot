@@ -1061,7 +1061,7 @@ def _compute_longest_road_race(
     return None
 
 
-def _compute_self_production(
+def _compute_production(
     game, color: str,
 ) -> dict[str, Any] | None:
     """Expected resource yield per roll given current builds.
@@ -1072,6 +1072,9 @@ def _compute_self_production(
     roll, 2.5 = well-established). ``top_resource`` names the most-
     produced resource so Noah can tell "ore-heavy" from "sheep-heavy"
     at a glance.
+
+    Color-generic: used for self (pace check) and each opp (threat
+    ranking — informs robber target and trade-block priority).
     """
     try:
         from catanatron import Color
@@ -1588,7 +1591,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "vp_breakdown": _vp_breakdown(game, self_color),
         "knights_played": _knights_played(game, self_color),
         "ports": _owned_ports(game, self_color),
-        "production": _compute_self_production(game, self_color),
+        "production": _compute_production(game, self_color),
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
@@ -1700,6 +1703,9 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # unknowns don't count, so this underestimates. Useful to
             # pre-warn about an opp's likely next-turn VP jump.
             "can_afford": _affordable_builds(inferred, unknown),
+            # Per-opp per-roll production. Drives robber-target choice
+            # (shut down the biggest engine) and trade-block priority.
+            "production": _compute_production(game, c),
         })
 
     pending = st.get("pending_trade_offer")
