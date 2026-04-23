@@ -1017,6 +1017,50 @@ def test_paid_builds_debit_costs_and_setup_is_free():
             f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
 
 
+def test_snapshot_exposes_piece_counts_on_self_and_opps():
+    """After two captures replayed, both self and every opp should
+    have piece counts populated: settlements placed, cities placed,
+    roads placed, plus the remaining-in-pool counts. Counts derive
+    from catanatron's Px_*_AVAILABLE keys so they're authoritative."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    me = snap["self"]
+    assert me is not None
+    p = me["pieces"]
+    # Every field populated, non-negative, placed+left sums to the base
+    # max (5 settlements, 4 cities, 15 roads).
+    assert p["settle"] + p["settle_left"] == 5
+    assert p["city"] + p["city_left"] == 4
+    assert p["road"] + p["road_left"] == 15
+    # Mid-game: at least the 2 starting settlements + some roads built.
+    assert p["settle"] >= 2 or p["city"] >= 1
+    assert p["road"] >= 2
+
+    for opp in snap["opps"]:
+        op = opp["pieces"]
+        assert op["settle"] + op["settle_left"] == 5
+        assert op["city"] + op["city_left"] == 4
+        assert op["road"] + op["road_left"] == 15
+
+
 def test_bank_supply_flags_low_resources():
     """Bank starts at 19 per resource. When player hands consume most
     of a resource, remaining drops below 2 and the `low` list fires.
