@@ -232,6 +232,8 @@
   .afford { color: #b8e8b8; margin: 0 0 6px; }
   .afford.none { color: #888; }
   .vpb { color: #888; font-size: calc(11px * var(--font-scale)); }
+  .ports { color: #78b4d8; font-size: calc(11px * var(--font-scale));
+           margin: 0 0 4px; }
   .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
   .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
   .opp { color: #ccc; font-size: calc(13px * var(--font-scale)); }
@@ -587,6 +589,16 @@
             parts.push(afford
                 ? `<div class="afford">→ ${afford}</div>`
                 : `<div class="afford none">→ nothing buildable</div>`);
+            // Owned ports: "2:1 whe · 2:1 shp · 3:1". Reminds Noah to
+            // over-produce toward his cheap-trade resources. Skipped
+            // silently when no ports are claimed yet.
+            if ((me.ports || []).length) {
+                const portSegs = me.ports.map(p => p === 'GENERIC'
+                    ? '3:1'
+                    : `2:1 ${p.slice(0, 3).toLowerCase()}`);
+                parts.push(`<div class="ports">ports: `
+                    + escapeHtml(portSegs.join(' · ')) + '</div>');
+            }
         }
         // Setup-phase opening picks render unconditionally — it's
         // useful to plan around them even off-turn so you know what to
