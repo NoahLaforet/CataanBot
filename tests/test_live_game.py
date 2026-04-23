@@ -1017,6 +1017,64 @@ def test_paid_builds_debit_costs_and_setup_is_free():
             f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
 
 
+def test_longest_road_race_silent_early_and_alerts_at_4():
+    """Race tracker should stay quiet while every road count is <4,
+    alert when self hits 4 unqualified ('self_push'), alert when an
+    opp hits 4 without self on 4 ('opp_threat'), and emit 'contested'
+    when both sides are within 1 of each other at 4+."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_longest_road_race
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = game.color_map.get(self_user)
+    my_enum = Color[self_color.upper()]
+    cat = game.tracker.game
+    ps = cat.state.player_state
+    my_idx = cat.state.color_to_index[my_enum]
+    opp_indices = [i for c, i in cat.state.color_to_index.items()
+                   if c != my_enum]
+    assert opp_indices, "fixture must seat at least one opp"
+    opp_idx = opp_indices[0]
+
+    # Baseline: zero every seat — silent.
+    for i in (my_idx, *opp_indices):
+        ps[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
+        ps[f"P{i}_HAS_ROAD"] = False
+    assert _compute_longest_road_race(game, self_color) is None
+
+    # Self at 4, opp at 0 → self_push alert.
+    ps[f"P{my_idx}_LONGEST_ROAD_LENGTH"] = 4
+    race = _compute_longest_road_race(game, self_color)
+    assert race and race["level"] == "self_push"
+    assert race["self_len"] == 4
+
+    # Self at 4, opp at 4 → contested.
+    ps[f"P{opp_idx}_LONGEST_ROAD_LENGTH"] = 4
+    race = _compute_longest_road_race(game, self_color)
+    assert race and race["level"] == "contested"
+    assert race["self_len"] == 4 and race["opp_len"] == 4
+
+    # Opp at 4, self at 0 → opp_threat alert.
+    ps[f"P{my_idx}_LONGEST_ROAD_LENGTH"] = 0
+    race = _compute_longest_road_race(game, self_color)
+    assert race and race["level"] == "opp_threat"
+
+    # Opp holds with 2+ lead → silent (race settled).
+    ps[f"P{opp_idx}_LONGEST_ROAD_LENGTH"] = 7
+    ps[f"P{opp_idx}_HAS_ROAD"] = True
+    ps[f"P{my_idx}_LONGEST_ROAD_LENGTH"] = 4
+    assert _compute_longest_road_race(game, self_color) is None
+
+
 def test_robber_on_me_fires_when_robber_sits_on_self_tile():
     """With the robber parked on a tile that has a self building,
     robber_on_me should report the resource, number, pips suppressed,

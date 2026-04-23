@@ -375,6 +375,13 @@
     display: block; font-weight: 400; font-size: calc(12px * var(--font-scale));
     color: #a88cb0; margin-top: 2px;
   }
+  .lr-race {
+    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
+    font-weight: 600;
+  }
+  .lr-race.self_push { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
+  .lr-race.opp_threat { background: #2a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
+  .lr-race.contested { background: #1a1f2a; color: #9ecfff; border: 1px solid #2e3b55; }
   .discard-hint {
     border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 4px 6px; margin: 6px 0 4px;
@@ -840,6 +847,13 @@
                 + ` ${rom.pips_blocked} pips suppressed`);
             parts.push(`<span class="rom-sub">${escapeHtml(sub)}</span>`);
             parts.push('</div>');
+        }
+        if (snap.longest_road_race) {
+            const lr = snap.longest_road_race;
+            const lvl = lr.level || 'contested';
+            parts.push(`<div class="lr-race ${lvl}">`
+                + escapeHtml(lr.message || '')
+                + '</div>');
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
