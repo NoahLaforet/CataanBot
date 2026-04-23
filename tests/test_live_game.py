@@ -1017,6 +1017,61 @@ def test_paid_builds_debit_costs_and_setup_is_free():
             f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
 
 
+def test_largest_army_race_silent_early_and_alerts_at_2():
+    """Parallel to the longest-road tracker but on played knights.
+    Race fires once someone hits 2 played (one away from qualifying
+    at 3), and settles silent once the holder is 2+ ahead."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_largest_army_race
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = game.color_map.get(self_user)
+    my_enum = Color[self_color.upper()]
+    cat = game.tracker.game
+    ps = cat.state.player_state
+    my_idx = cat.state.color_to_index[my_enum]
+    opp_indices = [i for c, i in cat.state.color_to_index.items()
+                   if c != my_enum]
+    opp_idx = opp_indices[0]
+
+    # Zero every seat — silent.
+    for i in (my_idx, *opp_indices):
+        ps[f"P{i}_PLAYED_KNIGHT"] = 0
+        ps[f"P{i}_HAS_ARMY"] = False
+    assert _compute_largest_army_race(game, self_color) is None
+
+    # Self at 2, nobody else close → self_push.
+    ps[f"P{my_idx}_PLAYED_KNIGHT"] = 2
+    race = _compute_largest_army_race(game, self_color)
+    assert race and race["level"] == "self_push"
+    assert race["self_n"] == 2
+
+    # Both on 2 → contested (not opp_threat).
+    ps[f"P{opp_idx}_PLAYED_KNIGHT"] = 2
+    race = _compute_largest_army_race(game, self_color)
+    assert race and race["level"] == "contested"
+
+    # Opp on 2, self at 0 → opp_threat.
+    ps[f"P{my_idx}_PLAYED_KNIGHT"] = 0
+    race = _compute_largest_army_race(game, self_color)
+    assert race and race["level"] == "opp_threat"
+
+    # Opp holds at 5, self at 2 → settled, silent.
+    ps[f"P{opp_idx}_PLAYED_KNIGHT"] = 5
+    ps[f"P{opp_idx}_HAS_ARMY"] = True
+    ps[f"P{my_idx}_PLAYED_KNIGHT"] = 2
+    assert _compute_largest_army_race(game, self_color) is None
+
+
 def test_longest_road_race_silent_early_and_alerts_at_4():
     """Race tracker should stay quiet while every road count is <4,
     alert when self hits 4 unqualified ('self_push'), alert when an

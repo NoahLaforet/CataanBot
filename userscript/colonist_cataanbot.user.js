@@ -382,6 +382,13 @@
   .lr-race.self_push { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
   .lr-race.opp_threat { background: #2a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
   .lr-race.contested { background: #1a1f2a; color: #9ecfff; border: 1px solid #2e3b55; }
+  .la-race {
+    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
+    font-weight: 600;
+  }
+  .la-race.self_push { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
+  .la-race.opp_threat { background: #2a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
+  .la-race.contested { background: #1a1f2a; color: #9ecfff; border: 1px solid #2e3b55; }
   .discard-hint {
     border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 4px 6px; margin: 6px 0 4px;
@@ -853,6 +860,13 @@
             const lvl = lr.level || 'contested';
             parts.push(`<div class="lr-race ${lvl}">`
                 + escapeHtml(lr.message || '')
+                + '</div>');
+        }
+        if (snap.largest_army_race) {
+            const la = snap.largest_army_race;
+            const lvl = la.level || 'contested';
+            parts.push(`<div class="la-race ${lvl}">`
+                + escapeHtml(la.message || '')
                 + '</div>');
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
