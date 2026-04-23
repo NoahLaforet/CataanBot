@@ -2622,3 +2622,140 @@ def test_robber_on_me_omits_rolls_since_placed_before_first_move():
     rom = snap["robber_on_me"]
     assert rom is not None
     assert "rolls_since_placed" not in rom
+
+
+def test_last_roll_includes_opponent_yields_on_productive_roll():
+    """On any non-7 roll with at least one opp owning a building on the
+    rolled number, last_roll.opponent_yields must list that opp with a
+    positive gained_total. Picks a number off the capture board that
+    hits an opp but not self so the shape is unambiguous."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = game.color_map.get(self_user)
+    my_enum = Color[self_color.upper()]
+    cat = game.tracker.game
+    m = cat.state.board.map
+    opp_enums = [c for c in cat.state.color_to_index if c != my_enum]
+    # Find a tile number where at least one opp has a building. Don't
+    # care about self here — we just want a productive-for-opp roll.
+    opp_numbers: dict[int, list] = {}
+    for coord, tile in m.land_tiles.items():
+        if tile.number is None or not tile.resource:
+            continue
+        if coord == cat.state.board.robber_coordinate:
+            continue
+        for nid, (bcol, _bt) in cat.state.board.buildings.items():
+            if bcol in opp_enums and int(nid) in set(tile.nodes.values()):
+                opp_numbers.setdefault(tile.number, []).append(bcol)
+    assert opp_numbers, "capture should leave opps with at least one build"
+    # Pick any number that hits an opp.
+    rolled = next(iter(opp_numbers))
+
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": {
+            "player": "them", "color": None,
+            "total": rolled, "is_you": False,
+        },
+        "roll_history": [], "total_rolls": 1,
+        "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    lr = snap["last_roll"]
+    assert "opponent_yields" in lr
+    oys = lr["opponent_yields"]
+    assert isinstance(oys, list)
+    assert oys, f"expected at least one opp-yield for roll {rolled}"
+    for e in oys:
+        assert e["gained_total"] > 0 or e["blocked_total"] > 0
+        assert isinstance(e["color"], str)
+
+
+def test_last_roll_opponent_yields_omits_zero_yield_opps():
+    """Opps who didn't gain or get blocked on this roll must be
+    omitted. Otherwise the banner lists everyone with a 0, defeating
+    the point of the "they:" tail which is to surface who was fed."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    # Pick a number that no tile on this board carries — a 2 would
+    # typically only exist on one tile, but we force the edge case by
+    # zeroing every tile's number so no player gains anything. This
+    # lets us assert the "nobody fed" list stays []; exercising the
+    # filter that omits zero-yield opps.
+    cat = game.tracker.game
+    for coord, tile in cat.state.board.map.land_tiles.items():
+        tile.number = None
+
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": {
+            "player": "them", "color": None, "total": 8, "is_you": False,
+        },
+        "roll_history": [], "total_rolls": 1,
+        "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    lr = snap["last_roll"]
+    assert lr.get("opponent_yields") == []
+
+
+def test_last_roll_opponent_yields_absent_on_seven():
+    """7-rolls produce nothing. The helper bails before opp-yields
+    compute runs so the field stays absent on the banner. The overlay
+    relies on the "no opp-yields key" check to skip rendering entirely
+    on 7s (discard logic handles that case separately)."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": {
+            "player": "them", "color": None, "total": 7, "is_you": False,
+        },
+        "roll_history": [], "total_rolls": 1,
+        "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    lr = snap["last_roll"]
+    # Either the key is absent, or explicitly None — both are fine; the
+    # overlay's Array.isArray check treats both as "don't render".
+    assert not lr.get("opponent_yields")

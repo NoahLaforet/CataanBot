@@ -259,6 +259,13 @@
   .roll .roll-yield { color: #a4ef9c; font-weight: 600;
     font-variant-numeric: tabular-nums; }
   .roll .roll-blocked { color: #d89c7a; font-weight: 500; }
+  /* Opponent-yields row: sits under the roll banner so the eye still
+     lands on "what I got" first. Dim base tone — this is context, not
+     the headline — but opp colors in the data still carry the color
+     cues via the text itself, not the row's background. */
+  .opp-yields { color: #888; font-size: calc(11px * var(--font-scale));
+    margin: 0 0 4px 0; font-variant-numeric: tabular-nums; }
+  .opp-yields .oy-blk { color: #d89c7a; font-weight: 500; }
   /* Recent-rolls strip: last ~10 dice totals, with the most recent on
      the right. Dimmer than the main roll banner so the live roll pops;
      hits on self highlighted (green) and robber-blocked rolls flagged
@@ -980,6 +987,24 @@
             }
             parts.push(`<div class="roll ${lr.is_you ? 'you-rolled' : ''}">`
                 + `${who}${yieldLine}</div>`);
+            // Opponent-yields on the same roll. Compact dim sub-line
+            // answering "did that feed somebody else?" Important on
+            // rolls where self got nothing — otherwise the banner
+            // reads "rolled 8, —" and hides the fact that an opp just
+            // scooped 4 cards. Blocked counts are surfaced parenthetic.
+            const oys = lr.opponent_yields;
+            if (Array.isArray(oys) && oys.length) {
+                const parts2 = oys.map((o) => {
+                    const g = o.gained_total > 0
+                        ? `${escapeHtml((o.color || '').toLowerCase())} +${o.gained_total}`
+                        : escapeHtml((o.color || '').toLowerCase());
+                    const b = o.blocked_total > 0
+                        ? ` <span class="oy-blk">(${o.blocked_total} blk)</span>`
+                        : '';
+                    return g + b;
+                }).join(' · ');
+                parts.push(`<div class="opp-yields">they: ${parts2}</div>`);
+            }
         }
         // Recent rolls strip: shows the last ~10 dice totals so Noah
         // can see at a glance which numbers have been dry (pip drought)
