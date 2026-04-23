@@ -1130,6 +1130,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # True when we know every card: breakdown sums to the total.
             "hand_tracked": (unknown == 0 and real_total > 0),
             "vp": _get_vp(game, c),
+            # Unplayed dev cards in hand. Includes hidden VPs, so a
+            # spike here is a real "they might be close to 10" signal.
+            # Counting comes from colonist's authoritative card-list
+            # length; we can't see the types, only the size.
+            "dev_cards": int(sess.dev_card_counts.get(cid, 0)),
         })
 
     pending = st.get("pending_trade_offer")

@@ -688,8 +688,11 @@
                     ? `<span class="opp-hand">${handParts.join('  ')}</span>`
                     : '';
                 const trackCls = o.hand_tracked ? ' tracked' : '';
+                const devTag = (o.dev_cards || 0) > 0
+                    ? ` · ${o.dev_cards}dev`
+                    : '';
                 parts.push(`<div class="opp${trackCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP</span>`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}</span>`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
