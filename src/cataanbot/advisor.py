@@ -546,17 +546,12 @@ def score_second_settlements(
         combined_distinct = sum(1 for v in combined.values() if v > 0)
         diversity_bonus = _COMBINED_DIVERSITY_BONUS.get(combined_distinct, 0.25)
 
+        # Share the first-settle port-bonus curve (scales with produced
+        # pips on the port resource). Second-settle plugs in the combined
+        # pair production so a port pick only blossoms when the two-node
+        # plan actually feeds it.
         port_label = node_to_port.get(node_id)
-        if port_label is None:
-            port_bonus = 0.0
-        elif port_label == "3:1":
-            port_bonus = 0.03
-        else:
-            port_resource = port_label.split(" ", 1)[0]
-            combined_r = combined.get(port_resource, 0.0)
-            # Port is most valuable when you already produce that resource;
-            # a 2:1 port on a resource you don't touch is near-useless.
-            port_bonus = 0.03 + combined_r * 0.3
+        port_bonus = _port_bonus(port_label, combined)
 
         tiles = []
         for tile in m.adjacent_tiles.get(node_id, []):
