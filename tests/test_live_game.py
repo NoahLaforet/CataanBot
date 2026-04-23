@@ -3016,3 +3016,105 @@ def test_monopoly_risk_threshold_is_five():
     mr = _build_advisor_snapshot(st)["self"]["monopoly_risk"]
     assert mr is not None
     assert mr["resource"] == "SHEEP" and mr["count"] == 5
+
+
+def test_sevens_hot_fires_on_three_of_ten_sevens():
+    """3+ sevens in the recent roll_history window trips the warning.
+    Baseline is 6/36 so 3 in 10 is roughly 2× expected. Below that,
+    random clustering is plausible and flashing the warning would
+    desensitize."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    # 3 sevens + 7 non-sevens.
+    history = (
+        [{**base_entry, "total": 7} for _ in range(3)]
+        + [{**base_entry, "total": 8} for _ in range(7)]
+    )
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 10, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    sh = snap["sevens_hot"]
+    assert sh is not None
+    assert sh["sevens"] == 3
+    assert sh["window"] == 10
+
+
+def test_sevens_hot_silent_below_threshold():
+    """2 sevens in 10 rolls is close to expected (1.67) — no warning.
+    Avoids crying wolf on normal dice clustering."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    history = (
+        [{**base_entry, "total": 7} for _ in range(2)]
+        + [{**base_entry, "total": 8} for _ in range(8)]
+    )
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 10, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    assert _build_advisor_snapshot(st)["sevens_hot"] is None
+
+
+def test_sevens_hot_requires_minimum_window():
+    """3 sevens in 3 rolls is a striking pattern but the sample is
+    too small — a brand-new game can't trip "hot 7s". Requires
+    window >= 4 so the cluster isn't just the first 3 rolls happening
+    to be 7s."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    history = [{**base_entry, "total": 7} for _ in range(3)]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 3, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    assert _build_advisor_snapshot(st)["sevens_hot"] is None

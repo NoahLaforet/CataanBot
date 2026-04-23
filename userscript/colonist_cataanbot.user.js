@@ -308,6 +308,11 @@
   .prod-stall { color: #e69a5a; font-size: calc(11px * var(--font-scale));
     margin: 0 0 4px 0; font-weight: 600;
     font-variant-numeric: tabular-nums; }
+  /* Sevens-hot warning. Red because the action cue is "hold less" —
+     more pointed than the amber stall warning. */
+  .sevens-hot { color: #ff8a6e; font-size: calc(11px * var(--font-scale));
+    margin: 0 0 4px 0; font-weight: 600;
+    font-variant-numeric: tabular-nums; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -1078,6 +1083,15 @@
         if (ps && ps.rolls_dry >= 3) {
             parts.push('<div class="prod-stall">'
                 + `dry ${ps.rolls_dry} rolls · ${ps.per_roll}/roll expected`
+                + '</div>');
+        }
+        // Sevens-hot: 7s are coming up at 2×+ expected rate in the
+        // recent window. Practical effect: lean toward holding fewer
+        // cards / spending before crossing the discard threshold.
+        const sh = snap.sevens_hot;
+        if (sh) {
+            parts.push('<div class="sevens-hot">'
+                + `7s hot: ${sh.sevens}/${sh.window} recent — consider discarding`
                 + '</div>');
         }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
