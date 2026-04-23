@@ -895,6 +895,96 @@ def _compute_knight_hint(
     }
 
 
+def _compute_longest_road_race(
+    game, self_color: str | None,
+) -> dict[str, Any] | None:
+    """Flag a longest-road race when either side is 1 segment away.
+
+    Returns a banner dict (level + message) or None. Levels:
+        * "self_push" — self is 1 road away from qualifying (5 segs)
+        * "opp_threat" — an opp is 1 road away from qualifying
+        * "contested" — both sides are within 1 of current holder
+    The banner is noise-free once the race is settled (holder is 2+
+    ahead of everyone). We deliberately don't alert on "self just
+    won longest road" because the VP banner already handles that.
+    """
+    from catanatron import Color
+
+    state = game.tracker.game.state
+    if self_color is None:
+        return None
+    try:
+        my_enum = Color[self_color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+
+    # Build (color, length, has_road) per seated player.
+    lengths: list[tuple[object, int, bool]] = []
+    for col, idx in state.color_to_index.items():
+        length = int(state.player_state.get(
+            f"P{idx}_LONGEST_ROAD_LENGTH", 0))
+        has_road = bool(state.player_state.get(
+            f"P{idx}_HAS_ROAD", False))
+        lengths.append((col, length, has_road))
+    if not lengths:
+        return None
+
+    self_entry = next((e for e in lengths if e[0] == my_enum), None)
+    opps = [e for e in lengths if e[0] != my_enum]
+    if self_entry is None:
+        return None
+    self_len = self_entry[1]
+    self_has = self_entry[2]
+    opp_max = max((e[1] for e in opps), default=0)
+    opp_holder = any(e[2] for e in opps)
+
+    # Nobody's close yet — don't spam early game.
+    if self_len < 4 and opp_max < 4:
+        return None
+
+    # Already held + lead by 2+: race is over, no alert.
+    if self_has and self_len >= opp_max + 2:
+        return None
+    if opp_holder and opp_max >= self_len + 2:
+        return None
+
+    # Contested first (most specific): both sides ≥4 and within 1.
+    # Keeps the contested banner from being drowned out by the plain
+    # opp_threat path when we're neck-and-neck at 4.
+    if self_len >= 4 and opp_max >= 4 and abs(self_len - opp_max) <= 1:
+        holder = "you" if self_has else ("opp" if opp_holder else "—")
+        return {
+            "level": "contested",
+            "self_len": self_len,
+            "opp_len": opp_max,
+            "message": (
+                f"longest-road race: you {self_len} vs opp {opp_max}"
+                f" (holder: {holder})"),
+        }
+    # Self pushing: we're on 4+, nobody else is close.
+    if self_len >= 4 and not self_has and opp_max < self_len:
+        return {
+            "level": "self_push",
+            "self_len": self_len,
+            "opp_len": opp_max,
+            "message": f"1 road → longest road (you have {self_len})",
+        }
+    # Opp threat: someone else is on 4+ and ahead of us.
+    if opp_max >= 4 and opp_max >= self_len and not self_has:
+        gap = opp_max - self_len
+        if opp_holder:
+            msg = f"opp holds longest road ({opp_max}) — {gap} ahead"
+        else:
+            msg = f"opp 1 road from longest road ({opp_max})"
+        return {
+            "level": "opp_threat",
+            "self_len": self_len,
+            "opp_len": opp_max,
+            "message": msg,
+        }
+    return None
+
+
 def _compute_robber_on_me(game) -> dict[str, Any] | None:
     """Persistent "robber is blocking you" banner.
 
@@ -987,6 +1077,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "discard_hint": None,
         "threat": None,
         "robber_on_me": None,
+        "longest_road_race": None,
     }
     if not game.started:
         return snap
@@ -1259,6 +1350,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["robber_on_me"] = _compute_robber_on_me(game)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] robber_on_me failed: {e!r}", flush=True)
+    # Longest-road race tracker: only alerts once someone hits 4 segs.
+    # Silent early game, settles down once a clear winner is ≥2 ahead.
+    try:
+        snap["longest_road_race"] = _compute_longest_road_race(
+            game, self_color)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] longest_road_race failed: {e!r}", flush=True)
     return snap
 
 
