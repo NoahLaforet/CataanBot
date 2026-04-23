@@ -257,6 +257,13 @@
      the muted row styling; weight kept normal so it doesn't eat the
      rest of the row's whitespace at the HUD's default font scale. */
   .opp .fat-hand { color: #ff8a6e; font-weight: 600; }
+  /* Card-delta trailer. Up = accumulating (warning), down = just
+     spent (reactive but still informative). Small parenthetical so
+     it reads as a trailer, not an axis of its own. */
+  .opp .card-up { color: #ff8a6e; font-weight: 600;
+    font-variant-numeric: tabular-nums; }
+  .opp .card-dn { color: #7a8a7a; font-weight: 400;
+    font-variant-numeric: tabular-nums; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
   /* Yield breakdown appended to the roll line: "+2 whe +1 ore" style.
@@ -938,9 +945,18 @@
                 // targets. Color the cards count so Noah eyeballs it
                 // without doing the addition.
                 const fatHand = (o.cards || 0) >= 8;
-                const cardsSpan = fatHand
+                let cardsSpan = fatHand
                     ? `<span class="fat-hand">${o.cards}c</span>`
                     : `${o.cards}c`;
+                // Hand-growth trailer: +3 means accumulating, -2 means
+                // just spent/got-stolen-from. Only surface when abs>=2
+                // because +1 is ambient and would noise the row out.
+                if (typeof o.card_delta === 'number'
+                        && Math.abs(o.card_delta) >= 2) {
+                    const sign = o.card_delta > 0 ? '+' : '';
+                    const cls = o.card_delta > 0 ? 'card-up' : 'card-dn';
+                    cardsSpan += ` <span class="${cls}">(${sign}${o.card_delta})</span>`;
+                }
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
                     + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}`
                     + (breakdown ? ` ${breakdown}` : '')

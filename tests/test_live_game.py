@@ -3362,3 +3362,114 @@ def test_game_progress_phase_transitions():
         gp = _build_advisor_snapshot(st)["game_progress"]
         assert gp["phase"] == expected_phase, (
             f"rolls={rolls} expected {expected_phase}, got {gp}")
+
+
+def test_card_delta_surfaces_positive_swing():
+    """A ring-buffer sample of [3, 4, 6] with current count 6 yields
+    card_delta = +3 — the opp went from 3 cards to 6 over the window.
+    That's snowballing; HUD needs to surface it so Noah notices before
+    the opp flips affordability."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    # Seed the card-hist buffer with a rising series for every opp cid.
+    # Values don't need to match hand_card_counts — card_delta is
+    # computed as (current count) - (oldest sample), so the "oldest
+    # sample" side is what we're poking here.
+    card_hist = {}
+    for cid in game.session.hand_card_counts:
+        if cid == game.session.self_color_id:
+            continue
+        card_hist[int(cid)] = [1, 2, 3]  # oldest first
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 10, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+        "opp_card_hist": card_hist,
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["opps"], "midgame capture should expose opps"
+    for opp in snap["opps"]:
+        # current - 1 should be the delta. current is real_total from
+        # session.hand_card_counts; we seeded oldest=1.
+        assert opp["card_delta"] is not None
+        assert opp["card_delta"] == opp["cards"] - 1
+        assert opp["card_delta_window"] == 3
+
+
+def test_card_delta_none_without_history():
+    """With an empty opp_card_hist, delta is undefined and must not
+    be fabricated — else a fresh session would read "+5" for every
+    opp just because we had no oldest sample to subtract. None is
+    the honest signal."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 0, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+        "opp_card_hist": {},
+    }
+    snap = _build_advisor_snapshot(st)
+    for opp in snap["opps"]:
+        assert opp["card_delta"] is None
+        assert opp["card_delta_window"] is None
+
+
+def test_card_hist_ring_buffer_caps_at_five():
+    """The on-roll snapshot appends each roll's count, capped at 5 so
+    a deep midgame doesn't grow unbounded. Beyond that the delta
+    signal gets noisy anyway — "who gained over the last 5 rolls" is
+    a tight enough window."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _track_overlay_state
+    from cataanbot.live import DispatchResult
+    from cataanbot.live_game import LiveGame
+    from cataanbot.events import RollEvent
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    # Find a valid opp username to attribute rolls to.
+    roller = None
+    for cid, user in game.session.player_names.items():
+        if user and cid != game.session.self_color_id:
+            roller = user
+            break
+    assert roller is not None
+    st: dict = {
+        "roll_history": [], "total_rolls": 0, "opp_card_hist": {},
+        "robber_pending": False, "robber_snapshot": None,
+        "robber_moved_at_rolls": None, "display_colors": {},
+        "game": game,
+    }
+    # Drive 7 synthetic rolls; buffer should hold only the last 5.
+    for _ in range(7):
+        _track_overlay_state(st, [DispatchResult(
+            event=RollEvent(player=roller, d1=3, d2=5),
+            status="applied", message="")])
+    for series in st["opp_card_hist"].values():
+        assert len(series) == 5, series
