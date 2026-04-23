@@ -473,6 +473,16 @@
   .threat.mid { background: #2a2a18; color: #e0d480; border: 1px solid #555538; }
   .threat.close { background: #3a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
   .threat.win { background: #4a1414; color: #ff5e5e; border: 1px solid #8b3333; }
+  /* Self close-to-win banner — green family since "self wins soon"
+     is a goal signal, not a danger signal. close-1 is a tick brighter
+     than close; win is near-celebratory. */
+  .win-prox {
+    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
+    font-weight: 600;
+  }
+  .win-prox.close { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
+  .win-prox.close-1 { background: #1f3a22; color: #b4f0a8; border: 1px solid #3a7048; }
+  .win-prox.win { background: #14412a; color: #aaf0b0; border: 1px solid #2e7048; }
   .robber-on-me {
     border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
     background: #2a1a28; color: #d8a0d8; border: 1px solid #553355;
@@ -1257,6 +1267,14 @@
             const lvl = snap.threat.level || 'mid';
             parts.push(`<div class="threat ${lvl}">`
                 + escapeHtml(snap.threat.message)
+                + '</div>');
+        }
+        // Self close-to-win banner — symmetric with snap.threat but
+        // fires on self VP hitting the close threshold.
+        if (snap.win_proximity && snap.win_proximity.message) {
+            const wlvl = snap.win_proximity.level || 'close';
+            parts.push(`<div class="win-prox ${wlvl}">`
+                + escapeHtml(snap.win_proximity.message)
                 + '</div>');
         }
         if (snap.robber_on_me) {

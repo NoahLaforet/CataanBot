@@ -867,6 +867,90 @@ def test_leader_threat_vector_flags_dev_vp_only_when_close():
     assert "2 dev" in t_close["message"]
 
 
+def test_win_proximity_silent_below_threshold():
+    """Self at 7 VP (one below close_to_win=8 in default 10-VP config)
+    should not produce a banner. The banner is decision-shifting — it
+    fires when self hits close-out range and stays dark otherwise."""
+    from cataanbot.bridge import _compute_win_proximity
+    snap = {"self": {"vp": 7, "afford": ["settlement", "road"]}}
+    assert _compute_win_proximity(snap) is None
+
+
+def test_win_proximity_close_level_at_8_vp():
+    """At 8 VP (close_to_win for target=10) the banner fires at level
+    ``close`` with gap_to_win=2. If a VP build is affordable, message
+    calls it out so Noah spends on the VP lane rather than dev/road."""
+    from cataanbot.bridge import _compute_win_proximity
+    snap = {"self": {"vp": 8, "afford": ["city", "road"]}}
+    w = _compute_win_proximity(snap)
+    assert w is not None
+    assert w["level"] == "close"
+    assert w["gap_to_win"] == 2
+    # Road filtered out — only city/settlement count as VP-closing.
+    assert w["vp_builds_affordable"] == ["city"]
+    assert "city ready" in w["message"]
+
+
+def test_win_proximity_close_1_level_at_9_vp():
+    """At 9 VP the banner escalates to ``close-1`` — exactly one VP
+    from winning. Any settle/city affordable here closes the game this
+    turn; message should mirror that urgency."""
+    from cataanbot.bridge import _compute_win_proximity
+    snap = {"self": {"vp": 9, "afford": ["settlement"]}}
+    w = _compute_win_proximity(snap)
+    assert w is not None
+    assert w["level"] == "close-1"
+    assert w["gap_to_win"] == 1
+    assert "1 VP to win" in w["message"]
+    assert "settlement ready" in w["message"]
+
+
+def test_win_proximity_win_level_at_10_vp():
+    """Self at 10 VP with target=10 — game is effectively over.
+    Banner flips to ``win`` and stops framing it as a push."""
+    from cataanbot.bridge import _compute_win_proximity
+    snap = {"self": {"vp": 10, "afford": []}}
+    w = _compute_win_proximity(snap)
+    assert w is not None
+    assert w["level"] == "win"
+    assert w["gap_to_win"] == 0
+
+
+def test_win_proximity_dev_card_hint_only_when_no_builds_at_close_1():
+    """The dev-hint in the message is a *fallback* — only shown when
+    there's no VP build ready, because builds are the more concrete
+    path. Held dev cards at close-1 might be hidden VPs (the reason
+    to surface them), but when a settle/city is already affordable
+    the build line is more actionable."""
+    from cataanbot.bridge import _compute_win_proximity
+    # No builds, dev in hand → message mentions dev.
+    snap_dev = {"self": {"vp": 9, "afford": []}}
+    w_dev = _compute_win_proximity(snap_dev, dev_cards_held=2)
+    assert w_dev is not None
+    assert w_dev["dev_cards_held"] == 2
+    assert "2 dev" in w_dev["message"]
+    # Builds present → dev-hint suppressed in message (still tracked
+    # in dev_cards_held for UIs that want it).
+    snap_both = {"self": {"vp": 9, "afford": ["city"]}}
+    w_both = _compute_win_proximity(snap_both, dev_cards_held=2)
+    assert w_both is not None
+    assert "2 dev" not in w_both["message"]
+    assert "city ready" in w_both["message"]
+
+
+def test_win_proximity_filters_non_vp_builds_from_afford():
+    """Self's ``afford`` can contain road/dev_card — neither flips VP
+    same-turn. ``vp_builds_affordable`` must filter to only the builds
+    that actually move VP, so the banner message doesn't mislead."""
+    from cataanbot.bridge import _compute_win_proximity
+    snap = {"self": {"vp": 8, "afford": ["road", "dev card"]}}
+    w = _compute_win_proximity(snap)
+    assert w is not None
+    assert w["vp_builds_affordable"] == []
+    # No builds → message falls back to generic push framing.
+    assert "keep pushing" in w["message"]
+
+
 def test_compute_monopoly_hint_picks_resource_with_largest_total():
     """When self holds a MONOPOLY, the hint should pick the resource
     with the highest inferred total across opps."""
