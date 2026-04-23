@@ -246,6 +246,10 @@
      Amber because it's a near-term threat (next-turn +VP in the
      worst case) without being a red-alert on its own. */
   .opp .can-afford { color: #ffb347; font-weight: 600; }
+  /* 8+ cards — prime 7-roll discard target. Red so it pops out of
+     the muted row styling; weight kept normal so it doesn't eat the
+     rest of the row's whitespace at the HUD's default font scale. */
+  .opp .fat-hand { color: #ff8a6e; font-weight: 600; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
@@ -833,8 +837,16 @@
                             + `${meaningful.join(', ')}</span>`;
                     }
                 }
+                // Fat-hand marker: opps carrying 8+ cards are primed
+                // for a 7-roll — they discard half AND are likely steal
+                // targets. Color the cards count so Noah eyeballs it
+                // without doing the addition.
+                const fatHand = (o.cards || 0) >= 8;
+                const cardsSpan = fatHand
+                    ? `<span class="fat-hand">${o.cards}c</span>`
+                    : `${o.cards}c`;
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}`
+                    + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
