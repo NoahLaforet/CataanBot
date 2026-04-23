@@ -1872,6 +1872,18 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["robber_on_me"] = _compute_robber_on_me(game)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] robber_on_me failed: {e!r}", flush=True)
+    # Enrich the banner with a recent-cost tally from roll_history. The
+    # helper is game-state-only; the history lives in `st`. Blocked-
+    # count across the window quantifies what the robber has actually
+    # been costing, not just current-turn pips. Useful because pips
+    # alone don't tell you whether the robber has been grinding you for
+    # 3 straight rolls or was placed this turn.
+    if snap.get("robber_on_me"):
+        hist = st.get("roll_history") or []
+        non_seven = [e for e in hist if e.get("total") != 7]
+        snap["robber_on_me"]["rolls_recent"] = len(non_seven)
+        snap["robber_on_me"]["blocks_recent"] = sum(
+            1 for e in non_seven if e.get("blocked_you"))
     # Longest-road race tracker: only alerts once someone hits 4 segs.
     # Silent early game, settles down once a clear winner is ≥2 ahead.
     try:

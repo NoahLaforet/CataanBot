@@ -2122,6 +2122,118 @@ def test_roll_history_never_flags_seven_as_hit():
     assert entry["blocked_you"] is False
 
 
+def test_robber_on_me_includes_recent_block_count():
+    """With the robber parked on a self tile and a roll_history that
+    includes blocked_you entries on that number, robber_on_me should
+    report blocks_recent/rolls_recent so the overlay can show "X/Y
+    recent rolls lost" beneath the banner. Seven rolls don't count
+    against rolls_recent (they can't produce, so they're not a fair
+    denominator for "did the robber cost us on this roll")."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    hot_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    hot_tile = m.land_tiles[hot_coord]
+    cat.state.board.robber_coordinate = hot_coord
+
+    # Hand-roll a roll_history: 1 hit on the blocked number (becomes
+    # blocked because robber is there), 3 non-hits, 1 seven. Expected:
+    # rolls_recent=4 (seven excluded), blocks_recent=1.
+    history = [
+        {"total": hot_tile.number, "is_you": True, "color": color,
+         "hit_you": False, "blocked_you": True},
+        {"total": 2 if hot_tile.number != 2 else 3,
+         "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False},
+        {"total": 11 if hot_tile.number != 11 else 12,
+         "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False},
+        {"total": 7, "is_you": True, "color": color,
+         "hit_you": False, "blocked_you": False},
+        {"total": 3 if hot_tile.number != 3 else 4,
+         "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False},
+    ]
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    rom = snap["robber_on_me"]
+    assert rom is not None
+    assert rom["rolls_recent"] == 4, (
+        f"7s must be excluded from denominator, got {rom['rolls_recent']}")
+    assert rom["blocks_recent"] == 1, (
+        f"one blocked entry expected, got {rom['blocks_recent']}")
+
+
+def test_robber_on_me_block_counts_default_to_zero_without_history():
+    """Fresh session (no roll_history yet) with robber on self tile
+    should still report the banner, with blocks_recent=0 and
+    rolls_recent=0 — the overlay then suppresses the "X/Y rolls lost"
+    tail so it doesn't render "0/0" noise."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    hot_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    cat.state.board.robber_coordinate = hot_coord
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    rom = snap["robber_on_me"]
+    assert rom is not None
+    assert rom["rolls_recent"] == 0
+    assert rom["blocks_recent"] == 0
+
+
 def test_snapshot_exposes_roll_history_as_list():
     """Whatever the bridge accumulates on roll_history should show up as
     a list on the snap so the overlay can render it. Empty before any
