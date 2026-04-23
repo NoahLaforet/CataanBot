@@ -252,6 +252,13 @@
   .opp .fat-hand { color: #ff8a6e; font-weight: 600; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
+  /* Yield breakdown appended to the roll line: "+2 whe +1 ore" style.
+     Green for positive because the color mirrors catanatron's resource
+     gain vibe; dimmer for the blocked portion so the eye lands on the
+     gains first, then notices what was missed. */
+  .roll .roll-yield { color: #a4ef9c; font-weight: 600;
+    font-variant-numeric: tabular-nums; }
+  .roll .roll-blocked { color: #d89c7a; font-weight: 500; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -915,8 +922,35 @@
             } else {
                 who = `rolled <b>${lr.total}</b>`;
             }
+            // Yield breakdown: what self actually received, and what
+            // the robber blocked. Skips silently when yield is missing
+            // (7-roll or compute failure) or wholly empty (no exposure).
+            let yieldLine = '';
+            const y = lr.yield;
+            if (y) {
+                const gPairs = Object.entries(y.gained || {})
+                    .filter(([_, n]) => n > 0);
+                const bPairs = Object.entries(y.blocked || {})
+                    .filter(([_, n]) => n > 0);
+                const gained = gPairs.length
+                    ? gPairs.map(([r, n]) => `+${n} ${iconFor(r)}`).join(' ')
+                    : '';
+                const blocked = bPairs.length
+                    ? ' <span class="roll-blocked">blocked: '
+                        + bPairs.map(([r, n]) => `${n} ${iconFor(r)}`).join(' ')
+                        + '</span>'
+                    : '';
+                if (gained || blocked) {
+                    yieldLine = ' <span class="roll-yield">'
+                        + gained + blocked + '</span>';
+                } else if (lr.total !== 7) {
+                    // Explicit "nothing" so Noah isn't wondering whether
+                    // the pipeline broke or the roll just missed him.
+                    yieldLine = ' <span class="roll-yield muted">—</span>';
+                }
+            }
             parts.push(`<div class="roll ${lr.is_you ? 'you-rolled' : ''}">`
-                + `${who}</div>`);
+                + `${who}${yieldLine}</div>`);
         }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             // Standalone knight-play panel (separate from the active-robber

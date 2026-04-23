@@ -1922,3 +1922,75 @@ def test_snapshot_populates_can_afford_on_opps():
         o for o in snap2["opps"] if o["username"] == target["username"])
     assert "city" in updated["can_afford"], (
         f"city should be affordable with 2w/3ore, got {updated['can_afford']}")
+
+
+def test_compute_roll_yield_sums_settlements_and_cities():
+    """Place one RED settlement on a numbered tile, pick that tile's
+    number, and assert the yield shows +1 of that resource. Upgrade to
+    a city and it becomes +2. Moving the robber onto the tile shifts
+    that yield from gained to blocked."""
+    from cataanbot.bridge import _compute_roll_yield
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    tr = Tracker(seed=4242)
+    board = tr.game.state.board
+    m = board.map
+    # Find a legal buildable node on a numbered non-desert tile and
+    # remember which tile/resource/number we're using so assertions
+    # can reference them.
+    buildable = board.buildable_node_ids(
+        Color.RED, initial_build_phase=True)
+    target_node = None
+    target_coord = None
+    target_res = None
+    target_num = None
+    for coord, tile in m.land_tiles.items():
+        if tile.number is None or not tile.resource:
+            continue
+        for nid in tile.nodes.values():
+            if nid in buildable:
+                target_node = int(nid)
+                target_coord = coord
+                target_res = tile.resource
+                target_num = tile.number
+                break
+        if target_node is not None:
+            break
+    assert target_node is not None
+
+    board.build_settlement(
+        Color.RED, target_node, initial_build_phase=True)
+
+    # Settlement: +1 of the tile's resource, nothing blocked.
+    y = _compute_roll_yield(_wrap_game(tr), "RED", target_num)
+    assert y is not None
+    assert y["gained"].get(target_res, 0) >= 1
+    assert y["blocked_total"] == 0
+
+    settle_amount = y["gained"][target_res]
+    # Upgrade to city: settle_amount doubles at this node.
+    board.build_city(Color.RED, target_node)
+    y_city = _compute_roll_yield(_wrap_game(tr), "RED", target_num)
+    assert y_city["gained"][target_res] == settle_amount + 1, (
+        f"city should add 1 more to gained count, got {y_city['gained']}")
+
+    # Move robber onto this tile. Yield shifts: that tile contributes
+    # to blocked, not gained.
+    board.robber_coordinate = target_coord
+    y_robbed = _compute_roll_yield(_wrap_game(tr), "RED", target_num)
+    # Blocked total should include at least 2 (the city's ×2).
+    assert y_robbed["blocked"].get(target_res, 0) >= 2
+    # And gained drops by the same amount (this city is fully blocked).
+    gain_after = y_robbed["gained"].get(target_res, 0)
+    assert gain_after <= y_city["gained"][target_res] - 2
+
+
+def test_compute_roll_yield_returns_none_on_7():
+    """7-rolls don't produce. The helper bails and returns None so the
+    overlay suppresses the yield line entirely on a 7 — the discard
+    hint and robber-placement flow cover that case separately."""
+    from cataanbot.bridge import _compute_roll_yield
+    from cataanbot.tracker import Tracker
+    tr = Tracker(seed=4242)
+    assert _compute_roll_yield(_wrap_game(tr), "RED", 7) is None
