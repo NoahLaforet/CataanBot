@@ -104,6 +104,11 @@ def _build_app(jsonl_path: Path | None = None,
         "robber_moved_at_rolls": None,
         "robber_pending": False,  # self rolled 7, hasn't placed robber yet
         "robber_snapshot": None,  # cached score_robber_targets payload
+        # Ring-buffer of card counts per color, one sample per roll.
+        # Capped at 5 samples so the delta window stays meaningful —
+        # long history would blur "just snowballed" into "always big".
+        # Keyed by int cid so the same shape survives color-swap resets.
+        "opp_card_hist": {},
         # Auto-postmortem buffers. Fed from the /log path so the output
         # shape matches `cataanbot replay --postmortem`. Independent from
         # LiveGame's WS tracker — the two pipelines never cross.
@@ -199,6 +204,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["robber_moved_at_rolls"] = None
         st["robber_pending"] = False
         st["robber_snapshot"] = None
+        st["opp_card_hist"] = {}
         st["pm_tracker"] = Tracker()
         st["pm_color_map"] = ColorMap()
         st["pm_events"] = []
@@ -486,6 +492,22 @@ def _track_overlay_state(st, results) -> None:
             hist.append(entry)
             st["roll_history"] = hist[-10:]
             st["total_rolls"] = int(st.get("total_rolls") or 0) + 1
+            # Snapshot each player's card count per-roll so the snap
+            # builder can compute a hand-growth delta. Ring buffer of 5
+            # samples means we can answer "+3 cards in the last 3 rolls"
+            # even after a couple of rolls of churn. Done on every roll
+            # including 7s — a robber steal actually drops the victim's
+            # count, which is itself a signal worth keeping.
+            try:
+                card_hist = st.setdefault("opp_card_hist", {})
+                for cid, count in game.session.hand_card_counts.items():
+                    series = card_hist.setdefault(int(cid), [])
+                    series.append(int(count))
+                    if len(series) > 5:
+                        del series[0]
+            except Exception as e:  # noqa: BLE001
+                print(f"[overlay] card hist snapshot failed: {e!r}",
+                      flush=True)
             if r.event.total == 7 and is_you:
                 st["robber_pending"] = True
                 st["robber_snapshot"] = _compute_robber_snapshot(
@@ -1987,6 +2009,23 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             inferred = trimmed
             inferred_total = sum(inferred.values())
         unknown = max(0, real_total - inferred_total)
+        # Hand-growth signal: compare current card count against the
+        # oldest sample in the ring buffer. A +3 swing over 3-4 rolls
+        # means this opp is snowballing — even if not *currently*
+        # affordable, the next production will probably flip a build.
+        # Delta is None when we don't have history (pre-roll or
+        # brand-new session); the HUD suppresses the tag in that case.
+        card_delta: int | None = None
+        card_hist_len: int | None = None
+        try:
+            card_hist = st.get("opp_card_hist") or {}
+            series = card_hist.get(int(cid)) or []
+            if len(series) >= 2:
+                card_delta = int(count) - int(series[0])
+                card_hist_len = len(series)
+        except Exception:  # noqa: BLE001
+            card_delta = None
+            card_hist_len = None
         snap["opps"].append({
             "username": user,
             "color": c,
@@ -1996,6 +2035,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             "unknown": unknown,
             # True when we know every card: breakdown sums to the total.
             "hand_tracked": (unknown == 0 and real_total > 0),
+            # Card delta vs oldest sample in a 5-roll window. Positive
+            # means accumulating; negative means spent/stolen/discarded.
+            "card_delta": card_delta,
+            "card_delta_window": card_hist_len,
             "vp": _get_vp(game, c),
             # Unplayed dev cards in hand. Includes hidden VPs, so a
             # spike here is a real "they might be close to 10" signal.
