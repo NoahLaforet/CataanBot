@@ -1153,6 +1153,48 @@ def _compute_bank_supply(game) -> dict[str, Any] | None:
     }
 
 
+def _compute_dev_deck_remaining(game) -> dict[str, Any] | None:
+    """Estimate how many dev cards are left in the deck.
+
+    Base game starts with 25: 14 knights, 5 VP, 2 monopoly, 2 YoP,
+    2 road building. A dev card bought stays out of the deck forever
+    (played or not), so ``remaining = 25 - total_ever_bought``. Total
+    ever bought = sum across all players of (unplayed dev cards in
+    hand) + (played knights + played specials). VP cards sit silently
+    in hand so they're already covered by the unplayed count.
+
+    Returns ``{remaining, drawn, low}`` where `low` is a bool flagged
+    when ≤2 cards remain — buying a dev card becomes a gamble that
+    can't happen at all once the deck is empty.
+    """
+    sess = game.session
+    if sess is None:
+        return None
+    try:
+        state = game.tracker.game.state
+    except Exception:  # noqa: BLE001
+        return None
+    total_unplayed = 0
+    total_played_actions = 0
+    for cid in sess.player_names:
+        total_unplayed += int(sess.dev_card_counts.get(cid, 0))
+    action_keys = ("PLAYED_KNIGHT", "PLAYED_MONOPOLY",
+                   "PLAYED_YEAR_OF_PLENTY", "PLAYED_ROAD_BUILDING")
+    for _c, idx in state.color_to_index.items():
+        for k in action_keys:
+            total_played_actions += int(state.player_state.get(
+                f"P{idx}_{k}", 0))
+    drawn = total_unplayed + total_played_actions
+    # Clamp — if tracking drift somehow outputs drawn > 25 we don't
+    # want to surface a negative number.
+    remaining = max(0, 25 - drawn)
+    return {
+        "remaining": remaining,
+        "drawn": drawn,
+        "low": remaining <= 2,
+    }
+
+
 def _compute_largest_army_race(
     game, self_color: str | None,
 ) -> dict[str, Any] | None:
@@ -1331,6 +1373,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "longest_road_race": None,
         "largest_army_race": None,
         "bank_supply": None,
+        "dev_deck": None,
     }
     if not game.started:
         return snap
@@ -1640,6 +1683,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["bank_supply"] = _compute_bank_supply(game)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] bank_supply failed: {e!r}", flush=True)
+    try:
+        snap["dev_deck"] = _compute_dev_deck_remaining(game)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] dev_deck failed: {e!r}", flush=True)
     return snap
 
 
