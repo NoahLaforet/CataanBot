@@ -1725,6 +1725,34 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 game, self_color, int(lr["total"]))
         except Exception as e:  # noqa: BLE001
             print(f"[advisor] roll_yield failed: {e!r}", flush=True)
+        # Opponent-yields on the same roll. Answers "did that roll
+        # just feed the leader while I got nothing?" — a key piece of
+        # context that self-only yield hides. Silent on zero-gain opps
+        # to keep the banner tight; only opps who actually got or were
+        # blocked from cards show up. Iterate directly off catanatron's
+        # color_to_index so we don't depend on snap["opps"] being
+        # populated yet (it's built later in this function).
+        try:
+            opp_yields = []
+            for opp_color_enum in cat_game.state.color_to_index:
+                if opp_color_enum.value == self_color:
+                    continue
+                oc = opp_color_enum.value
+                oy = _compute_roll_yield(game, oc, int(lr["total"]))
+                if not oy:
+                    continue
+                g = int(oy.get("total", 0))
+                b = int(oy.get("blocked_total", 0))
+                if g == 0 and b == 0:
+                    continue
+                opp_yields.append({
+                    "color": oc,
+                    "gained_total": g,
+                    "blocked_total": b,
+                })
+            lr["opponent_yields"] = opp_yields
+        except Exception as e:  # noqa: BLE001
+            print(f"[advisor] opponent_yields failed: {e!r}", flush=True)
     # Aggregate self yield vs expected across the roll_history window.
     # Sums the per-entry gained/blocked totals (populated at roll time)
     # and compares actual gained against production.per_roll × non-7
