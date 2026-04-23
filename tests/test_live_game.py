@@ -1669,3 +1669,99 @@ def test_snapshot_populates_robber_targets_when_self_holds_knight():
     snap = _build_advisor_snapshot(forced_st)
     assert snap["robber_reason"] == "forced"
     assert snap["robber_pending"] is True
+
+
+def test_affordable_builds_covers_all_four_builds():
+    """Unit on the bridge helper: every build with exactly its cost
+    in-hand should surface. Order is city > settle > dev > road so the
+    overlay tag reads worst-first when multiple are affordable."""
+    from cataanbot.bridge import _affordable_builds
+
+    # Empty hand → no builds.
+    assert _affordable_builds({}) == []
+    # Road only.
+    assert _affordable_builds({"WOOD": 1, "BRICK": 1}) == ["road"]
+    # Settlement: 1w/1b/1sh/1wh → covers settlement AND road (wood+brick).
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1}
+    assert _affordable_builds(hand) == ["settlement", "road"]
+    # City: 2wh/3ore → covers city only.
+    assert _affordable_builds({"WHEAT": 2, "ORE": 3}) == ["city"]
+    # Dev card: 1sh/1wh/1ore.
+    assert _affordable_builds({"SHEEP": 1, "WHEAT": 1, "ORE": 1}) == ["dev"]
+    # Stacked hand covers everything — order matches _AFFORD_COSTS.
+    fat = {"WOOD": 2, "BRICK": 2, "SHEEP": 2, "WHEAT": 3, "ORE": 3}
+    assert _affordable_builds(fat) == [
+        "city", "settlement", "dev", "road"]
+
+
+def test_affordable_builds_ignores_unknown_cards():
+    """The whole point: unknown cards (stolen from us, unresolved
+    trades) must NOT count toward affordability. Otherwise a 'can: city'
+    tag could fire on a hand with 0 ore but 5 unknowns — that's a guess,
+    not a warning. The helper gets unknown as a hint but must not bake
+    it into the 'definitely affords' decision."""
+    from cataanbot.bridge import _affordable_builds
+
+    # Hand has no ore, but 10 unknowns. City costs ore → must be absent.
+    result = _affordable_builds({"WHEAT": 2, "ORE": 0}, unknown=10)
+    assert "city" not in result
+    # Same for settlement — no sheep in hand, unknowns don't rescue it.
+    result = _affordable_builds(
+        {"WOOD": 1, "BRICK": 1, "WHEAT": 1}, unknown=5)
+    assert "settlement" not in result
+
+
+def test_snapshot_populates_can_afford_on_opps():
+    """End-to-end via capture replay: every opp row must have a
+    can_afford list. After overriding one opp's tracker hand to exactly
+    a city's worth, the replay snapshot surfaces 'city' on that row."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["opps"], "capture should include at least one opp"
+    for opp in snap["opps"]:
+        assert "can_afford" in opp
+        assert isinstance(opp["can_afford"], list)
+
+    # Pick the first opp. Force the tracker to believe they hold exactly
+    # a city's worth (2 wheat, 3 ore) and re-snap. The tracker reads
+    # hands out of catanatron's player_state P{idx}_{RES}_IN_HAND keys,
+    # so we write directly there. Also align the session's
+    # hand_card_counts so the snap's supply-cap trim doesn't fire.
+    target = snap["opps"][0]
+    opp_enum = Color[target["color"].upper()]
+    state = game.tracker.game.state
+    idx = state.color_to_index[opp_enum]
+    hand_override = {
+        "WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 2, "ORE": 3}
+    for r, n in hand_override.items():
+        state.player_state[f"P{idx}_{r}_IN_HAND"] = n
+    sess = game.session
+    target_cid = next(
+        cid for cid, name in sess.player_names.items()
+        if name == target["username"])
+    sess.hand_card_counts[target_cid] = 5
+
+    snap2 = _build_advisor_snapshot(st)
+    updated = next(
+        o for o in snap2["opps"] if o["username"] == target["username"])
+    assert "city" in updated["can_afford"], (
+        f"city should be affordable with 2w/3ore, got {updated['can_afford']}")

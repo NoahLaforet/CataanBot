@@ -242,6 +242,10 @@
   .opp-hand { color: #b5c4d0; font-variant-numeric: tabular-nums; }
   .opp.tracked .opp-hand { color: #a4ef9c; }
   .opp.hot-knight { color: #ffaa55; }
+  /* Tag that shows builds an opp can definitely pay for right now.
+     Amber because it's a near-term threat (next-turn +VP in the
+     worst case) without being a red-alert on its own. */
+  .opp .can-afford { color: #ffb347; font-weight: 600; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
@@ -798,8 +802,20 @@
                     ? ` · ${o.knights_played}k` : '';
                 const hotKnight = (o.knights_played || 0) >= 2;
                 const rowCls = hotKnight ? ' hot-knight' : '';
+                // Builds the inferred hand can already pay for. Skip
+                // 'road' alone — too noisy, doesn't move VP on its own.
+                // 'city' and 'settlement' are the real warning signs.
+                let affordTag = '';
+                if (Array.isArray(o.can_afford) && o.can_afford.length) {
+                    const meaningful = o.can_afford.filter(
+                        b => b !== 'road');
+                    if (meaningful.length) {
+                        affordTag = ` · <span class="can-afford">can: `
+                            + `${meaningful.join(', ')}</span>`;
+                    }
+                }
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}</span>`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}</span>${affordTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }

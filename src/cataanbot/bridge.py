@@ -1139,6 +1139,42 @@ def _knights_played(game, color: str) -> int:
         return 0
 
 
+# Build cost table used by _affordable_builds. Kept local to avoid
+# coupling the opp-afford snapshot to discard-plan ordering, which is
+# priority-sorted rather than impact-sorted. Order here is VP-impact
+# descending so the overlay shows the most worrying afford tag first.
+_AFFORD_COSTS: tuple[tuple[str, dict[str, int]], ...] = (
+    ("city", {"WHEAT": 2, "ORE": 3}),
+    ("settlement", {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1}),
+    ("dev", {"WHEAT": 1, "SHEEP": 1, "ORE": 1}),
+    ("road", {"WOOD": 1, "BRICK": 1}),
+)
+
+
+def _affordable_builds(
+    inferred: dict[str, int], unknown: int = 0,
+) -> list[str] | None:
+    """Return the builds an opp's *definitely-known* hand can cover.
+
+    Conservative by design: only flags builds whose every cost slot is
+    fully covered by the inferred bucket. Unknowns don't count — they
+    might be anything, so claiming affordability would over-alert Noah
+    on buys that rely on hidden cards. Returns [] when the hand covers
+    nothing, None on bad input (so overlay can silent-skip).
+
+    When hand_tracked is false (unknown > 0) the answer is still useful:
+    inferred is a *lower bound*, so "can: city" under unknowns still
+    means they can city now, even if their hidden cards add more.
+    """
+    if not isinstance(inferred, dict):
+        return None
+    out: list[str] = []
+    for name, cost in _AFFORD_COSTS:
+        if all(inferred.get(r, 0) >= n for r, n in cost.items()):
+            out.append(name)
+    return out
+
+
 def _pieces_for_color(game, color: str) -> dict[str, int]:
     """Settlement / city / road counts placed and remaining per color.
 
@@ -1660,6 +1696,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             "dev_cards": int(sess.dev_card_counts.get(cid, 0)),
             "pieces": _pieces_for_color(game, c),
             "knights_played": _knights_played(game, c),
+            # Builds the inferred hand definitely covers. Conservative:
+            # unknowns don't count, so this underestimates. Useful to
+            # pre-warn about an opp's likely next-turn VP jump.
+            "can_afford": _affordable_builds(inferred, unknown),
         })
 
     pending = st.get("pending_trade_offer")
