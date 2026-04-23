@@ -1206,6 +1206,53 @@ def test_snapshot_self_vp_breakdown_sums_to_total():
     assert b["settle"] + b["city"] >= 2
 
 
+def test_snapshot_exposes_knights_played_on_self_and_opps():
+    """After capture replay, every seated player should have a
+    non-negative `knights_played` field. We then bump one opp's
+    PLAYED_KNIGHT in catanatron state and re-snapshot to confirm the
+    field tracks it. This guards against accidentally dropping the
+    field in a future snap refactor — losing it would silently hide
+    a major largest-army signal."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["self"] is not None
+    assert "knights_played" in snap["self"]
+    assert snap["self"]["knights_played"] >= 0
+    for opp in snap["opps"]:
+        assert "knights_played" in opp
+        assert opp["knights_played"] >= 0
+
+    # Bump the first opp's PLAYED_KNIGHT and re-snap. New count should
+    # show on the row. Pick the first opp whose color is indexed.
+    target_opp = snap["opps"][0]
+    from catanatron import Color
+    opp_enum = Color[target_opp["color"].upper()]
+    idx = game.tracker.game.state.color_to_index[opp_enum]
+    game.tracker.game.state.player_state[f"P{idx}_PLAYED_KNIGHT"] = 3
+    snap2 = _build_advisor_snapshot(st)
+    updated = next(o for o in snap2["opps"]
+                   if o["color"] == target_opp["color"])
+    assert updated["knights_played"] == 3
+
+
 def test_bank_supply_flags_low_resources():
     """Bank starts at 19 per resource. When player hands consume most
     of a resource, remaining drops below 2 and the `low` list fires.
