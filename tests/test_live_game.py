@@ -1868,6 +1868,79 @@ def test_affordable_builds_ignores_unknown_cards():
     assert "settlement" not in result
 
 
+def test_one_short_vp_build_flags_city_deficit():
+    """Prototypical threat: 2 wheat and 2 ore — 1 ore from a city.
+    Must surface as city so Noah knows to withhold ORE in trades or
+    target an ORE tile with the robber."""
+    from cataanbot.bridge import _one_short_vp_build
+
+    hand = {"WHEAT": 2, "ORE": 2}
+    result = _one_short_vp_build(hand, unknown=0, already_affordable=[])
+    assert result is not None
+    assert result["build"] == "city"
+    assert result["need"] == "ORE"
+    assert result["uncertain"] is False
+
+
+def test_one_short_vp_build_skips_already_affordable():
+    """If the opp can already city (can_afford lists it), there's no
+    point flagging "1 short" on the same build — it'd double-count
+    and clutter the row. The helper must respect already_affordable."""
+    from cataanbot.bridge import _one_short_vp_build
+
+    # Hand that can both city AND be 1-short-of-settle (sort of).
+    hand = {"WHEAT": 2, "ORE": 3, "WOOD": 1, "BRICK": 1, "SHEEP": 1}
+    # Passing ["city"] should skip city. With all-4 settle costs covered,
+    # settle ALSO doesn't qualify as "1 short" — deficit is 0.
+    r = _one_short_vp_build(hand, unknown=0, already_affordable=["city"])
+    # No VP build both is "1 short" AND not already-affordable.
+    assert r is None
+
+
+def test_one_short_vp_build_settlement_when_no_city_opening():
+    """When the city path isn't close (0 ore) but settlement is 1 short
+    (missing one of wood/brick/sheep/wheat), surface settlement."""
+    from cataanbot.bridge import _one_short_vp_build
+
+    # 3 of 4 settlement resources present; missing SHEEP.
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "SHEEP": 0, "ORE": 0}
+    r = _one_short_vp_build(hand, unknown=0, already_affordable=[])
+    assert r is not None
+    assert r["build"] == "settlement"
+    assert r["need"] == "SHEEP"
+
+
+def test_one_short_vp_build_marks_uncertain_under_unknowns():
+    """With 1+ unknown cards the opp could already have the missing
+    resource — surface the threat but flag uncertainty so the HUD
+    can hedge with a '?' and Noah doesn't over-correct off a hunch."""
+    from cataanbot.bridge import _one_short_vp_build
+
+    hand = {"WHEAT": 2, "ORE": 2}
+    r = _one_short_vp_build(hand, unknown=1, already_affordable=[])
+    assert r is not None
+    assert r["uncertain"] is True
+
+
+def test_one_short_vp_build_skips_roads_and_dev():
+    """The 1-short check is VP-threat-focused. Dev cards and roads
+    don't jump VP on their own (dev can be a VP card, but the public
+    signal is muddled; road just gains longest-road potential which
+    we surface separately). Scope to city + settlement."""
+    from cataanbot.bridge import _one_short_vp_build
+
+    # 1 short of dev (have 2 of 3 ingredients) — must return None.
+    r = _one_short_vp_build(
+        {"SHEEP": 1, "WHEAT": 1, "ORE": 0},
+        unknown=0, already_affordable=[])
+    assert r is None
+    # 1 short of road (have wood, no brick) — must return None.
+    r = _one_short_vp_build(
+        {"WOOD": 1, "BRICK": 0},
+        unknown=0, already_affordable=[])
+    assert r is None
+
+
 def test_snapshot_populates_can_afford_on_opps():
     """End-to-end via capture replay: every opp row must have a
     can_afford list. After overriding one opp's tracker hand to exactly
