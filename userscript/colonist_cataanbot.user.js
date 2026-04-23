@@ -400,6 +400,11 @@
     display: block; font-weight: 400; font-size: calc(12px * var(--font-scale));
     color: #a89c68; margin-top: 2px;
   }
+  .dev-deck {
+    color: #888; font-size: calc(11px * var(--font-scale));
+    margin: 2px 0;
+  }
+  .dev-deck.low { color: #e8d878; font-weight: 600; }
   .discard-hint {
     border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 4px 6px; margin: 6px 0 4px;
@@ -943,6 +948,19 @@
             parts.push(`bank low: ${escapeHtml(lbl)}`);
             parts.push('<span class="bl-sub">4:1 trades blocked at 0</span>');
             parts.push('</div>');
+        }
+        if (snap.dev_deck) {
+            // Only surface when the deck is getting thin — at full
+            // stock it's just noise. Flashes amber at <=2 (same
+            // threshold the backend flags as `low`).
+            const dd = snap.dev_deck;
+            if (dd.remaining <= 10) {
+                const cls = dd.low ? 'dev-deck low' : 'dev-deck';
+                parts.push(`<div class="${cls}">`
+                    + `dev deck: ${dd.remaining} left`
+                    + (dd.low ? ' — last chance to buy' : '')
+                    + '</div>');
+            }
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;

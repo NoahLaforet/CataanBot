@@ -1253,6 +1253,60 @@ def test_snapshot_exposes_knights_played_on_self_and_opps():
     assert updated["knights_played"] == 3
 
 
+def test_compute_dev_deck_remaining_tracks_draws():
+    """Deck starts at 25. Draws reduce remaining. A played action card
+    still counts as drawn (it's out of the deck forever). With every
+    slot empty the deck reads 25; bumping one unplayed and two played
+    knights drops remaining to 22 and surfaces the drawn-count tally."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_dev_deck_remaining
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    assert game.started
+
+    # Zero everything first for a deterministic baseline.
+    sess = game.session
+    for cid in sess.player_names:
+        sess.dev_card_counts[cid] = 0
+    state = game.tracker.game.state
+    for idx in state.color_to_index.values():
+        for k in ("PLAYED_KNIGHT", "PLAYED_MONOPOLY",
+                  "PLAYED_YEAR_OF_PLENTY", "PLAYED_ROAD_BUILDING"):
+            state.player_state[f"P{idx}_{k}"] = 0
+    dd = _compute_dev_deck_remaining(game)
+    assert dd is not None
+    assert dd["remaining"] == 25
+    assert dd["drawn"] == 0
+    assert dd["low"] is False
+
+    # Bump: 1 unplayed dev on first seated player, 2 played knights on
+    # first color. Drawn = 3; remaining = 22.
+    first_cid = next(iter(sess.player_names))
+    sess.dev_card_counts[first_cid] = 1
+    first_color_idx = next(iter(state.color_to_index.values()))
+    state.player_state[f"P{first_color_idx}_PLAYED_KNIGHT"] = 2
+    dd = _compute_dev_deck_remaining(game)
+    assert dd["drawn"] == 3
+    assert dd["remaining"] == 22
+    assert dd["low"] is False
+
+    # Push draws to 23 — remaining = 2 → low flag fires.
+    state.player_state[f"P{first_color_idx}_PLAYED_KNIGHT"] = 22
+    dd = _compute_dev_deck_remaining(game)
+    assert dd["remaining"] == 2
+    assert dd["low"] is True
+
+    # Over-count clamps to 0 (defensive — real games can't exceed 25).
+    state.player_state[f"P{first_color_idx}_PLAYED_KNIGHT"] = 50
+    dd = _compute_dev_deck_remaining(game)
+    assert dd["remaining"] == 0
+    assert dd["low"] is True
+
+
 def test_bank_supply_flags_low_resources():
     """Bank starts at 19 per resource. When player hands consume most
     of a resource, remaining drops below 2 and the `low` list fires.
