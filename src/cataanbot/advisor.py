@@ -45,21 +45,32 @@ _DIVERSITY_BY_COUNT = {0: 1.0, 1: 1.0, 2: 1.05, 3: 1.15}
 
 
 def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
-    """Small additive bonus for port access.
+    """Additive bonus for port access, scaled by production alignment.
 
-    2:1 on a resource the node itself produces is worth the most — you can
-    immediately offload your excess. 2:1 on an unrelated resource and 3:1
-    generic ports are both mild bonuses since they require cards you don't
-    yet have."""
+    A 2:1 port on a resource the node already produces is a serious
+    asset — trading 2→1 effectively converts every ~2 pips of that
+    resource into 1 pip of anything else. So the bonus scales with the
+    port-resource's production at this corner: 5 pips of WHEAT on a
+    WHEAT 2:1 is much stronger than 1 pip of WHEAT on the same port.
+
+    2:1 on an unproduced resource is mild — useful only if you plan to
+    expand toward that resource later. 3:1 generic ports are a small
+    catchall bonus.
+    """
     if not port_label:
         return 0.0
     if port_label == "3:1":
-        return 0.02
+        return 0.10
     # "WHEAT 2:1", "ORE 2:1", etc.
     port_resource = port_label.split(" ", 1)[0]
-    if resources.get(port_resource, 0.0) > 0:
-        return 0.06
-    return 0.02
+    res_pips = float(resources.get(port_resource, 0.0))
+    if res_pips > 0:
+        # Base value for the port + scaling with production. Calibrated
+        # so a 3-pip wheat corner on a WHEAT 2:1 picks up +0.30, roughly
+        # a pip's worth of "soft" production once you factor in the
+        # steady 2:1 offload rate.
+        return 0.15 + 0.05 * res_pips
+    return 0.08
 
 
 # Per-adjacent-node weight for the denial bonus. Kept small so denial is a

@@ -52,6 +52,27 @@ def test_score_opening_top_node_is_on_a_good_number(tracker):
     assert len(numbers) >= 2
 
 
+def test_port_bonus_scales_with_produced_resource():
+    """A 2:1 port on a produced resource should outweigh 3:1 generic,
+    and a richer-production corner on the same port should be valued
+    more than a leaner one."""
+    from cataanbot.advisor import _port_bonus
+    # 3:1 generic port: small fixed bonus.
+    generic = _port_bonus("3:1", {"WHEAT": 0.3, "ORE": 0.3})
+    # 2:1 on unproduced: still small (can't offload until expansion).
+    unprod = _port_bonus("SHEEP 2:1", {"WHEAT": 0.3, "ORE": 0.3})
+    # 2:1 on a lightly-produced resource: base bonus.
+    prod_light = _port_bonus("WHEAT 2:1", {"WHEAT": 1.0})
+    # 2:1 on a strongly-produced resource: base + prod scaling.
+    prod_heavy = _port_bonus("WHEAT 2:1", {"WHEAT": 5.0})
+    assert generic > 0 and unprod > 0
+    assert prod_light > generic
+    assert prod_light > unprod
+    assert prod_heavy > prod_light
+    # No port → zero bonus.
+    assert _port_bonus(None, {"WHEAT": 3.0}) == 0.0
+
+
 def test_score_second_settlements_excludes_first_node(tracker):
     top = score_opening_nodes(tracker.game)[0]
     seconds = score_second_settlements(tracker.game, top.node_id, color="RED")
