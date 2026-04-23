@@ -2759,3 +2759,135 @@ def test_last_roll_opponent_yields_absent_on_seven():
     # Either the key is absent, or explicitly None — both are fine; the
     # overlay's Array.isArray check treats both as "don't render".
     assert not lr.get("opponent_yields")
+
+
+def test_production_stall_surfaces_after_three_dry_non_seven_rolls():
+    """roll_history window with >= 3 non-7 rolls in a row where
+    gained_total == 0 should populate snap["production_stall"] with
+    rolls_dry >= 3. The 7 in the middle should NOT reset the counter —
+    7s don't produce, so they're excluded from the dry count entirely,
+    not treated as a "productive roll" breaking the streak."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    # 4 dry rolls with a 7 in the middle. 7 is excluded; remaining 3
+    # non-7s are all dry → stall fires at rolls_dry=3.
+    history = [
+        {"total": 8, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 7, "is_you": True, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 4, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 11, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+    ]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 4, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    ps = snap["production_stall"]
+    assert ps is not None
+    assert ps["rolls_dry"] == 3
+    assert ps["per_roll"] > 0
+
+
+def test_production_stall_resets_on_any_recent_gain():
+    """A non-7 roll with gained_total > 0 terminates the stall count.
+    History [gain, miss, miss] → rolls_dry=2 (below threshold) → no
+    banner. Guards the "last gain anchors the counter" semantic."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    history = [
+        {"total": 8, "is_you": False, "color": None,
+         "hit_you": True, "blocked_you": False,
+         "gained_total": 3, "blocked_total": 0},
+        {"total": 4, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 11, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+    ]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 3, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    # 2 dry after the gain → under the 3-roll threshold → banner suppressed.
+    assert snap["production_stall"] is None
+
+
+def test_production_stall_suppressed_without_production():
+    """If self's production.per_roll == 0 (no settlements, setup phase),
+    the stall banner is meaningless — there's no expected gain to be
+    behind on. Suppress same as yield_summary so the setup HUD stays
+    uncluttered."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    # Strip self buildings → per_roll goes to 0.
+    board = game.tracker.game.state.board
+    for nid, (c, _t) in list(board.buildings.items()):
+        if c == my_enum:
+            del board.buildings[nid]
+    history = [
+        {"total": 8, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 4, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 11, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+    ]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 3, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["production_stall"] is None

@@ -1779,6 +1779,29 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         }
     else:
         snap["yield_summary"] = None
+    # Production stall: count non-7 rolls since the most recent gain.
+    # Useful because a "3 rolls dry" drought on a 2-pip/turn engine is
+    # expected variance, while the same drought on a 5-pip engine is a
+    # real signal (probably a robber or bad-number cluster). Only fires
+    # when per_roll > 0 — otherwise there's nothing to be behind on.
+    stall = None
+    if non_seven and per_roll > 0:
+        count_since_gain = 0
+        for e in reversed(non_seven):
+            if int(e.get("gained_total", 0)) > 0:
+                break
+            count_since_gain += 1
+        # Only surface if the whole window was dry AND it's meaningful.
+        # 3+ non-7 rolls with nothing is the threshold — below that,
+        # a single miss in 2 rolls is perfectly normal on even big
+        # engines and would just clutter the HUD.
+        if count_since_gain >= 3:
+            stall = {
+                "rolls_dry": count_since_gain,
+                "window": len(non_seven),
+                "per_roll": round(per_roll, 2),
+            }
+    snap["production_stall"] = stall
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
     # suggestions would just be noise.

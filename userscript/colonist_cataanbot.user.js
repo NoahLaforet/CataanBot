@@ -295,6 +295,12 @@
     letter-spacing: 0.3px; }
   .yield-sum.behind { color: #d8a872; }
   .yield-sum .ys-sep { color: #555; margin: 0 4px; }
+  /* Production stall alert. Amber ramps up to red-ish orange the
+     longer the drought. Dedicated class so the user eye can learn
+     it: "this line = something actionable, consider trading/dev". */
+  .prod-stall { color: #e69a5a; font-size: calc(11px * var(--font-scale));
+    margin: 0 0 4px 0; font-weight: 600;
+    font-variant-numeric: tabular-nums; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -1042,6 +1048,17 @@
             parts.push(`<div class="yield-sum ${behind ? 'behind' : ''}">`
                 + `got ${ys.got}/${ys.expected} (${ys.window} rolls)`
                 + blockedFrag
+                + '</div>');
+        }
+        // Production stall: surface a discrete banner when self has
+        // gone 3+ non-7 rolls without a gain AND has a real engine
+        // (per_roll > 0). yield_summary already shows the aggregate;
+        // this is the "right now" cue that pushes toward a trade or
+        // dev-card buy instead of just waiting for the next roll.
+        const ps = snap.production_stall;
+        if (ps && ps.rolls_dry >= 3) {
+            parts.push('<div class="prod-stall">'
+                + `dry ${ps.rolls_dry} rolls · ${ps.per_roll}/roll expected`
                 + '</div>');
         }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
