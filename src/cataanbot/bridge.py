@@ -439,12 +439,18 @@ def _track_overlay_state(st, results) -> None:
             # were on the board when this roll happened (robber
             # placement might update immediately after via a separate
             # event, but the yield math for this roll fired first).
+            # gained_total / blocked_total are the raw card counts so
+            # the snap can aggregate "actual vs expected" over the
+            # window without having to re-run _compute_roll_yield per
+            # entry.
             entry: dict[str, Any] = {
                 "total": r.event.total,
                 "is_you": bool(is_you),
                 "color": color,
                 "hit_you": False,
                 "blocked_you": False,
+                "gained_total": 0,
+                "blocked_total": 0,
             }
             if r.event.total and r.event.total != 7:
                 try:
@@ -455,9 +461,12 @@ def _track_overlay_state(st, results) -> None:
                             sc = game.color_map.get(uname)
                             y = _compute_roll_yield(game, sc, r.event.total)
                             if y:
-                                entry["hit_you"] = y.get("total", 0) > 0
-                                entry["blocked_you"] = (
-                                    y.get("blocked_total", 0) > 0)
+                                g = int(y.get("total", 0))
+                                b = int(y.get("blocked_total", 0))
+                                entry["gained_total"] = g
+                                entry["blocked_total"] = b
+                                entry["hit_you"] = g > 0
+                                entry["blocked_you"] = b > 0
                 except Exception:  # noqa: BLE001
                     pass
             hist = list(st.get("roll_history") or [])
@@ -1561,6 +1570,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "largest_army_race": None,
         "bank_supply": None,
         "dev_deck": None,
+        "yield_summary": None,
     }
     if not game.started:
         return snap
@@ -1694,6 +1704,29 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 game, self_color, int(lr["total"]))
         except Exception as e:  # noqa: BLE001
             print(f"[advisor] roll_yield failed: {e!r}", flush=True)
+    # Aggregate self yield vs expected across the roll_history window.
+    # Sums the per-entry gained/blocked totals (populated at roll time)
+    # and compares actual gained against production.per_roll × non-7
+    # rolls. Skipped when the window is empty — a single "0 vs 0" line
+    # is just noise on turn 1. Overlay renders this as a small dim
+    # trailer under the recent-rolls strip so Noah can answer "am I
+    # being starved?" without counting manually.
+    hist = st.get("roll_history") or []
+    non_seven = [e for e in hist if e.get("total") != 7]
+    if non_seven:
+        got = sum(int(e.get("gained_total", 0)) for e in non_seven)
+        blocked = sum(int(e.get("blocked_total", 0)) for e in non_seven)
+        per_roll = float((snap["self"].get("production") or {})
+                         .get("per_roll", 0.0))
+        expected = per_roll * len(non_seven)
+        snap["yield_summary"] = {
+            "window": len(non_seven),
+            "got": got,
+            "blocked": blocked,
+            "expected": round(expected, 1),
+        }
+    else:
+        snap["yield_summary"] = None
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
     # suggestions would just be noise.
