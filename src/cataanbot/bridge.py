@@ -1821,6 +1821,35 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             "window": window_len,
         }
     snap["sevens_hot"] = sevens_hot
+    # Hot numbers: productive dice that have over-rolled in the window.
+    # Sibling to sevens_hot but for the resource-producing dice. For
+    # each non-7 number, compare actual count to its 36-roll baseline
+    # (6/8=5/36, 5/9=4/36, 4/10=3/36, 3/11=2/36, 2/12=1/36). Flag when
+    # count≥3 AND actual≥2× expected. Useful because a hot 8 snowballs
+    # whoever's on it, so Noah can brace (or stay aggressive). Sort by
+    # ratio and take top 2 so the HUD shows the most-anomalous first
+    # without clutter.
+    NUM_WEIGHTS = {2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
+                   8: 5, 9: 4, 10: 3, 11: 2, 12: 1}
+    hot_numbers: list[dict] = []
+    if window_len >= 4:
+        counts: dict[int, int] = {}
+        for e in hist:
+            n = int(e.get("total", 0))
+            if n in NUM_WEIGHTS:
+                counts[n] = counts.get(n, 0) + 1
+        for n, c in counts.items():
+            expected = window_len * NUM_WEIGHTS[n] / 36.0
+            if c >= 3 and c >= 2.0 * expected:
+                hot_numbers.append({
+                    "number": n,
+                    "count": c,
+                    "expected": round(expected, 1),
+                })
+        hot_numbers.sort(
+            key=lambda x: -(x["count"] / max(x["expected"], 0.01))
+        )
+    snap["hot_numbers"] = hot_numbers[:2] if hot_numbers else None
     # Production stall: count non-7 rolls since the most recent gain.
     # Useful because a "3 rolls dry" drought on a 2-pip/turn engine is
     # expected variance, while the same drought on a 5-pip engine is a
