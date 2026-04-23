@@ -1646,6 +1646,31 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     )
     is_setup = not opening_complete
     snap["setup_phase"] = is_setup
+    # Game-progress header: rough round count + phase label so
+    # tactical banners (stall, hot numbers, bank supply) have an
+    # anchor. Round approximates as total_rolls / num_players; each
+    # round every player rolls once, so this is tight in practice.
+    # Phases are chosen against typical 10-VP game duration (~15-25
+    # rounds): early focuses on expansion, mid on cities/dev cards,
+    # late on the VP race. Silent during setup — no rolls yet means
+    # the round math is undefined and the phase is obvious anyway.
+    if not is_setup and num_players > 0:
+        total_rolls = int(st.get("total_rolls") or 0)
+        round_approx = (total_rolls // num_players) + 1
+        if round_approx <= 5:
+            phase = "early"
+        elif round_approx <= 12:
+            phase = "mid"
+        else:
+            phase = "late"
+        snap["game_progress"] = {
+            "round": round_approx,
+            "phase": phase,
+            "num_players": num_players,
+            "total_rolls": total_rolls,
+        }
+    else:
+        snap["game_progress"] = None
     if is_setup:
         from cataanbot.recommender import recommend_opening
         # self_color_id latches after self's 2nd settlement ships its

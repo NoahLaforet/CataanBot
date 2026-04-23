@@ -319,6 +319,14 @@
   .hot-numbers { color: #ffd47a; font-size: calc(11px * var(--font-scale));
     margin: 0 0 4px 0; font-weight: 600;
     font-variant-numeric: tabular-nums; }
+  /* Game progress header. Anchors all the tactical banners below
+     with "round N · phase". Dim because it's context, not action. */
+  .gprog { color: #9a9a9a; font-size: calc(10px * var(--font-scale));
+    margin: 0 0 4px 0; font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em; }
+  .gprog .ph-early { color: #8ec97a; }
+  .gprog .ph-mid { color: #ffd47a; }
+  .gprog .ph-late { color: #ff8a6e; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -609,6 +617,15 @@
             return;
         }
         const parts = [];
+        // Game-progress header: anchors the tactical signals below.
+        // Silent in setup — phase is self-evident then.
+        const gp = snap.game_progress;
+        if (gp) {
+            parts.push('<div class="gprog">'
+                + `round ${gp.round} · `
+                + `<span class="ph-${gp.phase}">${gp.phase}</span>`
+                + '</div>');
+        }
         const me = snap.self;
         if (me) {
             const bg = pillColor(me);
