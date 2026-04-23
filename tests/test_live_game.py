@@ -865,6 +865,102 @@ def test_compute_yop_hint_suggests_pair_to_unlock_build():
     assert "WHEAT" in h["pair"]
 
 
+def test_compute_rb_hint_fires_when_longest_road_in_reach():
+    """Road Building hint covers its four states: no card → None;
+    card but no road pieces → None; card + near longest road →
+    should_play=secures; card + opp ahead → should_play=catches; card
+    + no swing → should_play=False. Uses a fake game with a monkey-
+    patched _pieces_for_color so we don't need a live capture."""
+    import cataanbot.bridge as bridge
+    from cataanbot.bridge import _compute_rb_hint
+    from catanatron import Color
+
+    class _FakeGame:
+        class _Tracker:
+            class _Game:
+                class _State:
+                    color_to_index: dict = {}
+                    player_state: dict = {}
+                state = _State()
+            game = _Game()
+        tracker = _Tracker()
+
+    g = _FakeGame()
+    g.tracker.game.state.color_to_index = {Color.RED: 0, Color.BLUE: 1}
+
+    # Monkeypatch piece counts — 10 roads left keeps us out of the
+    # "running low" branch unless we explicitly set it.
+    original = bridge._pieces_for_color
+    bridge._pieces_for_color = lambda _g, _c: {
+        "settle": 2, "settle_left": 3, "city": 0, "city_left": 4,
+        "road": 5, "road_left": 10,
+    }
+    try:
+        # Case 1: no RB card → None.
+        g.tracker.game.state.player_state = {
+            "P0_ROAD_BUILDING_IN_HAND": 0,
+            "P0_LONGEST_ROAD_LENGTH": 3, "P0_HAS_ROAD": False,
+            "P1_LONGEST_ROAD_LENGTH": 2, "P1_HAS_ROAD": False,
+        }
+        assert _compute_rb_hint(g, "RED") is None
+
+        # Case 2: card + near longest road (self 4, opp 2) → secures.
+        g.tracker.game.state.player_state = {
+            "P0_ROAD_BUILDING_IN_HAND": 1,
+            "P0_LONGEST_ROAD_LENGTH": 4, "P0_HAS_ROAD": False,
+            "P1_LONGEST_ROAD_LENGTH": 2, "P1_HAS_ROAD": False,
+        }
+        h = _compute_rb_hint(g, "RED")
+        assert h is not None and h["should_play"]
+        assert "secures" in h["reason"]
+        assert h["self_len"] == 4 and h["opp_len"] == 2
+
+        # Case 3: card + opp holds longest road (opp 5/has_road,
+        # self 3). Projected 5 catches opp — should fire "catches".
+        g.tracker.game.state.player_state = {
+            "P0_ROAD_BUILDING_IN_HAND": 1,
+            "P0_LONGEST_ROAD_LENGTH": 3, "P0_HAS_ROAD": False,
+            "P1_LONGEST_ROAD_LENGTH": 5, "P1_HAS_ROAD": True,
+        }
+        h = _compute_rb_hint(g, "RED")
+        assert h is not None and h["should_play"]
+        assert "catches" in h["reason"]
+
+        # Case 4: card + no swing (both sides low) → hold.
+        g.tracker.game.state.player_state = {
+            "P0_ROAD_BUILDING_IN_HAND": 1,
+            "P0_LONGEST_ROAD_LENGTH": 2, "P0_HAS_ROAD": False,
+            "P1_LONGEST_ROAD_LENGTH": 2, "P1_HAS_ROAD": False,
+        }
+        h = _compute_rb_hint(g, "RED")
+        assert h is not None and not h["should_play"]
+        assert "hold" in h["reason"]
+
+        # Case 5: roads_left == 0 → None (can't use the card).
+        bridge._pieces_for_color = lambda _g, _c: {
+            "settle": 2, "settle_left": 3, "city": 0, "city_left": 4,
+            "road": 15, "road_left": 0,
+        }
+        assert _compute_rb_hint(g, "RED") is None
+
+        # Case 6: roads_left <= 2 triggers "running low" even with no
+        # race pressure.
+        bridge._pieces_for_color = lambda _g, _c: {
+            "settle": 2, "settle_left": 3, "city": 0, "city_left": 4,
+            "road": 14, "road_left": 1,
+        }
+        g.tracker.game.state.player_state = {
+            "P0_ROAD_BUILDING_IN_HAND": 1,
+            "P0_LONGEST_ROAD_LENGTH": 2, "P0_HAS_ROAD": False,
+            "P1_LONGEST_ROAD_LENGTH": 2, "P1_HAS_ROAD": False,
+        }
+        h = _compute_rb_hint(g, "RED")
+        assert h is not None and h["should_play"]
+        assert "running low" in h["reason"]
+    finally:
+        bridge._pieces_for_color = original
+
+
 def test_reconnect_replays_pre_existing_buildings_into_tracker():
     """Simulate a mid-game reconnect: on a fresh WS session, colonist
     ships the full current mapState in the GameStart payload — every
