@@ -91,6 +91,10 @@ def _build_app(jsonl_path: Path | None = None,
         # Populated in _track_overlay_state on every RollEvent; used by
         # the overlay's "recent rolls" strip to spot droughts and streaks.
         "roll_history": [],
+        # Monotonic game-roll counter. Separate from roll_history (which
+        # caps at 10) so the overlay can show "turn ~N" regardless of
+        # buffer size. Not decremented; resets only on /reset.
+        "total_rolls": 0,
         "robber_pending": False,  # self rolled 7, hasn't placed robber yet
         "robber_snapshot": None,  # cached score_robber_targets payload
         # Auto-postmortem buffers. Fed from the /log path so the output
@@ -184,6 +188,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["seq"] = 0
         st["last_roll"] = None
         st["roll_history"] = []
+        st["total_rolls"] = 0
         st["robber_pending"] = False
         st["robber_snapshot"] = None
         st["pm_tracker"] = Tracker()
@@ -472,6 +477,7 @@ def _track_overlay_state(st, results) -> None:
             hist = list(st.get("roll_history") or [])
             hist.append(entry)
             st["roll_history"] = hist[-10:]
+            st["total_rolls"] = int(st.get("total_rolls") or 0) + 1
             if r.event.total == 7 and is_you:
                 st["robber_pending"] = True
                 st["robber_snapshot"] = _compute_robber_snapshot(
@@ -1549,6 +1555,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "opps": [],
         "last_roll": st.get("last_roll"),
         "roll_history": list(st.get("roll_history") or []),
+        "total_rolls": int(st.get("total_rolls") or 0),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
         # "forced" = self rolled a 7 and must place the robber now;
@@ -1713,11 +1720,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # being starved?" without counting manually.
     hist = st.get("roll_history") or []
     non_seven = [e for e in hist if e.get("total") != 7]
-    if non_seven:
+    per_roll = float((snap["self"].get("production") or {})
+                     .get("per_roll", 0.0))
+    # Gate on production: before self has a settlement down, per_roll=0
+    # and "got 0/0 (N rolls)" is just visual noise. Also skip when the
+    # window is empty — no rolls yet means nothing meaningful to say.
+    if non_seven and per_roll > 0:
         got = sum(int(e.get("gained_total", 0)) for e in non_seven)
         blocked = sum(int(e.get("blocked_total", 0)) for e in non_seven)
-        per_roll = float((snap["self"].get("production") or {})
-                         .get("per_roll", 0.0))
         expected = per_roll * len(non_seven)
         snap["yield_summary"] = {
             "window": len(non_seven),
