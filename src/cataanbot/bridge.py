@@ -1264,6 +1264,50 @@ def _affordable_builds(
     return out
 
 
+def _one_short_vp_build(
+    inferred: dict[str, int], unknown: int = 0,
+    already_affordable: list[str] | None = None,
+) -> dict | None:
+    """The highest-VP build this opp is exactly 1 card short of.
+
+    Scoped to city + settlement — the only builds worth tracking as
+    threats, since road and dev rarely matter for a same-turn flip.
+    When an opp is 1 ORE from a city, Noah can (a) withhold ORE in
+    trades, (b) consider moving the robber onto an ORE tile, or (c)
+    plan for an opp VP jump next turn. Actionable in a way that
+    can_afford (already-flipped) is not.
+
+    Skipped when the opp already has the build affordable — that's
+    already surfaced by ``_affordable_builds``, showing "1 short"
+    for the same opp would just be double-counting. Also skipped
+    when ``unknown`` is high enough that the opp could already have
+    the missing card (>=1 unknown): reporting "1 short" then would
+    under-call the real risk.
+    """
+    if not isinstance(inferred, dict):
+        return None
+    already = set(already_affordable or [])
+    best: dict | None = None
+    # City outranks settlement for VP impact, so prefer it on ties.
+    for name, cost in (("city", {"WHEAT": 2, "ORE": 3}),
+                       ("settlement", {"WOOD": 1, "BRICK": 1,
+                                       "SHEEP": 1, "WHEAT": 1})):
+        if name in already:
+            continue
+        deficit = 0
+        missing: str | None = None
+        for r, n in cost.items():
+            have = inferred.get(r, 0)
+            if have < n:
+                deficit += n - have
+                missing = r
+        if deficit == 1 and missing is not None:
+            best = {"build": name, "need": missing,
+                    "uncertain": unknown >= 1}
+            break
+    return best
+
+
 def _pieces_for_color(game, color: str) -> dict[str, int]:
     """Settlement / city / road counts placed and remaining per color.
 
@@ -2009,6 +2053,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             inferred = trimmed
             inferred_total = sum(inferred.values())
         unknown = max(0, real_total - inferred_total)
+        # Affordable builds computed once and reused — _one_short_vp_build
+        # needs the same list to avoid double-surfacing (don't flag "1
+        # short of city" when the opp can already city).
+        can_afford = _affordable_builds(inferred, unknown)
         # Hand-growth signal: compare current card count against the
         # oldest sample in the ring buffer. A +3 swing over 3-4 rolls
         # means this opp is snowballing — even if not *currently*
@@ -2050,7 +2098,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # Builds the inferred hand definitely covers. Conservative:
             # unknowns don't count, so this underestimates. Useful to
             # pre-warn about an opp's likely next-turn VP jump.
-            "can_afford": _affordable_builds(inferred, unknown),
+            "can_afford": can_afford,
+            # The single highest-VP build this opp is exactly 1 card
+            # short of. Complements can_afford (which shows what's
+            # already flipped) by showing what's next in the pipeline.
+            "one_short": _one_short_vp_build(
+                inferred, unknown, already_affordable=can_afford),
             # Per-opp per-roll production. Drives robber-target choice
             # (shut down the biggest engine) and trade-block priority.
             "production": _compute_production(game, c),

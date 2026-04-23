@@ -253,6 +253,10 @@
      Amber because it's a near-term threat (next-turn +VP in the
      worst case) without being a red-alert on its own. */
   .opp .can-afford { color: #ffb347; font-weight: 600; }
+  /* 1-card-short trailer. Same amber family as can-afford but dimmer
+     because it's leading-indicator, not already-flipped. */
+  .opp .one-short { color: #d4a35a; font-weight: 500;
+    font-variant-numeric: tabular-nums; }
   /* 8+ cards — prime 7-roll discard target. Red so it pops out of
      the muted row styling; weight kept normal so it doesn't eat the
      rest of the row's whitespace at the HUD's default font scale. */
@@ -940,6 +944,20 @@
                             + `${meaningful.join(', ')}</span>`;
                     }
                 }
+                // 1-short: opp is one resource from city/settlement.
+                // Dim-amber so it doesn't compete with can_afford
+                // (which is already-flipped and more urgent). Only
+                // surface when can_afford for this opp didn't claim
+                // the same build. "?" suffix marks uncertain (unknown
+                // cards could already cover it).
+                let oneShortTag = '';
+                if (o.one_short) {
+                    const os = o.one_short;
+                    const tail = os.uncertain ? '?' : '';
+                    oneShortTag = ` · <span class="one-short">1 `
+                        + `${os.need.toLowerCase().slice(0,3)} → `
+                        + `${os.build}${tail}</span>`;
+                }
                 // Fat-hand marker: opps carrying 8+ cards are primed
                 // for a 7-roll — they discard half AND are likely steal
                 // targets. Color the cards count so Noah eyeballs it
@@ -958,7 +976,7 @@
                     cardsSpan += ` <span class="${cls}">(${sign}${o.card_delta})</span>`;
                 }
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}`
+                    + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}${oneShortTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
