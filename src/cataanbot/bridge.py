@@ -1264,6 +1264,23 @@ def _affordable_builds(
     return out
 
 
+def _is_dev_stash_risk(
+    vp: int, dev_cards: int, vp_target: int | None = None,
+) -> bool:
+    """Whether an opp's dev-card stash is a hidden-VP risk.
+
+    True when dev_cards >= 2 AND (vp + dev_cards) >= (VP_TARGET - 1).
+    The ``>= 2`` floor avoids false-positiving on every late-game opp
+    holding a single knight. The sum threshold models "if they flipped
+    every dev as a VP, they'd be within 1 of winning" — which is when
+    holding onto them stops looking like a knight race and starts
+    looking like a hidden-VP play.
+    """
+    from cataanbot.config import VP_TARGET
+    target = vp_target if vp_target is not None else VP_TARGET
+    return dev_cards >= 2 and (vp + dev_cards) >= (target - 1)
+
+
 def _one_short_vp_build(
     inferred: dict[str, int], unknown: int = 0,
     already_affordable: list[str] | None = None,
@@ -2075,6 +2092,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         except Exception:  # noqa: BLE001
             card_delta = None
             card_hist_len = None
+        opp_vp = _get_vp(game, c)
+        opp_dev_cards = int(sess.dev_card_counts.get(cid, 0))
+        # Hidden-VP risk: see _is_dev_stash_risk docstring. Leader_threat
+        # only picks the top-VP opp, so a secondary opp with a dev
+        # stash would otherwise be invisible on the HUD.
+        dev_stash_risk = _is_dev_stash_risk(opp_vp, opp_dev_cards)
         snap["opps"].append({
             "username": user,
             "color": c,
@@ -2088,12 +2111,16 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # means accumulating; negative means spent/stolen/discarded.
             "card_delta": card_delta,
             "card_delta_window": card_hist_len,
-            "vp": _get_vp(game, c),
+            "vp": opp_vp,
             # Unplayed dev cards in hand. Includes hidden VPs, so a
             # spike here is a real "they might be close to 10" signal.
             # Counting comes from colonist's authoritative card-list
             # length; we can't see the types, only the size.
-            "dev_cards": int(sess.dev_card_counts.get(cid, 0)),
+            "dev_cards": opp_dev_cards,
+            # Hidden-VP risk flag. See comment above — True when this
+            # opp's dev stash could realistically be hiding VPs that
+            # put them within 1 of the game-ending VP total.
+            "dev_stash_risk": dev_stash_risk,
             "pieces": _pieces_for_color(game, c),
             "knights_played": _knights_played(game, c),
             # Builds the inferred hand definitely covers. Conservative:

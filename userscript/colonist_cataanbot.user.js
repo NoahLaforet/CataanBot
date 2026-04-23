@@ -270,6 +270,10 @@
     font-variant-numeric: tabular-nums; }
   .opp .card-dn { color: #7a8a7a; font-weight: 400;
     font-variant-numeric: tabular-nums; }
+  /* Dev-card stash risk. Uniform grey at low VP blends into the muted
+     row; amber+bold when opp could plausibly be hiding enough VPs to
+     close the game. Lock emoji reinforces "something concealed here". */
+  .opp .dev-stash { color: #ffb347; font-weight: 600; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
   /* Yield breakdown appended to the roll line: "+2 whe +1 ore" style.
@@ -941,8 +945,13 @@
                     ? `<span class="opp-hand">${handParts.join('  ')}</span>`
                     : '';
                 const trackCls = o.hand_tracked ? ' tracked' : '';
+                // Dev-card tag: uniform grey at low VP, amber/bold
+                // when the dev-stash could plausibly be hiding VPs
+                // that push them to the win threshold.
                 const devTag = (o.dev_cards || 0) > 0
-                    ? ` · ${o.dev_cards}dev`
+                    ? (o.dev_stash_risk
+                        ? ` · <span class="dev-stash">${o.dev_cards}dev🔒</span>`
+                        : ` · ${o.dev_cards}dev`)
                     : '';
                 let piecesTag = '';
                 if (o.pieces) {
