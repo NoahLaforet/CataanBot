@@ -951,6 +951,90 @@ def test_win_proximity_filters_non_vp_builds_from_afford():
     assert "keep pushing" in w["message"]
 
 
+def test_dev_stash_risk_requires_both_count_and_vp_sum():
+    """Threshold formula: dev_cards >= 2 AND (vp + dev_cards) >=
+    VP_TARGET-1. Both have to be true — 1 dev at 9 VP is not a stash;
+    4 devs at 3 VP aren't close enough to matter. 2 devs at 7 VP hits
+    both gates simultaneously, so it's the canonical flagged state."""
+    from cataanbot.bridge import _is_dev_stash_risk
+    # Flagged: 2 devs at 7 VP (sum=9 >= 9 = target-1).
+    assert _is_dev_stash_risk(vp=7, dev_cards=2) is True
+    # Flagged: 3 devs at 6 VP (sum=9).
+    assert _is_dev_stash_risk(vp=6, dev_cards=3) is True
+    # Silent: single dev card, even at 9 VP. Most likely a knight they
+    # just bought; not a stash. The dev_cards >= 2 floor is what stops
+    # this from firing on every late-game row.
+    assert _is_dev_stash_risk(vp=9, dev_cards=1) is False
+    # Silent: 4 devs but at 3 VP (sum=7 < 9). Lots of devs, but even
+    # if all 4 flipped to VP they'd be at 7 VP — not a same-turn close.
+    assert _is_dev_stash_risk(vp=3, dev_cards=4) is False
+    # Silent: 0 devs — trivial case, just making sure the floor holds.
+    assert _is_dev_stash_risk(vp=8, dev_cards=0) is False
+
+
+def test_dev_stash_risk_scales_with_vp_target():
+    """With a 12 VP game the threshold sum rises to 11. An opp at 7 VP
+    holding 2 devs (sum=9) would have fired in a 10 VP game but must
+    stay silent in a 12 VP game — they're still 3 VP from winning even
+    under the worst-case all-VP flip."""
+    from cataanbot.bridge import _is_dev_stash_risk
+    # 10 VP: fires.
+    assert _is_dev_stash_risk(vp=7, dev_cards=2, vp_target=10) is True
+    # 12 VP: silent. Sum=9 < 11.
+    assert _is_dev_stash_risk(vp=7, dev_cards=2, vp_target=12) is False
+    # 12 VP: fires at 9 VP + 2 dev (sum=11).
+    assert _is_dev_stash_risk(vp=9, dev_cards=2, vp_target=12) is True
+
+
+def test_advisor_snapshot_flags_opp_dev_stash_risk():
+    """Snapshot should carry dev_stash_risk on each opp entry based on
+    the session's dev_card_counts and catanatron VP. Force an opp into
+    a flagged state and assert the field on the snap mirrors it."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    assert sess.self_color_id is not None
+    # Pick a non-self opp and force them into a dev_stash scenario.
+    opp_cid = next(
+        cid for cid in sess.player_names
+        if cid != sess.self_color_id
+        and game.color_map.has(sess.player_names[cid]))
+    # Force 3 unplayed dev cards on the opp. VP isn't easy to mutate
+    # mid-game, so use whatever catanatron reports — with 3 devs, the
+    # stash risk fires for any opp VP >= 6 (sum >= 9 = target-1). If
+    # the replayed opp is below 6 VP, the test still validates that
+    # the field is populated and tracks the formula.
+    sess.dev_card_counts[opp_cid] = 3
+    st = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    opp_user = sess.player_names[opp_cid]
+    forced_opp = next(o for o in snap["opps"]
+                      if o["username"] == opp_user)
+    # Field must exist on every opp entry regardless.
+    assert "dev_stash_risk" in forced_opp
+    # With dev_cards=3 and opp_vp=X, formula is (3 >= 2) AND (X+3 >= 9).
+    # So it fires iff X >= 6.
+    expected = (forced_opp["vp"] + 3) >= 9
+    assert forced_opp["dev_stash_risk"] is expected
+
+
 def test_compute_monopoly_hint_picks_resource_with_largest_total():
     """When self holds a MONOPOLY, the hint should pick the resource
     with the highest inferred total across opps."""
