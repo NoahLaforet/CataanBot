@@ -1314,8 +1314,23 @@
                     : `placed ${n} ${n === 1 ? 'roll' : 'rolls'} ago`);
             }
             parts.push('<div class="robber-on-me">');
-            parts.push(`robber on your ${escapeHtml(tileLbl)} ·`
-                + ` ${rom.pips_blocked} pips suppressed`);
+            // Head line: tile + expected card loss per roll (probability-
+            // weighted). Raw pip count is kept as a parenthetical for
+            // players who still want the pip read, but the headline
+            // number is in cards so it translates to impact intuitively.
+            let headExtra = '';
+            if (typeof rom.expected_per_roll === 'number'
+                && rom.expected_per_roll > 0) {
+                headExtra = ` · ${rom.expected_per_roll.toFixed(2)}/roll lost`;
+                if (typeof rom.expected_lost_total === 'number'
+                        && rom.expected_lost_total > 0.05) {
+                    headExtra += ` (~${rom.expected_lost_total.toFixed(1)}`
+                        + ' cards bled)';
+                }
+            } else {
+                headExtra = ` · ${rom.pips_blocked} pips suppressed`;
+            }
+            parts.push(`robber on your ${escapeHtml(tileLbl)}${headExtra}`);
             parts.push(`<span class="rom-sub">${escapeHtml(subParts.join(' · '))}</span>`);
             parts.push('</div>');
         }
