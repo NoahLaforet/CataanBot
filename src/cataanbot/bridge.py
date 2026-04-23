@@ -1802,6 +1802,14 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
     Returns a dict or None when nobody's ahead enough to warrant a
     banner. Close-to-win and mid-late thresholds track config so the
     warning scales with the game's VP_TARGET (default 10 → 8 = close).
+
+    Enrichment — ``threat_vector`` lists *how* the leader could close
+    the gap right now: an affordable VP-granting build ("city"/
+    "settlement") bumps urgency because VP can be claimed this turn,
+    and unplayed dev cards flag hidden-VP risk (hidden VP cards count
+    toward the win total the moment their total hits target). These
+    convert the banner from "watch the leader" to "the leader can
+    actually end it now" — which is a different decision for Noah.
     """
     from cataanbot.config import close_to_win_vp, mid_late_vp, VP_TARGET
     opps = snap.get("opps") or []
@@ -1814,22 +1822,53 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
     self_snap = snap.get("self") or {}
     my_vp = int(self_snap.get("vp", 0))
     close_vp = close_to_win_vp()
+    gap_to_win = max(0, VP_TARGET - leader_vp)
+
+    # Threat vector: what tools does the leader have right now?
+    # 'vp_build' = can afford city or settlement (+1 VP next turn).
+    # 'dev_vp' = holds dev cards, any of which could be a hidden VP.
+    vector: list[str] = []
+    can_afford = leader.get("can_afford") or []
+    vp_builds = [b for b in can_afford if b in ("city", "settlement")]
+    if vp_builds:
+        vector.append("vp_build")
+    # Dev cards are only urgent when leader is genuinely close — at
+    # mid_late VP they might be knights, and a knight is less scary
+    # than a hidden VP at 9 VP.
+    dev_cards = int(leader.get("dev_cards", 0) or 0)
+    if dev_cards > 0 and leader_vp >= close_vp:
+        vector.append("dev_vp")
+
     # Level maps to overlay styling: "win" is effectively over, "close"
-    # = one build from winning, "mid" = worth noticing but not yet urgent.
+    # = one build from winning, "mid" = worth noticing but not yet
+    # urgent. A leader at "mid" with a VP-build in hand gets bumped to
+    # "close" — they can actually close faster than their VP suggests.
     if leader_vp >= VP_TARGET:
         level = "win"
     elif leader_vp >= close_vp:
         level = "close"
+    elif vp_builds and leader_vp >= close_vp - 1:
+        level = "close"
     else:
         level = "mid"
     gap = leader_vp - my_vp
+
+    # Build a means-tag for the message. Order: vp_build first (most
+    # concrete), dev_vp second. Empty string when no vector present.
+    means_parts = []
+    if "vp_build" in vector:
+        means_parts.append(f"can {'/'.join(vp_builds)}")
+    if "dev_vp" in vector:
+        means_parts.append(f"{dev_cards} dev")
+    means = f" ({', '.join(means_parts)})" if means_parts else ""
+
     if level == "close":
         msg = (f"{leader.get('username')} at {leader_vp} VP — "
-               f"one build from winning")
+               f"one build from winning{means}")
     elif level == "win":
         msg = f"{leader.get('username')} at {leader_vp} VP — game over"
     else:
-        msg = f"{leader.get('username')} leads at {leader_vp} VP"
+        msg = f"{leader.get('username')} leads at {leader_vp} VP{means}"
     return {
         "leader_username": leader.get("username"),
         "leader_color": leader.get("color"),
@@ -1837,6 +1876,8 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
         "leader_vp": leader_vp,
         "my_vp": my_vp,
         "gap": gap,
+        "gap_to_win": gap_to_win,
+        "threat_vector": vector,
         "level": level,
         "message": msg,
     }

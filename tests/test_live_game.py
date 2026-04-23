@@ -798,6 +798,75 @@ def test_compute_leader_threat_win_level_at_10_vp():
     assert t["level"] == "win"
 
 
+def test_leader_threat_vector_flags_vp_build():
+    """Leader at 8 VP holding a city cost in hand should surface
+    'vp_build' in threat_vector AND include 'can city' in the
+    message. This is the qualitative jump that makes the banner
+    actionable — Noah can robber ore instead of just reading VP."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {
+        "opps": [{
+            "username": "X", "vp": 8, "color": "BLUE",
+            "can_afford": ["city"], "dev_cards": 0,
+        }],
+        "self": {"vp": 5},
+    }
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert "vp_build" in t["threat_vector"]
+    assert "can city" in t["message"]
+    assert t["gap_to_win"] == 2
+
+
+def test_leader_threat_vector_bumps_mid_to_close_on_vp_build():
+    """A leader at 7 VP normally reads 'mid', but if they can afford a
+    VP build they can close faster than VP suggests — bump to 'close'.
+    The 2-VP gap they'd close with city puts them at 8 next turn, same
+    as the normal close threshold. This is exactly when Noah needs
+    the urgent-banner styling to kick in."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {
+        "opps": [{
+            "username": "X", "vp": 7, "color": "BLUE",
+            "can_afford": ["settlement"], "dev_cards": 0,
+        }],
+        "self": {"vp": 5},
+    }
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert t["level"] == "close"
+    assert "vp_build" in t["threat_vector"]
+
+
+def test_leader_threat_vector_flags_dev_vp_only_when_close():
+    """Dev cards at mid-game (6 VP) don't warrant dev_vp flagging —
+    they're probably knights. Same dev cards at close (8 VP) = hidden
+    VP risk worth highlighting."""
+    from cataanbot.bridge import _compute_leader_threat
+    # 6 VP leader with dev card: vector should NOT include dev_vp.
+    snap_mid = {
+        "opps": [{
+            "username": "X", "vp": 6, "color": "RED",
+            "can_afford": [], "dev_cards": 2,
+        }],
+        "self": {"vp": 4},
+    }
+    t_mid = _compute_leader_threat(snap_mid)
+    assert "dev_vp" not in (t_mid or {}).get("threat_vector", [])
+    # 8 VP leader with dev card: vector SHOULD include dev_vp.
+    snap_close = {
+        "opps": [{
+            "username": "X", "vp": 8, "color": "RED",
+            "can_afford": [], "dev_cards": 2,
+        }],
+        "self": {"vp": 4},
+    }
+    t_close = _compute_leader_threat(snap_close)
+    assert t_close is not None
+    assert "dev_vp" in t_close["threat_vector"]
+    assert "2 dev" in t_close["message"]
+
+
 def test_compute_monopoly_hint_picks_resource_with_largest_total():
     """When self holds a MONOPOLY, the hint should pick the resource
     with the highest inferred total across opps."""
