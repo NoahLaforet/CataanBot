@@ -3267,3 +3267,98 @@ def test_hot_numbers_requires_minimum_window():
         "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
     }
     assert _build_advisor_snapshot(st)["hot_numbers"] is None
+
+
+def test_game_progress_none_during_setup():
+    """Before every color has 2 settlements + 2 roads we're in setup;
+    round math is undefined and the phase is obvious anyway. game_progress
+    must stay None to avoid a confusing "round 1" header at a time when
+    setup decisions dominate the HUD."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    # Boot but don't feed further — board still in opening phase.
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 0, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["setup_phase"] is True
+    assert snap["game_progress"] is None
+
+
+def test_game_progress_computes_round_and_early_phase():
+    """In a 4-player game, 8 total rolls → round 3 (rolls//4 + 1).
+    Rounds 1-5 label as "early" to anchor the HUD's tactical banners
+    in the opening-expansion window."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    # Feed both captures so setup_phase is complete — game_progress
+    # only populates once the opening is done.
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 8, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["setup_phase"] is False
+    gp = snap["game_progress"]
+    assert gp is not None
+    assert gp["num_players"] == 4
+    assert gp["total_rolls"] == 8
+    # 8 // 4 = 2, +1 = 3.
+    assert gp["round"] == 3
+    assert gp["phase"] == "early"
+
+
+def test_game_progress_phase_transitions():
+    """Phase thresholds: round<=5 early, 6-12 mid, 13+ late. Exercises
+    each band so a future threshold change (e.g., for a 12-VP game)
+    doesn't silently drift the HUD label."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    # 4 players → round = (rolls // 4) + 1.
+    # 24 rolls → round 7 (mid). 52 rolls → round 14 (late).
+    for rolls, expected_phase in [(24, "mid"), (52, "late")]:
+        st: dict = {
+            "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+            "last_roll": None, "roll_history": [],
+            "total_rolls": rolls, "robber_moved_at_rolls": None,
+            "robber_pending": False, "robber_snapshot": None,
+            "display_colors": {},
+            "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+        }
+        gp = _build_advisor_snapshot(st)["game_progress"]
+        assert gp["phase"] == expected_phase, (
+            f"rolls={rolls} expected {expected_phase}, got {gp}")
