@@ -259,8 +259,10 @@
     font-variant-numeric: tabular-nums; }
   /* 8+ cards — prime 7-roll discard target. Red so it pops out of
      the muted row styling; weight kept normal so it doesn't eat the
-     rest of the row's whitespace at the HUD's default font scale. */
-  .opp .fat-hand { color: #ff8a6e; font-weight: 600; }
+     rest of the row's whitespace at the HUD's default font scale.
+     Same class on self and opp rows: at 8+ cards the urgency is
+     symmetric (discard on a 7 hits whoever has too many cards). */
+  .opp .fat-hand, .you .fat-hand { color: #ff8a6e; font-weight: 600; }
   /* Card-delta trailer. Up = accumulating (warning), down = just
      spent (reactive but still informative). Small parenthetical so
      it reads as a trailer, not an axis of its own. */
@@ -656,8 +658,16 @@
             // army; rendering it here lets Noah eyeball progress.
             const kpTag = (me.knights_played || 0) > 0
                 ? ` · ${me.knights_played}k` : '';
+            // Mirror the opp fat-hand marker on self — at 8+ cards
+            // Noah is the one rolling the dice AND the one getting
+            // stolen from on a 7. Coloring the count red lets him
+            // eyeball his own exposure without re-reading the row.
+            const meFatHand = (me.cards || 0) >= 8;
+            const meCardsSpan = meFatHand
+                ? `<span class="fat-hand">${me.cards}c</span>`
+                : `${me.cards}c`;
             parts.push(`<div class="you">${pill}`
-                + ` <span class="muted">${me.cards}c · ${me.vp} VP${piecesTag}${kpTag}</span></div>`);
+                + ` <span class="muted">${meCardsSpan} · ${me.vp} VP${piecesTag}${kpTag}</span></div>`);
             // VP breakdown — only worth surfacing once VP > 2 (past the
             // trivial 2-settle opening). Shows how VP composes so Noah can
             // tell a 6-VP-via-cities lead apart from a 6-VP-via-longest-road
