@@ -237,6 +237,7 @@
   .opp { color: #ccc; font-size: calc(13px * var(--font-scale)); }
   .opp-hand { color: #b5c4d0; font-variant-numeric: tabular-nums; }
   .opp.tracked .opp-hand { color: #a4ef9c; }
+  .opp.hot-knight { color: #ffaa55; }
   .roll { margin: 4px 0 2px; color: #d8d8d8; }
   .roll.you-rolled { color: #ffde7a; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
@@ -538,8 +539,13 @@
                 // that build permanently.
                 piecesTag = ` · ${p.settle}s/${p.city}c/${p.road}r`;
             }
+            // Knights played — only surface once any have been played,
+            // since 0 is the boring default. At 3+ this earns largest
+            // army; rendering it here lets Noah eyeball progress.
+            const kpTag = (me.knights_played || 0) > 0
+                ? ` · ${me.knights_played}k` : '';
             parts.push(`<div class="you">${pill}`
-                + ` <span class="muted">${me.cards}c · ${me.vp} VP${piecesTag}</span></div>`);
+                + ` <span class="muted">${me.cards}c · ${me.vp} VP${piecesTag}${kpTag}</span></div>`);
             // VP breakdown — only worth surfacing once VP > 2 (past the
             // trivial 2-settle opening). Shows how VP composes so Noah can
             // tell a 6-VP-via-cities lead apart from a 6-VP-via-longest-road
@@ -755,8 +761,15 @@
                     const p = o.pieces;
                     piecesTag = ` · ${p.settle}s/${p.city}c/${p.road}r`;
                 }
-                parts.push(`<div class="opp${trackCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}</span>`
+                // Played-knights counter — silent at 0, flags at 2+
+                // (one away from largest army) so the overlay colors
+                // pick that opp out of the list.
+                const kpTag = (o.knights_played || 0) > 0
+                    ? ` · ${o.knights_played}k` : '';
+                const hotKnight = (o.knights_played || 0) >= 2;
+                const rowCls = hotKnight ? ' hot-knight' : '';
+                parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}</span>`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }

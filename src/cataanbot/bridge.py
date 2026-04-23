@@ -1061,6 +1061,26 @@ def _compute_longest_road_race(
     return None
 
 
+def _knights_played(game, color: str) -> int:
+    """Knights already played by `color` (for largest-army tracking).
+
+    At 3+ this qualifies the player for largest army; holders at 2 are
+    one knight away. Per-player visibility complements the single
+    largest_army_race banner — shows *which* opp is actually the
+    threat when multiple have dev cards in hand.
+    """
+    try:
+        from catanatron import Color
+        my_enum = Color[color.upper()]
+        idx = game.tracker.game.state.color_to_index.get(my_enum)
+        if idx is None:
+            return 0
+        return int(game.tracker.game.state.player_state.get(
+            f"P{idx}_PLAYED_KNIGHT", 0))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def _pieces_for_color(game, color: str) -> dict[str, int]:
     """Settlement / city / road counts placed and remaining per color.
 
@@ -1429,6 +1449,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "hand_drift": hand_drift,
         "pieces": _pieces_for_color(game, self_color),
         "vp_breakdown": _vp_breakdown(game, self_color),
+        "knights_played": _knights_played(game, self_color),
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
@@ -1535,6 +1556,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # length; we can't see the types, only the size.
             "dev_cards": int(sess.dev_card_counts.get(cid, 0)),
             "pieces": _pieces_for_color(game, c),
+            "knights_played": _knights_played(game, c),
         })
 
     pending = st.get("pending_trade_offer")
