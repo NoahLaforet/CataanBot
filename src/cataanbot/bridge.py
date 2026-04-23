@@ -642,6 +642,163 @@ def _compute_discard_hint(
     }
 
 
+# Resource tie-breaker weights when a Monopoly would net equal totals
+# across resources — prefer stealing the strategically scarcer cards.
+_MONOPOLY_RES_WEIGHT = {
+    "ORE": 5, "WHEAT": 5, "BRICK": 3, "WOOD": 3, "SHEEP": 2,
+}
+_BUILD_COSTS_MONOPOLY = {
+    "city": {"WHEAT": 2, "ORE": 3},
+    "settlement": {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1},
+    "dev card": {"WHEAT": 1, "SHEEP": 1, "ORE": 1},
+    "road": {"WOOD": 1, "BRICK": 1},
+}
+
+
+def _compute_monopoly_hint(
+    game, self_color: str, self_hand: dict[str, int],
+) -> dict[str, Any] | None:
+    """Pick the best resource to steal when self plays Monopoly.
+
+    Fires only when self holds at least one MONOPOLY card. Ranks each
+    resource by the inferred total held across opps; ties break toward
+    resources that would unlock an immediate build for self.
+    """
+    from catanatron import Color
+    try:
+        my_enum = Color[self_color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+    state = game.tracker.game.state
+    idx = state.color_to_index.get(my_enum)
+    if idx is None:
+        return None
+    held = int(state.player_state.get(f"P{idx}_MONOPOLY_IN_HAND", 0))
+    if held <= 0:
+        return None
+    # Aggregate inferred counts across opps via the tracker.
+    totals: dict[str, int] = {
+        "WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0,
+    }
+    for opp_color in state.color_to_index:
+        if opp_color == my_enum:
+            continue
+        try:
+            opp_hand = game.tracker.hand(opp_color.value)
+        except Exception:  # noqa: BLE001
+            continue
+        for r, n in opp_hand.items():
+            if r in totals:
+                totals[r] += int(n)
+    if not any(totals.values()):
+        return None
+    # Rank: (count, unlock-bonus, resource-weight).
+    def _unlock(res: str) -> int:
+        # 1 if grabbing `res` unlocks any build we couldn't afford.
+        gained = dict(self_hand)
+        gained[res] = gained.get(res, 0) + totals[res]
+        for name, cost in _BUILD_COSTS_MONOPOLY.items():
+            if all(gained.get(r, 0) >= n for r, n in cost.items()):
+                if not all(self_hand.get(r, 0) >= n for r, n in cost.items()):
+                    return 1
+        return 0
+    ranked = sorted(
+        totals.items(),
+        key=lambda kv: (kv[1], _unlock(kv[0]),
+                        _MONOPOLY_RES_WEIGHT.get(kv[0], 0)),
+        reverse=True,
+    )
+    best_res, best_count = ranked[0]
+    if best_count <= 0:
+        return None
+    # Unlock reason: which build does this unlock (if any)?
+    unlock_reason: str | None = None
+    gained = dict(self_hand)
+    gained[best_res] = gained.get(best_res, 0) + best_count
+    for name, cost in _BUILD_COSTS_MONOPOLY.items():
+        if (all(gained.get(r, 0) >= n for r, n in cost.items())
+                and not all(self_hand.get(r, 0) >= n
+                            for r, n in cost.items())):
+            unlock_reason = f"unlocks {name}"
+            break
+    return {
+        "have": held,
+        "resource": best_res,
+        "est_steal": best_count,
+        "totals": totals,
+        "unlock": unlock_reason,
+    }
+
+
+def _compute_yop_hint(
+    game, self_color: str, self_hand: dict[str, int],
+) -> dict[str, Any] | None:
+    """Suggest which pair to pick with Year-of-Plenty.
+
+    Fires only when self holds at least one YEAR_OF_PLENTY card. Picks
+    the pair that unlocks the most valuable buildable; falls back to
+    the pair that aligns with the costliest build closest to complete.
+    """
+    from catanatron import Color
+    try:
+        my_enum = Color[self_color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+    state = game.tracker.game.state
+    idx = state.color_to_index.get(my_enum)
+    if idx is None:
+        return None
+    held = int(state.player_state.get(f"P{idx}_YEAR_OF_PLENTY_IN_HAND", 0))
+    if held <= 0:
+        return None
+    # For each target build, compute deficit in self_hand. A pick is
+    # "unlocking" iff total_deficit <= 2 (YoP grants exactly 2 cards).
+    best: tuple[int, str, list[str]] | None = None  # (priority, build, [r1, r2])
+    priority = {"city": 4, "settlement": 3, "dev card": 2, "road": 1}
+    for name, cost in _BUILD_COSTS_MONOPOLY.items():
+        deficit: dict[str, int] = {}
+        for r, n in cost.items():
+            d = n - self_hand.get(r, 0)
+            if d > 0:
+                deficit[r] = d
+        total = sum(deficit.values())
+        if total == 0:
+            # Already affordable; YoP would be wasted on this target.
+            continue
+        if total > 2:
+            continue
+        pick: list[str] = []
+        for r, d in deficit.items():
+            pick.extend([r] * d)
+        if len(pick) < 2:
+            # Fill the second slot with a resource toward the next-
+            # best build (city takes priority if YoP is generous).
+            needs_next = None
+            for n2, cost2 in _BUILD_COSTS_MONOPOLY.items():
+                if n2 == name:
+                    continue
+                for r2, need in cost2.items():
+                    have = self_hand.get(r2, 0)
+                    if name != n2 and have + pick.count(r2) < need:
+                        needs_next = r2
+                        break
+                if needs_next:
+                    break
+            pick.append(needs_next or "ORE")  # ORE as safe default
+        pick = pick[:2]
+        p = priority.get(name, 0)
+        if best is None or p > best[0]:
+            best = (p, name, pick)
+    if best is None:
+        return None
+    _, build_name, pair = best
+    return {
+        "have": held,
+        "pair": pair,
+        "unlock": build_name,
+    }
+
+
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
@@ -759,6 +916,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "recommendations": [],
         "incoming_trade": None,
         "knight_hint": None,
+        "monopoly_hint": None,
+        "yop_hint": None,
         "discard_hint": None,
         "threat": None,
     }
@@ -985,6 +1144,15 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, display_colors=st.get("display_colors") or {})
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
+    try:
+        snap["monopoly_hint"] = _compute_monopoly_hint(
+            game, self_color, hand)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] monopoly_hint failed: {e!r}", flush=True)
+    try:
+        snap["yop_hint"] = _compute_yop_hint(game, self_color, hand)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] yop_hint failed: {e!r}", flush=True)
     # Discard-on-7 advice: fires whenever self's hand exceeds the discard
     # limit. The overlay should render it prominently on a 7-roll, but
     # we compute unconditionally — it's cheap and "you're over the limit"
