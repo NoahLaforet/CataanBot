@@ -693,6 +693,106 @@ def test_compute_knight_hint_play_when_robber_blocks_self():
     assert "your tile" in hint["reason"].lower() or "block" in hint["reason"].lower()
 
 
+def test_reconnect_replays_pre_existing_buildings_into_tracker():
+    """Simulate a mid-game reconnect: on a fresh WS session, colonist
+    ships the full current mapState in the GameStart payload — every
+    settlement, city, and road already on the board. Without
+    ``_replay_pre_existing_buildings`` the tracker starts empty and
+    downstream advisors think nothing has been built. This test drives
+    the early+midgame captures through one LiveGame, snapshots the
+    session's ``known_corners`` / ``known_edges`` / ``corner_owners``,
+    then boots a fresh LiveGame with those baked into the GameStart's
+    mapState and asserts the second tracker ends up with the same
+    building inventory as the first.
+    """
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from copy import deepcopy
+
+    from cataanbot.colonist_proto import load_capture
+    from cataanbot.live_game import LiveGame
+
+    # Drive the original game as a reference.
+    ref_game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            ref_game.feed(payload)
+    assert ref_game.started
+    ref_buildings = dict(ref_game.tracker.game.state.board.buildings)
+    ref_roads = dict(ref_game.tracker.game.state.board.roads)
+    assert ref_buildings, "reference game didn't build anything"
+
+    # Grab the very first GameStart body from the early capture so we can
+    # construct a synthetic reconnect payload that reuses the same map
+    # topology and player roster.
+    start_body: dict = {}
+    for frame in load_capture(CAPTURE_EARLY):
+        if frame.error:
+            continue
+        p = frame.payload
+        if isinstance(p, dict) and p.get("type") == 4:
+            start_body = deepcopy(p.get("payload") or {})
+            break
+    assert start_body, "no GameStart in early capture"
+
+    game_state = (start_body.get("gameState")
+                  if "gameState" in start_body else start_body)
+    map_state = game_state["mapState"]
+
+    # Inject the reference game's accumulated corner/edge state into the
+    # mapState — this mirrors what a real reconnect sees from colonist.
+    sess = ref_game.session
+    for cid, bt in sess.known_corners.items():
+        cid_str = str(cid)
+        if cid_str not in map_state["tileCornerStates"]:
+            continue
+        map_state["tileCornerStates"][cid_str]["buildingType"] = int(bt)
+        owner = sess.corner_owners.get(cid)
+        if owner is not None:
+            map_state["tileCornerStates"][cid_str]["owner"] = int(owner)
+    for eid, owner in sess.known_edges.items():
+        eid_str = str(eid)
+        if eid_str not in map_state["tileEdgeStates"]:
+            continue
+        if owner:
+            map_state["tileEdgeStates"][eid_str]["owner"] = int(owner)
+
+    # Boot a fresh game from the stitched body.
+    reconnect_game = LiveGame()
+    reconnect_game.start_from_game_state(start_body)
+    assert reconnect_game.started
+
+    got_buildings = dict(reconnect_game.tracker.game.state.board.buildings)
+    got_roads = dict(reconnect_game.tracker.game.state.board.roads)
+    assert got_buildings == ref_buildings, (
+        f"building parity failed: "
+        f"ref={sorted(ref_buildings.items())} "
+        f"got={sorted(got_buildings.items())}")
+    assert got_roads == ref_roads, (
+        f"road parity failed: "
+        f"ref={sorted(ref_roads.items())} "
+        f"got={sorted(got_roads.items())}")
+    # build_counts tally on the reconnect should reflect the corners +
+    # roads currently on the board (reconnect sees each corner once,
+    # classified by its final buildingType). The setup-phase gate in
+    # ``_debit_build`` only needs to see "this color already has ≥2
+    # settlements / roads" — which is trivially true for a reconnect —
+    # so any cap ≥2 is fine. We just assert the tallies are non-zero
+    # for colors with buildings so the gate doesn't incorrectly bill
+    # post-reconnect placements as free.
+    for color, tally in reconnect_game.build_counts.items():
+        corners = sum(1 for _nid, (c, _bt) in got_buildings.items()
+                      if c.name == color)
+        roads = sum(1 for (_a, _b), c in got_roads.items()
+                    if c.name == color) // 2  # both-directions
+        assert tally["settlement"] + tally["city"] == corners, (
+            f"{color}: replayed tally {tally} doesn't match "
+            f"board corners {corners}")
+        assert tally["road"] == roads, (
+            f"{color}: replayed road tally {tally['road']} "
+            f"doesn't match board roads {roads}")
+
+
 def test_paid_builds_debit_costs_and_setup_is_free():
     """First 2 settlements + 2 roads per color are free; subsequent
     settlements/cities/roads should debit the standard build cost."""

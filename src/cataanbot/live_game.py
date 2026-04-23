@@ -81,6 +81,85 @@ class LiveGame:
         for color_id in sorted(self.session.player_names):
             username = self.session.player_names[color_id]
             self.color_map.get(username)
+        self._replay_pre_existing_buildings()
+
+    def _replay_pre_existing_buildings(self) -> None:
+        """Apply any buildings/roads carried in the GameStart mapState.
+
+        A reconnect mid-game ships the full current mapState — every
+        settlement, city, and road that's already on the board. Without
+        replaying them the tracker starts empty, catanatron's building
+        table stays empty, and downstream consumers (setup-phase gate,
+        longest-road/largest-army recompute, distance-2 checks in the
+        recommender) all see a false "nothing has been built" world.
+        This resyncs the tracker so a mid-game reconnect picks up where
+        the live session left off.
+
+        Fresh games emit the setup-phase builds as real BuildEvents via
+        diffs, so in a non-reconnect start this is a no-op —
+        known_corners / known_edges start empty on a real GameStart.
+        """
+        sess = self.session
+        for cid, bt in list(sess.known_corners.items()):
+            if bt not in (1, 2):
+                continue
+            owner_cid = sess.corner_owners.get(cid)
+            if owner_cid is None:
+                continue
+            node_id = sess.mapping.node_id.get(cid)
+            if node_id is None:
+                continue
+            piece = "city" if bt == 2 else "settlement"
+            ev = BuildEvent(
+                player=sess.player_for(owner_cid),
+                piece=piece,
+                node_id=node_id,
+            )
+            result = apply_event(self.tracker, self.color_map, ev)
+            if result.status == "applied":
+                color = self.color_map.get(ev.player)
+                tally = self.build_counts.setdefault(
+                    color, {"settlement": 0, "city": 0, "road": 0})
+                tally[piece] += 1
+        # Roads have to connect to an existing settlement or another road
+        # of the same color — catanatron rejects "floating" placements
+        # with ``Invalid Road Placement``. When we replay the full
+        # snapshot in one pass, a road whose only connector is another
+        # replayed road can fail if that connector hasn't been placed
+        # yet. Retry until we stop making progress; any still-failing
+        # roads are genuinely disconnected (which shouldn't happen on a
+        # well-formed colonist snapshot, but we swallow rather than
+        # crash the feed).
+        pending: list[tuple[int, int, BuildEvent]] = []
+        for eid, owner_cid in sess.known_edges.items():
+            if not owner_cid:
+                continue
+            pair = sess.mapping.edge_nodes.get(eid)
+            if pair is None:
+                continue
+            a, b = sorted(pair)
+            ev = BuildEvent(
+                player=sess.player_for(int(owner_cid)),
+                piece="road",
+                edge_nodes=(a, b),
+            )
+            pending.append((a, b, ev))
+        while pending:
+            next_pending: list[tuple[int, int, BuildEvent]] = []
+            applied_any = False
+            for a, b, ev in pending:
+                result = apply_event(self.tracker, self.color_map, ev)
+                if result.status == "applied":
+                    applied_any = True
+                    color = self.color_map.get(ev.player)
+                    tally = self.build_counts.setdefault(
+                        color, {"settlement": 0, "city": 0, "road": 0})
+                    tally["road"] += 1
+                else:
+                    next_pending.append((a, b, ev))
+            if not applied_any:
+                break
+            pending = next_pending
 
     def feed(self, payload: dict[str, Any]) -> list[DispatchResult]:
         """Push one WS frame payload into the game. Returns dispatch results.
