@@ -35,3 +35,8 @@ data/
 
 # colonist WS capture dumps — session-specific, large, often noisy.
 ws_captures/
+
+# Per-session postmortem HTML — auto-generated when a live game ends.
+# Useful locally for reviewing a specific game, but not meant to be
+# checked in (each file is tied to one finished session).
+postmortems/
