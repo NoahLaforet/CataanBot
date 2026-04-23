@@ -912,6 +912,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "last_roll": st.get("last_roll"),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
+        # "forced" = self rolled a 7 and must place the robber now;
+        # "knight" = self holds a KNIGHT, targets shown as play-timing aid.
+        # None when targets are empty or from an older setup flow.
+        "robber_reason": (
+            "forced" if st.get("robber_pending") else None),
         "my_turn": False,
         "recommendations": [],
         "incoming_trade": None,
@@ -1149,6 +1154,21 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, display_colors=st.get("display_colors") or {})
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
+    # When self holds a KNIGHT and isn't already facing a forced robber
+    # placement, surface the full target ranking so Noah can eyeball the
+    # block before committing. Don't clobber "forced" state — the 7-roll
+    # path owns robber_targets in that case.
+    kh = snap.get("knight_hint") or {}
+    if kh.get("have", 0) > 0 and not snap["robber_pending"]:
+        try:
+            full = _compute_robber_snapshot(
+                game, display_colors=st.get("display_colors") or {})
+            if full:
+                snap["robber_targets"] = full
+                snap["robber_reason"] = "knight"
+        except Exception as e:  # noqa: BLE001
+            print(f"[advisor] knight robber targets failed: {e!r}",
+                  flush=True)
     try:
         snap["monopoly_hint"] = _compute_monopoly_hint(
             game, self_color, hand)
