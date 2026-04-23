@@ -351,6 +351,13 @@
   }
   .knight-hint .kh-verdict.play { background: #1e4d2b; color: #a4ef9c; }
   .knight-hint .kh-verdict.hold { background: #404040; color: #ddd; }
+  .threat {
+    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
+    font-weight: 600;
+  }
+  .threat.mid { background: #2a2a18; color: #e0d480; border: 1px solid #555538; }
+  .threat.close { background: #3a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
+  .threat.win { background: #4a1414; color: #ff5e5e; border: 1px solid #8b3333; }
   .discard-hint {
     border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 4px 6px; margin: 6px 0 4px;
@@ -769,6 +776,12 @@
                 + escapeHtml(kh.reason || '')
                 + escapeHtml(tail) + '</div>');
             parts.push('</div>');
+        }
+        if (snap.threat && snap.threat.message) {
+            const lvl = snap.threat.level || 'mid';
+            parts.push(`<div class="threat ${lvl}">`
+                + escapeHtml(snap.threat.message)
+                + '</div>');
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
