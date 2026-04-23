@@ -757,6 +757,47 @@ def test_compute_discard_hint_returns_plan_over_limit():
     assert "city" in hint["rationale"]
 
 
+def test_compute_leader_threat_bails_when_nobody_leads():
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {"opps": [{"username": "A", "vp": 3}, {"username": "B", "vp": 2}],
+            "self": {"vp": 4}}
+    assert _compute_leader_threat(snap) is None
+
+
+def test_compute_leader_threat_fires_at_mid_late():
+    """A 6 VP opp should trigger a mid-level warning."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {"opps": [{"username": "A", "vp": 6, "color": "RED"}],
+            "self": {"vp": 4}}
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert t["leader_username"] == "A"
+    assert t["leader_vp"] == 6
+    assert t["level"] == "mid"
+    assert t["gap"] == 2
+
+
+def test_compute_leader_threat_close_level_at_8_vp():
+    """At 8 VP (close_to_win for target=10), level escalates to
+    ``close``. Messaging should call out "one build from winning"."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {"opps": [{"username": "X", "vp": 8, "color": "BLUE"}],
+            "self": {"vp": 5}}
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert t["level"] == "close"
+    assert "one build" in t["message"]
+
+
+def test_compute_leader_threat_win_level_at_10_vp():
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {"opps": [{"username": "X", "vp": 10, "color": "BLUE"}],
+            "self": {"vp": 5}}
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert t["level"] == "win"
+
+
 def test_reconnect_replays_pre_existing_buildings_into_tracker():
     """Simulate a mid-game reconnect: on a fresh WS session, colonist
     ships the full current mapState in the GameStart payload — every

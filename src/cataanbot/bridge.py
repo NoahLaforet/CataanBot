@@ -760,6 +760,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "incoming_trade": None,
         "knight_hint": None,
         "discard_hint": None,
+        "threat": None,
     }
     if not game.started:
         return snap
@@ -992,7 +993,57 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["discard_hint"] = _compute_discard_hint(hand, cards)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] discard_hint failed: {e!r}", flush=True)
+    # Leader-threat banner: flag when any opp is at/near the win
+    # threshold so the overlay can shift tone toward defense. Uses the
+    # same close_to_win_vp() knob the rest of the bot respects.
+    snap["threat"] = _compute_leader_threat(snap)
     return snap
+
+
+def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
+    """Flag the highest-VP opp and label the urgency.
+
+    Returns a dict or None when nobody's ahead enough to warrant a
+    banner. Close-to-win and mid-late thresholds track config so the
+    warning scales with the game's VP_TARGET (default 10 → 8 = close).
+    """
+    from cataanbot.config import close_to_win_vp, mid_late_vp, VP_TARGET
+    opps = snap.get("opps") or []
+    if not opps:
+        return None
+    leader = max(opps, key=lambda o: o.get("vp", 0))
+    leader_vp = int(leader.get("vp", 0))
+    if leader_vp < mid_late_vp():
+        return None
+    self_snap = snap.get("self") or {}
+    my_vp = int(self_snap.get("vp", 0))
+    close_vp = close_to_win_vp()
+    # Level maps to overlay styling: "win" is effectively over, "close"
+    # = one build from winning, "mid" = worth noticing but not yet urgent.
+    if leader_vp >= VP_TARGET:
+        level = "win"
+    elif leader_vp >= close_vp:
+        level = "close"
+    else:
+        level = "mid"
+    gap = leader_vp - my_vp
+    if level == "close":
+        msg = (f"{leader.get('username')} at {leader_vp} VP — "
+               f"one build from winning")
+    elif level == "win":
+        msg = f"{leader.get('username')} at {leader_vp} VP — game over"
+    else:
+        msg = f"{leader.get('username')} leads at {leader_vp} VP"
+    return {
+        "leader_username": leader.get("username"),
+        "leader_color": leader.get("color"),
+        "leader_color_css": leader.get("color_css"),
+        "leader_vp": leader_vp,
+        "my_vp": my_vp,
+        "gap": gap,
+        "level": level,
+        "message": msg,
+    }
 
 
 def _evaluate_pending_trade(st, game, self_color, self_hand,
