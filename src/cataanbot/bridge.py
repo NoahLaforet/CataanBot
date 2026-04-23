@@ -1652,6 +1652,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "rb_hint": None,
         "discard_hint": None,
         "threat": None,
+        "win_proximity": None,
         "robber_on_me": None,
         "longest_road_race": None,
         "largest_army_race": None,
@@ -2165,6 +2166,20 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # threshold so the overlay can shift tone toward defense. Uses the
     # same close_to_win_vp() knob the rest of the bot respects.
     snap["threat"] = _compute_leader_threat(snap)
+    # Self close-to-win banner — symmetric with leader_threat but for
+    # self. Dev-card count comes from the session directly (snap doesn't
+    # carry the unplayed tally — ``vp_breakdown.vp_cards`` is the played
+    # slice only). Silent when self isn't close enough to matter.
+    try:
+        self_dev_held = 0
+        if sess.self_color_id is not None:
+            self_dev_held = int(
+                sess.dev_card_counts.get(sess.self_color_id, 0) or 0)
+        snap["win_proximity"] = _compute_win_proximity(
+            snap, dev_cards_held=self_dev_held)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] win_proximity failed: {e!r}", flush=True)
+        snap["win_proximity"] = None
     # Persistent robber-on-me warning — visible every snapshot while
     # the robber sits on a self tile, not just during a 7-roll or when
     # a knight is in hand.
@@ -2346,6 +2361,69 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
         "gap": gap,
         "gap_to_win": gap_to_win,
         "threat_vector": vector,
+        "level": level,
+        "message": msg,
+    }
+
+
+def _compute_win_proximity(
+    snap: dict[str, Any], dev_cards_held: int = 0,
+) -> dict[str, Any] | None:
+    """Self-side mirror of ``_compute_leader_threat``.
+
+    Fires when self hits ``close_to_win_vp()`` so Noah snaps into close-
+    out mode: the marginal value of a VP build leaps, bank/port trades
+    that unlock one become worth lopsided ratios, and any unplayed dev
+    card might already be a hidden VP that closes the game the instant
+    total hits target. Returns None when self is still building up —
+    banner stays out of the way until it's decision-shifting.
+
+    Levels:
+      * ``win``    — self VP >= target (game effectively over).
+      * ``close-1`` — 1 VP from winning. Every decision should close.
+      * ``close``  — 2 VP from winning. Start pruning non-VP spending.
+
+    ``dev_cards_held`` is accepted as a parameter instead of fished out
+    of snap because the dev count lives on the session, not the snap
+    payload — callers pass it through from the session.
+    """
+    from cataanbot.config import close_to_win_vp, VP_TARGET
+    self_snap = snap.get("self") or {}
+    vp = int(self_snap.get("vp", 0) or 0)
+    close_vp = close_to_win_vp()
+    if vp < close_vp:
+        return None
+    gap_to_win = max(0, VP_TARGET - vp)
+    afford = self_snap.get("afford") or []
+    # Only city + settlement flip VP same-turn. Road/dev-card don't.
+    vp_builds = [b for b in afford if b in ("city", "settlement")]
+    if vp >= VP_TARGET:
+        level = "win"
+    elif gap_to_win == 1:
+        level = "close-1"
+    else:
+        level = "close"
+    if level == "win":
+        msg = f"you reached {vp} VP — game over"
+    elif level == "close-1":
+        if vp_builds:
+            msg = f"1 VP to win — {'/'.join(vp_builds)} ready"
+        elif dev_cards_held > 0:
+            msg = (f"1 VP to win — {dev_cards_held} dev in hand "
+                   f"(VP?)")
+        else:
+            msg = "1 VP to win — close it out"
+    else:
+        if vp_builds:
+            msg = (f"{gap_to_win} VP to win — "
+                   f"{'/'.join(vp_builds)} ready")
+        else:
+            msg = f"{gap_to_win} VP to win — keep pushing"
+    return {
+        "vp": vp,
+        "gap_to_win": gap_to_win,
+        "vp_builds_affordable": vp_builds,
+        "dev_cards_held": int(dev_cards_held),
         "level": level,
         "message": msg,
     }
