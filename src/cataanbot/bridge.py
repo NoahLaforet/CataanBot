@@ -985,6 +985,45 @@ def _compute_longest_road_race(
     return None
 
 
+def _pieces_for_color(game, color: str) -> dict[str, int]:
+    """Settlement / city / road counts placed and remaining per color.
+
+    Counts directly off the board (buildings dict + roads dict) since
+    our tracker keeps those authoritative but doesn't decrement the
+    catanatron ``Px_*_AVAILABLE`` pool keys. Base-game caps are 5/4/15
+    for settlements/cities/roads. Roads in catanatron are stored with
+    both edge directions, so we count unique frozenset edges.
+    """
+    try:
+        from catanatron import Color
+        my_enum = Color[color.upper()]
+        board = game.tracker.game.state.board
+    except Exception:  # noqa: BLE001
+        return {"settle": 0, "settle_left": 5, "city": 0, "city_left": 4,
+                "road": 0, "road_left": 15}
+    settle = 0
+    city = 0
+    for nid, (col, btype) in board.buildings.items():
+        if col != my_enum:
+            continue
+        if str(btype).upper() == "CITY":
+            city += 1
+        else:
+            settle += 1
+    seen_edges: set[frozenset] = set()
+    for edge, col in board.roads.items():
+        if col != my_enum:
+            continue
+        key = frozenset(edge) if not isinstance(edge, frozenset) else edge
+        seen_edges.add(key)
+    road = len(seen_edges)
+    return {
+        "settle": settle, "settle_left": max(0, 5 - settle),
+        "city": city, "city_left": max(0, 4 - city),
+        "road": road, "road_left": max(0, 15 - road),
+    }
+
+
 def _compute_bank_supply(game) -> dict[str, Any] | None:
     """Estimate how many of each resource remain in the bank.
 
@@ -1311,6 +1350,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         # Overlay surfaces this so Noah knows the hand detail is unreliable
         # until the next HandSync frame corrects us.
         "hand_drift": hand_drift,
+        "pieces": _pieces_for_color(game, self_color),
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
@@ -1416,6 +1456,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # Counting comes from colonist's authoritative card-list
             # length; we can't see the types, only the size.
             "dev_cards": int(sess.dev_card_counts.get(cid, 0)),
+            "pieces": _pieces_for_color(game, c),
         })
 
     pending = st.get("pending_trade_offer")

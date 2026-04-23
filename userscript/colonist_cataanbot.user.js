@@ -529,8 +529,16 @@
             const fg = contrastText(bg);
             const pill = `<span class="color-pill" style="background:${bg};`
                 + `color:${fg};">${escapeHtml(me.username)}</span>`;
+            let piecesTag = '';
+            if (me.pieces) {
+                const p = me.pieces;
+                // Compact s/c/r format: "3s/1c/6r". A zero count is still
+                // worth showing — running out of a piece type locks off
+                // that build permanently.
+                piecesTag = ` · ${p.settle}s/${p.city}c/${p.road}r`;
+            }
             parts.push(`<div class="you">${pill}`
-                + ` <span class="muted">${me.cards}c · ${me.vp} VP</span></div>`);
+                + ` <span class="muted">${me.cards}c · ${me.vp} VP${piecesTag}</span></div>`);
             // Icons scan faster than letter abbrevs on a dense HUD.
             const hand = Object.entries(me.hand || {})
                 .filter(([, n]) => n > 0)
@@ -723,8 +731,13 @@
                 const devTag = (o.dev_cards || 0) > 0
                     ? ` · ${o.dev_cards}dev`
                     : '';
+                let piecesTag = '';
+                if (o.pieces) {
+                    const p = o.pieces;
+                    piecesTag = ` · ${p.settle}s/${p.city}c/${p.road}r`;
+                }
                 parts.push(`<div class="opp${trackCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}</span>`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}</span>`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
