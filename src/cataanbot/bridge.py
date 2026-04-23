@@ -985,6 +985,88 @@ def _compute_longest_road_race(
     return None
 
 
+def _compute_largest_army_race(
+    game, self_color: str | None,
+) -> dict[str, Any] | None:
+    """Flag a largest-army race once any player has ≥2 played knights.
+
+    Largest-army qualifies at 3 played knights, so 2 = "one knight
+    away." Same level structure as the longest-road race helper:
+    self_push / opp_threat / contested / settled (silent).
+
+    We look at PLAYED_KNIGHT (actual knights played) because that's
+    the only authoritative count — knights in hand don't yet count
+    toward the title.
+    """
+    from catanatron import Color
+
+    state = game.tracker.game.state
+    if self_color is None:
+        return None
+    try:
+        my_enum = Color[self_color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+
+    played: list[tuple[object, int, bool]] = []
+    for col, idx in state.color_to_index.items():
+        n = int(state.player_state.get(f"P{idx}_PLAYED_KNIGHT", 0))
+        has_army = bool(state.player_state.get(f"P{idx}_HAS_ARMY", False))
+        played.append((col, n, has_army))
+    if not played:
+        return None
+
+    self_entry = next((e for e in played if e[0] == my_enum), None)
+    opps = [e for e in played if e[0] != my_enum]
+    if self_entry is None:
+        return None
+    self_n = self_entry[1]
+    self_has = self_entry[2]
+    opp_max = max((e[1] for e in opps), default=0)
+    opp_holder = any(e[2] for e in opps)
+
+    # Silent pre-race: need at least one side on 2 to matter.
+    if self_n < 2 and opp_max < 2:
+        return None
+    # Settled: holder is 2+ ahead.
+    if self_has and self_n >= opp_max + 2:
+        return None
+    if opp_holder and opp_max >= self_n + 2:
+        return None
+
+    # Contested (most specific): both sides ≥2 and within 1.
+    if self_n >= 2 and opp_max >= 2 and abs(self_n - opp_max) <= 1:
+        holder = "you" if self_has else ("opp" if opp_holder else "—")
+        return {
+            "level": "contested",
+            "self_n": self_n,
+            "opp_n": opp_max,
+            "message": (
+                f"largest-army race: you {self_n} vs opp {opp_max}"
+                f" (holder: {holder})"),
+        }
+    if self_n >= 2 and not self_has and opp_max < self_n:
+        return {
+            "level": "self_push",
+            "self_n": self_n,
+            "opp_n": opp_max,
+            "message": f"1 knight → largest army (you have {self_n})",
+        }
+    if opp_max >= 2 and opp_max >= self_n and not self_has:
+        gap = opp_max - self_n
+        if opp_holder:
+            msg = f"opp holds largest army ({opp_max}) — {gap} ahead"
+        else:
+            msg = f"opp 1 knight from largest army ({opp_max})"
+        return {
+            "level": "opp_threat",
+            "self_n": self_n,
+            "opp_n": opp_max,
+            "message": msg,
+        }
+    return None
+
+
 def _compute_robber_on_me(game) -> dict[str, Any] | None:
     """Persistent "robber is blocking you" banner.
 
@@ -1078,6 +1160,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "threat": None,
         "robber_on_me": None,
         "longest_road_race": None,
+        "largest_army_race": None,
     }
     if not game.started:
         return snap
@@ -1357,6 +1440,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, self_color)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] longest_road_race failed: {e!r}", flush=True)
+    # Largest-army race tracker: parallel to longest-road but on played
+    # knights. Visible even when self has no knight in hand (knight_hint
+    # only fires with self-knight, so largest-army threats slipped by).
+    try:
+        snap["largest_army_race"] = _compute_largest_army_race(
+            game, self_color)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] largest_army_race failed: {e!r}", flush=True)
     return snap
 
 
