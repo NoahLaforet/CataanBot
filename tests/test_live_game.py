@@ -1017,6 +1017,74 @@ def test_paid_builds_debit_costs_and_setup_is_free():
             f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
 
 
+def test_robber_on_me_fires_when_robber_sits_on_self_tile():
+    """With the robber parked on a tile that has a self building,
+    robber_on_me should report the resource, number, pips suppressed,
+    and building count. A city doubles the pip cost. When the robber
+    moves away (or lands on desert), the banner clears."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+
+    base_st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+
+    # Find a tile adjacent to one of self's settlements/cities.
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    assert self_nodes
+    hot_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    cat.state.board.robber_coordinate = hot_coord
+    snap = _build_advisor_snapshot(dict(base_st))
+    rom = snap["robber_on_me"]
+    assert rom is not None
+    assert rom["pips_blocked"] > 0
+    assert rom["buildings"] >= 1
+    assert rom["resource"] == m.land_tiles[hot_coord].resource
+    assert rom["number"] == m.land_tiles[hot_coord].number
+
+    # Move to a tile with no self presence → banner clears.
+    cold_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and not (set(tile.nodes.values()) & self_nodes))
+    cat.state.board.robber_coordinate = cold_coord
+    snap = _build_advisor_snapshot(dict(base_st))
+    assert snap["robber_on_me"] is None
+
+    # Desert / unset → also None.
+    desert = next(
+        (coord for coord, tile in m.land_tiles.items()
+         if not tile.number), None)
+    if desert is not None:
+        cat.state.board.robber_coordinate = desert
+        snap = _build_advisor_snapshot(dict(base_st))
+        assert snap["robber_on_me"] is None
+
+
 def test_snapshot_populates_robber_targets_when_self_holds_knight():
     """Self holding a KNIGHT (and not facing a 7-roll) should get the
     full robber_targets ranking in the snapshot with

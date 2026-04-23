@@ -895,6 +895,67 @@ def _compute_knight_hint(
     }
 
 
+def _compute_robber_on_me(game) -> dict[str, Any] | None:
+    """Persistent "robber is blocking you" banner.
+
+    Different from knight_hint: fires whenever the robber is parked on
+    a self tile, regardless of whether a knight is in hand. Reports
+    which tile and how many pips are being suppressed so the overlay
+    can show the ongoing cost — a reminder to trade into dev cards or
+    push for a knight.
+    """
+    from catanatron import Color
+
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return None
+    username = sess.player_names.get(sess.self_color_id)
+    if not username:
+        return None
+    try:
+        color = game.color_map.get(username)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        my_enum = Color[color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+
+    board = game.tracker.game.state.board
+    robber = board.robber_coordinate
+    if not robber:
+        return None
+    m = board.map
+    robber_tile = m.land_tiles.get(robber)
+    if robber_tile is None or not robber_tile.number:
+        # Desert or uninit — robber parked here costs nothing.
+        return None
+
+    from cataanbot.advisor import PIP_DOTS_BY_NUMBER
+    robber_node_ids = set(robber_tile.nodes.values())
+    pips = 0
+    building_count = 0
+    has_city = False
+    for nid, (bcol, btype) in board.buildings.items():
+        if bcol != my_enum or int(nid) not in robber_node_ids:
+            continue
+        per_building = PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
+        if str(btype).upper() == "CITY":
+            per_building *= 2
+            has_city = True
+        pips += per_building
+        building_count += 1
+    if building_count == 0:
+        return None
+    return {
+        "resource": robber_tile.resource,
+        "number": robber_tile.number,
+        "buildings": building_count,
+        "has_city": has_city,
+        "pips_blocked": pips,
+    }
+
+
 def _build_advisor_snapshot(st) -> dict[str, Any]:
     """JSON payload for the userscript overlay.
 
@@ -925,6 +986,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "yop_hint": None,
         "discard_hint": None,
         "threat": None,
+        "robber_on_me": None,
     }
     if not game.started:
         return snap
@@ -1190,6 +1252,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # threshold so the overlay can shift tone toward defense. Uses the
     # same close_to_win_vp() knob the rest of the bot respects.
     snap["threat"] = _compute_leader_threat(snap)
+    # Persistent robber-on-me warning — visible every snapshot while
+    # the robber sits on a self tile, not just during a 7-roll or when
+    # a knight is in hand.
+    try:
+        snap["robber_on_me"] = _compute_robber_on_me(game)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] robber_on_me failed: {e!r}", flush=True)
     return snap
 
 

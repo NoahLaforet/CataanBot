@@ -366,6 +366,15 @@
   .threat.mid { background: #2a2a18; color: #e0d480; border: 1px solid #555538; }
   .threat.close { background: #3a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
   .threat.win { background: #4a1414; color: #ff5e5e; border: 1px solid #8b3333; }
+  .robber-on-me {
+    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
+    background: #2a1a28; color: #d8a0d8; border: 1px solid #553355;
+    font-weight: 600;
+  }
+  .robber-on-me .rom-sub {
+    display: block; font-weight: 400; font-size: calc(12px * var(--font-scale));
+    color: #a88cb0; margin-top: 2px;
+  }
   .discard-hint {
     border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 4px 6px; margin: 6px 0 4px;
@@ -817,6 +826,20 @@
             parts.push(`<div class="threat ${lvl}">`
                 + escapeHtml(snap.threat.message)
                 + '</div>');
+        }
+        if (snap.robber_on_me) {
+            const rom = snap.robber_on_me;
+            const res = (rom.resource || '').slice(0, 3).toLowerCase();
+            const tileLbl = `${res}${rom.number || ''}`;
+            const nBuilds = rom.buildings;
+            const sub = nBuilds > 1
+                ? `${nBuilds} buildings blocked`
+                : (rom.has_city ? 'city blocked' : 'settlement blocked');
+            parts.push('<div class="robber-on-me">');
+            parts.push(`robber on your ${escapeHtml(tileLbl)} ·`
+                + ` ${rom.pips_blocked} pips suppressed`);
+            parts.push(`<span class="rom-sub">${escapeHtml(sub)}</span>`);
+            parts.push('</div>');
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
