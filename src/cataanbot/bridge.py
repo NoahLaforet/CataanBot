@@ -1374,6 +1374,60 @@ def _compute_largest_army_race(
     return None
 
 
+def _compute_roll_yield(
+    game, color: str, number: int,
+) -> dict[str, Any] | None:
+    """Break down what self would produce from a specific roll.
+
+    Iterates every tile with ``tile.number == number``. For each, if
+    the robber is parked there the buildings on that tile are blocked
+    (tallied under ``blocked``); otherwise they contribute their
+    resource to ``gained`` (×1 per settlement, ×2 per city). Returns
+    None on bad input so the overlay can silent-skip.
+
+    Used by the last-roll banner to surface what the dice actually
+    delivered — and, more importantly, what the robber cost. A line
+    like "+1 ore (3 ore blocked on the 8)" is worth more than just
+    knowing a 7 didn't hit.
+    """
+    if number == 7 or not number:
+        return None
+    try:
+        from catanatron import Color
+        my_enum = Color[color.upper()]
+        board = game.tracker.game.state.board
+        m = board.map
+    except Exception:  # noqa: BLE001
+        return None
+    robber_coord = board.robber_coordinate
+    gained: dict[str, int] = {}
+    blocked: dict[str, int] = {}
+    tiles_touched = 0
+    for coord, tile in m.land_tiles.items():
+        if tile.number != number or not tile.resource:
+            continue
+        node_ids = set(tile.nodes.values())
+        # Count self buildings on this tile. Settlement = ×1, city = ×2.
+        for nid, (bcol, btype) in board.buildings.items():
+            if bcol != my_enum or int(nid) not in node_ids:
+                continue
+            mult = 2 if str(btype).upper() == "CITY" else 1
+            bucket = blocked if coord == robber_coord else gained
+            bucket[tile.resource] = bucket.get(tile.resource, 0) + mult
+            tiles_touched += 1
+    if tiles_touched == 0:
+        # Self's board has no exposure to this number — still useful to
+        # report ("rolled 4 · nothing for you") so the banner is
+        # informative rather than silent. Caller decides rendering.
+        return {"gained": {}, "blocked": {}, "total": 0, "blocked_total": 0}
+    return {
+        "gained": gained,
+        "blocked": blocked,
+        "total": sum(gained.values()),
+        "blocked_total": sum(blocked.values()),
+    }
+
+
 def _compute_robber_on_me(game) -> dict[str, Any] | None:
     """Persistent "robber is blocking you" banner.
 
@@ -1593,6 +1647,17 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "ports": _owned_ports(game, self_color),
         "production": _compute_production(game, self_color),
     }
+    # Enrich the last-roll with self's yield breakdown: what the dice
+    # actually delivered from self's buildings, plus what was blocked
+    # by the robber. Only when the last roll is a non-7 (7s don't
+    # produce). Silent skip on computation failure.
+    lr = snap.get("last_roll")
+    if lr and lr.get("total") and lr["total"] != 7:
+        try:
+            lr["yield"] = _compute_roll_yield(
+                game, self_color, int(lr["total"]))
+        except Exception as e:  # noqa: BLE001
+            print(f"[advisor] roll_yield failed: {e!r}", flush=True)
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
     # suggestions would just be noise.
