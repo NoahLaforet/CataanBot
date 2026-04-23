@@ -1015,3 +1015,63 @@ def test_paid_builds_debit_costs_and_setup_is_free():
         assert got == n, (
             f"{res}: expected debit of {n}, got {got} "
             f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
+
+
+def test_snapshot_populates_robber_targets_when_self_holds_knight():
+    """Self holding a KNIGHT (and not facing a 7-roll) should get the
+    full robber_targets ranking in the snapshot with
+    robber_reason=='knight'. This drives the overlay's advisory panel
+    so Noah can eyeball the block before burning the card."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    assert sess.self_color_id is not None
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    idx = cat.state.color_to_index[my_enum]
+
+    base_st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+
+    # No knight → no knight-driven robber_targets.
+    cat.state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 0
+    snap = _build_advisor_snapshot(dict(base_st))
+    assert snap["robber_reason"] is None
+    assert snap["robber_targets"] == []
+
+    # Give self a KNIGHT — full ranking must populate with the 'knight'
+    # discriminator so the overlay labels it differently from a 7-roll.
+    cat.state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 1
+    snap = _build_advisor_snapshot(dict(base_st))
+    assert snap["knight_hint"]["have"] == 1
+    assert snap["robber_reason"] == "knight"
+    assert len(snap["robber_targets"]) > 0
+    assert snap["robber_pending"] is False
+
+    # A self-7-roll (robber_pending=True) must retain "forced" labeling
+    # even when a knight is also in hand — urgent state wins.
+    forced_st = dict(base_st, robber_pending=True, robber_snapshot=[
+        {"coord": (0, 0, 0), "resource": "WHEAT", "number": 6,
+         "score": 3.0, "victims": [], "opponent_blocked": 0}])
+    snap = _build_advisor_snapshot(forced_st)
+    assert snap["robber_reason"] == "forced"
+    assert snap["robber_pending"] is True

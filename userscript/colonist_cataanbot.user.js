@@ -831,8 +831,15 @@
             }
             parts.push('</div>');
         }
-        if (snap.robber_pending && (snap.robber_targets || []).length) {
-            parts.push('<div class="robber-h">robber targets</div>');
+        if ((snap.robber_targets || []).length
+            && (snap.robber_pending || snap.robber_reason === 'knight')) {
+            // Header depends on why targets are showing: a forced 7-roll
+            // placement is urgent ("robber targets"); a knight-held hint
+            // is advisory ("knight → robber targets").
+            const rhTxt = snap.robber_reason === 'knight'
+                ? 'knight → robber targets'
+                : 'robber targets';
+            parts.push(`<div class="robber-h">${rhTxt}</div>`);
             parts.push('<table class="robber">');
             for (let i = 0; i < snap.robber_targets.length; i++) {
                 const t = snap.robber_targets[i];
