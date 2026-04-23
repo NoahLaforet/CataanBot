@@ -1351,6 +1351,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         # until the next HandSync frame corrects us.
         "hand_drift": hand_drift,
         "pieces": _pieces_for_color(game, self_color),
+        "vp_breakdown": _vp_breakdown(game, self_color),
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
@@ -1631,6 +1632,50 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
         "want": want,
         **verdict,
     }
+
+
+def _vp_breakdown(game, color: str) -> dict[str, int] | None:
+    """Per-category VP breakdown from colonist's victoryPointsState.
+
+    Returns ``{settle, city, vp_cards, longest_road, largest_army,
+    total}`` or None when we don't have a live colonist session. Only
+    works for self in the general case — VP cards are hidden for opps
+    (colonist never ships key 2 for another player), so for opps the
+    vp_cards slot is always 0 and total understates by their hidden
+    VPs.
+    """
+    try:
+        sess = getattr(game, "session", None)
+        color_map = getattr(game, "color_map", None)
+        if sess is None or color_map is None:
+            return None
+        username = color_map.reverse(color)
+        if username is None:
+            return None
+        cid = None
+        for c, name in sess.player_names.items():
+            if name == username:
+                cid = c
+                break
+        if cid is None:
+            return None
+        state = sess.victory_points_state.get(cid)
+        if not state:
+            return None
+        # Keys: 0=settle count, 1=city count, 2=held VP cards,
+        # 4=longest-road flag, 5=largest-army flag.
+        settle = int(state.get(0, 0))
+        city = int(state.get(1, 0))
+        vp_cards = int(state.get(2, 0))
+        lr = int(state.get(4, 0)) * 2
+        la = int(state.get(5, 0)) * 2
+        total = settle + city * 2 + vp_cards + lr + la
+        return {
+            "settle": settle, "city": city * 2, "vp_cards": vp_cards,
+            "longest_road": lr, "largest_army": la, "total": total,
+        }
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _get_vp(game, color: str) -> int:

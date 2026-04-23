@@ -231,6 +231,7 @@
   .hand { color: #d0d0d0; margin: 2px 0; }
   .afford { color: #b8e8b8; margin: 0 0 6px; }
   .afford.none { color: #888; }
+  .vpb { color: #888; font-size: calc(11px * var(--font-scale)); }
   .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
   .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
   .opp { color: #ccc; font-size: calc(13px * var(--font-scale)); }
@@ -539,6 +540,24 @@
             }
             parts.push(`<div class="you">${pill}`
                 + ` <span class="muted">${me.cards}c · ${me.vp} VP${piecesTag}</span></div>`);
+            // VP breakdown — only worth surfacing once VP > 2 (past the
+            // trivial 2-settle opening). Shows how VP composes so Noah can
+            // tell a 6-VP-via-cities lead apart from a 6-VP-via-longest-road
+            // that flips back the moment somebody outbuilds his road.
+            if (me.vp_breakdown && me.vp > 2) {
+                const b = me.vp_breakdown;
+                const segs = [];
+                if (b.settle) segs.push(`${b.settle}s`);
+                // city slot is already doubled (cities × 2).
+                if (b.city) segs.push(`${b.city}c`);
+                if (b.vp_cards) segs.push(`${b.vp_cards}vc`);
+                if (b.longest_road) segs.push(`${b.longest_road}LR`);
+                if (b.largest_army) segs.push(`${b.largest_army}LA`);
+                if (segs.length >= 2) {
+                    parts.push(`<div class="vpb">${segs.join(' + ')}`
+                        + ` = ${b.total} VP</div>`);
+                }
+            }
             // Icons scan faster than letter abbrevs on a dense HUD.
             const hand = Object.entries(me.hand || {})
                 .filter(([, n]) => n > 0)

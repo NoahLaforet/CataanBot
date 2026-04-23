@@ -1061,6 +1061,55 @@ def test_snapshot_exposes_piece_counts_on_self_and_opps():
         assert op["road"] + op["road_left"] == 15
 
 
+def test_snapshot_self_vp_breakdown_sums_to_total():
+    """Self VP breakdown must (a) exist when the colonist session is
+    populated, (b) have every category non-negative, (c) have its
+    `total` match the per-category sum, and (d) align with the
+    top-level `vp` number that _get_vp returns. Drift between those
+    two would mean the HUD is showing a breakdown that doesn't add up
+    to the displayed VP — confusing and worse than showing nothing."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    me = snap["self"]
+    assert me is not None
+    b = me["vp_breakdown"]
+    assert b is not None, "session-backed capture should yield a breakdown"
+    for key in ("settle", "city", "vp_cards",
+                "longest_road", "largest_army", "total"):
+        assert b[key] >= 0, f"{key} went negative"
+    # Sum of parts equals total (city/lr/la are already doubled in the dict).
+    summed = (b["settle"] + b["city"] + b["vp_cards"]
+              + b["longest_road"] + b["largest_army"])
+    assert b["total"] == summed, (
+        f"breakdown {b} parts sum to {summed} ≠ total {b['total']}")
+    # Breakdown must match the displayed VP — otherwise the HUD would
+    # show inconsistent numbers.
+    assert b["total"] == me["vp"], (
+        f"breakdown total {b['total']} ≠ self.vp {me['vp']}")
+    # Post-setup there are always 2 build slots on the board (settle or
+    # upgraded to city). `city` is already doubled, so a single upgrade
+    # accounts for 2 of the total on its own.
+    assert b["settle"] + b["city"] >= 2
+
+
 def test_bank_supply_flags_low_resources():
     """Bank starts at 19 per resource. When player hands consume most
     of a resource, remaining drops below 2 and the `low` list fires.
