@@ -259,6 +259,21 @@
   .roll .roll-yield { color: #a4ef9c; font-weight: 600;
     font-variant-numeric: tabular-nums; }
   .roll .roll-blocked { color: #d89c7a; font-weight: 500; }
+  /* Recent-rolls strip: last ~10 dice totals, with the most recent on
+     the right. Dimmer than the main roll banner so the live roll pops;
+     hits on self highlighted (green) and robber-blocked rolls flagged
+     (amber underline) so a dice drought on my numbers is visible at a
+     glance. */
+  .roll-history { color: #888; font-size: calc(11px * var(--font-scale));
+    margin: 0 0 4px 0; font-variant-numeric: tabular-nums;
+    letter-spacing: 0.5px; }
+  .roll-history .rh-label { color: #666; margin-right: 4px; }
+  .roll-history .rh { display: inline-block; margin-right: 4px;
+    padding: 0 2px; }
+  .roll-history .rh.hit { color: #a4ef9c; font-weight: 600; }
+  .roll-history .rh.blocked { color: #d89c7a;
+    text-decoration: underline; text-decoration-color: #d89c7a; }
+  .roll-history .rh.seven { color: #ff8a6e; font-weight: 600; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -951,6 +966,24 @@
             }
             parts.push(`<div class="roll ${lr.is_you ? 'you-rolled' : ''}">`
                 + `${who}${yieldLine}</div>`);
+        }
+        // Recent rolls strip: shows the last ~10 dice totals so Noah
+        // can see at a glance which numbers have been dry (pip drought)
+        // vs streaky. Most recent on the right; self-hits in green,
+        // robber-blocked in amber-underline, 7s in red.
+        const hist = snap.roll_history;
+        if (hist && hist.length > 0) {
+            const cells = hist.map((e) => {
+                const t = e.total;
+                let cls = 'rh';
+                if (t === 7) cls += ' seven';
+                else if (e.blocked_you) cls += ' blocked';
+                else if (e.hit_you) cls += ' hit';
+                return `<span class="${cls}">${t}</span>`;
+            }).join('');
+            parts.push('<div class="roll-history">'
+                + '<span class="rh-label">recent:</span>'
+                + cells + '</div>');
         }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             // Standalone knight-play panel (separate from the active-robber
