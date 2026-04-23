@@ -1101,6 +1101,16 @@
                 subParts.push(
                     `${rom.blocks_recent}/${rom.rolls_recent} recent rolls lost`);
             }
+            // Persistence: how many rolls ago the robber landed here.
+            // Complements the cost tally — 0 blocks over 5 rolls means
+            // "stuck here but lucky so far", while a fresh placement
+            // with 0 blocks just means "nobody's rolled the number yet".
+            if (rom.rolls_since_placed != null) {
+                const n = rom.rolls_since_placed;
+                subParts.push(n === 0
+                    ? 'just placed'
+                    : `placed ${n} ${n === 1 ? 'roll' : 'rolls'} ago`);
+            }
             parts.push('<div class="robber-on-me">');
             parts.push(`robber on your ${escapeHtml(tileLbl)} ·`
                 + ` ${rom.pips_blocked} pips suppressed`);

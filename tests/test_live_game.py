@@ -2453,3 +2453,172 @@ def test_snapshot_exposes_roll_history_as_list():
     snap2 = _build_advisor_snapshot(st)
     assert isinstance(snap2["roll_history"], list)
     assert [e["total"] for e in snap2["roll_history"]] == [8, 4]
+
+
+def _feed_robber_move(st, player="someone", tile_label="ore tile"):
+    """Push a RobberMoveEvent through _track_overlay_state. Mirrors
+    _feed_roll but for robber moves so persist-counter tests can
+    exercise the same dispatch path the bridge uses."""
+    from cataanbot.bridge import _track_overlay_state
+    from cataanbot.events import RobberMoveEvent
+    from cataanbot.live import DispatchResult
+    ev = RobberMoveEvent(player=player, tile_label=tile_label, prob=None)
+    _track_overlay_state(st, [DispatchResult(event=ev, status="applied")])
+
+
+def test_robber_move_anchors_persist_counter_at_current_roll_count():
+    """When a RobberMoveEvent lands, st['robber_moved_at_rolls'] must
+    snapshot the current total_rolls value. That's what powers the
+    "placed N rolls ago" banner — the snap reads total_rolls -
+    robber_moved_at_rolls at render time."""
+    from cataanbot.live_game import LiveGame
+    st: dict = {
+        "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [], "total_rolls": 0,
+        "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    # No rolls yet — move the robber. Counter should anchor at 0.
+    _feed_robber_move(st)
+    assert st["robber_moved_at_rolls"] == 0
+    # Play some rolls; counter should NOT change until the next move.
+    for _ in range(5):
+        _feed_roll(st, 8)
+    assert st["total_rolls"] == 5
+    assert st["robber_moved_at_rolls"] == 0
+    # Robber moves again — counter re-anchors at 5.
+    _feed_robber_move(st)
+    assert st["robber_moved_at_rolls"] == 5
+
+
+def test_robber_on_me_reports_rolls_since_placed_when_anchored():
+    """Given a non-None robber_moved_at_rolls and a higher total_rolls,
+    robber_on_me.rolls_since_placed should equal the delta so the
+    banner can say "placed X rolls ago"."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    hot_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    cat.state.board.robber_coordinate = hot_coord
+
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 7, "robber_moved_at_rolls": 3,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    rom = snap["robber_on_me"]
+    assert rom is not None
+    assert rom["rolls_since_placed"] == 4, (
+        f"expected 7-3=4, got {rom.get('rolls_since_placed')}")
+
+
+def test_robber_on_me_rolls_since_placed_zero_on_fresh_move():
+    """Right after a move the delta should be 0 — the banner should
+    read "placed 0 rolls ago" in the just-moved case. Total_rolls
+    equal to robber_moved_at_rolls must clamp to 0 (not negative)
+    even if some out-of-order bookkeeping ever inverts them."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    hot_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    cat.state.board.robber_coordinate = hot_coord
+
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 9, "robber_moved_at_rolls": 9,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    rom = snap["robber_on_me"]
+    assert rom is not None
+    assert rom["rolls_since_placed"] == 0
+
+
+def test_robber_on_me_omits_rolls_since_placed_before_first_move():
+    """If the robber has never moved (still on the desert from setup),
+    robber_moved_at_rolls is None and the snap should omit
+    rolls_since_placed entirely — no banner line, not a "0 rolls"
+    line that would imply the robber was just placed."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    m = cat.state.board.map
+    self_nodes = {n for n, (c, _) in cat.state.board.buildings.items()
+                  if c == my_enum}
+    hot_coord = next(
+        coord for coord, tile in m.land_tiles.items()
+        if tile.number and set(tile.nodes.values()) & self_nodes)
+    cat.state.board.robber_coordinate = hot_coord
+
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 6, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    rom = snap["robber_on_me"]
+    assert rom is not None
+    assert "rolls_since_placed" not in rom
