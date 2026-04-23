@@ -340,6 +340,11 @@
   .gprog .ph-early { color: #8ec97a; }
   .gprog .ph-mid { color: #ffd47a; }
   .gprog .ph-late { color: #ff8a6e; }
+  /* Standings tags on the progress header. Self-leading is bright
+     gold (good news); gap-to-leader is dim red so it sits below
+     the opp name. Avoids making the header a wall of color. */
+  .gprog .stand-self { color: #ffde7a; font-weight: 600; }
+  .gprog .stand-gap { color: #b07070; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -634,9 +639,27 @@
         // Silent in setup — phase is self-evident then.
         const gp = snap.game_progress;
         if (gp) {
+            // Standings trailer: "BLUE leading at 7 · you at 4" (or
+            // "you leading at 6 · BLUE at 4"). Only surface when both
+            // leader and self are set and VPs are beyond the trivial
+            // opening (>=3) — before that everyone is tied and the
+            // leader label is noise.
+            let standingsTag = '';
+            const st = snap.standings;
+            if (st && st.leader && (st.self_vp >= 3 || st.leader.vp >= 3)) {
+                if (st.self_is_leader) {
+                    standingsTag = ` · <span class="stand-self">you leading `
+                        + `at ${st.self_vp}</span>`;
+                } else {
+                    const leadName = escapeHtml(st.leader.username || '?');
+                    standingsTag = ` · ${leadName} leading at ${st.leader.vp}`
+                        + ` <span class="stand-gap">(you ${st.self_vp}, -${st.gap_to_leader})</span>`;
+                }
+            }
             parts.push('<div class="gprog">'
                 + `round ${gp.round} · `
                 + `<span class="ph-${gp.phase}">${gp.phase}</span>`
+                + standingsTag
                 + '</div>');
         }
         const me = snap.self;

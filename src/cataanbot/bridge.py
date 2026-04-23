@@ -2220,6 +2220,47 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["dev_deck"] = _compute_dev_deck_remaining(game)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] dev_deck failed: {e!r}", flush=True)
+    # VP standings: who's leading and Noah's gap. Anchors the game-
+    # progress header with an explicit leader read so Noah doesn't
+    # have to eyeball each row to answer "am I ahead?". Computed
+    # last so snap["self"] and snap["opps"] VP fields are populated.
+    try:
+        entries: list[dict[str, Any]] = []
+        if snap.get("self"):
+            entries.append({
+                "username": snap["self"].get("username", "you"),
+                "vp": int(snap["self"].get("vp", 0) or 0),
+                "is_self": True,
+            })
+        for opp in (snap.get("opps") or []):
+            entries.append({
+                "username": opp.get("username"),
+                "color": opp.get("color"),
+                "color_css": opp.get("color_css"),
+                "vp": int(opp.get("vp", 0) or 0),
+                "is_self": False,
+            })
+        entries.sort(key=lambda e: -e["vp"])
+        if entries:
+            leader = entries[0]
+            self_entry = next(
+                (e for e in entries if e["is_self"]), None)
+            self_vp = self_entry["vp"] if self_entry else 0
+            snap["standings"] = {
+                "leader": leader,
+                "self_vp": self_vp,
+                "gap_to_leader": (
+                    leader["vp"] - self_vp
+                    if self_entry and not leader["is_self"] else 0
+                ),
+                "self_is_leader": bool(
+                    self_entry and leader["is_self"]),
+            }
+        else:
+            snap["standings"] = None
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] standings failed: {e!r}", flush=True)
+        snap["standings"] = None
     return snap
 
 
