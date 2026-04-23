@@ -951,6 +951,59 @@ def test_win_proximity_filters_non_vp_builds_from_afford():
     assert "keep pushing" in w["message"]
 
 
+def test_closest_missing_build_points_at_smallest_gap():
+    """With hand = {WOOD:1, BRICK:1, SHEEP:0, WHEAT:1}, settlement is
+    1 sheep away (gap=1), road is already affordable (gap=0, skipped),
+    city is 2 WHEAT+3 ORE = 5 away. Closest pick should be settlement
+    with missing={SHEEP:1}."""
+    from cataanbot.bridge import _closest_missing_build
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 0, "WHEAT": 1, "ORE": 0}
+    n = _closest_missing_build(hand)
+    assert n is not None
+    assert n["build"] == "settlement"
+    assert n["missing"] == {"SHEEP": 1}
+    assert n["gap"] == 1
+
+
+def test_closest_missing_build_vp_tiebreak_prefers_city():
+    """When both city and settlement are 1 card away, city wins on
+    the VP-impact tie-break — upgrading a settle to a city is +1 VP
+    for less board-space cost, so the HUD should point there first."""
+    from cataanbot.bridge import _closest_missing_build
+    # hand covers everything except ORE (need 3 for city), but also
+    # missing BRICK for settle. Set it up so both gaps = 1.
+    hand = {"WOOD": 1, "BRICK": 0, "SHEEP": 1,
+            "WHEAT": 2, "ORE": 3}  # settle needs 1 brick
+    n = _closest_missing_build(hand)
+    assert n is not None
+    # City is already affordable (2 WHEAT + 3 ORE) → skipped.
+    # Settle needs 1 BRICK. Road needs 1 BRICK too. Dev is affordable.
+    # Settle wins over road on the VP tie-break.
+    assert n["build"] == "settlement"
+    assert n["missing"] == {"BRICK": 1}
+
+
+def test_closest_missing_build_returns_none_when_all_affordable():
+    """If every build can be paid for from ``hand``, the helper has
+    nothing to point at — must return None so the HUD renders the
+    normal affordable list instead of a misleading gap."""
+    from cataanbot.bridge import _closest_missing_build
+    hand = {"WOOD": 2, "BRICK": 2, "SHEEP": 2, "WHEAT": 3, "ORE": 3}
+    assert _closest_missing_build(hand) is None
+
+
+def test_closest_missing_build_handles_empty_hand():
+    """Empty hand — cheapest build is road (gap=2) vs settle (gap=4)
+    vs dev (gap=3) vs city (gap=5). Road wins."""
+    from cataanbot.bridge import _closest_missing_build
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
+    n = _closest_missing_build(hand)
+    assert n is not None
+    assert n["build"] == "road"
+    assert n["missing"] == {"WOOD": 1, "BRICK": 1}
+    assert n["gap"] == 2
+
+
 def test_dev_stash_risk_requires_both_count_and_vp_sum():
     """Threshold formula: dev_cards >= 2 AND (vp + dev_cards) >=
     VP_TARGET-1. Both have to be true — 1 dev at 9 VP is not a stash;

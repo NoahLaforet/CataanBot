@@ -238,6 +238,10 @@
     margin: 0 0 4px 0; font-weight: 600; }
   .afford { color: #b8e8b8; margin: 0 0 6px; }
   .afford.none { color: #888; }
+  /* Nearest-miss hint — dimmer than affordable (not available yet)
+     but brighter than the "nothing buildable" dead-end. Amber ties
+     it to the opp .one-short visual family. */
+  .afford.near { color: #d4a35a; }
   .vpb { color: #888; font-size: calc(11px * var(--font-scale)); }
   .ports { color: #78b4d8; font-size: calc(11px * var(--font-scale));
            margin: 0 0 4px; }
@@ -750,9 +754,21 @@
                     + '(waiting for resync)</div>');
             }
             const afford = (me.afford || []).join(' · ');
-            parts.push(afford
-                ? `<div class="afford">→ ${afford}</div>`
-                : `<div class="afford none">→ nothing buildable</div>`);
+            if (afford) {
+                parts.push(`<div class="afford">→ ${afford}</div>`);
+            } else if (me.next_build) {
+                // Nearest-miss gap as a direction-of-travel hint:
+                // "1 brick from settlement" is more useful than
+                // "nothing buildable" because it says what to aim for.
+                const nb = me.next_build;
+                const missingStr = Object.entries(nb.missing || {})
+                    .map(([r, n]) => `${n} ${r.toLowerCase().slice(0,3)}`)
+                    .join(' + ');
+                parts.push(`<div class="afford near">→ ${escapeHtml(missingStr)}`
+                    + ` from ${escapeHtml(nb.build)}</div>`);
+            } else {
+                parts.push('<div class="afford none">→ nothing buildable</div>');
+            }
             // Owned ports: "2:1 whe · 2:1 shp · 3:1". Reminds Noah to
             // over-produce toward his cheap-trade resources. Skipped
             // silently when no ports are claimed yet.
