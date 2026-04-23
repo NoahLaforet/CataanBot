@@ -3118,3 +3118,152 @@ def test_sevens_hot_requires_minimum_window():
         "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
     }
     assert _build_advisor_snapshot(st)["sevens_hot"] is None
+
+
+def test_hot_numbers_fires_on_over_rolled_productive_number():
+    """An 8 has a 5/36 baseline — in a 10-roll window its expected
+    count is ~1.4. Three 8s in that window is a 2.15× ratio and
+    should trip the hot-numbers warning so Noah sees "8 is running
+    hot" (if it's on his tile: stay aggressive; on opp tile: brace
+    / consider robber)."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    # 3x 8 + 7x 5 = 10 rolls. 5 expected 1.1×, got 7× (hot too);
+    # 8 expected 1.4×, got 3× (hot). Both should surface.
+    history = (
+        [{**base_entry, "total": 8} for _ in range(3)]
+        + [{**base_entry, "total": 5} for _ in range(7)]
+    )
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 10, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    hn = _build_advisor_snapshot(st)["hot_numbers"]
+    assert hn is not None and len(hn) >= 1
+    nums = {h["number"] for h in hn}
+    # 5 has the bigger ratio (7/1.1 ≈ 6.4) so it leads; 8 may follow.
+    assert 5 in nums
+    first = hn[0]
+    assert first["number"] == 5
+    assert first["count"] == 7
+
+
+def test_hot_numbers_silent_on_expected_distribution():
+    """A roughly-expected distribution (one of each common number in
+    a short window) shouldn't trip hot-numbers — else the banner
+    would show constantly and stop meaning anything."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    # Each number 4..10 rolled once — all ≤ 1 count, under the
+    # count≥3 floor.
+    history = [{**base_entry, "total": n} for n in (4, 5, 6, 8, 9, 10, 4)]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": len(history), "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    assert _build_advisor_snapshot(st)["hot_numbers"] is None
+
+
+def test_hot_numbers_caps_at_two_entries():
+    """If three numbers all qualify as hot, only the top-2 most
+    anomalous surface. Prevents a runaway window (5 hot numbers at
+    once) from turning the HUD into a wall of text."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    # 3x 4 (expected 0.75, ratio 4.0), 3x 10 (same), 3x 5 (expected 1.0,
+    # ratio 3.0) in a 9-roll window. All three qualify; top-2 by ratio
+    # should be 4 and 10.
+    history = (
+        [{**base_entry, "total": 4} for _ in range(3)]
+        + [{**base_entry, "total": 10} for _ in range(3)]
+        + [{**base_entry, "total": 5} for _ in range(3)]
+    )
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": len(history), "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    hn = _build_advisor_snapshot(st)["hot_numbers"]
+    assert hn is not None
+    assert len(hn) == 2
+    nums = {h["number"] for h in hn}
+    # Highest ratios (tied at 4.0): 4 and 10. 5 (ratio 3.0) is trimmed.
+    assert nums == {4, 10}
+
+
+def test_hot_numbers_requires_minimum_window():
+    """Three 8s in 3 rolls is a visually striking burst but the
+    sample is too small to call it "hot" — in a brand-new game the
+    first three rolls could trivially all be 8. Same window floor as
+    sevens_hot (>=4 rolls)."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    base_entry = {
+        "is_you": False, "color": None,
+        "hit_you": False, "blocked_you": False,
+        "gained_total": 0, "blocked_total": 0,
+    }
+    history = [{**base_entry, "total": 8} for _ in range(3)]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "total_rolls": 3, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    assert _build_advisor_snapshot(st)["hot_numbers"] is None

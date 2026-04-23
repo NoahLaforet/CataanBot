@@ -313,6 +313,12 @@
   .sevens-hot { color: #ff8a6e; font-size: calc(11px * var(--font-scale));
     margin: 0 0 4px 0; font-weight: 600;
     font-variant-numeric: tabular-nums; }
+  /* Hot-numbers banner. Informational gold — the cue is "a productive
+     number is over-rolling; map it to your tiles mentally", not an
+     alert. Sits with the rolls strip and yield summary. */
+  .hot-numbers { color: #ffd47a; font-size: calc(11px * var(--font-scale));
+    margin: 0 0 4px 0; font-weight: 600;
+    font-variant-numeric: tabular-nums; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -1093,6 +1099,16 @@
             parts.push('<div class="sevens-hot">'
                 + `7s hot: ${sh.sevens}/${sh.window} recent — consider discarding`
                 + '</div>');
+        }
+        // Hot numbers: productive dice (non-7) over-rolling at 2×+
+        // expected. Brief line showing top-2 most-anomalous so Noah
+        // can map them to his tiles. Stays active as long as the ratio
+        // holds — cools naturally as the window fills with other rolls.
+        const hn = snap.hot_numbers;
+        if (hn && hn.length > 0) {
+            const pieces = hn.map(h =>
+                `${h.number} (${h.count}× vs ${h.expected}×)`).join(', ');
+            parts.push('<div class="hot-numbers">hot: ' + pieces + '</div>');
         }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             // Standalone knight-play panel (separate from the active-robber
