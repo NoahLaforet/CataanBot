@@ -541,6 +541,107 @@ def _compute_robber_snapshot(
     return out
 
 
+# Cost tables mirror the build_costs used elsewhere in the bot. Keys
+# are ordered by "preserve this build over the others" priority — a
+# city beats a settlement beats a dev card beats a road when we can
+# only keep one of them post-discard.
+_DISCARD_PRESERVE_PLANS: tuple[tuple[str, dict[str, int]], ...] = (
+    ("city", {"WHEAT": 2, "ORE": 3}),
+    ("settlement", {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1}),
+    ("dev card", {"WHEAT": 1, "SHEEP": 1, "ORE": 1}),
+    ("road", {"WOOD": 1, "BRICK": 1}),
+)
+# Drop priority: resources on the left go first. SHEEP's the cheapest
+# to re-acquire (3:1 bank trade still leaves an edge) and isn't the
+# bottleneck for cities the way WHEAT/ORE are. WOOD/BRICK slot in
+# between — roads are cheaper than cities. WHEAT/ORE last: losing an
+# ore delays city tempo more than losing any other card.
+_DISCARD_PRIORITY: tuple[str, ...] = (
+    "SHEEP", "WOOD", "BRICK", "WHEAT", "ORE")
+
+
+def _compute_discard_plan(
+    hand: dict[str, int], need: int,
+) -> tuple[dict[str, int], str | None]:
+    """Return {resource: count} to discard plus a rationale string.
+
+    Strategy: try to preserve the most valuable build we can afford
+    *after* the discard. Drop from resources not needed for that build,
+    lowest-priority first; only break into the preserved build if the
+    remaining non-reserved cards aren't enough.
+    """
+    if need <= 0:
+        return {}, None
+    total = sum(hand.values())
+    after = total - need
+    preserve_name: str | None = None
+    reserved: dict[str, int] = {}
+    for name, cost in _DISCARD_PRESERVE_PLANS:
+        cost_total = sum(cost.values())
+        if cost_total > after:
+            continue
+        if all(hand.get(r, 0) >= n for r, n in cost.items()):
+            preserve_name = name
+            reserved = dict(cost)
+            break
+    drops: dict[str, int] = {}
+    remaining = need
+    for r in _DISCARD_PRIORITY:
+        if remaining == 0:
+            break
+        droppable = hand.get(r, 0) - reserved.get(r, 0)
+        if droppable <= 0:
+            continue
+        take = min(droppable, remaining)
+        drops[r] = drops.get(r, 0) + take
+        remaining -= take
+    if remaining > 0:
+        # Reserved cards weren't enough slack — we have to dip into the
+        # preserved build. Drop from its cheapest resource first.
+        preserve_name = None
+        for r in _DISCARD_PRIORITY:
+            if remaining == 0:
+                break
+            available = hand.get(r, 0) - drops.get(r, 0)
+            if available <= 0:
+                continue
+            take = min(available, remaining)
+            drops[r] = drops.get(r, 0) + take
+            remaining -= take
+    return drops, preserve_name
+
+
+def _compute_discard_hint(
+    hand: dict[str, int], cards: int,
+) -> dict[str, Any] | None:
+    """Recommend which cards to discard when self must discard on a 7.
+
+    Fires only when the authoritative card count exceeds the discard
+    limit (default 7). Returns None otherwise so the overlay can hide
+    the banner. Uses the authoritative ``cards`` total — the tracker's
+    per-resource breakdown is trusted for the *shape* but the total is
+    ``cards``; a drift between the two surfaces elsewhere already.
+    """
+    from cataanbot.config import DISCARD_LIMIT
+    if cards <= DISCARD_LIMIT:
+        return None
+    need = cards // 2
+    if need <= 0:
+        return None
+    drops, preserve = _compute_discard_plan(hand, need)
+    if not drops:
+        return None
+    if preserve:
+        rationale = f"keep enough to {preserve}"
+    else:
+        rationale = "trim least-scarce cards"
+    return {
+        "need": need,
+        "drop": drops,
+        "rationale": rationale,
+    }
+
+
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
@@ -658,6 +759,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "recommendations": [],
         "incoming_trade": None,
         "knight_hint": None,
+        "discard_hint": None,
     }
     if not game.started:
         return snap
@@ -882,6 +984,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, display_colors=st.get("display_colors") or {})
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
+    # Discard-on-7 advice: fires whenever self's hand exceeds the discard
+    # limit. The overlay should render it prominently on a 7-roll, but
+    # we compute unconditionally — it's cheap and "you're over the limit"
+    # is useful context even before a roll lands.
+    try:
+        snap["discard_hint"] = _compute_discard_hint(hand, cards)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] discard_hint failed: {e!r}", flush=True)
     return snap
 
 

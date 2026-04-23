@@ -351,6 +351,21 @@
   }
   .knight-hint .kh-verdict.play { background: #1e4d2b; color: #a4ef9c; }
   .knight-hint .kh-verdict.hold { background: #404040; color: #ddd; }
+  .discard-hint {
+    border: 1px solid #5a2a2a; border-radius: 4px;
+    padding: 4px 6px; margin: 6px 0 4px;
+    background: #2a1a1a;
+  }
+  .discard-hint .dh-h {
+    color: #ff9e5e; font-weight: 700; margin-bottom: 2px;
+  }
+  .discard-hint .dh-drops {
+    color: #f0d8c0; font-size: calc(13px * var(--font-scale));
+  }
+  .discard-hint .dh-reason {
+    color: #bfa68a; font-style: italic;
+    font-size: calc(12px * var(--font-scale));
+  }
   .muted { color: #888; }
   .err { color: #ff9999; }
 </style>
@@ -753,6 +768,19 @@
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
                 + escapeHtml(kh.reason || '')
                 + escapeHtml(tail) + '</div>');
+            parts.push('</div>');
+        }
+        if (snap.discard_hint && snap.discard_hint.need > 0) {
+            const dh = snap.discard_hint;
+            const dropText = Object.entries(dh.drop)
+                .map(([res, n]) => `${n} ${res.slice(0, 2).toLowerCase()}`)
+                .join(' · ');
+            parts.push('<div class="discard-hint">');
+            parts.push(`<div class="dh-h">discard ${dh.need} (over 7)</div>`);
+            parts.push(`<div class="dh-drops">${escapeHtml(dropText)}</div>`);
+            if (dh.rationale) {
+                parts.push(`<div class="dh-reason">${escapeHtml(dh.rationale)}</div>`);
+            }
             parts.push('</div>');
         }
         if (snap.robber_pending && (snap.robber_targets || []).length) {

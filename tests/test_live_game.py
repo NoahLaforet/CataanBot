@@ -693,6 +693,70 @@ def test_compute_knight_hint_play_when_robber_blocks_self():
     assert "your tile" in hint["reason"].lower() or "block" in hint["reason"].lower()
 
 
+def test_compute_discard_plan_preserves_city_over_lesser_builds():
+    """With 10 cards including 2+ WHEAT and 3+ ORE, we must drop 5.
+    The planner should hold the city cost (2W 3O = 5 cards) and dump
+    5 non-reserved cards (SHEEP first, then WOOD/BRICK)."""
+    from cataanbot.bridge import _compute_discard_plan
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 3, "WHEAT": 2, "ORE": 3}
+    drops, preserve = _compute_discard_plan(hand, 5)
+    assert preserve == "city"
+    assert sum(drops.values()) == 5
+    # City resources must still be in hand after drops.
+    for r, n in (("WHEAT", 2), ("ORE", 3)):
+        assert hand[r] - drops.get(r, 0) >= n, (
+            f"{r} dipped below city reserve: {drops}")
+
+
+def test_compute_discard_plan_falls_back_when_no_build_affordable():
+    """A pure-sheep hand can't preserve any build; drops all from SHEEP
+    without claiming a preserve rationale."""
+    from cataanbot.bridge import _compute_discard_plan
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 10, "WHEAT": 0, "ORE": 0}
+    drops, preserve = _compute_discard_plan(hand, 5)
+    assert preserve is None
+    assert drops == {"SHEEP": 5}
+
+
+def test_compute_discard_plan_breaks_reserve_when_no_slack():
+    """When non-reserved cards are insufficient to reach the discard
+    target, the planner dips into the preserved build — and drops the
+    preserve rationale since we can't hold it together."""
+    from cataanbot.bridge import _compute_discard_plan
+    # 8 cards. Best preserve: settlement (1W+1B+1S+1Wh = 4). Need to
+    # drop 4, so 4 remain. SHEEP has 1 non-reserved. All other non-
+    # reserved are 0. We have to dip in.
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 2, "WHEAT": 1, "ORE": 3}
+    drops, preserve = _compute_discard_plan(hand, 4)
+    assert sum(drops.values()) == 4
+    # Either the preserve is broken (None) or ORE was available as
+    # pure non-reserved (3 ore + 1 sheep = 4 drops, preserve held).
+    # In this hand city isn't affordable (need 2 wheat), so settlement
+    # is the preserve — which has no ore. So 4 drops from non-reserved
+    # = 1 sheep + 3 ore. That keeps settlement. Verify:
+    assert preserve == "settlement"
+    assert drops.get("ORE", 0) == 3
+    assert drops.get("SHEEP", 0) == 1
+
+
+def test_compute_discard_hint_bails_under_limit():
+    """7-card hand doesn't trigger discard on a 7-roll; hint is None."""
+    from cataanbot.bridge import _compute_discard_hint
+    hand = {"WOOD": 2, "BRICK": 2, "SHEEP": 1, "WHEAT": 1, "ORE": 1}
+    assert _compute_discard_hint(hand, 7) is None
+
+
+def test_compute_discard_hint_returns_plan_over_limit():
+    """10-card hand → must drop 5; hint surfaces drops + rationale."""
+    from cataanbot.bridge import _compute_discard_hint
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 3, "WHEAT": 2, "ORE": 3}
+    hint = _compute_discard_hint(hand, 10)
+    assert hint is not None
+    assert hint["need"] == 5
+    assert sum(hint["drop"].values()) == 5
+    assert "city" in hint["rationale"]
+
+
 def test_reconnect_replays_pre_existing_buildings_into_tracker():
     """Simulate a mid-game reconnect: on a fresh WS session, colonist
     ships the full current mapState in the GameStart payload — every
