@@ -2891,3 +2891,128 @@ def test_production_stall_suppressed_without_production():
     }
     snap = _build_advisor_snapshot(st)
     assert snap["production_stall"] is None
+
+
+def test_monopoly_risk_flags_largest_stack_when_opp_has_devs():
+    """Self hand with 5+ of one resource AND at least one opp holding
+    unplayed dev cards should populate self.monopoly_risk with the
+    tallest stack's resource and count. The tallest wins because
+    that's the biggest single-play loss."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    # Seed a 6-wheat hand on self and bump an opp's dev count so the
+    # gate fires. Use the first non-self cid we have a name for.
+    opp_cid = next(c for c in sess.player_names
+                   if c != sess.self_color_id)
+    sess.dev_card_counts[opp_cid] = max(
+        1, sess.dev_card_counts.get(opp_cid, 0))
+    idx = game.tracker.game.state.color_to_index[my_enum]
+    state = game.tracker.game.state
+    state.player_state[f"P{idx}_WHEAT_IN_HAND"] = 6
+    state.player_state[f"P{idx}_WOOD_IN_HAND"] = 2
+    state.player_state[f"P{idx}_BRICK_IN_HAND"] = 0
+    state.player_state[f"P{idx}_SHEEP_IN_HAND"] = 0
+    state.player_state[f"P{idx}_ORE_IN_HAND"] = 0
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 5, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    mr = snap["self"]["monopoly_risk"]
+    assert mr is not None
+    assert mr["resource"] == "WHEAT"
+    assert mr["count"] == 6
+
+
+def test_monopoly_risk_suppressed_when_no_opp_has_devs():
+    """Without any unplayed-dev-cards on opps, monopoly simply can't
+    be played this turn. A 6-wheat stack then isn't at risk in any
+    near-term sense, and flashing the warning would desensitize Noah
+    to it for the real case."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    # Zero out every opp's dev card count.
+    for cid in list(sess.dev_card_counts):
+        sess.dev_card_counts[cid] = 0
+    idx = game.tracker.game.state.color_to_index[my_enum]
+    game.tracker.game.state.player_state[f"P{idx}_WHEAT_IN_HAND"] = 6
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 5, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["self"]["monopoly_risk"] is None
+
+
+def test_monopoly_risk_threshold_is_five():
+    """4 of a resource should NOT fire (common enough to be noise);
+    5 should. Documents the picked threshold so tuning it later
+    makes a test-breakage explicit instead of silent drift."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    opp_cid = next(c for c in sess.player_names
+                   if c != sess.self_color_id)
+    sess.dev_card_counts[opp_cid] = 1
+    idx = game.tracker.game.state.color_to_index[my_enum]
+    state = game.tracker.game.state
+    state.player_state[f"P{idx}_SHEEP_IN_HAND"] = 4
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "total_rolls": 5, "robber_moved_at_rolls": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    assert _build_advisor_snapshot(st)["self"]["monopoly_risk"] is None
+    state.player_state[f"P{idx}_SHEEP_IN_HAND"] = 5
+    mr = _build_advisor_snapshot(st)["self"]["monopoly_risk"]
+    assert mr is not None
+    assert mr["resource"] == "SHEEP" and mr["count"] == 5

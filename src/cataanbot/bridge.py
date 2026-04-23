@@ -1696,6 +1696,30 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             and hand.get("ORE", 0) >= 1):
         afford.append("dev card")
     vp = _get_vp(game, self_color)
+    # Monopoly vulnerability: a monopoly play takes EVERY card of one
+    # resource from all opponents, so a 5+ stack in a single bucket is
+    # real exposure. Only flag when an opp could actually play one —
+    # if nobody holds an unplayed dev card, monopoly isn't on the
+    # menu this turn cycle. Conservative on type: dev_card_counts
+    # lumps VPs in with playables (we can't see types), so this
+    # sometimes fires on "impossible" VP-only hands. Better a false
+    # positive than missing a real hit that costs 5+ cards.
+    mono_risk = None
+    MONO_STACK_THRESHOLD = 5
+    opps_with_devs = any(
+        int(sess.dev_card_counts.get(cid, 0)) > 0
+        for cid in sess.player_names
+        if cid != sess.self_color_id
+    )
+    if opps_with_devs:
+        big_stacks = [(r, n) for r, n in hand.items()
+                      if n >= MONO_STACK_THRESHOLD]
+        if big_stacks:
+            # Pick the tallest stack — that's the biggest single-play
+            # loss if it gets monopolied.
+            big_stacks.sort(key=lambda rn: -rn[1])
+            r, n = big_stacks[0]
+            mono_risk = {"resource": r, "count": n}
     snap["self"] = {
         "username": username,
         "color": self_color,
@@ -1713,6 +1737,9 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "knights_played": _knights_played(game, self_color),
         "ports": _owned_ports(game, self_color),
         "production": _compute_production(game, self_color),
+        # Monopoly exposure. None when no big stack or no opp could
+        # play monopoly; {"resource", "count"} otherwise.
+        "monopoly_risk": mono_risk,
     }
     # Enrich the last-roll with self's yield breakdown: what the dice
     # actually delivered from self's buildings, plus what was blocked
