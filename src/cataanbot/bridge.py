@@ -985,6 +985,39 @@ def _compute_longest_road_race(
     return None
 
 
+def _compute_bank_supply(game) -> dict[str, Any] | None:
+    """Estimate how many of each resource remain in the bank.
+
+    Uses the 19-per-resource Catan rule and the tracker's authoritative
+    player hands to compute the difference. Returns None if we can't
+    trust the math (e.g. a player has a totally inferred hand with
+    unknowns, which would double-count against the bank). The `low`
+    list calls out resources with ≤2 in the bank so the overlay can
+    flash a warning — you can't port/4:1-trade into an empty resource
+    and no one can receive it on a dice roll until someone pays back.
+    """
+    sess = game.session
+    if sess is None:
+        return None
+    totals = {r: 0 for r in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")}
+    for user in sess.player_names.values():
+        try:
+            c = game.color_map.get(user)
+        except Exception:  # noqa: BLE001
+            continue
+        h = game.tracker.hand(c)
+        for r in totals:
+            totals[r] += int(h.get(r, 0))
+    remaining = {r: max(0, 19 - totals[r]) for r in totals}
+    low = sorted(
+        [(r, n) for r, n in remaining.items() if n <= 2],
+        key=lambda kv: kv[1])
+    return {
+        "remaining": remaining,
+        "low": [{"resource": r, "count": n} for r, n in low],
+    }
+
+
 def _compute_largest_army_race(
     game, self_color: str | None,
 ) -> dict[str, Any] | None:
@@ -1161,6 +1194,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "robber_on_me": None,
         "longest_road_race": None,
         "largest_army_race": None,
+        "bank_supply": None,
     }
     if not game.started:
         return snap
@@ -1448,6 +1482,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, self_color)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] largest_army_race failed: {e!r}", flush=True)
+    # Bank-supply warning: if any resource is ≤2 left in the bank, Noah
+    # needs to know — can't 4:1 trade into an empty pool and a 7-steal
+    # may be the only way to get more.
+    try:
+        snap["bank_supply"] = _compute_bank_supply(game)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] bank_supply failed: {e!r}", flush=True)
     return snap
 
 
