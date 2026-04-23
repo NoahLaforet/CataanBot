@@ -1055,13 +1055,22 @@
             const res = (rom.resource || '').slice(0, 3).toLowerCase();
             const tileLbl = `${res}${rom.number || ''}`;
             const nBuilds = rom.buildings;
-            const sub = nBuilds > 1
+            const subParts = [];
+            subParts.push(nBuilds > 1
                 ? `${nBuilds} buildings blocked`
-                : (rom.has_city ? 'city blocked' : 'settlement blocked');
+                : (rom.has_city ? 'city blocked' : 'settlement blocked'));
+            // Recent cost tally: how many of the last N non-7 rolls
+            // actually hit this blocked tile. Zero is meaningful too
+            // — it means the robber's there but hasn't bitten yet.
+            if (rom.rolls_recent != null && rom.blocks_recent != null
+                && rom.rolls_recent > 0) {
+                subParts.push(
+                    `${rom.blocks_recent}/${rom.rolls_recent} recent rolls lost`);
+            }
             parts.push('<div class="robber-on-me">');
             parts.push(`robber on your ${escapeHtml(tileLbl)} ·`
                 + ` ${rom.pips_blocked} pips suppressed`);
-            parts.push(`<span class="rom-sub">${escapeHtml(sub)}</span>`);
+            parts.push(`<span class="rom-sub">${escapeHtml(subParts.join(' · '))}</span>`);
             parts.push('</div>');
         }
         if (snap.longest_road_race) {
