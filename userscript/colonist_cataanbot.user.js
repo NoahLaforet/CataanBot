@@ -351,6 +351,14 @@
   }
   .knight-hint .kh-verdict.play { background: #1e4d2b; color: #a4ef9c; }
   .knight-hint .kh-verdict.hold { background: #404040; color: #ddd; }
+  .dev-hint {
+    border: 1px solid #3a3a4a; border-radius: 4px;
+    padding: 4px 6px; margin: 4px 0;
+    background: #1a1d24;
+  }
+  .dev-hint .dv-h { color: #9ec7ff; font-weight: 600; margin-bottom: 2px; }
+  .dev-hint .dv-body { color: #d8d8d8; font-size: calc(13px * var(--font-scale)); }
+  .dev-hint .dv-unlock { color: #a4ef9c; font-style: italic; margin-left: 4px; }
   .threat {
     border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
     font-weight: 600;
@@ -775,6 +783,30 @@
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
                 + escapeHtml(kh.reason || '')
                 + escapeHtml(tail) + '</div>');
+            parts.push('</div>');
+        }
+        if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
+            const mh = snap.monopoly_hint;
+            const resLbl = mh.resource.slice(0, 3).toLowerCase();
+            let body = `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
+            if (mh.unlock) {
+                body += `<span class="dv-unlock">${escapeHtml(mh.unlock)}</span>`;
+            }
+            parts.push('<div class="dev-hint">');
+            parts.push(`<div class="dv-h">monopoly (×${mh.have})</div>`);
+            parts.push(`<div class="dv-body">${body}</div>`);
+            parts.push('</div>');
+        }
+        if (snap.yop_hint && snap.yop_hint.have > 0) {
+            const yh = snap.yop_hint;
+            const pair = (yh.pair || []).map(r => r.slice(0, 3).toLowerCase()).join(' + ');
+            let body = `pick <b>${escapeHtml(pair)}</b>`;
+            if (yh.unlock) {
+                body += `<span class="dv-unlock">unlocks ${escapeHtml(yh.unlock)}</span>`;
+            }
+            parts.push('<div class="dev-hint">');
+            parts.push(`<div class="dv-h">year of plenty (×${yh.have})</div>`);
+            parts.push(`<div class="dv-body">${body}</div>`);
             parts.push('</div>');
         }
         if (snap.threat && snap.threat.message) {

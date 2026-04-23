@@ -798,6 +798,73 @@ def test_compute_leader_threat_win_level_at_10_vp():
     assert t["level"] == "win"
 
 
+def test_compute_monopoly_hint_picks_resource_with_largest_total():
+    """When self holds a MONOPOLY, the hint should pick the resource
+    with the highest inferred total across opps."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_monopoly_hint
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names.get(sess.self_color_id)
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    idx = cat.state.color_to_index[my_enum]
+    # With no MONOPOLY: hint is None.
+    cat.state.player_state[f"P{idx}_MONOPOLY_IN_HAND"] = 0
+    assert _compute_monopoly_hint(
+        game, color, dict(game.tracker.hand(color))) is None
+    # Grant one MONOPOLY: hint fires.
+    cat.state.player_state[f"P{idx}_MONOPOLY_IN_HAND"] = 1
+    h = _compute_monopoly_hint(
+        game, color, dict(game.tracker.hand(color)))
+    assert h is not None
+    assert h["have"] == 1
+    assert h["resource"] in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
+    assert h["est_steal"] >= 0
+    assert set(h["totals"]) == {"WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"}
+    # The chosen resource should have the max total (ties ok).
+    max_total = max(h["totals"].values())
+    assert h["totals"][h["resource"]] == max_total
+
+
+def test_compute_yop_hint_suggests_pair_to_unlock_build():
+    """YoP should identify a 2-card pickup that unlocks a build."""
+    from cataanbot.bridge import _compute_yop_hint
+
+    class _FakeGame:
+        class _Tracker:
+            class _Game:
+                class _State:
+                    color_to_index: dict = {}
+                    player_state: dict = {}
+                state = _State()
+            game = _Game()
+        tracker = _Tracker()
+
+    from catanatron import Color
+    g = _FakeGame()
+    g.tracker.game.state.color_to_index = {Color.RED: 0}
+    g.tracker.game.state.player_state = {"P0_YEAR_OF_PLENTY_IN_HAND": 1}
+    # Self has 1 WOOD + 1 BRICK + 1 SHEEP but no WHEAT. Settlement
+    # requires 1 of each of {WOOD, BRICK, SHEEP, WHEAT}. YoP → 1 WHEAT
+    # unlocks settlement; second slot should target another need.
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 0, "ORE": 0}
+    h = _compute_yop_hint(g, "RED", hand)
+    assert h is not None
+    assert h["have"] == 1
+    assert h["unlock"] == "settlement"
+    assert "WHEAT" in h["pair"]
+
+
 def test_reconnect_replays_pre_existing_buildings_into_tracker():
     """Simulate a mid-game reconnect: on a fresh WS session, colonist
     ships the full current mapState in the GameStart payload — every
