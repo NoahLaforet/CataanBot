@@ -274,6 +274,16 @@
   .roll-history .rh.blocked { color: #d89c7a;
     text-decoration: underline; text-decoration-color: #d89c7a; }
   .roll-history .rh.seven { color: #ff8a6e; font-weight: 600; }
+  /* Yield summary trailer: aggregate cards got / blocked / expected
+     across the roll-history window. Dim so it reads as supporting
+     context to the strip rather than a primary alert; "behind" variant
+     (actual < expected by ~30%+) switches to warning amber so dice
+     droughts or robber chokes pop. */
+  .yield-sum { color: #8893a0; font-size: calc(11px * var(--font-scale));
+    margin: -2px 0 4px 0; font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3px; }
+  .yield-sum.behind { color: #d8a872; }
+  .yield-sum .ys-sep { color: #555; margin: 0 4px; }
   .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
   table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
   table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
@@ -984,6 +994,21 @@
             parts.push('<div class="roll-history">'
                 + '<span class="rh-label">recent:</span>'
                 + cells + '</div>');
+        }
+        // Yield summary: actual vs expected cards across the roll
+        // window. Flags "behind" when expected is clearly above actual,
+        // i.e. dice droughts or the robber have cost us.
+        const ys = snap.yield_summary;
+        if (ys && ys.window > 0) {
+            const behind = (ys.expected - ys.got) > 0.3 * ys.expected
+                && ys.expected > 1.0;
+            const blockedFrag = ys.blocked > 0
+                ? `<span class="ys-sep">·</span>blocked ${ys.blocked}`
+                : '';
+            parts.push(`<div class="yield-sum ${behind ? 'behind' : ''}">`
+                + `got ${ys.got}/${ys.expected} (${ys.window} rolls)`
+                + blockedFrag
+                + '</div>');
         }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             // Standalone knight-play panel (separate from the active-robber

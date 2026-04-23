@@ -2234,6 +2234,107 @@ def test_robber_on_me_block_counts_default_to_zero_without_history():
     assert rom["blocks_recent"] == 0
 
 
+def test_roll_history_entries_carry_gained_and_blocked_totals():
+    """Each roll_history entry should include integer gained_total /
+    blocked_total so the snap can aggregate yield-vs-expected without
+    recomputing _compute_roll_yield for every historic roll. This is
+    the shape yield_summary depends on — a boolean-only entry would
+    only tell us whether-hit, not how-many-cards."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.live_game import LiveGame
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    _feed_roll(st, 8)
+    _feed_roll(st, 4)
+    for e in st["roll_history"]:
+        assert "gained_total" in e
+        assert "blocked_total" in e
+        assert isinstance(e["gained_total"], int)
+        assert isinstance(e["blocked_total"], int)
+        assert e["gained_total"] >= 0
+        assert e["blocked_total"] >= 0
+
+
+def test_yield_summary_aggregates_across_window():
+    """With a hand-built roll_history of known gained/blocked totals,
+    yield_summary should sum them and report the window size without
+    7s. expected is production.per_roll × window, so any production
+    value plumbed through self gives a reasonable comparison — the
+    behind/on-pace verdict is the overlay's concern, not the snap's."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    history = [
+        {"total": 8, "is_you": False, "color": None,
+         "hit_you": True, "blocked_you": False,
+         "gained_total": 2, "blocked_total": 0},
+        {"total": 7, "is_you": True, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 4, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": True,
+         "gained_total": 0, "blocked_total": 3},
+        {"total": 11, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 1, "blocked_total": 0},
+    ]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    ys = snap["yield_summary"]
+    assert ys is not None
+    assert ys["window"] == 3, "7s should be excluded from window"
+    assert ys["got"] == 3, "2 + 0 + 1"
+    assert ys["blocked"] == 3
+    # expected = per_roll × 3, which depends on capture board — just
+    # assert it's a non-negative float.
+    assert ys["expected"] >= 0
+
+
+def test_yield_summary_none_on_empty_history():
+    """Before any roll has been seen, yield_summary must be None. A
+    "0/0 (0 rolls)" banner on turn 1 would just be visual noise — the
+    overlay's `if (ys && ys.window > 0)` guard depends on this."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["yield_summary"] is None
+
+
 def test_snapshot_exposes_roll_history_as_list():
     """Whatever the bridge accumulates on roll_history should show up as
     a list on the snap so the overlay can render it. Empty before any
