@@ -810,6 +810,17 @@
                 if (o.production && o.production.per_roll > 0) {
                     prodTag = ` · ${o.production.per_roll.toFixed(2)}p`;
                 }
+                // Opp ports. Trade-partner signal: 2:1 on a resource
+                // means they'd rather bank-trade than swap with you.
+                // Silent when no ports. Format: "port:whe,shp,3" where
+                // 3 stands in for the generic 3:1.
+                let opPortTag = '';
+                if (Array.isArray(o.ports) && o.ports.length) {
+                    const segs = o.ports.map(p => p === 'GENERIC'
+                        ? '3'
+                        : p.slice(0, 3).toLowerCase());
+                    opPortTag = ` · port:${segs.join(',')}`;
+                }
                 // Builds the inferred hand can already pay for. Skip
                 // 'road' alone — too noisy, doesn't move VP on its own.
                 // 'city' and 'settlement' are the real warning signs.
@@ -823,7 +834,7 @@
                     }
                 }
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}</span>${affordTag}`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }

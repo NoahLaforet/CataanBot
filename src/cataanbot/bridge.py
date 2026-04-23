@@ -1706,6 +1706,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # Per-opp per-roll production. Drives robber-target choice
             # (shut down the biggest engine) and trade-block priority.
             "production": _compute_production(game, c),
+            # Ports this opp can access. Trade-partner signal: an opp
+            # with a 2:1 on a resource is a worse counterparty for that
+            # resource (they'd rather bank-trade than meet you halfway).
+            "ports": _owned_ports(game, c),
         })
 
     pending = st.get("pending_trade_offer")
