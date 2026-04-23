@@ -1264,6 +1264,47 @@ def _affordable_builds(
     return out
 
 
+def _closest_missing_build(
+    hand: dict[str, int],
+) -> dict[str, Any] | None:
+    """The build with the smallest resource gap given ``hand``.
+
+    When ``hand`` already covers every build, returns None — there's
+    nothing to point at. Otherwise returns the nearest-miss: the build
+    with the smallest sum of missing cards, with ties broken by VP
+    impact (city > settlement > dev > road).
+
+    The HUD uses this to turn "nothing buildable" into "1 brick from
+    settle" — a direction of travel rather than a dead-end read.
+    """
+    if not isinstance(hand, dict):
+        return None
+    candidates: list[dict[str, Any]] = []
+    # Preserves the VP-impact tie-break order — first-in-ties wins.
+    BUILDS: tuple[tuple[str, dict[str, int]], ...] = (
+        ("city", {"WHEAT": 2, "ORE": 3}),
+        ("settlement", {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1}),
+        ("dev card", {"WHEAT": 1, "SHEEP": 1, "ORE": 1}),
+        ("road", {"WOOD": 1, "BRICK": 1}),
+    )
+    for name, cost in BUILDS:
+        missing: dict[str, int] = {}
+        for r, n in cost.items():
+            have = int(hand.get(r, 0) or 0)
+            if have < n:
+                missing[r] = n - have
+        if not missing:
+            continue  # fully affordable — not the "next" build
+        gap = sum(missing.values())
+        candidates.append({
+            "build": name, "missing": missing, "gap": gap,
+        })
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c["gap"])
+    return candidates[0]
+
+
 def _is_dev_stash_risk(
     vp: int, dev_cards: int, vp_target: int | None = None,
 ) -> bool:
@@ -1842,6 +1883,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "hand": hand,
         "cards": cards,
         "afford": afford,
+        # Closest-build gap. None when every build is affordable or
+        # the hand is empty; otherwise a {build, missing, gap} dict
+        # pointing at the nearest-miss build so the HUD can render
+        # "1 brick from settle" instead of "nothing buildable".
+        "next_build": _closest_missing_build(hand),
         "vp": vp,
         # True when per-resource breakdown disagrees with the raw-total.
         # Overlay surfaces this so Noah knows the hand detail is unreliable
