@@ -1806,6 +1806,21 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         }
     else:
         snap["yield_summary"] = None
+    # Sevens density: how many 7s in the recent window vs expected.
+    # Baseline is 6/36 ≈ 16.7% — so 3+ sevens in a 10-roll window is
+    # ~2× expected. Use the whole history (not non_seven) because the
+    # window sizing matters too — a 3-of-4 burst is a bigger signal
+    # than 3-of-10. Silent when < 3 sevens; the noise floor for
+    # "random clustering" is around 2 in 10 per binomial math.
+    sevens_count = sum(1 for e in hist if e.get("total") == 7)
+    window_len = len(hist)
+    sevens_hot = None
+    if sevens_count >= 3 and window_len >= 4:
+        sevens_hot = {
+            "sevens": sevens_count,
+            "window": window_len,
+        }
+    snap["sevens_hot"] = sevens_hot
     # Production stall: count non-7 rolls since the most recent gain.
     # Useful because a "3 rolls dry" drought on a 2-pip/turn engine is
     # expected variance, while the same drought on a 5-pip engine is a
