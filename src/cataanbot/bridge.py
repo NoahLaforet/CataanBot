@@ -95,6 +95,13 @@ def _build_app(jsonl_path: Path | None = None,
         # caps at 10) so the overlay can show "turn ~N" regardless of
         # buffer size. Not decremented; resets only on /reset.
         "total_rolls": 0,
+        # total_rolls value at the moment the robber last moved onto a
+        # self tile. None until the first robber-on-me move. Used to
+        # enrich the robber_on_me banner with "placed N rolls ago" —
+        # a direct persistence signal. blocks_recent alone can read
+        # "0" even when the robber has sat there forever (if the number
+        # hasn't come up), so persistence and cost are complementary.
+        "robber_moved_at_rolls": None,
         "robber_pending": False,  # self rolled 7, hasn't placed robber yet
         "robber_snapshot": None,  # cached score_robber_targets payload
         # Auto-postmortem buffers. Fed from the /log path so the output
@@ -189,6 +196,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["last_roll"] = None
         st["roll_history"] = []
         st["total_rolls"] = 0
+        st["robber_moved_at_rolls"] = None
         st["robber_pending"] = False
         st["robber_snapshot"] = None
         st["pm_tracker"] = Tracker()
@@ -492,6 +500,12 @@ def _track_overlay_state(st, results) -> None:
             # overlay's ranking is stale.
             st["robber_pending"] = False
             st["robber_snapshot"] = None
+            # Anchor the persist counter at the current roll count.
+            # _compute_robber_on_me only runs when the robber is on a
+            # self tile, so the snap builder can safely treat the
+            # counter as "when did this sit-on-me start" without having
+            # to check here whether the destination is a self tile.
+            st["robber_moved_at_rolls"] = int(st.get("total_rolls") or 0)
 
 
 def _compute_robber_snapshot(
@@ -1927,6 +1941,16 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["robber_on_me"]["rolls_recent"] = len(non_seven)
         snap["robber_on_me"]["blocks_recent"] = sum(
             1 for e in non_seven if e.get("blocked_you"))
+        # Persistence: how many rolls since the robber last moved.
+        # rolls_since_placed answers "how long has this been sitting
+        # on me" — blocks_recent is the cost so far, this is the
+        # duration so far. Together they let the banner distinguish
+        # "just placed, may move soon" from "grinding me for 4 rolls".
+        placed_at = st.get("robber_moved_at_rolls")
+        if placed_at is not None:
+            total = int(st.get("total_rolls") or 0)
+            snap["robber_on_me"]["rolls_since_placed"] = max(
+                0, total - int(placed_at))
     # Longest-road race tracker: only alerts once someone hits 4 segs.
     # Silent early game, settles down once a clear winner is ≥2 ahead.
     try:
