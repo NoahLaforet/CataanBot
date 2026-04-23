@@ -1017,6 +1017,44 @@ def test_paid_builds_debit_costs_and_setup_is_free():
             f"(before={before.get(res, 0)}, after={after.get(res, 0)})")
 
 
+def test_bank_supply_flags_low_resources():
+    """Bank starts at 19 per resource. When player hands consume most
+    of a resource, remaining drops below 2 and the `low` list fires.
+    If every resource has plenty in the bank, low is empty."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_bank_supply
+    from cataanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+
+    # Zero everyone's hand first so the baseline is clean: every
+    # resource should then have 19 remaining — no low warnings.
+    sess = game.session
+    for user in sess.player_names.values():
+        c = game.color_map.get(user)
+        game.tracker.set_hand(c, {
+            "WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0})
+    bank = _compute_bank_supply(game)
+    assert bank is not None
+    assert bank["remaining"]["WOOD"] == 19
+    assert bank["low"] == []
+
+    # Pile 18 WOOD onto one player → bank has 1 WOOD left.
+    first_user = next(iter(sess.player_names.values()))
+    first_color = game.color_map.get(first_user)
+    game.tracker.set_hand(first_color, {
+        "WOOD": 18, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0})
+    bank = _compute_bank_supply(game)
+    assert bank["remaining"]["WOOD"] == 1
+    assert any(e["resource"] == "WOOD" and e["count"] == 1
+               for e in bank["low"])
+
+
 def test_largest_army_race_silent_early_and_alerts_at_2():
     """Parallel to the longest-road tracker but on played knights.
     Race fires once someone hits 2 played (one away from qualifying

@@ -389,6 +389,15 @@
   .la-race.self_push { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
   .la-race.opp_threat { background: #2a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
   .la-race.contested { background: #1a1f2a; color: #9ecfff; border: 1px solid #2e3b55; }
+  .bank-low {
+    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
+    background: #1f1f14; color: #e8d878; border: 1px solid #4a4028;
+    font-weight: 600;
+  }
+  .bank-low .bl-sub {
+    display: block; font-weight: 400; font-size: calc(12px * var(--font-scale));
+    color: #a89c68; margin-top: 2px;
+  }
   .discard-hint {
     border: 1px solid #5a2a2a; border-radius: 4px;
     padding: 4px 6px; margin: 6px 0 4px;
@@ -868,6 +877,16 @@
             parts.push(`<div class="la-race ${lvl}">`
                 + escapeHtml(la.message || '')
                 + '</div>');
+        }
+        if (snap.bank_supply && (snap.bank_supply.low || []).length) {
+            const low = snap.bank_supply.low;
+            const lbl = low.map(e =>
+                `${e.resource.slice(0, 3).toLowerCase()} ${e.count}`
+            ).join(' · ');
+            parts.push('<div class="bank-low">');
+            parts.push(`bank low: ${escapeHtml(lbl)}`);
+            parts.push('<span class="bl-sub">4:1 trades blocked at 0</span>');
+            parts.push('</div>');
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
