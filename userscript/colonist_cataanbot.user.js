@@ -229,6 +229,13 @@
     color: #111; font-weight: 700;
   }
   .hand { color: #d0d0d0; margin: 2px 0; }
+  /* Monopoly-risk highlight: amber text on the vulnerable stack so
+     the hand row itself shows exactly which resource is exposed, not
+     just the separate warning banner below. */
+  .hand .mono-risk { color: #f0a858; font-weight: 700;
+    text-shadow: 0 0 3px rgba(240,168,88,0.25); }
+  .mono-warn { color: #e69a5a; font-size: calc(11px * var(--font-scale));
+    margin: 0 0 4px 0; font-weight: 600; }
   .afford { color: #b8e8b8; margin: 0 0 6px; }
   .afford.none { color: #888; }
   .vpb { color: #888; font-size: calc(11px * var(--font-scale)); }
@@ -631,11 +638,23 @@
                 }
             }
             // Icons scan faster than letter abbrevs on a dense HUD.
+            // Wrap a vulnerable stack in .mono-risk so it pops amber
+            // — matches the monopoly_risk field on the snap.
+            const monoRes = me.monopoly_risk ? me.monopoly_risk.resource : null;
             const hand = Object.entries(me.hand || {})
                 .filter(([, n]) => n > 0)
-                .map(([r, n]) => `${n} ${iconFor(r)}`)
+                .map(([r, n]) => {
+                    const cls = (r === monoRes) ? ' class="mono-risk"' : '';
+                    return `<span${cls}>${n} ${iconFor(r)}</span>`;
+                })
                 .join('  ') || '<span class="muted">∅</span>';
             parts.push(`<div class="hand">${hand}</div>`);
+            if (me.monopoly_risk) {
+                const mr = me.monopoly_risk;
+                parts.push('<div class="mono-warn">'
+                    + `⚠ ${mr.count} ${iconFor(mr.resource)} at monopoly risk`
+                    + '</div>');
+            }
             // Hand-drift warning. Tracker's event-reconstructed breakdown
             // disagreed with colonist's authoritative card count — the
             // per-resource detail is unreliable until the next HandSync
