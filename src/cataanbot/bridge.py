@@ -1323,8 +1323,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     if not is_setup and snap["my_turn"]:
         try:
             from cataanbot.recommender import recommend_actions
+            # Feed the bank_supply we already computed into the rec
+            # planner so port/4:1 trades get skipped when the bank is
+            # dry on the needed resource.
+            bank_for_recs = (
+                snap.get("bank_supply") or {}).get("remaining")
             snap["recommendations"] = recommend_actions(
-                cat_game, self_color, hand, top=4)
+                cat_game, self_color, hand, top=4,
+                bank_supply=bank_for_recs)
         except Exception as e:  # noqa: BLE001
             print(f"[advisor] recommend_actions failed: {e!r}",
                   flush=True)
