@@ -1061,6 +1061,26 @@ def _compute_longest_road_race(
     return None
 
 
+def _owned_ports(game, color: str) -> list[str] | None:
+    """Return a sorted list of ports this color has a coastal building
+    on. Each entry is the port label as shown in ``advisor.player_ports``:
+    a resource name (``"WHEAT"``, ``"SHEEP"``, etc.) for a 2:1, or
+    ``"GENERIC"`` for the 3:1 port. Returns None on failure so the
+    overlay can skip the render instead of guessing.
+    """
+    try:
+        from cataanbot.advisor import player_ports
+        ports = player_ports(game.tracker.game, color)
+    except Exception:  # noqa: BLE001
+        return None
+    # Stable order so the overlay doesn't flicker between refreshes.
+    # GENERIC last so the specific 2:1s read first.
+    specific = sorted(p for p in ports if p != "GENERIC")
+    if "GENERIC" in ports:
+        specific.append("GENERIC")
+    return specific
+
+
 def _knights_played(game, color: str) -> int:
     """Knights already played by `color` (for largest-army tracking).
 
@@ -1493,6 +1513,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "pieces": _pieces_for_color(game, self_color),
         "vp_breakdown": _vp_breakdown(game, self_color),
         "knights_played": _knights_played(game, self_color),
+        "ports": _owned_ports(game, self_color),
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn

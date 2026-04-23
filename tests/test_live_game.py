@@ -1206,6 +1206,50 @@ def test_snapshot_self_vp_breakdown_sums_to_total():
     assert b["settle"] + b["city"] >= 2
 
 
+def test_snapshot_populates_self_ports_after_build():
+    """`_owned_ports` returns a list based on coastal buildings. With
+    no building on a port node, the list is empty; after a build on a
+    port terminal, the port's resource (or GENERIC) shows up."""
+    from cataanbot.bridge import _owned_ports
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    tr = Tracker(seed=4242)
+    board = tr.game.state.board
+    m = board.map
+    # Pre-build: no settlements, no ports owned.
+    assert _owned_ports(_wrap_game(tr), "RED") == []
+    # Pick a port whose terminals are legitimate buildable nodes at
+    # opening time, then drop a RED settlement on one terminal.
+    buildable = board.buildable_node_ids(
+        Color.RED, initial_build_phase=True)
+    target = None
+    expected_label: str | None = None
+    for port in m.ports_by_id.values():
+        for nid in port.nodes.values():
+            if nid in buildable:
+                target = nid
+                expected_label = (
+                    port.resource if port.resource is not None else "GENERIC")
+                break
+        if target is not None:
+            break
+    assert target is not None, "no reachable port terminal in base map"
+    board.build_settlement(Color.RED, target, initial_build_phase=True)
+    ports = _owned_ports(_wrap_game(tr), "RED")
+    assert ports is not None
+    assert expected_label in ports
+
+
+def _wrap_game(tracker):
+    """Minimal adapter so _owned_ports sees `.tracker.game`."""
+    class _W:
+        pass
+    w = _W()
+    w.tracker = tracker
+    return w
+
+
 def test_snapshot_exposes_knights_played_on_self_and_opps():
     """After capture replay, every seated player should have a
     non-negative `knights_played` field. We then bump one opp's
