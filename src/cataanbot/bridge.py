@@ -1061,6 +1061,44 @@ def _compute_longest_road_race(
     return None
 
 
+def _compute_self_production(
+    game, color: str,
+) -> dict[str, Any] | None:
+    """Expected resource yield per roll given current builds.
+
+    Sums ``map.node_production[node_id]`` across every settlement (×1)
+    and city (×2) this color owns. ``per_roll`` is the total expected
+    cards per dice roll — a rough pace indicator (1.0 = one card per
+    roll, 2.5 = well-established). ``top_resource`` names the most-
+    produced resource so Noah can tell "ore-heavy" from "sheep-heavy"
+    at a glance.
+    """
+    try:
+        from catanatron import Color
+        my_enum = Color[color.upper()]
+        board = game.tracker.game.state.board
+        m = board.map
+    except Exception:  # noqa: BLE001
+        return None
+    totals: dict[str, float] = {
+        "WOOD": 0.0, "BRICK": 0.0, "SHEEP": 0.0, "WHEAT": 0.0, "ORE": 0.0,
+    }
+    for nid, (col, btype) in board.buildings.items():
+        if col != my_enum:
+            continue
+        mult = 2.0 if str(btype).upper() == "CITY" else 1.0
+        for res, pips in m.node_production.get(int(nid), {}).items():
+            if res in totals:
+                totals[res] += mult * float(pips)
+    per_roll = sum(totals.values())
+    top_res = max(totals, key=lambda r: totals[r]) if per_roll > 0 else None
+    return {
+        "per_roll": per_roll,
+        "by_resource": totals,
+        "top_resource": top_res if (top_res and totals[top_res] > 0) else None,
+    }
+
+
 def _owned_ports(game, color: str) -> list[str] | None:
     """Return a sorted list of ports this color has a coastal building
     on. Each entry is the port label as shown in ``advisor.player_ports``:
@@ -1514,6 +1552,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "vp_breakdown": _vp_breakdown(game, self_color),
         "knights_played": _knights_played(game, self_color),
         "ports": _owned_ports(game, self_color),
+        "production": _compute_self_production(game, self_color),
     }
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn

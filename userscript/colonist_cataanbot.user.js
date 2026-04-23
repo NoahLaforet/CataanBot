@@ -234,6 +234,8 @@
   .vpb { color: #888; font-size: calc(11px * var(--font-scale)); }
   .ports { color: #78b4d8; font-size: calc(11px * var(--font-scale));
            margin: 0 0 4px; }
+  .prod { color: #9ecfaa; font-size: calc(11px * var(--font-scale));
+          margin: 0 0 4px; }
   .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
   .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
   .opp { color: #ccc; font-size: calc(13px * var(--font-scale)); }
@@ -598,6 +600,17 @@
                     : `2:1 ${p.slice(0, 3).toLowerCase()}`);
                 parts.push(`<div class="ports">ports: `
                     + escapeHtml(portSegs.join(' · ')) + '</div>');
+            }
+            // Production rate — expected cards per dice roll given
+            // current builds. Skip at 0 (setup phase) to avoid a
+            // meaningless "0.00/roll" line.
+            const prod = me.production;
+            if (prod && prod.per_roll > 0) {
+                const top = prod.top_resource
+                    ? ` · strongest ${prod.top_resource.slice(0, 3).toLowerCase()}`
+                    : '';
+                parts.push(`<div class="prod">prod: `
+                    + `${prod.per_roll.toFixed(2)}/roll${top}</div>`);
             }
         }
         // Setup-phase opening picks render unconditionally — it's

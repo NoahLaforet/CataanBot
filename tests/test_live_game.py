@@ -1206,6 +1206,47 @@ def test_snapshot_self_vp_breakdown_sums_to_total():
     assert b["settle"] + b["city"] >= 2
 
 
+def test_compute_self_production_scales_settlements_and_cities():
+    """Pre-build: zero production. After a settlement on a numbered
+    tile: per_roll > 0. After upgrading to city: exactly 2× the
+    settlement rate (per-node production doubles). Guards against
+    regressions where city multiplier goes missing or double-applies
+    to settlements."""
+    from cataanbot.bridge import _compute_self_production
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    tr = Tracker(seed=4242)
+    board = tr.game.state.board
+    m = board.map
+    # Pre-build: zero production.
+    p0 = _compute_self_production(_wrap_game(tr), "RED")
+    assert p0 is not None
+    assert p0["per_roll"] == 0.0
+    assert p0["top_resource"] is None
+    # Find a legal inland node that touches at least two numbered
+    # tiles so the math is meaningful.
+    buildable = board.buildable_node_ids(
+        Color.RED, initial_build_phase=True)
+    target = None
+    for nid in buildable:
+        prod = m.node_production.get(int(nid), {})
+        if sum(prod.values()) > 0.1:
+            target = nid
+            break
+    assert target is not None
+    board.build_settlement(Color.RED, target, initial_build_phase=True)
+    p1 = _compute_self_production(_wrap_game(tr), "RED")
+    assert p1["per_roll"] > 0
+    assert p1["top_resource"] in {
+        "WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"}
+    settle_rate = p1["per_roll"]
+    # Upgrade to city — production should double at this node.
+    board.build_city(Color.RED, target)
+    p2 = _compute_self_production(_wrap_game(tr), "RED")
+    assert abs(p2["per_roll"] - 2 * settle_rate) < 1e-9
+
+
 def test_snapshot_populates_self_ports_after_build():
     """`_owned_ports` returns a list based on coastal buildings. With
     no building on a port node, the list is empty; after a build on a
