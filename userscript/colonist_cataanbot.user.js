@@ -274,6 +274,10 @@
   .roll-history .rh.blocked { color: #d89c7a;
     text-decoration: underline; text-decoration-color: #d89c7a; }
   .roll-history .rh.seven { color: #ff8a6e; font-weight: 600; }
+  /* Total-rolls tail on the history strip: dim so it reads as
+     metadata rather than a data point. Useful when the 10-entry
+     buffer saturates — tells you whether you're at roll 15 or 45. */
+  .roll-history .rh-count { color: #555; font-weight: 400; }
   /* Yield summary trailer: aggregate cards got / blocked / expected
      across the roll-history window. Dim so it reads as supporting
      context to the strip rather than a primary alert; "behind" variant
@@ -991,9 +995,14 @@
                 else if (e.hit_you) cls += ' hit';
                 return `<span class="${cls}">${t}</span>`;
             }).join('');
+            // Absolute game-roll counter so Noah can tell "turn ~5" from
+            // "turn ~20" — roll_history only keeps the last 10, but
+            // total_rolls is monotonic. Shown in parens after the label.
+            const totalRolls = snap.total_rolls || 0;
+            const tail = totalRolls > 0 ? ` <span class="rh-count">(${totalRolls})</span>` : '';
             parts.push('<div class="roll-history">'
                 + '<span class="rh-label">recent:</span>'
-                + cells + '</div>');
+                + cells + tail + '</div>');
         }
         // Yield summary: actual vs expected cards across the roll
         // window. Flags "behind" when expected is clearly above actual,

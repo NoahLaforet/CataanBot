@@ -2311,6 +2311,95 @@ def test_yield_summary_aggregates_across_window():
     assert ys["expected"] >= 0
 
 
+def test_total_rolls_is_monotonic_across_buffer_cap():
+    """total_rolls keeps counting past the 10-entry roll_history cap —
+    that's the whole point of storing it separately. After 15 rolls,
+    history has 10 entries but total_rolls reports 15."""
+    from cataanbot.live_game import LiveGame
+    st: dict = {
+        "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [], "total_rolls": 0,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    for _ in range(15):
+        _feed_roll(st, 8)
+    assert st["total_rolls"] == 15
+    assert len(st["roll_history"]) == 10
+
+
+def test_yield_summary_suppressed_when_no_production():
+    """During setup / before first settlement, self's production per
+    roll is 0. Emitting "got 0/0 (5 rolls)" is noise — the banner must
+    be gated on per_roll > 0 so it only fires once there's something
+    to measure against."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    # Strip self's buildings so production.per_roll goes to 0.
+    board = game.tracker.game.state.board
+    for nid, (c, _t) in list(board.buildings.items()):
+        if c == my_enum:
+            del board.buildings[nid]
+    history = [
+        {"total": 8, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+        {"total": 4, "is_you": False, "color": None,
+         "hit_you": False, "blocked_you": False,
+         "gained_total": 0, "blocked_total": 0},
+    ]
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": history, "total_rolls": 2,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["yield_summary"] is None, (
+        "yield_summary must be None when per_roll == 0")
+
+
+def test_snapshot_exposes_total_rolls_field():
+    """Snap should surface total_rolls as an int for the overlay's
+    running counter. Defaults to 0 on a fresh session."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [], "total_rolls": 0,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["total_rolls"] == 0
+    _feed_roll(st, 8)
+    _feed_roll(st, 7)
+    _feed_roll(st, 4)
+    snap2 = _build_advisor_snapshot(st)
+    assert snap2["total_rolls"] == 3
+
+
 def test_yield_summary_none_on_empty_history():
     """Before any roll has been seen, yield_summary must be None. A
     "0/0 (0 rolls)" banner on turn 1 would just be visual noise — the
