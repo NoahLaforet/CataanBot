@@ -986,6 +986,127 @@ def test_dev_stash_risk_scales_with_vp_target():
     assert _is_dev_stash_risk(vp=9, dev_cards=2, vp_target=12) is True
 
 
+def test_robber_on_me_expected_per_roll_matches_pips():
+    """Probability-weighted card loss per roll is just pips_blocked / 36.
+    The test walks through the whole _compute_robber_on_me path so we
+    catch regressions where pip attribution changes (e.g. a city
+    doubling wrapper being removed)."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _compute_robber_on_me
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    if not game.started:
+        pytest.skip("capture didn't boot a game")
+    sess = game.session
+    if sess.self_color_id is None:
+        pytest.skip("capture didn't latch self_color_id")
+    username = sess.player_names.get(sess.self_color_id)
+    color = game.color_map.get(username)
+    # Place a self settlement on a node touching a non-desert tile, then
+    # move the robber onto that tile. Fresh settlement = 1 building on
+    # the blocked tile, so pips_blocked = PIP_DOTS_BY_NUMBER[number].
+    board = game.tracker.game.state.board
+    my_enum = Color[color.upper()]
+    # Ask catanatron for a legal settle spot, then find a numbered tile
+    # it touches — that's the one we'll drop the robber onto.
+    buildable = board.buildable_node_ids(
+        my_enum, initial_build_phase=True)
+    target_coord = None
+    target_node = None
+    for nid in buildable:
+        for coord, tile in board.map.land_tiles.items():
+            if tile.number is None:
+                continue
+            if nid in tile.nodes.values():
+                target_coord = coord
+                target_node = nid
+                break
+        if target_coord is not None:
+            break
+    if target_node is None:
+        pytest.skip("no legal settle spot on a numbered tile")
+    board.build_settlement(
+        my_enum, target_node, initial_build_phase=True)
+    board.robber_coordinate = target_coord
+    result = _compute_robber_on_me(game)
+    assert result is not None
+    # expected_per_roll must be exactly pips_blocked / 36.
+    assert result["expected_per_roll"] == round(
+        result["pips_blocked"] / 36.0, 3)
+    # With a single settlement (not city), pips_blocked should equal
+    # the raw PIP_DOTS for the tile number — no doubling.
+    from cataanbot.advisor import PIP_DOTS_BY_NUMBER
+    tile_number = board.map.land_tiles[target_coord].number
+    assert result["pips_blocked"] == PIP_DOTS_BY_NUMBER.get(
+        tile_number, 0)
+
+
+def test_robber_on_me_expected_lost_total_scales_with_rolls():
+    """Cumulative expected loss = per_roll × rolls_since_placed. The
+    snapshot enrichment does the multiplication in _build_advisor_
+    snapshot, so the unit check is against a realistic state dict."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    if not game.started or game.session.self_color_id is None:
+        pytest.skip("capture didn't latch a self color")
+    sess = game.session
+    username = sess.player_names[sess.self_color_id]
+    color = game.color_map.get(username)
+    my_enum = Color[color.upper()]
+
+    # Find a self building + the tile it sits on, then park the robber
+    # there. If the replayed state already has a robber-on-me setup, we
+    # reuse it; otherwise we nudge the robber onto a self tile.
+    board = game.tracker.game.state.board
+    self_nodes = {nid for nid, (col, _) in board.buildings.items()
+                  if col == my_enum}
+    target_coord = None
+    for coord, tile in board.map.land_tiles.items():
+        if tile.number is None:
+            continue
+        if set(tile.nodes.values()) & self_nodes:
+            target_coord = coord
+            break
+    if target_coord is None:
+        pytest.skip("no self buildings touch a numbered tile")
+    board.robber_coordinate = target_coord
+
+    st = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+        "total_rolls": 10,
+        "robber_moved_at_rolls": 6,  # 4 rolls ago
+        "roll_history": [],
+    }
+    snap = _build_advisor_snapshot(st)
+    rom = snap.get("robber_on_me")
+    assert rom is not None
+    # With since=4 and some per_roll rate, expected_lost_total should
+    # equal round(per_roll * 4, 2). Compute directly and compare.
+    assert rom["rolls_since_placed"] == 4
+    expected = round(rom["expected_per_roll"] * 4, 2)
+    assert rom["expected_lost_total"] == expected
+
+
 def test_advisor_snapshot_flags_opp_dev_stash_risk():
     """Snapshot should carry dev_stash_risk on each opp entry based on
     the session's dev_card_counts and catanatron VP. Force an opp into

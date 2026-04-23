@@ -1627,12 +1627,18 @@ def _compute_robber_on_me(game) -> dict[str, Any] | None:
         building_count += 1
     if building_count == 0:
         return None
+    # Probability-weighted card loss per dice roll. pips_blocked already
+    # doubled cities, so dividing by 36 gives the expected cards denied
+    # per roll — a figure Noah can reason about in "cards" rather than
+    # translating dot-counts in his head.
+    expected_per_roll = pips / 36.0
     return {
         "resource": robber_tile.resource,
         "number": robber_tile.number,
         "buildings": building_count,
         "has_city": has_city,
         "pips_blocked": pips,
+        "expected_per_roll": round(expected_per_roll, 3),
     }
 
 
@@ -2234,8 +2240,18 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         placed_at = st.get("robber_moved_at_rolls")
         if placed_at is not None:
             total = int(st.get("total_rolls") or 0)
-            snap["robber_on_me"]["rolls_since_placed"] = max(
-                0, total - int(placed_at))
+            since = max(0, total - int(placed_at))
+            snap["robber_on_me"]["rolls_since_placed"] = since
+            # Cumulative expected loss since placement. Uses the
+            # probability-weighted per-roll rate × rolls elapsed — an
+            # estimate, since actual rolls may have missed the number,
+            # but it's the "what did this cost me" headline number.
+            # blocks_recent is the observed count over a ~10-roll
+            # window; this is the lifetime since-placed estimate.
+            per_roll = float(
+                snap["robber_on_me"].get("expected_per_roll") or 0.0)
+            snap["robber_on_me"]["expected_lost_total"] = round(
+                per_roll * since, 2)
     # Longest-road race tracker: only alerts once someone hits 4 segs.
     # Silent early game, settles down once a clear winner is ≥2 ahead.
     try:
