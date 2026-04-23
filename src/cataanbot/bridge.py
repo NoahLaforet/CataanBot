@@ -799,6 +799,82 @@ def _compute_yop_hint(
     }
 
 
+def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
+    """Recommend whether to play Road Building this turn.
+
+    Fires only when self holds a ROAD_BUILDING card AND has at least
+    one road piece left to place. Two free roads is worth the most
+    when it swings longest road — either qualifying self or catching
+    an opp who's about to. Secondary case: road supply is almost
+    exhausted, so play while the cards are still useful.
+
+    Returns ``{have, should_play, reason, self_len, opp_len}`` or None
+    when we shouldn't surface a hint. The projected length is a naive
+    +2 to self's current chain — catanatron recomputes topology-aware
+    length after play, so this is a hint upper bound, not a promise.
+    """
+    from catanatron import Color
+    try:
+        my_enum = Color[self_color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+    state = game.tracker.game.state
+    idx = state.color_to_index.get(my_enum)
+    if idx is None:
+        return None
+    held = int(state.player_state.get(
+        f"P{idx}_ROAD_BUILDING_IN_HAND", 0))
+    if held <= 0:
+        return None
+    # Need at least 1 road piece left to get any value. (The card
+    # still plays with 0 roads available but grants nothing — treat
+    # as a non-hint in that case to avoid nudging a wasted play.)
+    pieces = _pieces_for_color(game, self_color)
+    roads_left = int(pieces.get("road_left", 0))
+    if roads_left <= 0:
+        return None
+
+    self_len = int(state.player_state.get(
+        f"P{idx}_LONGEST_ROAD_LENGTH", 0))
+    self_has = bool(state.player_state.get(
+        f"P{idx}_HAS_ROAD", False))
+    opp_max = 0
+    opp_has = False
+    for c, oidx in state.color_to_index.items():
+        if c == my_enum:
+            continue
+        ln = int(state.player_state.get(
+            f"P{oidx}_LONGEST_ROAD_LENGTH", 0))
+        opp_max = max(opp_max, ln)
+        if state.player_state.get(f"P{oidx}_HAS_ROAD", False):
+            opp_has = True
+    projected = self_len + min(2, roads_left)
+    qualify = 5  # base-game longest-road threshold
+
+    should = False
+    reason = "hold — no clear swing yet"
+    if not self_has and projected >= max(qualify, opp_max + 1):
+        should = True
+        reason = (f"secures longest road "
+                  f"({self_len}→{projected} vs opp {opp_max})")
+    elif opp_has and opp_max >= qualify and projected >= opp_max:
+        should = True
+        reason = (f"catches opp longest road "
+                  f"(proj {projected} ≥ opp {opp_max})")
+    elif roads_left <= 2:
+        # Almost out of roads — card loses value the longer you hold it.
+        should = True
+        reason = f"road pieces running low ({roads_left} left)"
+
+    return {
+        "have": held,
+        "should_play": should,
+        "reason": reason,
+        "self_len": self_len,
+        "opp_len": opp_max,
+    }
+
+
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
@@ -1228,6 +1304,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "knight_hint": None,
         "monopoly_hint": None,
         "yop_hint": None,
+        "rb_hint": None,
         "discard_hint": None,
         "threat": None,
         "robber_on_me": None,
@@ -1496,6 +1573,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["yop_hint"] = _compute_yop_hint(game, self_color, hand)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] yop_hint failed: {e!r}", flush=True)
+    try:
+        snap["rb_hint"] = _compute_rb_hint(game, self_color)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] rb_hint failed: {e!r}", flush=True)
     # Discard-on-7 advice: fires whenever self's hand exceeds the discard
     # limit. The overlay should render it prominently on a 7-roll, but
     # we compute unconditionally — it's cheap and "you're over the limit"

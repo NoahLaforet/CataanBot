@@ -876,6 +876,17 @@
             parts.push(`<div class="dv-body">${body}</div>`);
             parts.push('</div>');
         }
+        if (snap.rb_hint && snap.rb_hint.have > 0) {
+            const rh = snap.rb_hint;
+            const verdictLbl = rh.should_play ? 'PLAY' : 'HOLD';
+            const verdictCls = rh.should_play ? 'play' : 'hold';
+            parts.push('<div class="dev-hint">');
+            parts.push(`<div class="dv-h">road building (×${rh.have})</div>`);
+            parts.push(`<div class="dv-body">`
+                + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + escapeHtml(rh.reason || '') + '</div>');
+            parts.push('</div>');
+        }
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';
             parts.push(`<div class="threat ${lvl}">`
