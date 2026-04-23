@@ -802,6 +802,14 @@
                     ? ` · ${o.knights_played}k` : '';
                 const hotKnight = (o.knights_played || 0) >= 2;
                 const rowCls = hotKnight ? ' hot-knight' : '';
+                // Per-opp expected cards per roll. Drives robber and
+                // trade-block priority — compare across rows to pick
+                // the strongest engine. Silent at 0 (setup / robbed
+                // out). 'p' is short for per-roll production.
+                let prodTag = '';
+                if (o.production && o.production.per_roll > 0) {
+                    prodTag = ` · ${o.production.per_roll.toFixed(2)}p`;
+                }
                 // Builds the inferred hand can already pay for. Skip
                 // 'road' alone — too noisy, doesn't move VP on its own.
                 // 'city' and 'settlement' are the real warning signs.
@@ -815,7 +823,7 @@
                     }
                 }
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}</span>${affordTag}`
+                    + ` <span class="muted">${o.cards}c · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}</span>${affordTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }

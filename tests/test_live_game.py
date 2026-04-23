@@ -1206,13 +1206,13 @@ def test_snapshot_self_vp_breakdown_sums_to_total():
     assert b["settle"] + b["city"] >= 2
 
 
-def test_compute_self_production_scales_settlements_and_cities():
+def test_compute_production_scales_settlements_and_cities():
     """Pre-build: zero production. After a settlement on a numbered
     tile: per_roll > 0. After upgrading to city: exactly 2× the
     settlement rate (per-node production doubles). Guards against
     regressions where city multiplier goes missing or double-applies
     to settlements."""
-    from cataanbot.bridge import _compute_self_production
+    from cataanbot.bridge import _compute_production
     from cataanbot.tracker import Tracker
     from catanatron import Color
 
@@ -1220,7 +1220,7 @@ def test_compute_self_production_scales_settlements_and_cities():
     board = tr.game.state.board
     m = board.map
     # Pre-build: zero production.
-    p0 = _compute_self_production(_wrap_game(tr), "RED")
+    p0 = _compute_production(_wrap_game(tr), "RED")
     assert p0 is not None
     assert p0["per_roll"] == 0.0
     assert p0["top_resource"] is None
@@ -1236,15 +1236,70 @@ def test_compute_self_production_scales_settlements_and_cities():
             break
     assert target is not None
     board.build_settlement(Color.RED, target, initial_build_phase=True)
-    p1 = _compute_self_production(_wrap_game(tr), "RED")
+    p1 = _compute_production(_wrap_game(tr), "RED")
     assert p1["per_roll"] > 0
     assert p1["top_resource"] in {
         "WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"}
     settle_rate = p1["per_roll"]
     # Upgrade to city — production should double at this node.
     board.build_city(Color.RED, target)
-    p2 = _compute_self_production(_wrap_game(tr), "RED")
+    p2 = _compute_production(_wrap_game(tr), "RED")
     assert abs(p2["per_roll"] - 2 * settle_rate) < 1e-9
+
+
+def test_snapshot_populates_per_opp_production():
+    """Every opp row should carry a production block after capture
+    replay. The block may show zero (e.g. robbed out or building-less)
+    but the shape must be consistent — None would break the overlay's
+    strong-engine comparison logic. After forcing an extra city onto
+    one opp, that row's per_roll must rise (2x settle delta)."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _build_advisor_snapshot, _compute_production
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["opps"]
+    for opp in snap["opps"]:
+        assert "production" in opp
+        assert opp["production"] is not None
+        assert opp["production"]["per_roll"] >= 0
+        # by_resource has all 5 resource keys with non-negative floats
+        by_res = opp["production"]["by_resource"]
+        for r in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"):
+            assert r in by_res
+            assert by_res[r] >= 0
+
+    # Upgrade a settlement to a city on the first opp; re-snap;
+    # per_roll for that opp must rise (city = 2× settle at same node).
+    target = snap["opps"][0]
+    opp_enum = Color[target["color"].upper()]
+    board = game.tracker.game.state.board
+    settle_nids = [nid for nid, (col, bt) in board.buildings.items()
+                   if col == opp_enum and str(bt).upper() != "CITY"]
+    if not settle_nids:
+        pytest.skip("first opp has no upgradable settlement in capture")
+    before = target["production"]["per_roll"]
+    board.build_city(opp_enum, settle_nids[0])
+    p_after = _compute_production(game, target["color"])
+    assert p_after["per_roll"] >= before, (
+        f"city upgrade must not reduce production: {before} -> "
+        f"{p_after['per_roll']}")
 
 
 def test_snapshot_populates_self_ports_after_build():
