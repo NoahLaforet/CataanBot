@@ -80,6 +80,39 @@ def test_score_second_settlements_excludes_first_node(tracker):
     assert top.node_id not in ids
 
 
+def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
+    """Second-settle port scoring used to run its own ad-hoc formula
+    (0.03 base + 0.3 * combined) which was 3× hotter than the first-
+    settle curve and could hit 0.9+ on a port-matching pair. Unified
+    onto _port_bonus — the same curve that governs first-settle. The
+    guard: no port bonus may exceed the per-resource cap (0.15 + 0.05
+    * combined-pips-on-that-resource), which is what the shared helper
+    would return."""
+    from cataanbot.advisor import (
+        _port_bonus, score_second_settlements)
+    top = score_opening_nodes(tracker.game)[0]
+    seconds = score_second_settlements(tracker.game, top.node_id, color="RED")
+    # Recompute what the unified helper would return given the same
+    # combined dict that score_second_settlements uses internally.
+    # combined = first-node production + this-node production, per
+    # resource. We only have this node's production on the result, so
+    # rebuild combined by adding the first-node side.
+    m = tracker.game.state.board.map
+    first_prod = m.node_production.get(top.node_id, {})
+    had_port_nodes = False
+    for s in seconds:
+        if not s.port:
+            continue
+        had_port_nodes = True
+        combined = {r: first_prod.get(r, 0.0) + s.resources.get(r, 0.0)
+                    for r in s.resources}
+        expected = _port_bonus(s.port, combined)
+        assert abs(s.port_bonus - expected) < 1e-9, (
+            f"node {s.node_id} port {s.port}: got {s.port_bonus}, "
+            f"expected {expected} from shared helper")
+    assert had_port_nodes, "fixture should include at least one port node"
+
+
 def test_score_robber_targets_skips_current_robber(tracker):
     from catanatron import Color
     # Move robber onto a specific tile we can verify is skipped.
