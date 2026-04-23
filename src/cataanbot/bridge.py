@@ -86,6 +86,11 @@ def _build_app(jsonl_path: Path | None = None,
         "game": LiveGame(),
         "seq": 0,
         "last_roll": None,        # {"player","color","total","is_you"}
+        # Ring-buffer of the last ~10 rolls, most-recent last.
+        # Each entry: {"total", "is_you", "color", "hit_you", "blocked_you"}.
+        # Populated in _track_overlay_state on every RollEvent; used by
+        # the overlay's "recent rolls" strip to spot droughts and streaks.
+        "roll_history": [],
         "robber_pending": False,  # self rolled 7, hasn't placed robber yet
         "robber_snapshot": None,  # cached score_robber_targets payload
         # Auto-postmortem buffers. Fed from the /log path so the output
@@ -178,6 +183,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["game"] = LiveGame()
         st["seq"] = 0
         st["last_roll"] = None
+        st["roll_history"] = []
         st["robber_pending"] = False
         st["robber_snapshot"] = None
         st["pm_tracker"] = Tracker()
@@ -428,6 +434,35 @@ def _track_overlay_state(st, results) -> None:
                 "total": r.event.total,
                 "is_you": bool(is_you),
             }
+            # Ring-buffer entry. hit_you/blocked_you are computed NOW
+            # against current board state — i.e., the buildings that
+            # were on the board when this roll happened (robber
+            # placement might update immediately after via a separate
+            # event, but the yield math for this roll fired first).
+            entry: dict[str, Any] = {
+                "total": r.event.total,
+                "is_you": bool(is_you),
+                "color": color,
+                "hit_you": False,
+                "blocked_you": False,
+            }
+            if r.event.total and r.event.total != 7:
+                try:
+                    sess = game.session
+                    if sess and sess.self_color_id is not None:
+                        uname = sess.player_names.get(sess.self_color_id)
+                        if uname:
+                            sc = game.color_map.get(uname)
+                            y = _compute_roll_yield(game, sc, r.event.total)
+                            if y:
+                                entry["hit_you"] = y.get("total", 0) > 0
+                                entry["blocked_you"] = (
+                                    y.get("blocked_total", 0) > 0)
+                except Exception:  # noqa: BLE001
+                    pass
+            hist = list(st.get("roll_history") or [])
+            hist.append(entry)
+            st["roll_history"] = hist[-10:]
             if r.event.total == 7 and is_you:
                 st["robber_pending"] = True
                 st["robber_snapshot"] = _compute_robber_snapshot(
@@ -1504,6 +1539,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "self": None,
         "opps": [],
         "last_roll": st.get("last_roll"),
+        "roll_history": list(st.get("roll_history") or []),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
         # "forced" = self rolled a 7 and must place the robber now;

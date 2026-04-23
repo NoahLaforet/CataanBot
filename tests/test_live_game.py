@@ -1994,3 +1994,160 @@ def test_compute_roll_yield_returns_none_on_7():
     from cataanbot.tracker import Tracker
     tr = Tracker(seed=4242)
     assert _compute_roll_yield(_wrap_game(tr), "RED", 7) is None
+
+
+def _feed_roll(st, total, player=None):
+    """Small helper: build a DispatchResult wrapping a RollEvent and push
+    it through _track_overlay_state the way the bridge would on a real
+    WS frame. Keeps the roll_history tests focused on outcome, not on
+    event-plumbing glue."""
+    from cataanbot.bridge import _track_overlay_state
+    from cataanbot.events import RollEvent
+    from cataanbot.live import DispatchResult
+    # RollEvent takes d1+d2, and .total sums them. Split total into two
+    # legal die faces so the event sums to what we want.
+    d1 = min(6, max(1, total // 2))
+    d2 = total - d1
+    ev = RollEvent(player=player or "", d1=d1, d2=d2)
+    _track_overlay_state(st, [DispatchResult(event=ev, status="applied")])
+
+
+def test_roll_history_accumulates_and_caps_at_ten():
+    """Every RollEvent dispatched appends one entry to roll_history, and
+    the buffer never grows past 10. The overlay strip uses this to show
+    the last ~10 rolls; an unbounded list would leak memory over a long
+    game and blow up the render."""
+    from cataanbot.live_game import LiveGame
+    st: dict = {
+        "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    # Push 14 rolls — only the last 10 should survive.
+    totals = [8, 6, 9, 4, 11, 5, 7, 10, 3, 12, 6, 8, 4, 9]
+    for t in totals:
+        _feed_roll(st, t)
+    assert len(st["roll_history"]) == 10
+    got = [e["total"] for e in st["roll_history"]]
+    assert got == totals[-10:], (
+        f"ring buffer should keep last 10, got {got}")
+
+
+def test_roll_history_marks_self_hits_against_own_buildings():
+    """After replaying a capture so a self color is latched and self
+    owns buildings on at least one numbered tile, a roll on that tile's
+    number should flag hit_you=True in the history entry. Other numbers
+    should be recorded as misses (hit_you=False). This is what powers
+    the green highlight on the strip."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from catanatron import Color
+    from cataanbot.live_game import LiveGame
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    sess = game.session
+    assert sess is not None and sess.self_color_id is not None
+    uname = sess.player_names.get(sess.self_color_id)
+    self_color = game.color_map.get(uname)
+    my_enum = Color[self_color.upper()]
+    board = game.tracker.game.state.board
+    m = board.map
+    # Find a numbered tile where self has at least one building. Pick
+    # its number as the "hit" case; a number with zero self exposure as
+    # the miss case.
+    self_building_nodes = {
+        int(nid) for nid, (col, _t) in board.buildings.items()
+        if col == my_enum}
+    hit_number = None
+    for coord, tile in m.land_tiles.items():
+        if tile.number is None or not tile.resource:
+            continue
+        node_ids = set(tile.nodes.values())
+        if self_building_nodes & node_ids and coord != board.robber_coordinate:
+            hit_number = tile.number
+            break
+    assert hit_number is not None, (
+        "capture should leave self with at least one non-robbed building")
+    miss_number = None
+    for n in (2, 3, 4, 5, 6, 8, 9, 10, 11, 12):
+        if n == hit_number:
+            continue
+        exposed = False
+        for coord, tile in m.land_tiles.items():
+            if tile.number != n:
+                continue
+            if self_building_nodes & set(tile.nodes.values()):
+                exposed = True
+                break
+        if not exposed:
+            miss_number = n
+            break
+    assert miss_number is not None, "board has no non-exposure number"
+
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    _feed_roll(st, hit_number)
+    _feed_roll(st, miss_number)
+    hist = st["roll_history"]
+    assert len(hist) == 2
+    assert hist[0]["total"] == hit_number
+    assert hist[0]["hit_you"] is True, (
+        f"roll on {hit_number} touches self buildings → hit_you should be True")
+    assert hist[1]["total"] == miss_number
+    assert hist[1]["hit_you"] is False
+
+
+def test_roll_history_never_flags_seven_as_hit():
+    """A 7-roll triggers robber-discard, not production — so hit_you /
+    blocked_you must always be False for 7s regardless of board layout.
+    Also guards against accidentally calling _compute_roll_yield on a
+    7 (which would spam the error log and poison the entry)."""
+    from cataanbot.live_game import LiveGame
+    st: dict = {
+        "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    _feed_roll(st, 7)
+    entry = st["roll_history"][0]
+    assert entry["total"] == 7
+    assert entry["hit_you"] is False
+    assert entry["blocked_you"] is False
+
+
+def test_snapshot_exposes_roll_history_as_list():
+    """Whatever the bridge accumulates on roll_history should show up as
+    a list on the snap so the overlay can render it. Empty before any
+    roll; non-empty after. Guards against a future snap refactor
+    dropping the field silently (the overlay strip would just stop
+    rendering without any test telling us why)."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["roll_history"] == []
+    _feed_roll(st, 8)
+    _feed_roll(st, 4)
+    snap2 = _build_advisor_snapshot(st)
+    assert isinstance(snap2["roll_history"], list)
+    assert [e["total"] for e in snap2["roll_history"]] == [8, 4]
