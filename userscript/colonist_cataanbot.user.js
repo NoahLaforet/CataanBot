@@ -378,6 +378,7 @@
   .sec-h.sec-opps  { color: var(--fg-label); }
   .sec-h.sec-roll  { color: var(--info); }
   .sec-h.sec-signals { color: var(--warn); }
+  .sec-h.sec-dev   { color: var(--accent); }
 
   /* Deprecated in v0.17 — section headers replace the raw hr */
   .hr { display: none; }
@@ -1200,6 +1201,43 @@
   }
   .knight-hint .kh-verdict.play { background: rgba(126, 217, 159, 0.18); color: var(--pos); }
   .knight-hint .kh-verdict.hold { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
+  /* "big" modifier: used when the hint cluster lives right under the
+     rec list (instead of buried at the bottom of the HUD). Scales
+     verdict + reason so PLAY/HOLD is the biggest thing on the card. */
+  .knight-hint.big .kh-h,
+  .dev-hint.big .dv-h {
+    font-size: calc(11px * var(--font-scale));
+    margin-bottom: var(--s-3);
+  }
+  .knight-hint.big .kh-reason,
+  .dev-hint.big .dv-body {
+    font-size: calc(14px * var(--font-scale));
+  }
+  .knight-hint.big .kh-verdict,
+  .dev-hint.big .kh-verdict {
+    padding: var(--s-1) var(--s-3);
+    font-size: calc(12px * var(--font-scale));
+    letter-spacing: 0.1em;
+  }
+  /* should-play pops with a green gradient background so Noah sees it
+     on first scan without parsing text. The verdict chip gets a darker
+     solid background (no translucency) so the label reads at distance. */
+  .knight-hint.should-play,
+  .dev-hint.should-play {
+    background: linear-gradient(90deg,
+      rgba(126, 217, 159, 0.14), var(--bg-1) 70%);
+    border-left-color: var(--pos);
+  }
+  .knight-hint.should-play .kh-h,
+  .dev-hint.should-play .dv-h {
+    color: var(--pos);
+  }
+  .knight-hint.should-play .kh-verdict.play,
+  .dev-hint.should-play .kh-verdict.play {
+    background: var(--pos);
+    color: #0a1810;
+    font-weight: 900;
+  }
 
   .dev-hint { border-left-color: var(--info); }
   .dev-hint .dv-h {
@@ -2204,6 +2242,126 @@
             parts.push('<div class="turn-hint">your turn — '
                 + 'nothing affordable</div>');
         }
+        // --- Dev-card play-timing cluster ---
+        // Knight / Monopoly / YoP / Road-Building hints are all "should I
+        // play this dev card right now" decisions. Group them into one
+        // cluster right under the rec list so the PLAY/HOLD verdict sits
+        // in Noah's first scan, not buried below opponents + trade +
+        // roll history. Section header only when at least one fires.
+        const devBlocks = [];
+        if (snap.knight_hint && snap.knight_hint.have > 0) {
+            const kh = snap.knight_hint;
+            const verdictCls = kh.should_play ? 'play' : 'hold';
+            const verdictLbl = kh.should_play ? 'PLAY KNIGHT' : 'HOLD KNIGHT';
+            let tail = '';
+            if (kh.best_target) {
+                const t = kh.best_target;
+                const tile = t.resource
+                    ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
+                    : 'DES';
+                const scoreTxt = (t.score > 0 ? '+' : '') + t.score;
+                tail = ` · top ${tile} (${scoreTxt})`;
+            }
+            const hintCls = kh.should_play
+                ? 'knight-hint big should-play' : 'knight-hint big';
+            devBlocks.push('<div class="' + hintCls + '">'
+                + `<div class="kh-h">knight ×${kh.have}</div>`
+                + '<div class="kh-reason">'
+                + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + escapeHtml(kh.reason || '')
+                + escapeHtml(tail) + '</div>'
+                + '</div>');
+        }
+        if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
+            const mh = snap.monopoly_hint;
+            const resLbl = mh.resource.slice(0, 3).toLowerCase();
+            const verdictCls = mh.should_play ? 'play' : 'hold';
+            const verdictLbl = mh.should_play
+                ? 'PLAY MONOPOLY' : 'HOLD MONOPOLY';
+            let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
+            if (mh.unlock) {
+                body += `<span class="dv-unlock">${escapeHtml(mh.unlock)}</span>`;
+            }
+            let sub = '';
+            if (mh.top_holder && mh.top_holder.count > 0) {
+                const th = mh.top_holder;
+                const swatch = th.display
+                    ? `<span class="mh-swatch" style="background:${escapeHtml(th.display)}"></span>`
+                    : '';
+                sub = `<div class="dv-sub">`
+                    + swatch
+                    + escapeHtml(`drains ${th.count} from ${th.color.toLowerCase()}`)
+                    + '</div>';
+            }
+            const hintCls = mh.should_play
+                ? 'dev-hint big should-play' : 'dev-hint big';
+            devBlocks.push('<div class="' + hintCls + '">'
+                + `<div class="dv-h">monopoly ×${mh.have}</div>`
+                + `<div class="dv-body">${body}${sub}</div>`
+                + '</div>');
+        }
+        if (snap.yop_hint && snap.yop_hint.have > 0) {
+            const yh = snap.yop_hint;
+            const pair = (yh.pair || []).map(r => r.slice(0, 3).toLowerCase()).join(' + ');
+            const verdictCls = yh.should_play ? 'play' : 'hold';
+            const verdictLbl = yh.should_play
+                ? 'PLAY YEAR OF PLENTY' : 'HOLD YEAR OF PLENTY';
+            let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + `pick <b>${escapeHtml(pair)}</b>`;
+            if (yh.unlock) {
+                body += `<span class="dv-unlock">unlocks ${escapeHtml(yh.unlock)}</span>`;
+            }
+            if (yh.bank_ok === false) {
+                body += `<div class="dv-sub">`
+                    + escapeHtml(yh.reason || 'bank short on pair') + '</div>';
+            }
+            const hintCls = yh.should_play
+                ? 'dev-hint big should-play' : 'dev-hint big';
+            devBlocks.push('<div class="' + hintCls + '">'
+                + `<div class="dv-h">year of plenty ×${yh.have}</div>`
+                + `<div class="dv-body">${body}</div>`
+                + '</div>');
+        }
+        if (snap.rb_hint && snap.rb_hint.have > 0) {
+            const rh = snap.rb_hint;
+            const verdictLbl = rh.should_play
+                ? 'PLAY ROAD BUILDING' : 'HOLD ROAD BUILDING';
+            const verdictCls = rh.should_play ? 'play' : 'hold';
+            let body = `<div class="dv-body">`
+                + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + escapeHtml(rh.reason || '');
+            if (rh.placement) {
+                const pl = rh.placement;
+                const arrow = pl.direction ? pl.direction.arrow : '→';
+                const word = pl.direction ? pl.direction.word : '';
+                const dirTxt = word ? `lay ${word}` : 'lay road';
+                const towardHtml = (pl.toward_tiles
+                        && pl.toward_tiles.length)
+                    ? ` toward ${tilesToHtml(pl.toward_tiles)}`
+                    : '';
+                let sub = `<div class="dv-sub">`
+                    + `<span class="dv-arrow">${escapeHtml(arrow)}</span>`
+                    + escapeHtml(dirTxt) + towardHtml;
+                if (pl.placement_reason) {
+                    sub += `<span class="dv-unlock">`
+                        + escapeHtml(pl.placement_reason) + '</span>';
+                }
+                sub += '</div>';
+                body += sub;
+            }
+            body += '</div>';
+            const hintCls = rh.should_play
+                ? 'dev-hint big should-play' : 'dev-hint big';
+            devBlocks.push('<div class="' + hintCls + '">'
+                + `<div class="dv-h">road building ×${rh.have}</div>`
+                + body
+                + '</div>');
+        }
+        if (devBlocks.length) {
+            parts.push('<div class="sec-h sec-dev">dev cards in hand</div>');
+            parts.push(devBlocks.join(''));
+        }
         if ((snap.opps || []).length) {
             parts.push('<div class="sec-h sec-opps">opponents</div>');
             parts.push('<div class="opps">');
@@ -2534,111 +2692,6 @@
             const pieces = hn.map(h =>
                 `${h.number} (${h.count}× vs ${h.expected}×)`).join(', ');
             parts.push('<div class="hot-numbers">hot: ' + pieces + '</div>');
-        }
-        if (snap.knight_hint && snap.knight_hint.have > 0) {
-            // Standalone knight-play panel (separate from the active-robber
-            // ranking): fires whenever self holds a Knight so Noah knows
-            // whether to play it this turn.
-            const kh = snap.knight_hint;
-            const verdictCls = kh.should_play ? 'play' : 'hold';
-            const verdictLbl = kh.should_play ? 'PLAY' : 'HOLD';
-            let tail = '';
-            if (kh.best_target) {
-                const t = kh.best_target;
-                const tile = t.resource
-                    ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
-                    : 'DES';
-                const scoreTxt = (t.score > 0 ? '+' : '') + t.score;
-                tail = ` · top ${tile} (${scoreTxt})`;
-            }
-            parts.push('<div class="knight-hint">');
-            parts.push(`<div class="kh-h">knight card (×${kh.have})</div>`);
-            parts.push('<div class="kh-reason">'
-                + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + escapeHtml(kh.reason || '')
-                + escapeHtml(tail) + '</div>');
-            parts.push('</div>');
-        }
-        if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
-            const mh = snap.monopoly_hint;
-            const resLbl = mh.resource.slice(0, 3).toLowerCase();
-            const verdictCls = mh.should_play ? 'play' : 'hold';
-            const verdictLbl = mh.should_play ? 'PLAY' : 'HOLD';
-            let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
-            if (mh.unlock) {
-                body += `<span class="dv-unlock">${escapeHtml(mh.unlock)}</span>`;
-            }
-            // Top holder sub-line: who you're draining the most. The
-            // opponent's display color tints the chip so it reads at a
-            // glance. Only renders when a dominant holder exists.
-            let sub = '';
-            if (mh.top_holder && mh.top_holder.count > 0) {
-                const th = mh.top_holder;
-                const swatch = th.display
-                    ? `<span class="mh-swatch" style="background:${escapeHtml(th.display)}"></span>`
-                    : '';
-                sub = `<div class="dv-sub">`
-                    + swatch
-                    + escapeHtml(`drains ${th.count} from ${th.color.toLowerCase()}`)
-                    + '</div>';
-            }
-            parts.push('<div class="dev-hint">');
-            parts.push(`<div class="dv-h">monopoly (×${mh.have})</div>`);
-            parts.push(`<div class="dv-body">${body}${sub}</div>`);
-            parts.push('</div>');
-        }
-        if (snap.yop_hint && snap.yop_hint.have > 0) {
-            const yh = snap.yop_hint;
-            const pair = (yh.pair || []).map(r => r.slice(0, 3).toLowerCase()).join(' + ');
-            const verdictCls = yh.should_play ? 'play' : 'hold';
-            const verdictLbl = yh.should_play ? 'PLAY' : 'HOLD';
-            let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + `pick <b>${escapeHtml(pair)}</b>`;
-            if (yh.unlock) {
-                body += `<span class="dv-unlock">unlocks ${escapeHtml(yh.unlock)}</span>`;
-            }
-            // Bank-out warning when the chosen pair can't be granted.
-            if (yh.bank_ok === false) {
-                body += `<div class="dv-sub">`
-                    + escapeHtml(yh.reason || 'bank short on pair') + '</div>';
-            }
-            parts.push('<div class="dev-hint">');
-            parts.push(`<div class="dv-h">year of plenty (×${yh.have})</div>`);
-            parts.push(`<div class="dv-body">${body}</div>`);
-            parts.push('</div>');
-        }
-        if (snap.rb_hint && snap.rb_hint.have > 0) {
-            const rh = snap.rb_hint;
-            const verdictLbl = rh.should_play ? 'PLAY' : 'HOLD';
-            const verdictCls = rh.should_play ? 'play' : 'hold';
-            parts.push('<div class="dev-hint">');
-            parts.push(`<div class="dv-h">road building (×${rh.have})</div>`);
-            let body = `<div class="dv-body">`
-                + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + escapeHtml(rh.reason || '');
-            if (rh.placement) {
-                const pl = rh.placement;
-                const arrow = pl.direction ? pl.direction.arrow : '→';
-                const word = pl.direction ? pl.direction.word : '';
-                const dirTxt = word ? `lay ${word}` : 'lay road';
-                const towardHtml = (pl.toward_tiles
-                        && pl.toward_tiles.length)
-                    ? ` toward ${tilesToHtml(pl.toward_tiles)}`
-                    : '';
-                let sub = `<div class="dv-sub">`
-                    + `<span class="dv-arrow">${escapeHtml(arrow)}</span>`
-                    + escapeHtml(dirTxt) + towardHtml;
-                if (pl.placement_reason) {
-                    sub += `<span class="dv-unlock">`
-                        + escapeHtml(pl.placement_reason) + '</span>';
-                }
-                sub += '</div>';
-                body += sub;
-            }
-            body += '</div>';
-            parts.push(body);
-            parts.push('</div>');
         }
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';
