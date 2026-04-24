@@ -1192,7 +1192,7 @@ def _suggest_rb_placement(
         "toward_tiles": _tile_label(m, int(toward)),
         "placement_reason": tag,
     }
-    # Direction of the FIRST edge — read "lay a road lower-right toward
+    # Direction of the FIRST edge — read "lay a road right toward
     # [wheat 6]" as the primary action. Second edge direction is implied
     # by the chain and would be noise in the overlay.
     dir_lbl = _direction_label(positions, edges[0][0], edges[0][1])

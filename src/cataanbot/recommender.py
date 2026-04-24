@@ -31,9 +31,9 @@ from typing import Any
 
 # Pointy-top hex geometry. NodeRef offsets from tile center in "unit hex"
 # coordinates (radius=1). Cube coord (x,y,z) with x+y+z=0 maps to pixels via
-# px = √3·x + √3/2·z, py = 1.5·z. Used to compute a human-readable compass
-# direction ("upper-right", "down-left", etc.) for opening-road hints so the
-# overlay can show "↗ upper-right" instead of making Noah parse tile chips.
+# px = √3·x + √3/2·z, py = 1.5·z. Used to compute a human-readable cardinal
+# direction (up / down / left / right) for opening-road hints so the overlay
+# can show "↑ up" instead of making Noah parse tile chips.
 _SQRT3 = math.sqrt(3.0)
 _NODEREF_OFFSETS = {
     "NORTH":     (0.0, -1.0),
@@ -68,45 +68,31 @@ def _node_positions(m) -> dict[int, tuple[float, float]]:
     return positions
 
 
-# Pointy-top hex edges radiate at 30°/90°/150°/210°/270°/330° (not 0°/60°/…
-# — those would be flat-top edges). Using atan2 with a flipped y so
-# "upper" means up on screen, this gives us Noah's exact mental model:
-# up / down / upper-right / upper-left / lower-right / lower-left.
-_DIRECTION_BUCKETS = [
-    # (angle_deg, word, arrow)
-    (30.0,  "upper-right", "↗"),
-    (90.0,  "up",          "↑"),
-    (150.0, "upper-left",  "↖"),
-    (210.0, "lower-left",  "↙"),
-    (270.0, "down",        "↓"),
-    (330.0, "lower-right", "↘"),
-]
-
-
 def _direction_label(positions: dict[int, tuple[float, float]],
                      from_node: int, to_node: int
                      ) -> tuple[str, str] | None:
-    """Classify the road edge from_node→to_node into one of six compass
-    directions. Returns (word, arrow) or None if either endpoint is
-    missing from the position map (shouldn't happen for land nodes)."""
+    """Classify the road edge from_node→to_node into one of 4 cardinal
+    directions (up / down / left / right). Noah specifically asked for
+    only these — from any Catan vertex only 3 outgoing edges exist,
+    one vertical-axis and two diagonals, and diagonals read cleaner as
+    "left/right" than as "upper-left/lower-right/etc." Returns
+    (word, arrow) or None if either endpoint is missing from the
+    position map (shouldn't happen for land nodes)."""
     p1 = positions.get(int(from_node))
     p2 = positions.get(int(to_node))
     if p1 is None or p2 is None:
         return None
     dx = p2[0] - p1[0]
-    # Flip y so "upper" = up on screen: positive py is downward in pixel
-    # space, but humans read "upper" as top-of-board.
+    # Flip y so positive dy = up-on-screen (catanatron's y grows
+    # downward in layout coordinates).
     dy = -(p2[1] - p1[1])
-    # atan2 returns radians in (-π, π]. Convert to [0, 360) with 0° = east,
-    # 90° = north, etc., then snap to the nearest 60° bucket.
-    angle = math.degrees(math.atan2(dy, dx)) % 360.0
-    best: tuple[float, str, str] | None = None
-    for bucket_angle, word, arrow in _DIRECTION_BUCKETS:
-        diff = abs(((angle - bucket_angle + 180.0) % 360.0) - 180.0)
-        if best is None or diff < best[0]:
-            best = (diff, word, arrow)
-    assert best is not None
-    return (best[1], best[2])
+    # Catan's pointy-top edges are either near-vertical (|dy|≈1, dx≈0)
+    # or diagonal (|dx|≈0.87, |dy|≈0.5). The vertical axis wins when
+    # |dy| > |dx|; otherwise it's a diagonal that's visually more
+    # horizontal, so label by the sign of dx.
+    if abs(dy) > abs(dx):
+        return ("up", "↑") if dy > 0 else ("down", "↓")
+    return ("right", "→") if dx > 0 else ("left", "←")
 
 
 def _score_settlement(prod: float) -> float:
@@ -1063,10 +1049,10 @@ def recommend_actions(
                 "tiles": _tile_label(m, landing) if landing else [],
             }
             # Direction label — same pattern as opening roads so the HUD
-            # can say "lay ↗ upper-right toward [wheat 6]" instead of
-            # raw node ids. Anchor direction from the endpoint that's
-            # attached to self's network (the existing one), toward the
-            # new far end.
+            # can say "lay → right toward [wheat 6]" instead of raw node
+            # ids. Anchor direction from the endpoint that's attached
+            # to self's network (the existing one), toward the new far
+            # end.
             from cataanbot.advisor import _build_node_neighbors as _bnn
             nb = _bnn(m)
             my_nodes: set[int] = set()
