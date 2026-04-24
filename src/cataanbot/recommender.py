@@ -801,6 +801,128 @@ def _tile_label(m, node_id: int) -> list[tuple[str, int | None]]:
     return out
 
 
+# --- Rationale helpers ------------------------------------------------
+#
+# Noah asked for more substantive "why" text on every rec — the old
+# ``prod 0.50/roll`` line is correct but too abstract to act on. These
+# helpers produce a one-line rationale that breaks down WHAT resources
+# a rec produces, WHAT it adds to the current hand position, or WHAT
+# tactical state it moves (LR progression, LA progression, etc.).
+
+_RES_LETTER = {
+    "WOOD": "W", "BRICK": "B", "SHEEP": "Sh",
+    "WHEAT": "Wh", "ORE": "O",
+}
+
+
+def _breakdown_per_roll(prod_map) -> str:
+    """Format a per-resource /roll production line — the reason this
+    spot matters, in concrete numbers.
+
+    Example: a 6-wheat + 10-ore + 4-brick corner returns
+    '+0.14 Wh +0.08 O +0.08 B /roll'. Sorted descending so the biggest
+    resource leads (Noah reads it as "this is mostly a wheat spot").
+    """
+    items = [(r, float(v)) for r, v in dict(prod_map).items()
+             if float(v) > 0.0]
+    if not items:
+        return ""
+    items.sort(key=lambda kv: -kv[1])
+    parts = [f"+{v:.2f} {_RES_LETTER.get(r, r[:1])}" for r, v in items]
+    return " ".join(parts) + " /roll"
+
+
+def _settle_rationale(m, node_id: int, self_expected: dict | None) -> str:
+    """Settlement rationale: per-resource breakdown + a weak-fill hint
+    when the spot's biggest new resource is one self is low on."""
+    prod_map = m.node_production.get(int(node_id), {})
+    if not prod_map:
+        return ""
+    line = _breakdown_per_roll(prod_map)
+    # Weak-fill hint: if self's current expected/roll for the spot's
+    # biggest resource is <= 0.05, call this out as a diversity pick.
+    # (self_expected is the current per-resource /roll map for all of
+    # self's existing buildings; passed in from recommend_actions.)
+    if self_expected:
+        top_res = max(prod_map.items(), key=lambda kv: kv[1])[0]
+        if float(self_expected.get(top_res, 0.0)) <= 0.05:
+            line = line + (f" · fills {_RES_LETTER.get(top_res, top_res[:1])}"
+                           " (your weakest)")
+    return line
+
+
+def _city_rationale(m, node_id: int) -> str:
+    """City rationale: city doubles the existing settle — the DELTA
+    yield equals the current yield. Framed as 'adds +X /roll' so Noah
+    reads it as marginal gain, plus 'doubles' to surface the mechanism.
+    """
+    prod_map = m.node_production.get(int(node_id), {})
+    if not prod_map:
+        return ""
+    items = [(r, float(v)) for r, v in dict(prod_map).items()
+             if float(v) > 0.0]
+    if not items:
+        return ""
+    items.sort(key=lambda kv: -kv[1])
+    parts = [f"+{v:.2f} {_RES_LETTER.get(r, r[:1])}" for r, v in items]
+    return "adds " + " ".join(parts) + " /roll (doubles yield)"
+
+
+def _road_rationale(state, color, self_len: int, has_lr: bool) -> str:
+    """Road rationale: LR progression when the +1 road would cross a
+    meaningful threshold (qualifies at 5, ties/beats opp_max), or
+    simply names the current chain length."""
+    from catanatron import Color
+    if not isinstance(color, Color):
+        try:
+            color = Color[str(color).upper()]
+        except Exception:  # noqa: BLE001
+            return ""
+    ps = state.player_state
+    opp_max = 0
+    for col, idx in state.color_to_index.items():
+        if col == color:
+            continue
+        ol = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0) or 0)
+        if ol > opp_max:
+            opp_max = ol
+    next_len = self_len + 1
+    # Opp holds and we're catching up / flipping?
+    opp_holds = any(
+        bool(ps.get(f"P{idx}_HAS_ROAD", False))
+        for col, idx in state.color_to_index.items() if col != color
+    )
+    if not has_lr and next_len >= 5 and next_len > opp_max:
+        if opp_holds:
+            return f"extends to {next_len} → FLIPS LR (+2 VP)"
+        return f"extends to {next_len} → claims LR (+2 VP)"
+    if not has_lr and next_len >= 5 and next_len == opp_max:
+        return f"extends to {next_len} — ties LR leader"
+    if has_lr and next_len > opp_max + 1:
+        return f"extends to {next_len}, pads LR lead"
+    if self_len >= 3:
+        return f"extends {self_len}-chain to {next_len}"
+    return ""
+
+
+def _compute_self_expected_per_roll(
+    m, board, color,
+) -> dict[str, float]:
+    """Sum per-resource /roll across all of self's current buildings
+    (cities contribute 2×). Mirrors what HUD shows on self row but
+    scoped to the rec helpers; lets _settle_rationale flag weak-fill
+    picks without the snap having to pass it in."""
+    out: dict[str, float] = {r: 0.0 for r in _RES_LETTER}
+    for nid, (bcol, btype) in board.buildings.items():
+        if bcol != color:
+            continue
+        mult = 2.0 if str(btype).upper() == "CITY" else 1.0
+        prod = m.node_production.get(int(nid), {})
+        for r, v in dict(prod).items():
+            out[r] = out.get(r, 0.0) + float(v) * mult
+    return out
+
+
 def recommend_actions(
     game, color, hand: dict[str, int], *, top: int = 4,
     opp_hands: dict[str, dict[str, int]] | None = None,
@@ -826,6 +948,11 @@ def recommend_actions(
     c = color if isinstance(color, Color) else Color[str(color).upper()]
     m = game.state.board.map
     recs: list[dict[str, Any]] = []
+    # Per-resource /roll baseline — drives the "fills your weakest" hint
+    # in settle rationales. Computed once up front since it reads every
+    # self building; cheap but not zero-cost.
+    self_expected = _compute_self_expected_per_roll(
+        m, game.state.board, c)
 
     def _best_settlement_spot() -> tuple[int, float] | None:
         try:
@@ -867,6 +994,7 @@ def recommend_actions(
                 "score": _score_settlement(prod),
                 "detail": f"prod {prod:.2f}/roll",
                 "tiles": _tile_label(m, int(node)),
+                "rationale": _settle_rationale(m, int(node), self_expected),
             })
 
     # --- City upgrades ---------------------------------------------------
@@ -883,6 +1011,7 @@ def recommend_actions(
                 "score": _score_city(prod),
                 "detail": f"2× prod ({prod:.2f}/roll) + 1 VP",
                 "tiles": _tile_label(m, int(node_id)),
+                "rationale": _city_rationale(m, int(node_id)),
             })
 
     # --- Roads -----------------------------------------------------------
@@ -960,6 +1089,24 @@ def recommend_actions(
                 road_rec["direction"] = {"word": lbl[0], "arrow": lbl[1]}
             road_rec["edge_from"] = from_n
             road_rec["edge_to"] = to_n
+            # LR-progression rationale: if this +1 road crosses a
+            # meaningful LR threshold (qualifies at 5, ties/beats
+            # opp_max), that's a more actionable "why build this" than
+            # the landing-spot prod alone.
+            try:
+                my_idx = game.state.color_to_index.get(c)
+                if my_idx is not None:
+                    ps = game.state.player_state
+                    self_len = int(ps.get(
+                        f"P{my_idx}_LONGEST_ROAD_LENGTH", 0) or 0)
+                    self_has_lr = bool(ps.get(
+                        f"P{my_idx}_HAS_ROAD", False))
+                    lr_line = _road_rationale(
+                        game.state, c, self_len, self_has_lr)
+                    if lr_line:
+                        road_rec["rationale"] = lr_line
+            except Exception:  # noqa: BLE001
+                pass
             recs.append(road_rec)
 
     # --- Dev card --------------------------------------------------------
@@ -993,6 +1140,8 @@ def recommend_actions(
                     "detail": (f"{_format_missing(missing)} "
                                f"· {prod:.2f}/roll target"),
                     "tiles": _tile_label(m, node),
+                    "rationale": _settle_rationale(
+                        m, node, self_expected),
                 })
     if not _hand_can_afford(hand, _CITY_COST):
         missing = _missing_for(hand, _CITY_COST)
@@ -1009,6 +1158,7 @@ def recommend_actions(
                     "detail": (f"{_format_missing(missing)} "
                                f"· 2×{prod:.2f}/roll + 1 VP"),
                     "tiles": _tile_label(m, node),
+                    "rationale": _city_rationale(m, node),
                 })
     if not _hand_can_afford(hand, _DEV_COST):
         missing = _missing_for(hand, _DEV_COST)
