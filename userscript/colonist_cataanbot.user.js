@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.16.0
+// @version      0.17.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -159,130 +159,111 @@
         const root = host.attachShadow({ mode: 'open' });
         root.innerHTML = `
 <style>
-  /* Web fonts — Archivo for display (banner headlines, section labels)
-     and JetBrains Mono for body data. Loaded inside the shadow DOM so
-     colonist's stylesheets can't touch them. If the user is offline or
-     blocks fonts.googleapis.com, the system fallbacks below kick in. */
-  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+  /* --------------------------------------------------------------
+     CataanBot HUD — v0.17 redesign.
+
+     Principles:
+     - ONE font family (JetBrains Mono) used across the HUD. Hierarchy
+       comes from size/weight/casing, not a second typeface. Fewer
+       decisions, more consistency.
+     - Five signal colors total (pos / warn / alert / info / accent).
+       Every semantic state maps to one of them — no bespoke hues.
+     - Section dividers are real: a horizontal rule plus an inline
+       uppercase label. The eye lands on section boundaries before
+       it reads data.
+     - Self block lives in an explicit card with a colored left
+       border. Opps live in their own sibling cards. Banners share a
+       single archetype (3px left-edge bar + uniform dark bg).
+     - 14px body base with a 4px spacing grid. Generous line-height.
+     -------------------------------------------------------------- */
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
 
   :host, * { box-sizing: border-box; }
 
-  /* --------------------------------------------------------------
-     Design tokens. Everything downstream references these so the
-     whole HUD can be reskinned from this block alone. The resize
-     handle mutates --panel-w and --font-scale; every font size is
-     calc(base * var(--font-scale)) so width drives text too.
-     -------------------------------------------------------------- */
   .panel {
-    --panel-w: 360px;
+    /* layout */
+    --panel-w: 380px;
     --panel-h: auto;
     --font-scale: 1;
 
-    /* Spacing scale — 4px rhythm, stepped */
+    /* spacing — 4px rhythm */
     --s-1: 2px;
     --s-2: 4px;
     --s-3: 8px;
     --s-4: 12px;
     --s-5: 16px;
     --s-6: 20px;
+    --s-7: 24px;
 
-    /* Surfaces */
-    --bg-0: #0d0e13;              /* panel body */
-    --bg-1: #161820;              /* nested card / banner surface */
-    --bg-2: #1c1f29;              /* header strip */
-    --bg-3: #252836;              /* pill / chip bg */
-    --line: rgba(255, 255, 255, 0.07);
-    --line-strong: rgba(255, 255, 255, 0.14);
+    /* surfaces */
+    --bg-0: #0c0d11;
+    --bg-1: #14161d;
+    --bg-2: #1c1e27;
+    --bg-3: #252834;
+    --line:        rgba(255, 255, 255, 0.06);
+    --line-strong: rgba(255, 255, 255, 0.12);
 
-    /* Text ladder */
-    --fg: #e9ebf1;
-    --fg-mute: #a1a7b5;
-    --fg-dim: #6e7485;
-    --fg-label: #8089a0;          /* section labels */
+    /* text ladder */
+    --fg:       #eef0f5;
+    --fg-mute:  #a9aeba;
+    --fg-dim:   #70768a;
+    --fg-label: #7a7fa0;
 
-    /* Role colors — one hue per semantic axis, not per component */
-    --acc-pos:   #6ed79a;         /* goal / mine / gain */
-    --acc-warn:  #e8a860;         /* attention / near-miss */
-    --acc-alert: #ff6b5e;         /* danger / fat-hand / 7 */
-    --acc-info:  #7ec0f5;         /* informational blue */
-    --acc-insight: #c88aee;       /* hidden-info / robber-on-me */
-    --acc-gold:  #ffc857;         /* VP / opening-option */
-    --acc-teal:  #6ec8c0;         /* recs / my actions */
+    /* signal palette — only 5 */
+    --pos:    #7ed99f;
+    --warn:   #ecb06a;
+    --alert:  #ff6d61;
+    --info:   #7dc0f2;
+    --accent: #ffcf5e;
 
     --radius-sm: 3px;
-    --radius:    5px;
-    --radius-lg: 8px;
+    --radius:    6px;
+    --radius-lg: 10px;
 
-    --font-display: 'Archivo', -apple-system, BlinkMacSystemFont,
-                    'SF Pro Display', 'Helvetica Neue', sans-serif;
-    --font-mono:    'JetBrains Mono', ui-monospace, Menlo, Consolas,
-                    monospace;
+    --font: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 
-    font-family: var(--font-mono);
-    font-size: calc(13px * var(--font-scale));
+    font-family: var(--font);
+    font-size: calc(14px * var(--font-scale));
     line-height: 1.55;
     color: var(--fg);
     background: var(--bg-0);
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     border-radius: var(--radius-lg);
     width: var(--panel-w);
     height: var(--panel-h);
     box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.02) inset,
-      0 18px 48px rgba(0, 0, 0, 0.55),
-      0 4px 12px rgba(0, 0, 0, 0.28);
+      0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+      0 20px 50px rgba(0, 0, 0, 0.6),
+      0 6px 16px rgba(0, 0, 0, 0.35);
     user-select: none;
     position: relative;
-    overflow: hidden;
   }
 
-  /* Resize handle — subtle diagonal tick, brightens on hover */
-  .resize-handle {
-    position: absolute; right: 0; bottom: 0;
-    width: 14px; height: 14px;
-    cursor: nwse-resize;
-    background:
-      linear-gradient(135deg,
-        transparent 0%, transparent 45%,
-        var(--line-strong) 45%, var(--line-strong) 50%,
-        transparent 50%, transparent 65%,
-        var(--line-strong) 65%, var(--line-strong) 70%,
-        transparent 70%);
-    opacity: 0.55;
-    transition: opacity 0.15s ease;
-  }
-  .resize-handle:hover { opacity: 1; }
-
-  .body.scrollable { overflow-y: auto; }
-  .body { padding: var(--s-3) var(--s-4); }
-  .body.collapsed { display: none; }
-
-  /* Header strip — Archivo display caps, confident but understated */
+  /* Header strip — live-dot + title + collapse button */
   .header {
     display: flex; align-items: center; gap: var(--s-3);
     padding: var(--s-3) var(--s-4);
     cursor: move;
     border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+    background: var(--bg-2);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }
   .title {
     flex: 1;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: calc(13px * var(--font-scale));
-    letter-spacing: 0.04em;
+    font-weight: 800;
+    font-size: calc(12px * var(--font-scale));
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--fg);
   }
   .dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--fg-dim);
-    box-shadow: 0 0 0 3px rgba(110, 215, 154, 0);
-    transition: background 0.2s ease, box-shadow 0.2s ease;
+    transition: background 0.2s, box-shadow 0.2s;
   }
   .dot.live {
-    background: var(--acc-pos);
-    box-shadow: 0 0 0 3px rgba(110, 215, 154, 0.15);
+    background: var(--pos);
+    box-shadow: 0 0 0 3px rgba(126, 217, 159, 0.18);
   }
   .btn {
     cursor: pointer;
@@ -291,173 +272,284 @@
     border: 1px solid var(--line);
     border-radius: var(--radius-sm);
     background: transparent;
-    font-family: var(--font-mono);
-    transition: color 0.15s ease, border-color 0.15s ease;
+    font-family: var(--font);
+    font-size: calc(12px * var(--font-scale));
   }
   .btn:hover { color: var(--fg); border-color: var(--line-strong); }
 
-  /* --------------------------------------------------------------
-     Color pill — player name badge. Unified spec for self + opps
-     so every player chip has the same visual weight.
-     -------------------------------------------------------------- */
-  .color-pill {
-    display: inline-block;
-    padding: 1px var(--s-3);
-    border-radius: var(--radius);
-    color: #111;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: calc(12px * var(--font-scale));
-    letter-spacing: 0.02em;
-    vertical-align: middle;
-  }
+  /* Body container */
+  .body { padding: var(--s-4) var(--s-4) var(--s-6); }
+  .body.collapsed { display: none; }
+  .body.scrollable { overflow-y: auto; }
 
   /* --------------------------------------------------------------
-     Game-progress header: "round N · PHASE · standings"
-     Smaller, dim, tracked — reads as metadata anchoring everything
-     below it. The phase pill picks up the phase color, not the
-     whole line.
+     Resize grip — visible, grabbable. Three diagonal ticks in the
+     bottom-right corner. Rounded to match panel's corner radius so
+     the grip visually lives at the panel edge.
+     -------------------------------------------------------------- */
+  .resize-handle {
+    position: absolute; right: 0; bottom: 0;
+    width: 18px; height: 18px;
+    cursor: nwse-resize;
+    border-bottom-right-radius: var(--radius-lg);
+    background:
+      linear-gradient(135deg,
+        transparent 0%, transparent 30%,
+        var(--fg-mute) 30%, var(--fg-mute) 38%,
+        transparent 38%, transparent 52%,
+        var(--fg-mute) 52%, var(--fg-mute) 60%,
+        transparent 60%, transparent 74%,
+        var(--fg-mute) 74%, var(--fg-mute) 82%,
+        transparent 82%);
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
+  }
+  .resize-handle:hover { opacity: 1; }
+
+  /* --------------------------------------------------------------
+     Game-progress strip — "ROUND 7 · MID · YOU +1". Sits at the top
+     under the header, separated from content by a hairline.
      -------------------------------------------------------------- */
   .gprog {
-    font-family: var(--font-display);
-    color: var(--fg-label);
     font-size: calc(10px * var(--font-scale));
-    font-weight: 500;
-    letter-spacing: 0.08em;
+    font-weight: 700;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    margin: 0 0 var(--s-3);
+    color: var(--fg-label);
     font-variant-numeric: tabular-nums;
+    margin: 0 0 var(--s-4);
+    padding-bottom: var(--s-3);
+    border-bottom: 1px solid var(--line);
   }
-  .gprog .ph-early { color: var(--acc-pos); font-weight: 700; }
-  .gprog .ph-mid   { color: var(--acc-gold); font-weight: 700; }
-  .gprog .ph-late  { color: var(--acc-alert); font-weight: 700; }
-  .gprog .stand-self { color: var(--acc-gold); font-weight: 700; }
+  .gprog .ph-early { color: var(--pos); }
+  .gprog .ph-mid   { color: var(--accent); }
+  .gprog .ph-late  { color: var(--alert); }
+  .gprog .stand-self { color: var(--accent); }
   .gprog .stand-gap  { color: var(--fg-dim); }
 
   /* --------------------------------------------------------------
-     Self block: identity + resources + action hints. More breathing
-     room than the dense original — the eye lands here first every
-     poll.
+     Section headings — horizontal hairline + inline uppercase label.
+     Primary mechanism for grouping content. Two shapes:
+       .sec-h   — generic section (OPPS, ROLL, etc.)
+       .recs-h  — recommendations (green accent)
+     Both share the same structure so they feel visually consistent.
      -------------------------------------------------------------- */
+  .sec-h, .recs-h, .robber-h {
+    display: flex; align-items: center;
+    gap: var(--s-3);
+    margin: var(--s-5) 0 var(--s-3);
+    font-size: calc(10px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+  }
+  .sec-h::after, .recs-h::after, .robber-h::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+  .recs-h          { color: var(--pos); }
+  .recs-h.plan-h   { color: var(--info); }
+  .robber-h        { color: var(--alert); }
+  .sec-h.sec-opps  { color: var(--fg-label); }
+  .sec-h.sec-roll  { color: var(--info); }
+  .sec-h.sec-signals { color: var(--warn); }
+
+  /* Deprecated in v0.17 — section headers replace the raw hr */
+  .hr { display: none; }
+
+  /* --------------------------------------------------------------
+     SELF CARD — player identity + hand + primary action.
+     Distinct visual container. The top row is the identity bar
+     (pill name + big VP number + terse stats). Below that, the
+     hand row gets generous horizontal spacing. Afford line is the
+     call-to-action — green when something's buildable.
+     -------------------------------------------------------------- */
+  .card.self {
+    padding: var(--s-4);
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--fg-dim);
+    border-radius: var(--radius);
+  }
   .you {
     display: flex; align-items: center;
     gap: var(--s-3);
-    padding-bottom: var(--s-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--s-2);
+  }
+  .color-pill {
+    display: inline-block;
+    padding: 2px var(--s-3);
+    border-radius: var(--radius);
+    color: #111;
+    font-weight: 800;
+    font-size: calc(12px * var(--font-scale));
+    letter-spacing: 0.04em;
+    vertical-align: middle;
   }
   .you .color-pill {
     font-size: calc(13px * var(--font-scale));
     padding: 2px var(--s-3);
   }
-  .you .muted {
-    color: var(--fg-mute);
+  .you .vp-big {
+    font-size: calc(18px * var(--font-scale));
+    font-weight: 800;
+    color: var(--accent);
     font-variant-numeric: tabular-nums;
-    font-size: calc(12px * var(--font-scale));
+    line-height: 1;
+    margin-left: auto;
+    letter-spacing: 0.02em;
+  }
+  .you .vp-big .lbl {
+    font-size: calc(9px * var(--font-scale));
+    color: var(--fg-dim);
+    letter-spacing: 0.18em;
+    margin-left: var(--s-1);
+    font-weight: 700;
+    vertical-align: 2px;
+    text-transform: uppercase;
+  }
+  .you .self-meta {
+    color: var(--fg-mute);
+    font-size: calc(10px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.8;
+    width: 100%;
+    margin-top: var(--s-1);
+  }
+  .you .self-meta .fat-hand {
+    color: var(--alert);
+    font-weight: 700;
   }
 
-  /* Hand row — generous spacing between chip stacks so 5 resources
-     don't mash together. Grid with gap handles the rhythm. */
+  /* Hand row — resource counts, bigger and airier */
   .hand {
     display: flex; flex-wrap: wrap;
     gap: var(--s-2) var(--s-4);
-    color: var(--fg);
     padding: var(--s-2) 0;
-    font-variant-numeric: tabular-nums;
+    font-size: calc(15px * var(--font-scale));
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
   }
-  .hand span { display: inline-flex; align-items: center; gap: 2px; }
+  .hand span {
+    display: inline-flex; align-items: center;
+    gap: 3px;
+  }
   .hand .mono-risk {
-    color: var(--acc-warn);
+    color: var(--warn);
     font-weight: 700;
-    text-shadow: 0 0 6px rgba(232, 168, 96, 0.3);
+    text-shadow: 0 0 6px rgba(236, 176, 106, 0.3);
   }
   .mono-warn {
-    color: var(--acc-warn);
+    color: var(--warn);
     font-size: calc(11px * var(--font-scale));
-    font-weight: 600;
-    margin: 0 0 var(--s-2);
+    font-weight: 700;
+    margin: var(--s-1) 0;
+    letter-spacing: 0.04em;
   }
 
-  /* Afford line — the "what can I actually do" action hint */
   .afford {
-    color: var(--acc-pos);
-    font-weight: 600;
-    margin: var(--s-1) 0 var(--s-3);
+    color: var(--pos);
+    font-weight: 700;
+    margin: var(--s-2) 0 var(--s-1);
+    font-size: calc(13px * var(--font-scale));
+    letter-spacing: 0.02em;
   }
   .afford.none { color: var(--fg-dim); font-weight: 400; }
-  .afford.near { color: var(--acc-warn); font-weight: 500; }
+  .afford.near { color: var(--warn); font-weight: 600; }
 
+  /* Self sub-info row — VP breakdown, ports, production rate. All
+     dim metadata that sits below the main self card. */
   .vpb {
     color: var(--fg-dim);
     font-size: calc(11px * var(--font-scale));
-    margin-bottom: var(--s-2);
-  }
-  .ports {
-    color: var(--acc-info);
-    font-size: calc(11px * var(--font-scale));
-    margin: 0 0 var(--s-2);
+    margin-top: var(--s-1);
     letter-spacing: 0.02em;
   }
-  .prod {
-    color: var(--acc-pos);
+  .ports {
+    color: var(--info);
     font-size: calc(11px * var(--font-scale));
-    margin: 0 0 var(--s-2);
+    margin-top: var(--s-1);
+    letter-spacing: 0.04em;
+  }
+  .prod {
+    color: var(--pos);
     opacity: 0.9;
+    font-size: calc(11px * var(--font-scale));
+    margin-top: var(--s-1);
+    letter-spacing: 0.04em;
   }
 
-  /* Section divider — hairline with vertical breathing room. Acts
-     as the primary rhythm between self / opps / recs / alerts. */
-  .hr {
-    height: 1px;
-    background: var(--line);
-    margin: var(--s-4) 0;
+  /* Hand-drift warning — appears when tracker state disagrees */
+  .drift {
+    color: var(--alert);
+    font-size: calc(11px * var(--font-scale));
+    margin: var(--s-1) 0;
+    font-weight: 600;
   }
 
   /* --------------------------------------------------------------
-     Opp rows: grid layout with the pill + core metadata on the top
-     line, hand + tags on a second line. Gives every opp a two-row
-     mini-card feel instead of a packed text blob.
+     OPP CARDS — list of opponent rows, each in its own mini-card.
+     Left border highlights tracked (green) or hot-knight (amber).
+     Hand breakdown sits inline on the same row; tags trail.
      -------------------------------------------------------------- */
   .opps {
     display: flex; flex-direction: column;
-    gap: var(--s-3);
+    gap: var(--s-2);
   }
   .opp {
+    padding: var(--s-3);
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--fg-dim);
+    border-radius: var(--radius);
     color: var(--fg-mute);
     font-size: calc(12px * var(--font-scale));
-    padding: var(--s-2) 0;
-    border-left: 2px solid transparent;
-    padding-left: var(--s-3);
-    margin-left: calc(var(--s-3) * -1);
-    transition: border-color 0.2s ease;
+    transition: border-left-color 0.2s ease;
+    line-height: 1.45;
   }
-  .opp.tracked { border-left-color: var(--acc-pos); }
-  .opp.hot-knight { border-left-color: var(--acc-warn); }
+  .opp.tracked    { border-left-color: var(--pos); }
+  .opp.hot-knight { border-left-color: var(--warn); }
+  .opp .color-pill {
+    font-size: calc(11px * var(--font-scale));
+    padding: 1px var(--s-2);
+  }
   .opp .opp-hand {
     color: var(--fg);
     font-variant-numeric: tabular-nums;
+    font-size: calc(13px * var(--font-scale));
     display: inline-flex; flex-wrap: wrap;
     gap: var(--s-1) var(--s-3);
-    margin-top: var(--s-1);
+    margin-left: var(--s-2);
   }
-  .opp.tracked .opp-hand { color: var(--acc-pos); }
+  .opp.tracked .opp-hand { color: var(--pos); }
   .opp .can-afford {
-    color: var(--acc-warn);
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    color: var(--warn);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: calc(10px * var(--font-scale));
   }
   .opp .one-short {
-    color: var(--acc-warn);
-    opacity: 0.75;
+    color: var(--warn);
+    opacity: 0.7;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
+    font-size: calc(11px * var(--font-scale));
   }
   .opp .fat-hand, .you .fat-hand {
-    color: var(--acc-alert);
+    color: var(--alert);
     font-weight: 700;
   }
   .opp .card-up {
-    color: var(--acc-alert);
-    font-weight: 600;
+    color: var(--alert);
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
   .opp .card-dn {
@@ -465,34 +557,37 @@
     font-variant-numeric: tabular-nums;
   }
   .opp .dev-stash {
-    color: var(--acc-warn);
+    color: var(--warn);
     font-weight: 700;
   }
 
   /* --------------------------------------------------------------
-     Roll banner — live dice read-out. Distinctively larger and
-     more airy than metadata. Yield trailer in green (gains) with a
-     dimmer tone for blocked portions.
+     ROLL BANNER — last dice outcome. Prominent when self rolled
+     (accent gold); dimmer for opp rolls. Yield trailer in green.
      -------------------------------------------------------------- */
   .roll {
-    margin: var(--s-3) 0 var(--s-2);
     color: var(--fg);
     font-weight: 500;
+    font-size: calc(14px * var(--font-scale));
+    margin-bottom: var(--s-2);
+    letter-spacing: 0.01em;
   }
   .roll.you-rolled {
-    color: var(--acc-gold);
-    font-weight: 600;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: calc(15px * var(--font-scale));
   }
+  .roll b { font-weight: 800; }
   .roll .roll-yield {
-    color: var(--acc-pos);
-    font-weight: 600;
+    color: var(--pos);
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
     margin-left: var(--s-2);
   }
   .roll .roll-blocked {
-    color: var(--acc-alert);
-    opacity: 0.8;
-    font-weight: 500;
+    color: var(--alert);
+    opacity: 0.75;
+    font-weight: 600;
     margin-left: var(--s-2);
   }
   .opp-yields {
@@ -501,53 +596,55 @@
     margin: 0 0 var(--s-2);
     font-variant-numeric: tabular-nums;
   }
-  .opp-yields .oy-blk { color: var(--acc-alert); opacity: 0.75; }
+  .opp-yields .oy-blk {
+    color: var(--alert);
+    opacity: 0.7;
+  }
 
-  /* Recent rolls strip — compact dice timeline. Cells use the
-     mono's tabular figures so the strip lines up perfectly. */
+  /* Recent rolls strip */
   .roll-history {
-    color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
-    margin: 0 0 var(--s-2);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.06em;
     display: flex; flex-wrap: wrap; align-items: baseline;
     gap: var(--s-1);
+    font-variant-numeric: tabular-nums;
+    font-size: calc(11px * var(--font-scale));
+    color: var(--fg-dim);
+    margin: var(--s-2) 0;
+    letter-spacing: 0.06em;
   }
   .roll-history .rh-label {
-    font-family: var(--font-display);
     color: var(--fg-label);
     font-size: calc(9px * var(--font-scale));
-    font-weight: 600;
-    letter-spacing: 0.12em;
+    font-weight: 700;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
     margin-right: var(--s-2);
   }
   .roll-history .rh {
     display: inline-block;
-    min-width: 14px; text-align: center;
-    padding: 0 var(--s-1);
+    min-width: 16px;
+    padding: 1px var(--s-1);
     border-radius: 2px;
+    text-align: center;
     font-weight: 500;
   }
   .roll-history .rh.hit {
-    color: var(--acc-pos);
+    color: var(--pos);
     font-weight: 700;
-    background: rgba(110, 215, 154, 0.08);
+    background: rgba(126, 217, 159, 0.1);
   }
   .roll-history .rh.blocked {
-    color: var(--acc-alert);
-    opacity: 0.75;
+    color: var(--alert);
+    opacity: 0.8;
     text-decoration: underline;
-    text-decoration-color: var(--acc-alert);
+    text-decoration-color: var(--alert);
   }
   .roll-history .rh.seven {
-    color: var(--acc-alert);
-    font-weight: 700;
+    color: var(--alert);
+    font-weight: 800;
   }
   .roll-history .rh-count {
     color: var(--fg-dim);
-    opacity: 0.6;
+    opacity: 0.55;
     margin-left: var(--s-2);
   }
   .yield-sum {
@@ -556,238 +653,199 @@
     margin: 0 0 var(--s-2);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
-    opacity: 0.85;
   }
-  .yield-sum.behind {
-    color: var(--acc-warn);
-    opacity: 1;
-  }
-  .yield-sum .ys-sep {
-    color: var(--fg-dim);
-    opacity: 0.5;
-    margin: 0 var(--s-2);
-  }
+  .yield-sum.behind { color: var(--warn); }
+  .yield-sum .ys-sep { color: var(--fg-dim); opacity: 0.4; margin: 0 var(--s-2); }
 
   .prod-stall {
-    color: var(--acc-warn);
+    color: var(--warn);
     font-size: calc(11px * var(--font-scale));
-    font-weight: 600;
-    margin: 0 0 var(--s-2);
-    letter-spacing: 0.02em;
+    font-weight: 700;
+    margin: var(--s-1) 0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .sevens-hot {
-    color: var(--acc-alert);
+    color: var(--alert);
     font-size: calc(11px * var(--font-scale));
-    font-weight: 600;
-    margin: 0 0 var(--s-2);
+    font-weight: 700;
+    margin: var(--s-1) 0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .hot-numbers {
-    color: var(--acc-gold);
+    color: var(--accent);
     font-size: calc(11px * var(--font-scale));
-    font-weight: 600;
-    margin: 0 0 var(--s-2);
-    letter-spacing: 0.02em;
+    font-weight: 700;
+    margin: var(--s-1) 0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   /* --------------------------------------------------------------
-     Recs block — section label in display face, then ranked list.
-     Score chip sits on the left as a fixed-width tabular tag; kind
-     label in Archivo; tiles in mono for alignment.
+     RECOMMENDATIONS — ranked action list. Top rec gets highlighted
+     card treatment (green left border + card bg) so it reads as the
+     primary CTA. Planning entries dim + italic.
      -------------------------------------------------------------- */
-  .recs-h {
-    font-family: var(--font-display);
-    color: var(--acc-teal);
-    font-weight: 700;
-    font-size: calc(10px * var(--font-scale));
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    margin: var(--s-4) 0 var(--s-2);
-  }
-  .recs-h.plan-h {
-    color: var(--acc-info);
-    margin-top: var(--s-3);
-  }
   .rec {
     color: var(--fg);
-    margin: var(--s-1) 0;
+    padding: var(--s-2) 0;
     line-height: 1.5;
+    display: flex; flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s-2);
+    font-size: calc(13px * var(--font-scale));
   }
-  .rec.top { font-weight: 600; }
+  .rec.top {
+    padding: var(--s-3);
+    margin: var(--s-1) 0;
+    background: var(--bg-1);
+    border-radius: var(--radius);
+    border-left: 3px solid var(--pos);
+  }
   .rec .kind {
-    display: inline-block; min-width: 58px;
-    font-family: var(--font-display);
-    color: var(--acc-gold);
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: lowercase;
+    min-width: 60px;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-size: calc(12px * var(--font-scale));
+    text-transform: uppercase;
   }
   .rec .detail {
     color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
     font-weight: 400;
+    flex: 1 1 100%;
   }
   .rec .score {
-    display: inline-block;
-    min-width: 54px;
-    padding: 1px var(--s-3);
+    min-width: 50px;
+    padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
-    font-weight: 700;
+    font-weight: 800;
     text-align: center;
     font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
-    letter-spacing: 0.04em;
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.06em;
   }
-  .rec .score.strong {
-    background: rgba(110, 215, 154, 0.14);
-    color: var(--acc-pos);
-  }
-  .rec .score.decent {
-    background: rgba(255, 200, 87, 0.14);
-    color: var(--acc-gold);
-  }
-  .rec .score.weak {
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--fg-dim);
-  }
-  .rec .tiles { color: var(--fg-mute); font-weight: 500; }
+  .rec .score.strong { background: rgba(126, 217, 159, 0.16); color: var(--pos); }
+  .rec .score.decent { background: rgba(236, 176, 106, 0.16); color: var(--warn); }
+  .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
+  .rec .tiles { color: var(--fg-mute); font-size: calc(12px * var(--font-scale)); }
   .tile-chip {
     display: inline-block;
     margin-right: var(--s-2);
     font-variant-numeric: tabular-nums;
   }
-  .tile-num { color: var(--acc-gold); font-weight: 700; }
-  .tile-num.hot { color: var(--acc-alert); }
+  .tile-num { color: var(--accent); font-weight: 700; }
+  .tile-num.hot { color: var(--alert); }
   .tile-res { color: var(--fg-mute); font-weight: 500; margin-left: 2px; }
-  .rec.plan { opacity: 0.78; }
-  .rec.plan .kind { color: var(--acc-info); font-style: italic; }
+
+  .rec.plan {
+    opacity: 0.78;
+    padding: var(--s-1) 0;
+  }
+  .rec.plan .kind { color: var(--info); }
 
   .rec-sub {
-    color: var(--acc-pos);
-    font-size: calc(12px * var(--font-scale));
-    padding: 0 0 var(--s-1) 66px;
-    opacity: 0.95;
+    color: var(--pos);
+    font-size: calc(11px * var(--font-scale));
+    padding: 0 0 var(--s-1) 62px;
+    opacity: 0.92;
   }
-  .rec-sub .warn { color: var(--acc-warn); font-weight: 500; }
+  .rec-sub .warn  { color: var(--warn); font-weight: 600; }
   .rec-sub .arrow { color: var(--fg-dim); margin-right: var(--s-1); }
-  .rec-sub.plan-second { color: var(--acc-info); }
+  .rec-sub.plan-second { color: var(--info); }
   .rec-sub.plan-second .arrow { color: var(--fg-dim); }
   .rec-sub.plan-second .cov {
-    color: var(--acc-info);
+    color: var(--info);
     opacity: 0.75;
     margin-left: var(--s-2);
     font-variant-numeric: tabular-nums;
   }
   .rec-sub.plan-second .arch {
-    background: rgba(126, 192, 245, 0.16);
-    color: var(--acc-info);
+    background: rgba(125, 192, 242, 0.16);
+    color: var(--info);
     border-radius: var(--radius-lg);
     padding: 1px var(--s-2);
     margin-left: var(--s-2);
-    font-family: var(--font-display);
     font-size: calc(10px * var(--font-scale));
-    font-weight: 600;
-    text-transform: lowercase;
-    letter-spacing: 0.08em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
-
   .rec .opt {
-    display: inline-block;
     min-width: 22px;
-    margin-right: var(--s-2);
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
-    background: rgba(255, 200, 87, 0.14);
-    color: var(--acc-gold);
-    font-family: var(--font-display);
-    font-weight: 700;
+    background: rgba(255, 207, 94, 0.18);
+    color: var(--accent);
+    font-weight: 800;
     font-size: calc(11px * var(--font-scale));
     text-align: center;
   }
-  .rec.trade .kind { color: var(--acc-warn); }
+  .rec.trade .kind { color: var(--warn); }
   .turn-hint {
     color: var(--fg-dim);
-    margin-top: var(--s-2);
     font-style: italic;
-  }
-  .drift {
-    color: var(--acc-alert);
-    margin: var(--s-1) 0;
+    margin: var(--s-2) 0;
     font-size: calc(12px * var(--font-scale));
   }
 
   /* --------------------------------------------------------------
-     BANNER FAMILY — the game-state signal system.
-
-     All tactical alerts (threat, win-prox, robber-on-me, road/army
-     race, bank, discard, trade, dev-card hints) share one visual
-     archetype: a subtle card with a 3px left-edge accent bar. The
-     bar color carries the level signal; the card background is a
-     near-uniform dark so the eye doesn't fight ten different
-     background hues. Consistent spacing (--s-3 padding, --s-3
-     vertical margin) gives them all the same rhythm.
+     BANNER FAMILY — every tactical alert uses the same archetype:
+     a card with a 3px left-edge accent bar in its level color. The
+     card background is near-uniform (bg-1); the color of the bar +
+     the text is what communicates urgency. Headers inside banners
+     are uppercase tracked labels.
      -------------------------------------------------------------- */
-  .banner,
   .threat, .win-prox, .robber-on-me,
   .lr-race, .la-race, .bank-low,
   .trade-offer, .knight-hint, .dev-hint, .discard-hint {
     position: relative;
     padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
-    margin: var(--s-3) 0;
+    margin: var(--s-2) 0;
     border-radius: var(--radius);
     background: var(--bg-1);
     border: 1px solid var(--line);
     border-left: 3px solid var(--fg-dim);
+    font-size: calc(13px * var(--font-scale));
     font-weight: 500;
-  }
-  .banner-h,
-  .threat > *:first-child, .win-prox > *:first-child,
-  .robber-on-me, .bank-low, .lr-race, .la-race {
-    font-family: var(--font-display);
-    letter-spacing: 0.02em;
-  }
-
-  /* Threat ladder — opp close to winning */
-  .threat {
-    font-family: var(--font-display);
-    letter-spacing: 0.02em;
-  }
-  .threat.mid   { border-left-color: var(--acc-gold);
-                  color: var(--acc-gold); }
-  .threat.close { border-left-color: var(--acc-alert);
-                  color: var(--acc-alert); }
-  .threat.win   { border-left-color: var(--acc-alert);
-                  background: linear-gradient(90deg,
-                    rgba(255, 107, 94, 0.1), var(--bg-1) 40%);
-                  color: var(--acc-alert);
-                  font-weight: 700; }
-
-  /* Self close-to-win — green symmetric */
-  .win-prox {
-    font-family: var(--font-display);
-    letter-spacing: 0.02em;
-  }
-  .win-prox.close   { border-left-color: var(--acc-pos);
-                      color: var(--acc-pos); }
-  .win-prox.close-1 { border-left-color: var(--acc-pos);
-                      color: var(--acc-pos);
-                      background: linear-gradient(90deg,
-                        rgba(110, 215, 154, 0.08), var(--bg-1) 50%); }
-  .win-prox.win     { border-left-color: var(--acc-pos);
-                      background: linear-gradient(90deg,
-                        rgba(110, 215, 154, 0.15), var(--bg-1) 50%);
-                      color: var(--acc-pos);
-                      font-weight: 700; }
-
-  /* Robber on me — purple/insight accent */
-  .robber-on-me {
-    border-left-color: var(--acc-insight);
-    color: var(--acc-insight);
-    font-family: var(--font-display);
-    font-weight: 600;
     letter-spacing: 0.01em;
+  }
+
+  .threat.mid   { border-left-color: var(--accent); color: var(--accent); }
+  .threat.close { border-left-color: var(--alert); color: var(--alert); }
+  .threat.win   {
+    border-left-color: var(--alert);
+    color: var(--alert);
+    font-weight: 700;
+    background: linear-gradient(90deg,
+      rgba(255, 109, 97, 0.08), var(--bg-1) 50%);
+  }
+
+  .win-prox.close   { border-left-color: var(--pos); color: var(--pos); }
+  .win-prox.close-1 {
+    border-left-color: var(--pos);
+    color: var(--pos);
+    font-weight: 600;
+    background: linear-gradient(90deg,
+      rgba(126, 217, 159, 0.08), var(--bg-1) 50%);
+  }
+  .win-prox.win {
+    border-left-color: var(--pos);
+    color: var(--pos);
+    font-weight: 700;
+    background: linear-gradient(90deg,
+      rgba(126, 217, 159, 0.16), var(--bg-1) 50%);
+  }
+
+  .robber-on-me {
+    border-left-color: var(--alert);
+    color: var(--alert);
+    font-weight: 600;
   }
   .robber-on-me .rom-sub {
     display: block;
-    font-family: var(--font-mono);
     font-weight: 400;
     font-size: calc(11px * var(--font-scale));
     color: var(--fg-mute);
@@ -796,34 +854,23 @@
     letter-spacing: 0;
   }
 
-  /* Road / Army race banners */
-  .lr-race, .la-race {
-    font-family: var(--font-display);
-    letter-spacing: 0.02em;
-  }
   .lr-race.self_push, .la-race.self_push {
-    border-left-color: var(--acc-pos);
-    color: var(--acc-pos);
+    border-left-color: var(--pos); color: var(--pos);
   }
   .lr-race.opp_threat, .la-race.opp_threat {
-    border-left-color: var(--acc-alert);
-    color: var(--acc-alert);
+    border-left-color: var(--alert); color: var(--alert);
   }
   .lr-race.contested, .la-race.contested {
-    border-left-color: var(--acc-info);
-    color: var(--acc-info);
+    border-left-color: var(--info); color: var(--info);
   }
 
-  /* Bank low — gold warn */
   .bank-low {
-    border-left-color: var(--acc-gold);
-    color: var(--acc-gold);
-    font-family: var(--font-display);
-    letter-spacing: 0.02em;
+    border-left-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
   }
   .bank-low .bl-sub {
     display: block;
-    font-family: var(--font-mono);
     font-weight: 400;
     font-size: calc(11px * var(--font-scale));
     color: var(--fg-mute);
@@ -834,34 +881,30 @@
 
   .dev-deck {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
-    margin: var(--s-1) 0;
-    font-family: var(--font-display);
-    letter-spacing: 0.04em;
+    font-size: calc(10px * var(--font-scale));
+    margin: var(--s-2) 0;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
+    font-weight: 600;
   }
   .dev-deck.low {
-    color: var(--acc-gold);
-    font-weight: 700;
+    color: var(--accent);
+    font-weight: 800;
   }
 
-  /* Discard hint — red accent, highest urgency */
-  .discard-hint {
-    border-left-color: var(--acc-alert);
-  }
+  .discard-hint { border-left-color: var(--alert); }
   .discard-hint .dh-h {
-    font-family: var(--font-display);
-    color: var(--acc-alert);
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--alert);
+    font-weight: 800;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    margin-bottom: var(--s-1);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(10px * var(--font-scale));
+    margin-bottom: var(--s-2);
   }
   .discard-hint .dh-drops {
     color: var(--fg);
-    font-weight: 500;
     font-variant-numeric: tabular-nums;
+    font-weight: 600;
   }
   .discard-hint .dh-reason {
     color: var(--fg-dim);
@@ -870,163 +913,116 @@
     margin-top: var(--s-1);
   }
 
-  /* Incoming trade panel — amber accent (same as rec.trade kind) */
-  .trade-offer {
-    border-left-color: var(--acc-warn);
-  }
+  .trade-offer { border-left-color: var(--warn); }
   .trade-offer .trade-h {
-    font-family: var(--font-display);
-    color: var(--acc-warn);
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--warn);
+    font-weight: 800;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(10px * var(--font-scale));
     margin-bottom: var(--s-2);
     display: flex; align-items: center; gap: var(--s-2);
   }
   .trade-offer .trade-h .muted {
     text-transform: none;
     letter-spacing: 0;
-    font-weight: 500;
     color: var(--fg-mute);
-    font-family: var(--font-mono);
+    font-weight: 500;
   }
   .trade-offer .trade-body {
     color: var(--fg);
-    font-size: calc(12px * var(--font-scale));
-    margin: var(--s-1) 0;
     font-variant-numeric: tabular-nums;
+    margin: var(--s-1) 0;
   }
   .trade-offer .trade-reason {
     color: var(--fg-mute);
     font-size: calc(11px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-2);
-    display: flex; align-items: center; gap: var(--s-2);
+    display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
   }
   .trade-offer .verdict {
-    display: inline-block;
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
-    font-family: var(--font-display);
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-weight: 800;
+    letter-spacing: 0.12em;
     font-size: calc(9px * var(--font-scale));
   }
-  .trade-offer .verdict.accept {
-    background: rgba(110, 215, 154, 0.18);
-    color: var(--acc-pos);
-  }
-  .trade-offer .verdict.decline {
-    background: rgba(255, 107, 94, 0.18);
-    color: var(--acc-alert);
-  }
-  .trade-offer .verdict.consider {
-    background: rgba(255, 255, 255, 0.07);
-    color: var(--fg-mute);
-  }
+  .trade-offer .verdict.accept   { background: rgba(126, 217, 159, 0.18); color: var(--pos); }
+  .trade-offer .verdict.decline  { background: rgba(255, 109, 97, 0.18);  color: var(--alert); }
+  .trade-offer .verdict.consider { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
   .trade-offer .swap-side { color: var(--fg); }
-  .trade-offer .swap-arrow {
-    color: var(--fg-dim);
-    margin: 0 var(--s-2);
-  }
+  .trade-offer .swap-arrow { color: var(--fg-dim); margin: 0 var(--s-2); }
   .trade-offer .counter {
     margin-top: var(--s-2);
     padding: var(--s-2) var(--s-3);
     border-radius: var(--radius-sm);
-    background: rgba(126, 192, 245, 0.06);
-    border-left: 2px solid var(--acc-info);
-    font-size: calc(12px * var(--font-scale));
+    background: rgba(125, 192, 242, 0.08);
+    border-left: 2px solid var(--info);
     color: var(--fg);
+    font-size: calc(12px * var(--font-scale));
   }
   .trade-offer .counter .counter-h {
-    font-family: var(--font-display);
-    color: var(--acc-info);
-    font-weight: 700;
-    font-size: calc(10px * var(--font-scale));
-    letter-spacing: 0.08em;
+    color: var(--info);
+    font-weight: 800;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
+    font-size: calc(10px * var(--font-scale));
     margin-right: var(--s-2);
   }
   .trade-offer .counter .counter-reason {
     color: var(--fg-dim);
     font-style: italic;
-    margin-left: var(--s-2);
     font-size: calc(11px * var(--font-scale));
+    margin-left: var(--s-2);
   }
 
-  /* Knight-play hint — gold accent */
-  .knight-hint {
-    border-left-color: var(--acc-gold);
-  }
+  .knight-hint { border-left-color: var(--accent); }
   .knight-hint .kh-h {
-    font-family: var(--font-display);
-    color: var(--acc-gold);
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--accent);
+    font-weight: 800;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(10px * var(--font-scale));
     margin-bottom: var(--s-2);
   }
   .knight-hint .kh-reason {
     color: var(--fg);
     font-size: calc(12px * var(--font-scale));
     margin: var(--s-1) 0;
-    display: flex; align-items: center; gap: var(--s-2);
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
   }
   .knight-hint .kh-verdict {
-    display: inline-block;
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
-    font-family: var(--font-display);
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-weight: 800;
+    letter-spacing: 0.12em;
     font-size: calc(9px * var(--font-scale));
   }
-  .knight-hint .kh-verdict.play {
-    background: rgba(110, 215, 154, 0.18);
-    color: var(--acc-pos);
-  }
-  .knight-hint .kh-verdict.hold {
-    background: rgba(255, 255, 255, 0.07);
-    color: var(--fg-mute);
-  }
+  .knight-hint .kh-verdict.play { background: rgba(126, 217, 159, 0.18); color: var(--pos); }
+  .knight-hint .kh-verdict.hold { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
 
-  /* Dev-card (monopoly, YOP, road-building) hints — blue accent */
-  .dev-hint {
-    border-left-color: var(--acc-info);
-  }
+  .dev-hint { border-left-color: var(--info); }
   .dev-hint .dv-h {
-    font-family: var(--font-display);
-    color: var(--acc-info);
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--info);
+    font-weight: 800;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(10px * var(--font-scale));
     margin-bottom: var(--s-2);
   }
   .dev-hint .dv-body {
     color: var(--fg);
-    font-size: calc(12px * var(--font-scale));
     font-variant-numeric: tabular-nums;
+    font-size: calc(12px * var(--font-scale));
   }
   .dev-hint .dv-unlock {
-    color: var(--acc-pos);
+    color: var(--pos);
     font-style: italic;
     margin-left: var(--s-2);
   }
 
-  /* Robber targets table — compact ranked list */
-  .robber-h {
-    font-family: var(--font-display);
-    color: var(--acc-insight);
-    font-weight: 700;
-    font-size: calc(10px * var(--font-scale));
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    margin: var(--s-4) 0 var(--s-2);
-  }
+  /* Robber targets table */
   table.robber {
     width: 100%;
     border-collapse: collapse;
@@ -1038,13 +1034,10 @@
     vertical-align: top;
     font-size: calc(11px * var(--font-scale));
   }
-  .victim-top {
-    color: var(--acc-gold);
-    font-weight: 700;
-  }
+  .victim-top { color: var(--accent); font-weight: 800; }
 
   .muted { color: var(--fg-dim); }
-  .err { color: var(--acc-alert); }
+  .err { color: var(--alert); }
 </style>
 <div class="panel" id="panel">
   <div class="header" id="header">
@@ -1100,9 +1093,9 @@
         // from base 340px → 1.0 up to 640px → 1.5. Persisted to
         // localStorage so the size survives reloads.
         const PANEL_W_MIN = 260, PANEL_W_MAX = 720;
-        const BASE_W = 340;
+        const BASE_W = 380;
         function scaleForWidth(w) {
-            // 340→1.0, 640→1.5 — linear, clamped to [0.85, 1.6].
+            // 380→1.0, 680→1.5 — linear, clamped to [0.85, 1.6].
             const s = 1.0 + (w - BASE_W) * 0.5 / 300;
             return Math.max(0.85, Math.min(1.6, s));
         }
@@ -1182,33 +1175,34 @@
         }
         const me = snap.self;
         if (me) {
+            parts.push('<div class="card self">');
             const bg = pillColor(me);
             const fg = contrastText(bg);
             const pill = `<span class="color-pill" style="background:${bg};`
                 + `color:${fg};">${escapeHtml(me.username)}</span>`;
-            let piecesTag = '';
+            // Meta trailer: cards · pieces · knights. Uppercase tracked
+            // label pinned below the identity row so the main row stays
+            // clean — pill on the left, big VP on the right.
+            const metaSegs = [];
+            const meFatHand = (me.cards || 0) >= 8;
+            metaSegs.push(meFatHand
+                ? `<span class="fat-hand">${me.cards}c</span>`
+                : `${me.cards}c`);
             if (me.pieces) {
                 const p = me.pieces;
-                // Compact s/c/r format: "3s/1c/6r". A zero count is still
-                // worth showing — running out of a piece type locks off
-                // that build permanently.
-                piecesTag = ` · ${p.settle}s/${p.city}c/${p.road}r`;
+                metaSegs.push(`${p.settle}s/${p.city}c/${p.road}r`);
             }
-            // Knights played — only surface once any have been played,
-            // since 0 is the boring default. At 3+ this earns largest
-            // army; rendering it here lets Noah eyeball progress.
-            const kpTag = (me.knights_played || 0) > 0
-                ? ` · ${me.knights_played}k` : '';
-            // Mirror the opp fat-hand marker on self — at 8+ cards
-            // Noah is the one rolling the dice AND the one getting
-            // stolen from on a 7. Coloring the count red lets him
-            // eyeball his own exposure without re-reading the row.
-            const meFatHand = (me.cards || 0) >= 8;
-            const meCardsSpan = meFatHand
-                ? `<span class="fat-hand">${me.cards}c</span>`
-                : `${me.cards}c`;
-            parts.push(`<div class="you">${pill}`
-                + ` <span class="muted">${meCardsSpan} · ${me.vp} VP${piecesTag}${kpTag}</span></div>`);
+            if ((me.knights_played || 0) > 0) {
+                metaSegs.push(`${me.knights_played}k`);
+            }
+            const metaHtml = `<span class="self-meta">`
+                + metaSegs.join(' · ') + `</span>`;
+            // VP number as the visual anchor of the self card — sized up,
+            // right-aligned via margin-left:auto in CSS so the pill stays
+            // flush-left and the eye snaps between them.
+            const vpBig = `<span class="vp-big">${me.vp}`
+                + `<span class="lbl">VP</span></span>`;
+            parts.push(`<div class="you">${pill}${vpBig}${metaHtml}</div>`);
             // VP breakdown — only worth surfacing once VP > 2 (past the
             // trivial 2-settle opening). Shows how VP composes so Noah can
             // tell a 6-VP-via-cities lead apart from a 6-VP-via-longest-road
@@ -1290,6 +1284,7 @@
                 parts.push(`<div class="prod">prod: `
                     + `${prod.per_roll.toFixed(2)}/roll${top}</div>`);
             }
+            parts.push('</div>');  // .card.self
         }
         // Setup-phase opening picks render unconditionally — it's
         // useful to plan around them even off-turn so you know what to
@@ -1434,7 +1429,7 @@
                 + 'nothing affordable</div>');
         }
         if ((snap.opps || []).length) {
-            parts.push('<div class="hr"></div>');
+            parts.push('<div class="sec-h sec-opps">opponents</div>');
             parts.push('<div class="opps">');
             for (const o of snap.opps) {
                 const bg = pillColor(o);
@@ -1602,6 +1597,7 @@
             parts.push('</div>');
         }
         if (snap.last_roll) {
+            parts.push('<div class="sec-h sec-roll">roll</div>');
             const lr = snap.last_roll;
             let who;
             if (lr.is_you) {
