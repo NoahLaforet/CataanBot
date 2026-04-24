@@ -617,3 +617,145 @@ def test_format_report_includes_hand_dynamics_section():
         if "Alice" in ln and " 8 " in ln and "#0" in ln
     )
     assert dyn_line
+
+
+# --- Move annotations ------------------------------------------------------
+
+
+def test_move_annotations_brilliant_monopoly():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        DevCardPlayEvent(player="Alice", card="monopoly"),
+        MonopolyStealEvent(player="Alice", resource="WHEAT", count=7),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    anns = [a for a in rep.move_annotations if a.move_kind == "monopoly"]
+    assert len(anns) == 1
+    assert anns[0].glyph == "!!"
+    assert "7" in anns[0].summary
+    assert anns[0].player == "Alice"
+
+
+def test_move_annotations_whiffed_monopoly_is_blunder():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        MonopolyStealEvent(player="Alice", resource="WHEAT", count=0),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    ann = rep.move_annotations[0]
+    assert ann.glyph == "??"
+    assert "whiffed" in ann.note
+
+
+def test_move_annotations_self_inflicted_seven_is_blunder():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        # Fatten Alice to 9 cards before she rolls a 7
+        ProduceEvent(player="Alice", resources={"WOOD": 9}),
+        RollEvent(player="Alice", d1=3, d2=4),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    seven_anns = [
+        a for a in rep.move_annotations if a.move_kind == "rolled_7"
+    ]
+    assert len(seven_anns) == 1
+    assert seven_anns[0].glyph == "??"
+    assert seven_anns[0].player == "Alice"
+    assert "9" in seven_anns[0].summary
+
+
+def test_move_annotations_seven_against_fat_opp_is_brilliant():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        # Bob is fat with 9 cards; Alice rolls a 7 and stays clean
+        ProduceEvent(player="Bob", resources={"WOOD": 9}),
+        ProduceEvent(player="Alice", resources={"WOOD": 2}),
+        RollEvent(player="Alice", d1=3, d2=4),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    seven_anns = [
+        a for a in rep.move_annotations if a.move_kind == "rolled_7"
+    ]
+    assert len(seven_anns) == 1
+    assert seven_anns[0].glyph == "!!"
+    assert seven_anns[0].player == "Alice"
+
+
+def test_move_annotations_mutually_lopsided_trade_flags_both_sides():
+    """When both sides swap their abundance for their scarcity (classic
+    'you have wood, I have wheat, let's fix both our gaps' trade), the
+    marginal-value delta is positive for both players, so both get a
+    brilliant-tier glyph. This is the common healthy-trade case."""
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WHEAT": 10}),
+        ProduceEvent(player="Bob", resources={"BRICK": 10}),
+        TradeCommitEvent(
+            giver="Alice", receiver="Bob",
+            gave={"WHEAT": 1}, got={"BRICK": 1},
+        ),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    trade_anns = [
+        a for a in rep.move_annotations if a.move_kind == "trade"
+    ]
+    # Both sides flagged (both got a scarce resource for their abundance).
+    assert len(trade_anns) == 2
+    players = {a.player: a.glyph for a in trade_anns}
+    assert players["Alice"] == "!!"
+    assert players["Bob"] == "!!"
+
+
+def test_move_annotations_bank_trade_not_flagged():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        ProduceEvent(player="Alice", resources={"WOOD": 4}),
+        TradeCommitEvent(
+            giver="Alice", receiver="BANK",
+            gave={"WOOD": 4}, got={"WHEAT": 1},
+        ),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    trade_anns = [
+        a for a in rep.move_annotations if a.move_kind == "trade"
+    ]
+    assert trade_anns == []
+
+
+def test_format_report_includes_move_annotations_section():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        MonopolyStealEvent(player="Alice", resource="ORE", count=6),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    out = format_report(rep)
+    assert "Move annotations" in out
+    assert "!!" in out
+    assert "Monopoly" in out
+
+
+def test_format_report_move_annotations_empty_graceful():
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        RollEvent(player="Alice", d1=2, d2=3),  # a 5, nothing interesting
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    out = format_report(rep)
+    assert "Move annotations" in out
+    assert "no flagged moves" in out
