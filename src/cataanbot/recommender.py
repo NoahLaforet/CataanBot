@@ -472,6 +472,10 @@ def _opening_road_followup(*, game, c, neighbors, scored_by_node, m):
         "tiles": _tile_label(m, nid),
         "port": None,
         "road": road,
+        # Primary action IS the road now — the settlement is already
+        # placed. Flag it so the overlay can show "ROAD" as the label
+        # instead of "settle", matching what Noah's about to do.
+        "action": "road",
     })
     return out
 

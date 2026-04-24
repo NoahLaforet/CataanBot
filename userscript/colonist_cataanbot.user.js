@@ -2014,6 +2014,13 @@
                 .join('');
             const renderRec = (r, isTop, optLetter) => {
                 const topCls = isTop ? ' top' : '';
+                // Setup-phase followup recs are kind='opening_settlement'
+                // but their primary action is laying a road (the settle
+                // is already down). Backend flags that with action:'road'
+                // so we show "ROAD" as the label — matches what Noah's
+                // about to actually do.
+                const effectiveKind = (r.action === 'road')
+                    ? 'road' : r.kind;
                 const kindLabel = {
                     settlement: 'settle',
                     city: 'city',
@@ -2024,7 +2031,7 @@
                     bank_trade: 'port/bank',
                     discard: 'discard',
                     opening_settlement: 'settle',
-                }[r.kind] || r.kind.replace(/_/g, ' ');
+                }[effectiveKind] || effectiveKind.replace(/_/g, ' ');
                 const tilesHtml = tilesToHtml(r.tiles);
                 // Roads lead to a landing spot — arrow makes it read as
                 // "this road → these tiles" rather than "on these tiles".
