@@ -1150,7 +1150,7 @@ def recommend_actions(
             "kind": "dev_card",
             "when": "now",
             "score": _DEV_CARD_SCORE,
-            "detail": "knight / VP / road-building / YoP / monopoly",
+            "detail": "knight / VP / road / YoP / mono",
         })
 
     # --- "Save for X" plans ---------------------------------------------
