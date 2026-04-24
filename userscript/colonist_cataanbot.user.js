@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.19.0
+// @version      0.20.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -182,7 +182,7 @@
 
   .panel {
     /* layout */
-    --panel-w: 380px;
+    --panel-w: 460px;
     --panel-h: auto;
     --font-scale: 1;
 
@@ -223,8 +223,8 @@
     --font: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 
     font-family: var(--font);
-    font-size: calc(14px * var(--font-scale));
-    line-height: 1.55;
+    font-size: calc(16px * var(--font-scale));
+    line-height: 1.5;
     color: var(--fg);
     background: var(--bg-0);
     border: 1px solid var(--line-strong);
@@ -800,50 +800,87 @@
      card treatment (green left border + card bg) so it reads as the
      primary CTA. Planning entries dim + italic.
      -------------------------------------------------------------- */
+  /* Non-top recs are intentionally dense + muted so the eye lands on
+     the hero above without needing to parse lineup detail. */
   .rec {
-    color: var(--fg);
-    padding: var(--s-2) 0;
-    line-height: 1.5;
+    color: var(--fg-mute);
+    padding: var(--s-1) 0;
+    line-height: 1.4;
     display: flex; flex-wrap: wrap;
     align-items: baseline;
     gap: var(--s-2);
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
+    opacity: 0.85;
   }
+  /* Hero top rec — this is the "what do I do NOW" block. Big kind
+     label, big tile chips, gradient accent bar on the left. Score and
+     detail drop away so the eye only catches verb + target. */
   .rec.top {
-    padding: var(--s-3);
-    margin: var(--s-1) 0;
-    background: var(--bg-1);
+    padding: var(--s-4) var(--s-5);
+    margin: var(--s-2) 0 var(--s-3);
+    background:
+      linear-gradient(180deg,
+        rgba(126, 217, 159, 0.09),
+        rgba(126, 217, 159, 0.02) 60%,
+        transparent);
     border-radius: var(--radius);
-    border-left: 3px solid var(--pos);
+    border-left: 5px solid var(--pos);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-2);
+    opacity: 1;
+    color: var(--fg);
   }
   .rec .kind {
-    min-width: 60px;
-    color: var(--accent);
+    min-width: 58px;
+    color: var(--fg-dim);
     font-weight: 700;
     letter-spacing: 0.04em;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     text-transform: uppercase;
   }
+  .rec.top .kind {
+    min-width: 0;
+    color: var(--pos);
+    font-size: calc(26px * var(--font-scale));
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
   .rec .detail {
-    color: var(--fg-mute);
-    font-size: calc(11px * var(--font-scale));
+    color: var(--fg-dim);
+    font-size: calc(10px * var(--font-scale));
     font-weight: 400;
     flex: 1 1 100%;
+    opacity: 0.75;
   }
+  /* Hero drops prose entirely — verb + target is enough. */
+  .rec.top .detail { display: none; }
   .rec .score {
-    min-width: 50px;
+    min-width: 44px;
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
     font-weight: 800;
     text-align: center;
     font-variant-numeric: tabular-nums;
     font-size: calc(10px * var(--font-scale));
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
+  }
+  .rec.top .score {
+    align-self: flex-end;
+    font-size: calc(11px * var(--font-scale));
+    padding: 2px var(--s-3);
   }
   .rec .score.strong { background: rgba(126, 217, 159, 0.16); color: var(--pos); }
   .rec .score.decent { background: rgba(236, 176, 106, 0.16); color: var(--warn); }
   .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
-  .rec .tiles { color: var(--fg-mute); font-size: calc(12px * var(--font-scale)); }
+  .rec .tiles { color: var(--fg-mute); font-size: calc(11px * var(--font-scale)); }
+  .rec.top .tiles {
+    color: var(--fg);
+    font-size: calc(16px * var(--font-scale));
+    font-weight: 600;
+  }
+  .rec.top .tile-num { font-size: calc(17px * var(--font-scale)); }
   .tile-chip {
     display: inline-block;
     margin-right: var(--s-2);
@@ -952,44 +989,45 @@
       rgba(126, 217, 159, 0.16), var(--bg-1) 50%);
   }
 
-  /* WIN THIS TURN — the loudest banner in the HUD. Renders above every
-     other element when a single action (settle / city / road→LR /
-     knight→LA) closes the game. Uses the "pos" green used for
-     win_prox.win plus a thicker accent bar + all-caps header to
-     distinguish it as the press-the-button-now signal. */
+  /* WIN THIS TURN — the loudest element in the HUD, full stop. When
+     a single action closes the game we want it readable across the
+     room at a glance: oversized all-caps header, chunky accent bar,
+     strong background wash. Everything else can go small. */
   .winning-move {
-    border-left-width: 5px;
+    border-left-width: 6px;
     border-left-color: var(--pos);
     color: var(--pos);
     font-weight: 700;
+    padding: var(--s-4) var(--s-5);
     background: linear-gradient(90deg,
-      rgba(126, 217, 159, 0.22), var(--bg-1) 60%);
+      rgba(126, 217, 159, 0.26), var(--bg-1) 70%);
   }
   .winning-move.hedge {
     border-left-color: var(--accent);
     color: var(--accent);
     background: linear-gradient(90deg,
-      rgba(255, 207, 94, 0.16), var(--bg-1) 60%);
+      rgba(255, 207, 94, 0.18), var(--bg-1) 70%);
   }
   .winning-move .wm-head {
     display: block;
     font-weight: 900;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(12px * var(--font-scale));
-    margin-bottom: var(--s-1);
+    font-size: calc(22px * var(--font-scale));
+    line-height: 1.1;
+    margin-bottom: var(--s-2);
   }
   .winning-move .wm-detail {
     color: var(--fg);
     font-weight: 600;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     letter-spacing: 0;
   }
   .winning-move .wm-alts {
-    color: var(--fg-mute);
+    color: var(--fg-dim);
     font-size: calc(11px * var(--font-scale));
     font-weight: 400;
-    margin-top: var(--s-1);
+    margin-top: var(--s-2);
     letter-spacing: 0;
   }
 
@@ -2024,7 +2062,7 @@
                     : '';
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}">`
                     + optHtml
-                    + `<span class="score ${scoreCls}">${s.toFixed(1)}/10</span>`
+                    + `<span class="score ${scoreCls}">${s.toFixed(1)}</span>`
                     + ` <span class="kind">${kindLabel}</span>`
                     + `<span class="tiles">${loc}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
