@@ -1823,8 +1823,29 @@ def _compute_longest_road_race(
         return None
     self_len = self_entry[1]
     self_has = self_entry[2]
-    opp_max = max((e[1] for e in opps), default=0)
-    opp_holder = any(e[2] for e in opps)
+    # Name the leading opp (by length) so messages say "alice" not "opp".
+    # Ties broken by whoever currently holds the title, then by iteration
+    # order — same across calls so the banner doesn't flip-flop.
+    top_opp = max(
+        opps,
+        key=lambda e: (e[1], 1 if e[2] else 0),
+        default=None,
+    )
+    opp_max = top_opp[1] if top_opp else 0
+    opp_holder_entry = next((e for e in opps if e[2]), None)
+    opp_holder = opp_holder_entry is not None
+    color_map = getattr(game, "color_map", None)
+
+    def _name_for(entry) -> str:
+        if entry is None or color_map is None:
+            return "opp"
+        col = entry[0]
+        col_str = col.value if hasattr(col, "value") else str(col)
+        uname = color_map.reverse(col_str)
+        return uname or "opp"
+
+    top_opp_name = _name_for(top_opp)
+    holder_name = _name_for(opp_holder_entry) if opp_holder else None
 
     # Nobody's close yet — don't spam early game.
     if self_len < 4 and opp_max < 4:
@@ -1840,14 +1861,21 @@ def _compute_longest_road_race(
     # Keeps the contested banner from being drowned out by the plain
     # opp_threat path when we're neck-and-neck at 4.
     if self_len >= 4 and opp_max >= 4 and abs(self_len - opp_max) <= 1:
-        holder = "you" if self_has else ("opp" if opp_holder else "—")
+        if self_has:
+            holder = "you"
+        elif holder_name:
+            holder = holder_name
+        else:
+            holder = "nobody"
         return {
             "level": "contested",
             "self_len": self_len,
             "opp_len": opp_max,
+            "opp_username": top_opp_name,
+            "holder_username": holder_name,
             "message": (
-                f"longest-road race: you {self_len} vs opp {opp_max}"
-                f" (holder: {holder})"),
+                f"longest-road race: you {self_len} vs "
+                f"{top_opp_name} {opp_max} (holder: {holder})"),
         }
     # Self pushing: we're on 4+, nobody else is close.
     if self_len >= 4 and not self_has and opp_max < self_len:
@@ -1855,19 +1883,28 @@ def _compute_longest_road_race(
             "level": "self_push",
             "self_len": self_len,
             "opp_len": opp_max,
+            "opp_username": top_opp_name,
             "message": f"1 road → longest road (you have {self_len})",
         }
     # Opp threat: someone else is on 4+ and ahead of us.
     if opp_max >= 4 and opp_max >= self_len and not self_has:
         gap = opp_max - self_len
         if opp_holder:
-            msg = f"opp holds longest road ({opp_max}) — {gap} ahead"
+            msg = (
+                f"{holder_name or top_opp_name} holds longest road"
+                f" ({opp_max}) — {gap} ahead"
+            )
         else:
-            msg = f"opp 1 road from longest road ({opp_max})"
+            msg = (
+                f"{top_opp_name} 1 road from longest road"
+                f" ({opp_max})"
+            )
         return {
             "level": "opp_threat",
             "self_len": self_len,
             "opp_len": opp_max,
+            "opp_username": top_opp_name,
+            "holder_username": holder_name,
             "message": msg,
         }
     return None
@@ -2243,8 +2280,26 @@ def _compute_largest_army_race(
         return None
     self_n = self_entry[1]
     self_has = self_entry[2]
-    opp_max = max((e[1] for e in opps), default=0)
-    opp_holder = any(e[2] for e in opps)
+    top_opp = max(
+        opps,
+        key=lambda e: (e[1], 1 if e[2] else 0),
+        default=None,
+    )
+    opp_max = top_opp[1] if top_opp else 0
+    opp_holder_entry = next((e for e in opps if e[2]), None)
+    opp_holder = opp_holder_entry is not None
+    color_map = getattr(game, "color_map", None)
+
+    def _name_for(entry) -> str:
+        if entry is None or color_map is None:
+            return "opp"
+        col = entry[0]
+        col_str = col.value if hasattr(col, "value") else str(col)
+        uname = color_map.reverse(col_str)
+        return uname or "opp"
+
+    top_opp_name = _name_for(top_opp)
+    holder_name = _name_for(opp_holder_entry) if opp_holder else None
 
     # Silent pre-race: need at least one side on 2 to matter.
     if self_n < 2 and opp_max < 2:
@@ -2257,32 +2312,48 @@ def _compute_largest_army_race(
 
     # Contested (most specific): both sides ≥2 and within 1.
     if self_n >= 2 and opp_max >= 2 and abs(self_n - opp_max) <= 1:
-        holder = "you" if self_has else ("opp" if opp_holder else "—")
+        if self_has:
+            holder = "you"
+        elif holder_name:
+            holder = holder_name
+        else:
+            holder = "nobody"
         return {
             "level": "contested",
             "self_n": self_n,
             "opp_n": opp_max,
+            "opp_username": top_opp_name,
+            "holder_username": holder_name,
             "message": (
-                f"largest-army race: you {self_n} vs opp {opp_max}"
-                f" (holder: {holder})"),
+                f"largest-army race: you {self_n} vs "
+                f"{top_opp_name} {opp_max} (holder: {holder})"),
         }
     if self_n >= 2 and not self_has and opp_max < self_n:
         return {
             "level": "self_push",
             "self_n": self_n,
             "opp_n": opp_max,
+            "opp_username": top_opp_name,
             "message": f"1 knight → largest army (you have {self_n})",
         }
     if opp_max >= 2 and opp_max >= self_n and not self_has:
         gap = opp_max - self_n
         if opp_holder:
-            msg = f"opp holds largest army ({opp_max}) — {gap} ahead"
+            msg = (
+                f"{holder_name or top_opp_name} holds largest army"
+                f" ({opp_max}) — {gap} ahead"
+            )
         else:
-            msg = f"opp 1 knight from largest army ({opp_max})"
+            msg = (
+                f"{top_opp_name} 1 knight from largest army"
+                f" ({opp_max})"
+            )
         return {
             "level": "opp_threat",
             "self_n": self_n,
             "opp_n": opp_max,
+            "opp_username": top_opp_name,
+            "holder_username": holder_name,
             "message": msg,
         }
     return None

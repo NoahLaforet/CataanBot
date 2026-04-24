@@ -1953,25 +1953,33 @@
                 // ("↗ upper-right") so Noah can read placement at a
                 // glance instead of parsing tile chips every time.
                 if (r.kind === 'opening_settlement' && r.road
-                        && r.road.toward_tiles) {
-                    const towardHtml = tilesToHtml(r.road.toward_tiles);
-                    if (towardHtml) {
-                        const warn = r.road.contested
-                            ? ' <span class="warn">⚠ contested</span>'
-                            : '';
-                        const dir = r.road.direction;
-                        const dirHtml = dir
-                            ? `<span class="arrow">↳ ${escapeHtml(
-                                dir.arrow)} ${escapeHtml(
-                                dir.word)}</span> `
-                              + '<span class="muted">toward</span> '
-                            : '<span class="arrow">↳ road →</span> ';
-                        parts.push('<div class="rec-sub">'
-                            + dirHtml
-                            + towardHtml
-                            + warn
-                            + '</div>');
+                        && (r.road.direction || r.road.toward_tiles)) {
+                    const towardHtml = tilesToHtml(
+                        r.road.toward_tiles || []);
+                    const dir = r.road.direction;
+                    // Always lead with the compass arrow when we have one —
+                    // even a "sealed" fallback rec (no legal 2-hop) still
+                    // wants to show WHICH direction to lay the road.
+                    const dirHtml = dir
+                        ? `<span class="arrow">↳ ${escapeHtml(
+                            dir.arrow)} ${escapeHtml(
+                            dir.word)}</span> `
+                        : '<span class="arrow">↳ road →</span> ';
+                    let warn = r.road.contested
+                        ? ' <span class="warn">⚠ contested</span>'
+                        : '';
+                    if (r.road.sealed) {
+                        warn += ' <span class="warn">⚠ corridor sealed'
+                            + '</span>';
                     }
+                    const tail = towardHtml
+                        ? '<span class="muted">toward</span> ' + towardHtml
+                        : '';
+                    parts.push('<div class="rec-sub">'
+                        + dirHtml
+                        + tail
+                        + warn
+                        + '</div>');
                 }
                 // Round-1 picks also carry plan.second — the best paired
                 // 2nd-settlement for this F. Render it as its own sub-line

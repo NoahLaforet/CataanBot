@@ -2156,15 +2156,23 @@ def test_largest_army_race_silent_early_and_alerts_at_2():
     assert race and race["level"] == "self_push"
     assert race["self_n"] == 2
 
-    # Both on 2 → contested (not opp_threat).
+    # Both on 2 → contested (not opp_threat). Message must name the opp.
     ps[f"P{opp_idx}_PLAYED_KNIGHT"] = 2
     race = _compute_largest_army_race(game, self_color)
     assert race and race["level"] == "contested"
+    opp_color_enum = next(
+        c for c, i in cat.state.color_to_index.items() if i == opp_idx)
+    opp_name = game.color_map.reverse(opp_color_enum.value)
+    assert opp_name, "fixture must have a named opp"
+    assert race["opp_username"] == opp_name
+    assert opp_name in race["message"]
+    assert " opp " not in race["message"]
 
-    # Opp on 2, self at 0 → opp_threat.
+    # Opp on 2, self at 0 → opp_threat. Opp name must appear.
     ps[f"P{my_idx}_PLAYED_KNIGHT"] = 0
     race = _compute_largest_army_race(game, self_color)
     assert race and race["level"] == "opp_threat"
+    assert opp_name in race["message"]
 
     # Opp holds at 5, self at 2 → settled, silent.
     ps[f"P{opp_idx}_PLAYED_KNIGHT"] = 5
@@ -2213,16 +2221,26 @@ def test_longest_road_race_silent_early_and_alerts_at_4():
     assert race and race["level"] == "self_push"
     assert race["self_len"] == 4
 
-    # Self at 4, opp at 4 → contested.
+    # Self at 4, opp at 4 → contested. Message should name the opp, not
+    # say "opp" — that's the regression from the `--`/`opp` bug.
     ps[f"P{opp_idx}_LONGEST_ROAD_LENGTH"] = 4
     race = _compute_longest_road_race(game, self_color)
     assert race and race["level"] == "contested"
     assert race["self_len"] == 4 and race["opp_len"] == 4
+    opp_color_enum = next(
+        c for c, i in cat.state.color_to_index.items() if i == opp_idx)
+    opp_name = game.color_map.reverse(opp_color_enum.value)
+    assert opp_name, "fixture must have a named opp"
+    assert race["opp_username"] == opp_name
+    assert opp_name in race["message"]
+    assert " opp " not in race["message"]
+    assert "holder: —" not in race["message"]
 
-    # Opp at 4, self at 0 → opp_threat alert.
+    # Opp at 4, self at 0 → opp_threat alert. Opp name must appear.
     ps[f"P{my_idx}_LONGEST_ROAD_LENGTH"] = 0
     race = _compute_longest_road_race(game, self_color)
     assert race and race["level"] == "opp_threat"
+    assert opp_name in race["message"]
 
     # Opp holds with 2+ lead → silent (race settled).
     ps[f"P{opp_idx}_LONGEST_ROAD_LENGTH"] = 7
