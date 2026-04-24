@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.20.0
+// @version      0.20.1
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -417,7 +417,7 @@
     padding: 2px var(--s-3);
   }
   .you .vp-big {
-    font-size: calc(18px * var(--font-scale));
+    font-size: calc(26px * var(--font-scale));
     font-weight: 800;
     color: var(--accent);
     font-variant-numeric: tabular-nums;
@@ -431,7 +431,7 @@
     letter-spacing: 0.18em;
     margin-left: var(--s-1);
     font-weight: 700;
-    vertical-align: 2px;
+    vertical-align: 4px;
     text-transform: uppercase;
   }
   .you .self-meta {
@@ -590,14 +590,14 @@
   .roll {
     color: var(--fg);
     font-weight: 500;
-    font-size: calc(14px * var(--font-scale));
+    font-size: calc(15px * var(--font-scale));
     margin-bottom: var(--s-2);
     letter-spacing: 0.01em;
   }
   .roll.you-rolled {
     color: var(--accent);
-    font-weight: 700;
-    font-size: calc(15px * var(--font-scale));
+    font-weight: 800;
+    font-size: calc(18px * var(--font-scale));
   }
   .roll b { font-weight: 800; }
   .roll .roll-yield {
@@ -881,6 +881,14 @@
     font-weight: 600;
   }
   .rec.top .tile-num { font-size: calc(17px * var(--font-scale)); }
+  .rec.top .tile-chip {
+    display: inline-block;
+    padding: 2px var(--s-2);
+    margin-right: var(--s-2);
+    background: rgba(126, 217, 159, 0.08);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(126, 217, 159, 0.2);
+  }
   .tile-chip {
     display: inline-block;
     margin-right: var(--s-2);
