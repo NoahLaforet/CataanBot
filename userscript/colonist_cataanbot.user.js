@@ -333,7 +333,7 @@
      under the header, separated from content by a hairline.
      -------------------------------------------------------------- */
   .gprog {
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-weight: 700;
     letter-spacing: 0.18em;
     text-transform: uppercase;
@@ -360,7 +360,7 @@
     display: flex; align-items: center;
     gap: var(--s-3);
     margin: var(--s-5) 0 var(--s-3);
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-weight: 700;
     letter-spacing: 0.18em;
     text-transform: uppercase;
