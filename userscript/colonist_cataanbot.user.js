@@ -437,7 +437,7 @@
   }
   .you .self-meta {
     color: var(--fg-mute);
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -687,7 +687,7 @@
   }
   .roll-dist .rd-label {
     color: var(--fg-label);
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
@@ -850,7 +850,7 @@
   }
   .rec .detail {
     color: var(--fg-dim);
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-weight: 400;
     flex: 1 1 100%;
     opacity: 0.75;
@@ -1082,7 +1082,7 @@
 
   .dev-deck {
     color: var(--fg-dim);
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin: var(--s-2) 0;
     letter-spacing: 0.14em;
     text-transform: uppercase;
