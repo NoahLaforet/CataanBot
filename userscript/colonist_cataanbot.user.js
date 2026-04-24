@@ -2253,7 +2253,7 @@
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             const kh = snap.knight_hint;
             const verdictCls = kh.should_play ? 'play' : 'hold';
-            const verdictLbl = kh.should_play ? 'PLAY KNIGHT' : 'HOLD KNIGHT';
+            const verdictLbl = kh.should_play ? 'PLAY' : 'HOLD';
             let tail = '';
             if (kh.best_target) {
                 const t = kh.best_target;
@@ -2277,8 +2277,7 @@
             const mh = snap.monopoly_hint;
             const resLbl = mh.resource.slice(0, 3).toLowerCase();
             const verdictCls = mh.should_play ? 'play' : 'hold';
-            const verdictLbl = mh.should_play
-                ? 'PLAY MONOPOLY' : 'HOLD MONOPOLY';
+            const verdictLbl = mh.should_play ? 'PLAY' : 'HOLD';
             let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
                 + `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
             if (mh.unlock) {
@@ -2306,8 +2305,7 @@
             const yh = snap.yop_hint;
             const pair = (yh.pair || []).map(r => r.slice(0, 3).toLowerCase()).join(' + ');
             const verdictCls = yh.should_play ? 'play' : 'hold';
-            const verdictLbl = yh.should_play
-                ? 'PLAY YEAR OF PLENTY' : 'HOLD YEAR OF PLENTY';
+            const verdictLbl = yh.should_play ? 'PLAY' : 'HOLD';
             let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
                 + `pick <b>${escapeHtml(pair)}</b>`;
             if (yh.unlock) {
@@ -2326,8 +2324,7 @@
         }
         if (snap.rb_hint && snap.rb_hint.have > 0) {
             const rh = snap.rb_hint;
-            const verdictLbl = rh.should_play
-                ? 'PLAY ROAD BUILDING' : 'HOLD ROAD BUILDING';
+            const verdictLbl = rh.should_play ? 'PLAY' : 'HOLD';
             const verdictCls = rh.should_play ? 'play' : 'hold';
             let body = `<div class="dv-body">`
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
