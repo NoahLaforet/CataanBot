@@ -639,17 +639,21 @@ def _collect_move_annotations(
                     scored = _score_trade_side(delta)
                     if scored is None:
                         continue
-                    glyph, note = scored
+                    glyph, base_note = scored
                     color = color_map.get(player) or ""
                     counterparty = t.receiver if player == t.giver else t.giver
+                    gave_pack = t.gave if player == t.giver else t.got
+                    got_pack = t.got if player == t.giver else t.gave
+                    swap = (f"{_fmt_res_counter(gave_pack)} → "
+                            f"{_fmt_res_counter(got_pack)}")
                     out.append(MoveAnnotation(
                         event_index=i,
                         player=player,
                         color=color,
                         move_kind="trade",
                         glyph=glyph,
-                        summary=f"trade w/ {counterparty}",
-                        note=note,
+                        summary=f"trade w/ {counterparty}: {swap}",
+                        note=base_note,
                     ))
         apply_event(hands, event, color_map)
     return out
