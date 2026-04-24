@@ -182,7 +182,7 @@
 
   .panel {
     /* layout */
-    --panel-w: 460px;
+    --panel-w: 520px;
     --panel-h: auto;
     --font-scale: 1;
 
@@ -533,9 +533,9 @@
     border-left: 2px solid var(--fg-dim);
     border-radius: var(--radius);
     color: var(--fg-mute);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     transition: border-left-color 0.2s ease;
-    line-height: 1.45;
+    line-height: 1.5;
   }
   .opp.tracked    { border-left-color: var(--pos); }
   .opp.hot-knight { border-left-color: var(--warn); }
@@ -800,17 +800,18 @@
      card treatment (green left border + card bg) so it reads as the
      primary CTA. Planning entries dim + italic.
      -------------------------------------------------------------- */
-  /* Non-top recs are intentionally dense + muted so the eye lands on
-     the hero above without needing to parse lineup detail. */
+  /* Non-top recs: still secondary to the hero, but large enough to
+     read during a live game — bumped from 12px→13px and dropped the
+     opacity dimmer so the alternatives read as "real options", not
+     as disabled text. Hero still dominates via 26px kind + gradient. */
   .rec {
     color: var(--fg-mute);
-    padding: var(--s-1) 0;
-    line-height: 1.4;
+    padding: var(--s-2) 0;
+    line-height: 1.45;
     display: flex; flex-wrap: wrap;
     align-items: baseline;
     gap: var(--s-2);
-    font-size: calc(12px * var(--font-scale));
-    opacity: 0.85;
+    font-size: calc(13px * var(--font-scale));
   }
   /* Hero top rec — this is the "what do I do NOW" block. Big kind
      label, big tile chips, gradient accent bar on the left. Score and
