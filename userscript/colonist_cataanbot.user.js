@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.8
+// @version      0.18.9
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1984,15 +1984,25 @@
                     if (r.direction) {
                         arrowHtml = `<span class="arrow">${escapeHtml(
                                 r.direction.arrow)} ${escapeHtml(
-                                r.direction.word)}</span>`
-                            + ' <span class="muted">toward</span> ';
+                                r.direction.word)}</span>`;
+                        // "toward [tiles]" tail is suppressed when no
+                        // tiles are attached (sealed corridor / empty
+                        // landing); keeping the direction standalone
+                        // still tells Noah WHICH way to lay the road.
+                        if (tilesHtml) {
+                            arrowHtml += ' <span class="muted">toward</span> ';
+                        }
                     } else {
                         arrowHtml = '<span class="arrow">→</span> ';
                     }
                 }
-                const loc = tilesHtml
+                // Direction arrow ALWAYS renders for roads, even when
+                // tiles are missing — that was the bug Noah kept flagging
+                // (in-game road recs with no direction shown). For non-
+                // road recs, fall back to tiles-only (settlement/city etc).
+                const loc = (r.kind === 'road' && arrowHtml)
                     ? ` ${arrowHtml}${tilesHtml}`
-                    : '';
+                    : (tilesHtml ? ` ${arrowHtml}${tilesHtml}` : '');
                 const s = Number(r.score || 0);
                 const scoreCls = s >= 8 ? 'strong'
                     : (s >= 5 ? 'decent' : 'weak');
