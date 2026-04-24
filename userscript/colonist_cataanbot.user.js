@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.2
+// @version      0.18.3
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1052,6 +1052,34 @@
     color: var(--accent);
     font-weight: 700;
     margin-right: 2px;
+  }
+  .dev-hint .mh-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    margin-right: 5px;
+    vertical-align: baseline;
+    position: relative;
+    top: 1px;
+  }
+  .dev-hint .kh-verdict {
+    display: inline-block;
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    padding: 1px 5px;
+    border-radius: 2px;
+    margin-right: var(--s-2);
+    vertical-align: baseline;
+  }
+  .dev-hint .kh-verdict.play {
+    background: rgba(126, 217, 159, 0.18);
+    color: var(--pos);
+  }
+  .dev-hint .kh-verdict.hold {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--fg-mute);
   }
 
   /* Robber targets table */
@@ -2141,21 +2169,46 @@
         if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
             const mh = snap.monopoly_hint;
             const resLbl = mh.resource.slice(0, 3).toLowerCase();
-            let body = `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
+            const verdictCls = mh.should_play ? 'play' : 'hold';
+            const verdictLbl = mh.should_play ? 'PLAY' : 'HOLD';
+            let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
             if (mh.unlock) {
                 body += `<span class="dv-unlock">${escapeHtml(mh.unlock)}</span>`;
             }
+            // Top holder sub-line: who you're draining the most. The
+            // opponent's display color tints the chip so it reads at a
+            // glance. Only renders when a dominant holder exists.
+            let sub = '';
+            if (mh.top_holder && mh.top_holder.count > 0) {
+                const th = mh.top_holder;
+                const swatch = th.display
+                    ? `<span class="mh-swatch" style="background:${escapeHtml(th.display)}"></span>`
+                    : '';
+                sub = `<div class="dv-sub">`
+                    + swatch
+                    + escapeHtml(`drains ${th.count} from ${th.color.toLowerCase()}`)
+                    + '</div>';
+            }
             parts.push('<div class="dev-hint">');
             parts.push(`<div class="dv-h">monopoly (×${mh.have})</div>`);
-            parts.push(`<div class="dv-body">${body}</div>`);
+            parts.push(`<div class="dv-body">${body}${sub}</div>`);
             parts.push('</div>');
         }
         if (snap.yop_hint && snap.yop_hint.have > 0) {
             const yh = snap.yop_hint;
             const pair = (yh.pair || []).map(r => r.slice(0, 3).toLowerCase()).join(' + ');
-            let body = `pick <b>${escapeHtml(pair)}</b>`;
+            const verdictCls = yh.should_play ? 'play' : 'hold';
+            const verdictLbl = yh.should_play ? 'PLAY' : 'HOLD';
+            let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
+                + `pick <b>${escapeHtml(pair)}</b>`;
             if (yh.unlock) {
                 body += `<span class="dv-unlock">unlocks ${escapeHtml(yh.unlock)}</span>`;
+            }
+            // Bank-out warning when the chosen pair can't be granted.
+            if (yh.bank_ok === false) {
+                body += `<div class="dv-sub">`
+                    + escapeHtml(yh.reason || 'bank short on pair') + '</div>';
             }
             parts.push('<div class="dev-hint">');
             parts.push(`<div class="dv-h">year of plenty (×${yh.have})</div>`);

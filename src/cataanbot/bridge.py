@@ -757,12 +757,16 @@ _BUILD_COSTS_MONOPOLY = {
 
 def _compute_monopoly_hint(
     game, self_color: str, self_hand: dict[str, int],
+    display_colors: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Pick the best resource to steal when self plays Monopoly.
 
     Fires only when self holds at least one MONOPOLY card. Ranks each
     resource by the inferred total held across opps; ties break toward
-    resources that would unlock an immediate build for self.
+    resources that would unlock an immediate build for self. Carries a
+    PLAY/HOLD verdict (unlock or big-pot → PLAY; small pot w/ no unlock
+    → HOLD) and the top opp holder so Noah can see where the cards are
+    coming from.
     """
     from catanatron import Color
     try:
@@ -776,10 +780,14 @@ def _compute_monopoly_hint(
     held = int(state.player_state.get(f"P{idx}_MONOPOLY_IN_HAND", 0))
     if held <= 0:
         return None
-    # Aggregate inferred counts across opps via the tracker.
+    # Aggregate inferred counts across opps via the tracker. We also
+    # remember the per-opp split so we can spotlight the top holder —
+    # monopoly steals from everyone, but Noah wants to know whose stack
+    # he's draining the most (it informs follow-up trade/robber calls).
     totals: dict[str, int] = {
         "WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0,
     }
+    per_opp: dict[str, dict[str, int]] = {}
     for opp_color in state.color_to_index:
         if opp_color == my_enum:
             continue
@@ -787,9 +795,12 @@ def _compute_monopoly_hint(
             opp_hand = game.tracker.hand(opp_color.value)
         except Exception:  # noqa: BLE001
             continue
+        counts: dict[str, int] = {}
         for r, n in opp_hand.items():
             if r in totals:
                 totals[r] += int(n)
+                counts[r] = int(n)
+        per_opp[opp_color.value] = counts
     if not any(totals.values()):
         return None
     # Rank: (count, unlock-bonus, resource-weight).
@@ -821,23 +832,69 @@ def _compute_monopoly_hint(
                             for r, n in cost.items())):
             unlock_reason = f"unlocks {name}"
             break
+
+    # Verdict: PLAY when it unlocks or when the pot is large enough to
+    # swing tempo (4+ cards is a full settlement's worth of resources).
+    # HOLD when the pot is small AND no unlock — you'll get more value
+    # letting opps accumulate. The 4-card threshold is intentionally
+    # slightly above a single-opp production spike so we don't fire
+    # PLAY on a one-roll lucky stack.
+    should_play = False
+    if unlock_reason:
+        should_play = True
+        reason = unlock_reason
+    elif best_count >= 4:
+        should_play = True
+        reason = f"large pot ({best_count} cards)"
+    else:
+        reason = f"small pot ({best_count}) — wait for more"
+
+    # Top holder: the single opp contributing the most to best_count.
+    # Used by the overlay to render "drains 4 from noah" as a sub-line.
+    top_holder_color: str | None = None
+    top_holder_count = 0
+    for color_val, counts in per_opp.items():
+        n = counts.get(best_res, 0)
+        if n > top_holder_count:
+            top_holder_count = n
+            top_holder_color = color_val
+    top_holder: dict[str, Any] | None = None
+    if top_holder_color is not None and top_holder_count > 0:
+        dc = (display_colors or {}).get(top_holder_color, top_holder_color)
+        top_holder = {
+            "color": top_holder_color,
+            "display": dc,
+            "count": top_holder_count,
+        }
+
     return {
         "have": held,
+        "should_play": should_play,
+        "reason": reason,
         "resource": best_res,
         "est_steal": best_count,
         "totals": totals,
         "unlock": unlock_reason,
+        "top_holder": top_holder,
     }
 
 
 def _compute_yop_hint(
     game, self_color: str, self_hand: dict[str, int],
+    bank_supply: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Suggest which pair to pick with Year-of-Plenty.
 
     Fires only when self holds at least one YEAR_OF_PLENTY card. Picks
     the pair that unlocks the most valuable buildable; falls back to
     the pair that aligns with the costliest build closest to complete.
+
+    When no pair would unlock anything this turn, still surface the
+    hint with should_play=False so the overlay can render a HOLD
+    verdict rather than silently hiding the card. If the bank is
+    completely out of a resource in the chosen pair, the YoP play
+    can't actually grant that card — flag bank_ok=False so Noah knows
+    before spending the card.
     """
     from catanatron import Color
     try:
@@ -889,13 +946,63 @@ def _compute_yop_hint(
         p = priority.get(name, 0)
         if best is None or p > best[0]:
             best = (p, name, pick)
+
+    # No unlock within reach: surface a HOLD verdict pointed at the
+    # cheapest build's deficit resource so Noah still sees the card.
+    # Pair: two of the single resource most in demand across all builds
+    # (weighted by priority). Default to ORE+WHEAT (city pair) as a
+    # safe-ish hoard pick when we can't infer anything.
     if best is None:
-        return None
+        demand: dict[str, float] = {r: 0.0 for r in (
+            "WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")}
+        for name, cost in _BUILD_COSTS_MONOPOLY.items():
+            w = priority.get(name, 1)
+            for r, n in cost.items():
+                d = n - self_hand.get(r, 0)
+                if d > 0:
+                    demand[r] += float(w * d)
+        ranked = sorted(demand.items(),
+                        key=lambda kv: kv[1], reverse=True)
+        top_r = ranked[0][0] if ranked and ranked[0][1] > 0 else "ORE"
+        second_r = (ranked[1][0] if len(ranked) > 1 and ranked[1][1] > 0
+                    else "WHEAT")
+        pair = [top_r, second_r] if top_r != second_r else [top_r, top_r]
+        return {
+            "have": held,
+            "should_play": False,
+            "reason": "no build within reach — hold",
+            "pair": pair,
+            "unlock": None,
+            "bank_ok": True,
+        }
+
     _, build_name, pair = best
+
+    # Bank-supply guard: YoP can't grant a resource the bank is out of.
+    # If either pick is unavailable, flag it — Noah should trade/port
+    # or pick a different pair.
+    bank_ok = True
+    if bank_supply and isinstance(bank_supply.get("remaining"), dict):
+        remaining = bank_supply["remaining"]
+        needed: dict[str, int] = {}
+        for r in pair:
+            needed[r] = needed.get(r, 0) + 1
+        for r, n in needed.items():
+            if int(remaining.get(r, 0)) < n:
+                bank_ok = False
+                break
+
+    reason = f"unlocks {build_name}"
+    if not bank_ok:
+        reason = f"bank short on {' or '.join(sorted(set(pair)))} — verify"
+
     return {
         "have": held,
+        "should_play": bank_ok,  # If bank can't grant the pair, don't PLAY yet
+        "reason": reason,
         "pair": pair,
         "unlock": build_name,
+        "bank_ok": bank_ok,
     }
 
 
@@ -2411,6 +2518,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # Knight-card play-timing advice: only fires when self has >=1 KNIGHT
     # in hand. Harmless to compute every snapshot; _compute_knight_hint
     # bails out cheaply when nothing to say.
+    # Compute bank_supply early so the YoP hint can check it — YoP can't
+    # grant a resource the bank doesn't have.
+    try:
+        snap["bank_supply"] = _compute_bank_supply(game)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] bank_supply failed: {e!r}", flush=True)
     try:
         snap["knight_hint"] = _compute_knight_hint(
             game, display_colors=st.get("display_colors") or {})
@@ -2433,11 +2546,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                   flush=True)
     try:
         snap["monopoly_hint"] = _compute_monopoly_hint(
-            game, self_color, hand)
+            game, self_color, hand,
+            display_colors=st.get("display_colors") or {})
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] monopoly_hint failed: {e!r}", flush=True)
     try:
-        snap["yop_hint"] = _compute_yop_hint(game, self_color, hand)
+        snap["yop_hint"] = _compute_yop_hint(
+            game, self_color, hand,
+            bank_supply=snap.get("bank_supply"))
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] yop_hint failed: {e!r}", flush=True)
     try:
@@ -2524,13 +2640,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, self_color)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] largest_army_race failed: {e!r}", flush=True)
-    # Bank-supply warning: if any resource is ≤2 left in the bank, Noah
-    # needs to know — can't 4:1 trade into an empty pool and a 7-steal
-    # may be the only way to get more.
-    try:
-        snap["bank_supply"] = _compute_bank_supply(game)
-    except Exception as e:  # noqa: BLE001
-        print(f"[advisor] bank_supply failed: {e!r}", flush=True)
+    # Bank-supply warning already computed above (YoP needs it). Just
+    # left as a no-op marker here for clarity.
     try:
         snap["dev_deck"] = _compute_dev_deck_remaining(game)
     except Exception as e:  # noqa: BLE001
