@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.1
+// @version      0.18.2
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1042,6 +1042,16 @@
     color: var(--pos);
     font-style: italic;
     margin-left: var(--s-2);
+  }
+  .dev-hint .dv-sub {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    margin-top: var(--s-1);
+  }
+  .dev-hint .dv-sub .dv-arrow {
+    color: var(--accent);
+    font-weight: 700;
+    margin-right: 2px;
   }
 
   /* Robber targets table */
@@ -2158,9 +2168,30 @@
             const verdictCls = rh.should_play ? 'play' : 'hold';
             parts.push('<div class="dev-hint">');
             parts.push(`<div class="dv-h">road building (×${rh.have})</div>`);
-            parts.push(`<div class="dv-body">`
+            let body = `<div class="dv-body">`
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + escapeHtml(rh.reason || '') + '</div>');
+                + escapeHtml(rh.reason || '');
+            if (rh.placement) {
+                const pl = rh.placement;
+                const arrow = pl.direction ? pl.direction.arrow : '→';
+                const word = pl.direction ? pl.direction.word : '';
+                const dirTxt = word ? `lay ${word}` : 'lay road';
+                const towardHtml = (pl.toward_tiles
+                        && pl.toward_tiles.length)
+                    ? ` toward ${tilesToHtml(pl.toward_tiles)}`
+                    : '';
+                let sub = `<div class="dv-sub">`
+                    + `<span class="dv-arrow">${escapeHtml(arrow)}</span>`
+                    + escapeHtml(dirTxt) + towardHtml;
+                if (pl.placement_reason) {
+                    sub += `<span class="dv-unlock">`
+                        + escapeHtml(pl.placement_reason) + '</span>';
+                }
+                sub += '</div>';
+                body += sub;
+            }
+            body += '</div>';
+            parts.push(body);
             parts.push('</div>');
         }
         if (snap.threat && snap.threat.message) {
@@ -2276,13 +2307,19 @@
             parts.push('</div>');
         }
         if ((snap.robber_targets || []).length
-            && (snap.robber_pending || snap.robber_reason === 'knight')) {
+            && (snap.robber_pending
+                || snap.robber_reason === 'knight'
+                || snap.robber_reason === 'placed')) {
             // Header depends on why targets are showing: a forced 7-roll
             // placement is urgent ("robber targets"); a knight-held hint
-            // is advisory ("knight → robber targets").
+            // is advisory ("knight → robber targets"); a "placed" state
+            // lingers after placement so Noah can see the ranking through
+            // the rest of the turn ("robber placed — ranking").
             const rhTxt = snap.robber_reason === 'knight'
                 ? 'knight → robber targets'
-                : 'robber targets';
+                : snap.robber_reason === 'placed'
+                    ? 'robber placed · ranking'
+                    : 'robber targets';
             parts.push(`<div class="robber-h">${rhTxt}</div>`);
             parts.push('<table class="robber">');
             for (let i = 0; i < snap.robber_targets.length; i++) {

@@ -368,8 +368,12 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         st["robber_snapshot"] = _compute_robber_snapshot(
             game, display_colors=st.get("display_colors") or {})
     elif isinstance(event, RobberMoveEvent):
+        # Drop the urgency — self no longer needs to *pick* — but
+        # keep the snapshot around so the overlay's robber panel
+        # stays visible through the steal + rest of the turn. Cleared
+        # on the next RollEvent (or instantly if an opponent rolls a
+        # new 7) in _track_overlay_state.
         st["robber_pending"] = False
-        st["robber_snapshot"] = None
 
     if isinstance(event, GameOverEvent) and not st["pm_written"]:
         _write_postmortem(st, event)
@@ -517,11 +521,21 @@ def _track_overlay_state(st, results) -> None:
                 # overlay ranking from a prior self-roll if somehow still set.
                 st["robber_pending"] = False
                 st["robber_snapshot"] = None
+            else:
+                # Fresh non-7 roll — if we were holding a post-placement
+                # snapshot from an earlier 7-roll or played knight, the
+                # review window for that placement is over. Clear it so
+                # the robber panel doesn't cling to stale data. The
+                # knight-held path in the snap builder will refill
+                # targets on the next poll if self still has a knight.
+                if not st.get("robber_pending"):
+                    st["robber_snapshot"] = None
         elif isinstance(r.event, RobberMoveEvent):
-            # Any robber move clears pending — once the robber lands the
-            # overlay's ranking is stale.
+            # Urgency ends the moment the robber lands, but keep the
+            # snapshot visible so Noah can reflect on the placement
+            # (and steal outcome) through the rest of the turn. Cleared
+            # on the next non-7 RollEvent above.
             st["robber_pending"] = False
-            st["robber_snapshot"] = None
             # Anchor the persist counter at the current roll count.
             # _compute_robber_on_me only runs when the robber is on a
             # self tile, so the snap builder can safely treat the
@@ -885,6 +899,189 @@ def _compute_yop_hint(
     }
 
 
+def _suggest_rb_placement(
+    game, self_color_enum,
+) -> dict[str, Any] | None:
+    """Pick the best pair of free roads to lay when Road Building plays.
+
+    Search strategy is intentionally local (no full minimax): walk
+    out-edges from self's road network, then the out-edges after
+    hypothetically laying each first pick. Pairs that land on a
+    settlement-buildable node get ranked by that node's opening-score;
+    a single-edge unlock is preferred over a 2-edge reach (less
+    commitment, same reward). If no unlock is available, fall back to
+    the pair that extends the longest continuous chain the most.
+
+    Returns ``{edges, toward_node, toward_tiles, direction,
+    placement_reason}`` or None when self has no legal road build.
+    """
+    from catanatron import Color  # noqa: F401 — only for typing clarity
+    from cataanbot.advisor import (
+        _build_node_neighbors, score_opening_nodes,
+    )
+    from cataanbot.recommender import (
+        _direction_label, _node_positions, _tile_label,
+    )
+
+    board = game.state.board
+    m = board.map
+    neighbors = _build_node_neighbors(m)
+    try:
+        first_edges = list(board.buildable_edges(self_color_enum))
+    except Exception:  # noqa: BLE001
+        return None
+    if not first_edges:
+        return None
+
+    # Distance-2 legal-settlement filter mirrors the opening scorer.
+    blocked: set[int] = set()
+    for nid, (col, bt) in board.buildings.items():
+        if bt in ("SETTLEMENT", "CITY"):
+            blocked.add(int(nid))
+            blocked |= {int(x) for x in neighbors.get(int(nid), set())}
+    scored = {ns.node_id: ns for ns in score_opening_nodes(game)}
+
+    def node_is_buildable(nid: int) -> bool:
+        return nid not in blocked and nid in scored
+
+    # My network endpoints. We need this to score "longest-path gain" as
+    # a fallback when no unlock is available. Chain length is just the
+    # count of consecutive edges reachable from any of my network nodes
+    # including the two new ones.
+    my_edges: set[frozenset[int]] = set()
+    my_nodes: set[int] = set()
+    for (a, b), col in board.roads.items():
+        if col == self_color_enum:
+            my_edges.add(frozenset((int(a), int(b))))
+            my_nodes.add(int(a))
+            my_nodes.add(int(b))
+    for nid, (col, bt) in board.buildings.items():
+        if col == self_color_enum:
+            my_nodes.add(int(nid))
+
+    enemy_bld_nodes: set[int] = {
+        int(nid) for nid, (col, bt) in board.buildings.items()
+        if col != self_color_enum
+    }
+
+    def step2_edges_from(far_node: int, first_edge: tuple[int, int]):
+        """Legal edges to build on a board where ``first_edge`` has been
+        laid. Rules: can't step through an enemy settle/city; can't reuse
+        an existing road."""
+        out: list[tuple[int, int]] = []
+        if far_node in enemy_bld_nodes:
+            return out
+        for nb in neighbors.get(int(far_node), ()):
+            e2 = (int(far_node), int(nb))
+            if nb == first_edge[0]:
+                continue
+            existing = (board.roads.get(e2)
+                        or board.roads.get((e2[1], e2[0])))
+            if existing is not None:
+                continue
+            out.append(e2)
+        return out
+
+    def longest_path_from(new_edges: set[frozenset[int]]) -> int:
+        """Rough longest continuous chain on (my_edges ∪ new_edges).
+        Not topology-perfect — we just DFS from each endpoint of a new
+        edge and count the longest simple path. Good enough to rank
+        extension candidates relative to each other."""
+        g = my_edges | new_edges
+        if not g:
+            return 0
+        adj: dict[int, set[int]] = {}
+        for e in g:
+            a, b = tuple(e)
+            adj.setdefault(a, set()).add(b)
+            adj.setdefault(b, set()).add(a)
+        # Enemy nodes break chains the same way they break road-legality.
+        best_len = 0
+        seeds = set()
+        for e in new_edges:
+            seeds |= set(e)
+        if not seeds:
+            seeds = set(adj)
+        for start in seeds:
+            stack = [(start, frozenset(), 0)]
+            while stack:
+                node, used, length = stack.pop()
+                if length > best_len:
+                    best_len = length
+                for nb in adj.get(node, ()):
+                    if nb in enemy_bld_nodes and nb != start:
+                        continue
+                    edge = frozenset((node, nb))
+                    if edge in used:
+                        continue
+                    stack.append((nb, used | {edge}, length + 1))
+        return best_len
+
+    positions = _node_positions(m)
+
+    # (score, tag, edges, toward_node). Higher score wins.
+    candidates: list[tuple[float, str, list[tuple[int, int]], int]] = []
+    for (a1, b1) in first_edges:
+        new1 = {frozenset((int(a1), int(b1)))}
+        # Case A: single-edge unlock at b1.
+        if node_is_buildable(int(b1)):
+            sc = float(scored[int(b1)].score)
+            candidates.append((
+                sc * 10.0 + 5.0,  # +5 bonus: 1-edge cost beats 2-edge
+                "unlocks settlement",
+                [(int(a1), int(b1))],
+                int(b1),
+            ))
+        # Case B: 2-edge unlock at b2.
+        for (a2, b2) in step2_edges_from(int(b1), (int(a1), int(b1))):
+            if node_is_buildable(int(b2)):
+                sc = float(scored[int(b2)].score)
+                candidates.append((
+                    sc * 10.0,
+                    "unlocks 2-hop settle",
+                    [(int(a1), int(b1)), (int(a2), int(b2))],
+                    int(b2),
+                ))
+        # Case C (fallback): pure longest-road extension. Gets ranked
+        # below any unlock — unlock score starts at >= _score_opening(0)
+        # ≈ 2, so chain-only scores cap below 2.
+        for (a2, b2) in step2_edges_from(int(b1), (int(a1), int(b1))):
+            new2 = new1 | {frozenset((int(a2), int(b2)))}
+            chain = longest_path_from(new2)
+            candidates.append((
+                0.05 * float(chain),
+                f"extends chain to {chain}",
+                [(int(a1), int(b1)), (int(a2), int(b2))],
+                int(b2),
+            ))
+        # Single-edge chain extension (when no second edge is legal).
+        chain1 = longest_path_from(new1)
+        candidates.append((
+            0.04 * float(chain1),
+            f"extends chain to {chain1}",
+            [(int(a1), int(b1))],
+            int(b1),
+        ))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    _, tag, edges, toward = candidates[0]
+    out: dict[str, Any] = {
+        "edges": [list(e) for e in edges],
+        "toward_node": int(toward),
+        "toward_tiles": _tile_label(m, int(toward)),
+        "placement_reason": tag,
+    }
+    # Direction of the FIRST edge — read "lay a road lower-right toward
+    # [wheat 6]" as the primary action. Second edge direction is implied
+    # by the chain and would be noise in the overlay.
+    dir_lbl = _direction_label(positions, edges[0][0], edges[0][1])
+    if dir_lbl is not None:
+        out["direction"] = {"word": dir_lbl[0], "arrow": dir_lbl[1]}
+    return out
+
+
 def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
     """Recommend whether to play Road Building this turn.
 
@@ -894,10 +1091,12 @@ def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
     an opp who's about to. Secondary case: road supply is almost
     exhausted, so play while the cards are still useful.
 
-    Returns ``{have, should_play, reason, self_len, opp_len}`` or None
-    when we shouldn't surface a hint. The projected length is a naive
-    +2 to self's current chain — catanatron recomputes topology-aware
-    length after play, so this is a hint upper bound, not a promise.
+    Returns ``{have, should_play, reason, self_len, opp_len, placement?}``
+    or None when we shouldn't surface a hint. The projected length is a
+    naive +2 to self's current chain — catanatron recomputes
+    topology-aware length after play, so this is a hint upper bound,
+    not a promise. ``placement`` carries the concrete pair of edges to
+    lay when we can compute one.
     """
     from catanatron import Color
     try:
@@ -952,13 +1151,20 @@ def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
         should = True
         reason = f"road pieces running low ({roads_left} left)"
 
-    return {
+    out: dict[str, Any] = {
         "have": held,
         "should_play": should,
         "reason": reason,
         "self_len": self_len,
         "opp_len": opp_max,
     }
+    try:
+        placement = _suggest_rb_placement(game.tracker.game, my_enum)
+        if placement is not None:
+            out["placement"] = placement
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] rb placement failed: {e!r}", flush=True)
+    return out
 
 
 def _compute_knight_hint(
@@ -1703,10 +1909,15 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
         # "forced" = self rolled a 7 and must place the robber now;
-        # "knight" = self holds a KNIGHT, targets shown as play-timing aid.
-        # None when targets are empty or from an older setup flow.
+        # "placed" = the robber just got placed (from a 7-roll or a
+        #     knight play); snapshot lingers through the turn so Noah
+        #     can reflect;
+        # "knight" = self holds a KNIGHT, targets shown as play-timing
+        #     aid — takes precedence over "placed" in the snap builder.
+        # None when targets are empty.
         "robber_reason": (
-            "forced" if st.get("robber_pending") else None),
+            "forced" if st.get("robber_pending")
+            else ("placed" if st.get("robber_snapshot") else None)),
         "my_turn": False,
         "recommendations": [],
         "incoming_trade": None,
