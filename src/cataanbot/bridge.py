@@ -95,6 +95,10 @@ def _build_app(jsonl_path: Path | None = None,
         # caps at 10) so the overlay can show "turn ~N" regardless of
         # buffer size. Not decremented; resets only on /reset.
         "total_rolls": 0,
+        # Full-game tally of each 2..12 dice total so the HUD can plot
+        # a distribution chart — complementary to the last-10 window.
+        # Resets only on /reset.
+        "roll_histogram": {i: 0 for i in range(2, 13)},
         # total_rolls value at the moment the robber last moved onto a
         # self tile. None until the first robber-on-me move. Used to
         # enrich the robber_on_me banner with "placed N rolls ago" —
@@ -201,6 +205,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["last_roll"] = None
         st["roll_history"] = []
         st["total_rolls"] = 0
+        st["roll_histogram"] = {i: 0 for i in range(2, 13)}
         st["robber_moved_at_rolls"] = None
         st["robber_pending"] = False
         st["robber_snapshot"] = None
@@ -496,6 +501,13 @@ def _track_overlay_state(st, results) -> None:
             hist.append(entry)
             st["roll_history"] = hist[-10:]
             st["total_rolls"] = int(st.get("total_rolls") or 0) + 1
+            # Full-game distribution tally — complements roll_history
+            # (last 10 only) so the overlay can render a chart across
+            # all rolls.
+            rh = st.setdefault(
+                "roll_histogram", {i: 0 for i in range(2, 13)})
+            if isinstance(r.event.total, int) and 2 <= r.event.total <= 12:
+                rh[r.event.total] = int(rh.get(r.event.total, 0)) + 1
             # Snapshot each player's card count per-roll so the snap
             # builder can compute a hand-growth delta. Ring buffer of 5
             # samples means we can answer "+3 cards in the last 3 rolls"
@@ -2282,6 +2294,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "last_roll": st.get("last_roll"),
         "roll_history": list(st.get("roll_history") or []),
         "total_rolls": int(st.get("total_rolls") or 0),
+        "roll_histogram": dict(st.get("roll_histogram")
+                               or {i: 0 for i in range(2, 13)}),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
         # "forced" = self rolled a 7 and must place the robber now;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.4
+// @version      0.18.5
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -669,6 +669,97 @@
     opacity: 0.55;
     margin-left: var(--s-2);
   }
+
+  /* Full-game roll distribution — 11 bars 2..12. Bar height scales to
+     the most-hit number this game; dashed guide shows what the number
+     of hits would be on the expected 36-facet distribution at the
+     current roll count so droughts and streaks pop out visually. */
+  .roll-dist {
+    margin: var(--s-2) 0;
+    font-variant-numeric: tabular-nums;
+    font-size: calc(10px * var(--font-scale));
+    color: var(--fg-dim);
+  }
+  .roll-dist .rd-h {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: var(--s-1);
+  }
+  .roll-dist .rd-label {
+    color: var(--fg-label);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .roll-dist .rd-total {
+    color: var(--fg-dim);
+    opacity: 0.7;
+  }
+  .roll-dist .rd-bars {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    gap: 3px;
+    align-items: end;
+    height: 54px;
+    padding: 0 1px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .roll-dist .rd-col {
+    display: flex; flex-direction: column;
+    justify-content: flex-end; align-items: center;
+    position: relative;
+    height: 100%;
+  }
+  .roll-dist .rd-bar {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 2px 2px 0 0;
+    min-height: 1px;
+    transition: background 0.15s ease;
+  }
+  .roll-dist .rd-col.seven .rd-bar {
+    background: rgba(245, 144, 129, 0.35);
+  }
+  .roll-dist .rd-col.last .rd-bar {
+    background: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .roll-dist .rd-col.last.seven .rd-bar {
+    background: var(--alert);
+    box-shadow: 0 0 0 1px var(--alert);
+  }
+  .roll-dist .rd-count {
+    position: absolute;
+    bottom: 100%;
+    margin-bottom: 1px;
+    color: var(--fg-dim);
+    font-size: calc(9px * var(--font-scale));
+    opacity: 0.8;
+  }
+  .roll-dist .rd-col.last .rd-count { color: var(--accent); opacity: 1; }
+  .roll-dist .rd-col.last.seven .rd-count { color: var(--alert); }
+  .roll-dist .rd-expected {
+    position: absolute; left: 0; right: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.22);
+    pointer-events: none;
+  }
+  .roll-dist .rd-axis {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    gap: 3px;
+    margin-top: 2px;
+  }
+  .roll-dist .rd-axis span {
+    text-align: center;
+    font-size: calc(9px * var(--font-scale));
+    color: var(--fg-dim);
+  }
+  .roll-dist .rd-axis span.seven { color: var(--alert); opacity: 0.7; }
+  .roll-dist .rd-axis span.last {
+    color: var(--accent);
+    font-weight: 800;
+  }
+  .roll-dist .rd-axis span.last.seven { color: var(--alert); }
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(11px * var(--font-scale));
@@ -2154,28 +2245,64 @@
                 parts.push(`<div class="opp-yields">they: ${parts2}</div>`);
             }
         }
-        // Recent rolls strip: shows the last ~10 dice totals so Noah
-        // can see at a glance which numbers have been dry (pip drought)
-        // vs streaky. Most recent on the right; self-hits in green,
-        // robber-blocked in amber-underline, 7s in red.
-        const hist = snap.roll_history;
-        if (hist && hist.length > 0) {
-            const cells = hist.map((e) => {
-                const t = e.total;
-                let cls = 'rh';
-                if (t === 7) cls += ' seven';
-                else if (e.blocked_you) cls += ' blocked';
-                else if (e.hit_you) cls += ' hit';
-                return `<span class="${cls}">${t}</span>`;
-            }).join('');
-            // Absolute game-roll counter so Noah can tell "turn ~5" from
-            // "turn ~20" — roll_history only keeps the last 10, but
-            // total_rolls is monotonic. Shown in parens after the label.
-            const totalRolls = snap.total_rolls || 0;
-            const tail = totalRolls > 0 ? ` <span class="rh-count">(${totalRolls})</span>` : '';
-            parts.push('<div class="roll-history">'
-                + '<span class="rh-label">recent:</span>'
-                + cells + tail + '</div>');
+        // Full-game roll distribution chart: one bar per 2..12, height
+        // scaled to the most-hit number this game. Last-rolled number
+        // highlighted in accent so Noah knows where we are; 7s tinted
+        // amber. Dashed overlay shows the expected count per number on
+        // an unbiased 36-facet distribution at the current roll count
+        // — droughts (bars short of the line) and streaks (bars above
+        // it) pop out visually.
+        const dist = snap.roll_histogram || {};
+        const totalRolls = snap.total_rolls || 0;
+        if (totalRolls > 0) {
+            // 2:1/36, 3:2/36, ..., 7:6/36, ..., 12:1/36
+            const facets = {
+                2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6,
+                8: 5, 9: 4, 10: 3, 11: 2, 12: 1,
+            };
+            const lastRoll = snap.last_roll ? snap.last_roll.total : null;
+            let maxCount = 0;
+            for (let n = 2; n <= 12; n++) {
+                const c = Number(dist[n] || 0);
+                if (c > maxCount) maxCount = c;
+            }
+            // Scale the bars to a clean number just above the tallest
+            // bar — also ensure expected line fits in the chart.
+            const maxExpected = totalRolls * 6 / 36;
+            const scaleTop = Math.max(maxCount, maxExpected, 1);
+            const bars = [];
+            const axis = [];
+            for (let n = 2; n <= 12; n++) {
+                const c = Number(dist[n] || 0);
+                const expected = (facets[n] / 36) * totalRolls;
+                const pct = Math.max(1, Math.round((c / scaleTop) * 100));
+                const expPct = Math.round((expected / scaleTop) * 100);
+                let cls = 'rd-col';
+                if (n === 7) cls += ' seven';
+                if (n === lastRoll) cls += ' last';
+                const countLbl = c > 0
+                    ? `<span class="rd-count">${c}</span>` : '';
+                const expLine = expected > 0
+                    ? `<span class="rd-expected" style="bottom:${expPct}%"></span>`
+                    : '';
+                bars.push(`<div class="${cls}">`
+                    + countLbl
+                    + expLine
+                    + `<div class="rd-bar" style="height:${pct}%"></div>`
+                    + '</div>');
+                let axCls = '';
+                if (n === 7) axCls += ' seven';
+                if (n === lastRoll) axCls += ' last';
+                axis.push(`<span class="${axCls.trim()}">${n}</span>`);
+            }
+            parts.push('<div class="roll-dist">'
+                + '<div class="rd-h">'
+                + '<span class="rd-label">rolls</span>'
+                + `<span class="rd-total">${totalRolls} total</span>`
+                + '</div>'
+                + `<div class="rd-bars">${bars.join('')}</div>`
+                + `<div class="rd-axis">${axis.join('')}</div>`
+                + '</div>');
         }
         // Yield summary: actual vs expected cards across the roll
         // window. Flags "behind" when expected is clearly above actual,
