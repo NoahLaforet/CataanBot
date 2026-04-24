@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.9
+// @version      0.19.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1744,6 +1744,13 @@
         return { host, panel, body, content, dot };
     }
 
+    // Tracks each roll-bar's rendered height percentage across renders so
+    // the histogram can animate from its previous height to the new one
+    // when a fresh roll lands (or when scaleTop shifts and all bars
+    // rebalance). Populated after every successful render; read before
+    // setting up the next frame's animations. Keyed by roll total (2..12).
+    const prevHistogramPcts = Object.create(null);
+
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
         if (!snap) {
@@ -2401,11 +2408,15 @@
             const scaleTop = Math.max(maxCount, maxExpected, 1);
             const bars = [];
             const axis = [];
+            // Stash target heights so the post-render animation pass can
+            // tween each bar from its previous pct to the new one.
+            const nextBarPcts = Object.create(null);
             for (let n = 2; n <= 12; n++) {
                 const c = Number(dist[n] || 0);
                 const expected = (facets[n] / 36) * totalRolls;
                 const pct = Math.max(1, Math.round((c / scaleTop) * 100));
                 const expPct = Math.round((expected / scaleTop) * 100);
+                nextBarPcts[n] = pct;
                 let cls = 'rd-col';
                 if (n === 7) cls += ' seven';
                 if (n === lastRoll) cls += ' last';
@@ -2414,7 +2425,7 @@
                 const expLine = expected > 0
                     ? `<span class="rd-expected" style="bottom:${expPct}%"></span>`
                     : '';
-                bars.push(`<div class="${cls}">`
+                bars.push(`<div class="${cls}" data-roll="${n}">`
                     + countLbl
                     + expLine
                     + `<div class="rd-bar" style="height:${pct}%"></div>`
@@ -2424,6 +2435,7 @@
                 if (n === lastRoll) axCls += ' last';
                 axis.push(`<span class="${axCls.trim()}">${n}</span>`);
             }
+            snap.__histogramPcts = nextBarPcts;
             parts.push('<div class="roll-dist">'
                 + '<div class="rd-h">'
                 + '<span class="rd-label">rolls</span>'
@@ -2738,6 +2750,46 @@
             parts.push('</table>');
         }
         ui.content.innerHTML = parts.join('');
+        animateHistogramBars(ui, snap);
+    }
+
+    // Live histogram animation. innerHTML rewrite replaces the bar DOM
+    // every render, so CSS transitions can't tween — but Web Animations
+    // API lets us schedule a from→to height animation on the fresh bar
+    // element, starting from the previous render's pct. The effect: when
+    // a new roll lands, the winning column visibly grows from its prior
+    // height to its new height (rather than snapping). When no counts
+    // changed, animations are no-ops so idle ticks stay quiet.
+    function animateHistogramBars(ui, snap) {
+        const next = snap && snap.__histogramPcts;
+        if (!next) return;
+        const cols = ui.content.querySelectorAll(
+            '.roll-dist .rd-col[data-roll]');
+        cols.forEach((col) => {
+            const n = Number(col.dataset.roll);
+            const bar = col.querySelector('.rd-bar');
+            if (!bar) return;
+            const prevPct = prevHistogramPcts[n];
+            const nextPct = next[n];
+            if (nextPct == null) return;
+            if (prevPct == null || prevPct === nextPct) return;
+            if (typeof bar.animate !== 'function') return;
+            try {
+                bar.animate(
+                    [
+                        { height: prevPct + '%' },
+                        { height: nextPct + '%' },
+                    ],
+                    {
+                        duration: 500,
+                        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                        fill: 'backwards',
+                    });
+            } catch (e) { /* WAAPI unsupported — bar snaps to final pct */ }
+        });
+        for (let n = 2; n <= 12; n++) {
+            prevHistogramPcts[n] = next[n];
+        }
     }
 
     function escapeHtml(s) {
