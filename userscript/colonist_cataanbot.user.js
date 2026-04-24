@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.17.0
+// @version      0.18.0
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1038,15 +1038,206 @@
 
   .muted { color: var(--fg-dim); }
   .err { color: var(--alert); }
+
+  /* --------------------------------------------------------------
+     SETTINGS DRAWER — reveals below the header. Holds the New Game
+     action, pause toggle, opacity slider, and copy-snapshot. Shows
+     keyboard hints at the bottom so shortcuts are discoverable
+     without a separate docs page.
+     -------------------------------------------------------------- */
+  .settings-btn { font-size: calc(13px * var(--font-scale)); padding: 0 var(--s-2); }
+
+  .paused-badge {
+    display: none;
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    background: rgba(236, 176, 106, 0.18);
+    color: var(--warn);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .panel[data-paused="1"] .paused-badge { display: inline-block; }
+
+  .drawer {
+    display: none;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-4) var(--s-4);
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-1);
+  }
+  .drawer.open { display: flex; }
+  .drawer-row {
+    display: flex; align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+  }
+  .drawer-label {
+    color: var(--fg-label);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    min-width: 64px;
+  }
+  .drawer-btn {
+    padding: var(--s-1) var(--s-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-2);
+    border: 1px solid var(--line-strong);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .drawer-btn:hover {
+    background: var(--bg-3);
+    border-color: var(--fg-mute);
+  }
+  .drawer-btn.danger {
+    color: var(--alert);
+    border-color: rgba(255, 109, 97, 0.35);
+  }
+  .drawer-btn.danger:hover {
+    background: rgba(255, 109, 97, 0.12);
+    border-color: var(--alert);
+  }
+  .drawer-btn.armed {
+    background: var(--alert);
+    color: #111;
+    border-color: var(--alert);
+    font-weight: 800;
+    animation: cataanbot-armed-pulse 0.7s ease-in-out infinite alternate;
+  }
+  @keyframes cataanbot-armed-pulse {
+    from { box-shadow: 0 0 0 0 rgba(255, 109, 97, 0.55); }
+    to   { box-shadow: 0 0 0 5px rgba(255, 109, 97, 0); }
+  }
+  .drawer-btn.flash-ok {
+    background: rgba(126, 217, 159, 0.18);
+    color: var(--pos);
+    border-color: var(--pos);
+  }
+
+  .toggle {
+    display: inline-flex; align-items: center;
+    gap: var(--s-2);
+    cursor: pointer;
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    letter-spacing: 0.02em;
+  }
+  .toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 28px; height: 16px;
+    border-radius: 10px;
+    background: var(--bg-3);
+    border: 1px solid var(--line-strong);
+    position: relative;
+    cursor: pointer;
+    margin: 0;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .toggle input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 1px; left: 1px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--fg-mute);
+    transition: left 0.15s, background 0.15s;
+  }
+  .toggle input[type="checkbox"]:checked {
+    background: rgba(236, 176, 106, 0.3);
+    border-color: var(--warn);
+  }
+  .toggle input[type="checkbox"]:checked::after {
+    left: 13px;
+    background: var(--warn);
+  }
+
+  .drawer input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--bg-3);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .drawer input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg-0);
+  }
+  .drawer input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg-0);
+  }
+  .opacity-val {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+    min-width: 38px;
+    text-align: right;
+  }
+
+  .drawer-help { margin-top: var(--s-1); }
+  .drawer-hint {
+    color: var(--fg-dim);
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.02em;
+    font-style: italic;
+  }
+
+  /* Paused render filter: keep the game-progress strip and the self
+     card, hide every tactical section (opps, recs, banners, rolls). */
+  .panel[data-paused="1"] #content > div:not(.gprog):not(.card) { display: none; }
 </style>
 <div class="panel" id="panel">
   <div class="header" id="header">
     <span class="dot" id="dot"></span>
     <span class="title">CataanBot</span>
-    <button class="btn" id="toggle" title="collapse/expand">_</button>
+    <span class="paused-badge" id="paused-badge">paused</span>
+    <button class="btn settings-btn" id="settings" title="settings (alt+s)">⚙</button>
+    <button class="btn" id="toggle" title="collapse/expand (alt+c)">_</button>
+  </div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-row">
+      <span class="drawer-label">actions</span>
+      <button class="drawer-btn danger" id="new-game">new game</button>
+      <button class="drawer-btn" id="copy-snap">copy snapshot</button>
+    </div>
+    <div class="drawer-row">
+      <span class="drawer-label">advisor</span>
+      <label class="toggle"><input type="checkbox" id="pause"/><span>pause banners &amp; recs</span></label>
+    </div>
+    <div class="drawer-row">
+      <span class="drawer-label">opacity</span>
+      <input type="range" id="opacity" min="40" max="100" step="5" value="100"/>
+      <span class="opacity-val" id="opacity-val">100%</span>
+    </div>
+    <div class="drawer-row drawer-help">
+      <span class="drawer-label">keys</span>
+      <span class="drawer-hint">alt+p pause &middot; alt+c collapse &middot; alt+n new game &middot; alt+s settings</span>
+    </div>
   </div>
   <div class="body" id="body">
-    <div id="content"><span class="muted">waiting for bridge…</span></div>
+    <div id="content"><span class="muted">waiting for bridge&hellip;</span></div>
   </div>
   <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
 </div>`;
@@ -1061,6 +1252,161 @@
         root.getElementById('toggle').addEventListener('click', (e) => {
             e.stopPropagation();
             body.classList.toggle('collapsed');
+        });
+
+        // --------------------------------------------------------------
+        // Settings drawer + actions. Holds the New Game reset, pause
+        // toggle, opacity slider, and snapshot export. Everything here
+        // is optional — the overlay works without any of it — but these
+        // are the knobs Noah needs during a session without hunting for
+        // a terminal (reset the bridge, mute banners mid-chat, make the
+        // HUD translucent, grab a snapshot for bug reports).
+        // --------------------------------------------------------------
+        const settingsBtn = root.getElementById('settings');
+        const drawer = root.getElementById('drawer');
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            drawer.classList.toggle('open');
+        });
+
+        // New Game = two-click confirm. First click arms the button for
+        // 3s (red flash + "click again to confirm"); second click posts
+        // /reset. Auto-disarms so an accidental press doesn't linger.
+        const newGameBtn = root.getElementById('new-game');
+        const NEW_GAME_LABEL = 'new game';
+        let armTimer = null;
+        function disarmNewGame() {
+            newGameBtn.classList.remove('armed');
+            newGameBtn.textContent = NEW_GAME_LABEL;
+            if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+        }
+        function armNewGame() {
+            newGameBtn.classList.add('armed');
+            newGameBtn.textContent = 'click again to confirm';
+            if (armTimer) clearTimeout(armTimer);
+            armTimer = setTimeout(disarmNewGame, 3000);
+        }
+        function fireNewGame() {
+            disarmNewGame();
+            postTo('http://127.0.0.1:8765/reset', {}, { quiet: true });
+            newGameBtn.classList.add('flash-ok');
+            newGameBtn.textContent = 'reset ✓';
+            setTimeout(() => {
+                newGameBtn.classList.remove('flash-ok');
+                newGameBtn.textContent = NEW_GAME_LABEL;
+            }, 1200);
+        }
+        newGameBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (newGameBtn.classList.contains('armed')) fireNewGame();
+            else armNewGame();
+        });
+
+        // Pause toggle — sets data-paused on the panel so the CSS filter
+        // suppresses tactical sections. The advisor keeps polling so
+        // unpause is instant and state is still current.
+        const pauseInput = root.getElementById('pause');
+        function applyPaused(paused) {
+            panel.dataset.paused = paused ? '1' : '0';
+            try {
+                localStorage.setItem(
+                    'cataanbot.paused', paused ? '1' : '0');
+            } catch (_) { /* storage blocked — fine */ }
+        }
+        try {
+            const savedPause =
+                localStorage.getItem('cataanbot.paused') === '1';
+            pauseInput.checked = savedPause;
+            applyPaused(savedPause);
+        } catch (_) { applyPaused(false); }
+        pauseInput.addEventListener('change', () => {
+            applyPaused(pauseInput.checked);
+        });
+
+        // Opacity slider — applies to the host element (outside shadow)
+        // so the whole overlay goes translucent. 100% = default. Useful
+        // for placing the HUD over the board without blocking reads.
+        const opacityInput = root.getElementById('opacity');
+        const opacityVal = root.getElementById('opacity-val');
+        function applyOpacity(pct) {
+            const clamped = Math.max(40, Math.min(100, pct));
+            host.style.opacity = (clamped / 100).toFixed(2);
+            opacityVal.textContent = clamped + '%';
+            try {
+                localStorage.setItem('cataanbot.opacity', String(clamped));
+            } catch (_) { /* storage blocked */ }
+        }
+        try {
+            const savedOp = parseInt(
+                localStorage.getItem('cataanbot.opacity') || '', 10);
+            if (Number.isFinite(savedOp)) {
+                opacityInput.value = String(savedOp);
+                applyOpacity(savedOp);
+            }
+        } catch (_) { /* storage blocked */ }
+        opacityInput.addEventListener('input', () => {
+            applyOpacity(parseInt(opacityInput.value, 10));
+        });
+
+        // Copy Snapshot — fetches the current /advisor JSON and writes
+        // it to the clipboard. Exists so Noah can paste exact tracker
+        // state into a bug report without screenshotting.
+        const copySnapBtn = root.getElementById('copy-snap');
+        const COPY_SNAP_LABEL = 'copy snapshot';
+        async function copySnapshot() {
+            try {
+                const snap = await getJson(
+                    'http://127.0.0.1:8765/advisor');
+                const text = JSON.stringify(snap, null, 2);
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    // Fallback: dump into a hidden textarea and copy.
+                    const ta = document.createElement('textarea');
+                    ta.value = text; ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select(); document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }
+                copySnapBtn.classList.add('flash-ok');
+                copySnapBtn.textContent = 'copied ✓';
+            } catch (_) {
+                copySnapBtn.textContent = 'copy failed';
+            }
+            setTimeout(() => {
+                copySnapBtn.classList.remove('flash-ok');
+                copySnapBtn.textContent = COPY_SNAP_LABEL;
+            }, 1200);
+        }
+        copySnapBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            copySnapshot();
+        });
+
+        // Keyboard shortcuts. Alt+<letter> avoids typing collisions with
+        // colonist's chat and the board. Uses e.code (KeyP/KeyC/etc)
+        // because on macOS Alt produces special chars for e.key.
+        window.addEventListener('keydown', (e) => {
+            if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
+            if (e.code === 'KeyP') {
+                e.preventDefault();
+                pauseInput.checked = !pauseInput.checked;
+                applyPaused(pauseInput.checked);
+            } else if (e.code === 'KeyC') {
+                e.preventDefault();
+                body.classList.toggle('collapsed');
+            } else if (e.code === 'KeyS') {
+                e.preventDefault();
+                drawer.classList.toggle('open');
+            } else if (e.code === 'KeyN') {
+                e.preventDefault();
+                if (!drawer.classList.contains('open')) {
+                    drawer.classList.add('open');
+                }
+                if (newGameBtn.classList.contains('armed')) fireNewGame();
+                else armNewGame();
+            }
         });
 
         // Simple drag: on mousedown in the header, track pointer and move
