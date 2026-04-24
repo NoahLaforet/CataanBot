@@ -1736,6 +1736,9 @@
                 // Opening-settlement picks include a nested road hint:
                 // "which direction to lay your road so it extends toward
                 // the best 2-hop expansion spot." Render as a sub-line.
+                // Leads with a compass arrow + direction word
+                // ("↗ upper-right") so Noah can read placement at a
+                // glance instead of parsing tile chips every time.
                 if (r.kind === 'opening_settlement' && r.road
                         && r.road.toward_tiles) {
                     const towardHtml = tilesToHtml(r.road.toward_tiles);
@@ -1743,8 +1746,15 @@
                         const warn = r.road.contested
                             ? ' <span class="warn">⚠ contested</span>'
                             : '';
+                        const dir = r.road.direction;
+                        const dirHtml = dir
+                            ? `<span class="arrow">↳ ${escapeHtml(
+                                dir.arrow)} ${escapeHtml(
+                                dir.word)}</span> `
+                              + '<span class="muted">toward</span> '
+                            : '<span class="arrow">↳ road →</span> ';
                         parts.push('<div class="rec-sub">'
-                            + '<span class="arrow">↳ road →</span> '
+                            + dirHtml
                             + towardHtml
                             + warn
                             + '</div>');
