@@ -2638,6 +2638,35 @@ def test_roll_history_accumulates_and_caps_at_ten():
         f"ring buffer should keep last 10, got {got}")
 
 
+def test_roll_histogram_tallies_every_roll_full_game():
+    """Unlike ``roll_history`` (capped at 10), ``roll_histogram`` is
+    unbounded — it's the full-game distribution the overlay chart
+    plots. Every RollEvent increments the correct bucket; 2..12 stay in
+    range, the total matches total_rolls."""
+    from cataanbot.live_game import LiveGame
+    st: dict = {
+        "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+    }
+    totals = [6, 8, 6, 9, 8, 6, 7, 4, 11, 10, 8, 5, 8, 12, 2, 6]
+    for t in totals:
+        _feed_roll(st, t)
+    hg = st.get("roll_histogram")
+    assert isinstance(hg, dict)
+    assert set(hg.keys()) == set(range(2, 13))
+    # Hand-tally expected counts from totals.
+    from collections import Counter
+    expected = Counter(totals)
+    for n in range(2, 13):
+        assert hg[n] == expected.get(n, 0), (
+            f"bucket {n}: expected {expected.get(n, 0)}, got {hg[n]}")
+    # Histogram sum == total_rolls.
+    assert sum(hg.values()) == int(st.get("total_rolls") or 0)
+    assert int(st["total_rolls"]) == len(totals)
+
+
 def test_roll_history_marks_self_hits_against_own_buildings():
     """After replaying a capture so a self color is latched and self
     owns buildings on at least one numbered tile, a roll on that tile's
