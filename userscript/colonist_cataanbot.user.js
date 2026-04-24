@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.15.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.10.1 bumps HUD font 12→14px and width 280→340px for readability; v0.10.0 added the incoming-trade accept/decline panel.
+// @version      0.16.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -159,29 +159,84 @@
         const root = host.attachShadow({ mode: 'open' });
         root.innerHTML = `
 <style>
+  /* Web fonts — Archivo for display (banner headlines, section labels)
+     and JetBrains Mono for body data. Loaded inside the shadow DOM so
+     colonist's stylesheets can't touch them. If the user is offline or
+     blocks fonts.googleapis.com, the system fallbacks below kick in. */
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
   :host, * { box-sizing: border-box; }
-  /* --panel-w / --panel-h / --font-scale are mutated by the resize
-     handle. Font size scales with width so "bigger HUD" means bigger
-     text, not just spread-out text. Every font declaration below uses
-     calc(base * var(--font-scale)) so one knob controls everything. */
+
+  /* --------------------------------------------------------------
+     Design tokens. Everything downstream references these so the
+     whole HUD can be reskinned from this block alone. The resize
+     handle mutates --panel-w and --font-scale; every font size is
+     calc(base * var(--font-scale)) so width drives text too.
+     -------------------------------------------------------------- */
   .panel {
-    --panel-w: 340px;
+    --panel-w: 360px;
     --panel-h: auto;
     --font-scale: 1;
-    font: calc(14px * var(--font-scale))/1.4 ui-monospace, Menlo, Consolas, monospace;
-    color: #e8e8e8;
-    background: rgba(18, 18, 22, 0.94);
-    border: 1px solid #2a2a32;
-    border-radius: 6px;
+
+    /* Spacing scale — 4px rhythm, stepped */
+    --s-1: 2px;
+    --s-2: 4px;
+    --s-3: 8px;
+    --s-4: 12px;
+    --s-5: 16px;
+    --s-6: 20px;
+
+    /* Surfaces */
+    --bg-0: #0d0e13;              /* panel body */
+    --bg-1: #161820;              /* nested card / banner surface */
+    --bg-2: #1c1f29;              /* header strip */
+    --bg-3: #252836;              /* pill / chip bg */
+    --line: rgba(255, 255, 255, 0.07);
+    --line-strong: rgba(255, 255, 255, 0.14);
+
+    /* Text ladder */
+    --fg: #e9ebf1;
+    --fg-mute: #a1a7b5;
+    --fg-dim: #6e7485;
+    --fg-label: #8089a0;          /* section labels */
+
+    /* Role colors — one hue per semantic axis, not per component */
+    --acc-pos:   #6ed79a;         /* goal / mine / gain */
+    --acc-warn:  #e8a860;         /* attention / near-miss */
+    --acc-alert: #ff6b5e;         /* danger / fat-hand / 7 */
+    --acc-info:  #7ec0f5;         /* informational blue */
+    --acc-insight: #c88aee;       /* hidden-info / robber-on-me */
+    --acc-gold:  #ffc857;         /* VP / opening-option */
+    --acc-teal:  #6ec8c0;         /* recs / my actions */
+
+    --radius-sm: 3px;
+    --radius:    5px;
+    --radius-lg: 8px;
+
+    --font-display: 'Archivo', -apple-system, BlinkMacSystemFont,
+                    'SF Pro Display', 'Helvetica Neue', sans-serif;
+    --font-mono:    'JetBrains Mono', ui-monospace, Menlo, Consolas,
+                    monospace;
+
+    font-family: var(--font-mono);
+    font-size: calc(13px * var(--font-scale));
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
     width: var(--panel-w);
     height: var(--panel-h);
-    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.02) inset,
+      0 18px 48px rgba(0, 0, 0, 0.55),
+      0 4px 12px rgba(0, 0, 0, 0.28);
     user-select: none;
     position: relative;
+    overflow: hidden;
   }
-  /* Resize handle in the bottom-right corner. Diagonal ticks hint at
-     drag-to-resize. Pointer-events are only enabled on the handle so
-     text selection inside the panel still works. */
+
+  /* Resize handle — subtle diagonal tick, brightens on hover */
   .resize-handle {
     position: absolute; right: 0; bottom: 0;
     width: 14px; height: 14px;
@@ -189,362 +244,807 @@
     background:
       linear-gradient(135deg,
         transparent 0%, transparent 45%,
-        #4a4a55 45%, #4a4a55 50%,
+        var(--line-strong) 45%, var(--line-strong) 50%,
         transparent 50%, transparent 65%,
-        #4a4a55 65%, #4a4a55 70%,
+        var(--line-strong) 65%, var(--line-strong) 70%,
         transparent 70%);
-    border-bottom-right-radius: 6px;
-    opacity: 0.6;
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
   }
   .resize-handle:hover { opacity: 1; }
-  /* If the body is scrollable (user made the panel short), let it
-     scroll rather than overflow the panel container. */
+
   .body.scrollable { overflow-y: auto; }
-  .header {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 8px;
-    cursor: move;
-    border-bottom: 1px solid #2a2a32;
-    background: linear-gradient(180deg, #23232a, #1a1a20);
-    border-radius: 6px 6px 0 0;
-  }
-  .title { font-weight: 600; flex: 1; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
-  .dot.live { background: #7ac74f; }
-  .btn {
-    cursor: pointer; padding: 0 6px; color: #aaa;
-    border: 1px solid #2a2a32; border-radius: 3px;
-    background: transparent;
-  }
-  .btn:hover { color: #fff; border-color: #444; }
-  .body { padding: 8px; }
+  .body { padding: var(--s-3) var(--s-4); }
   .body.collapsed { display: none; }
-  .you {
-    display: flex; align-items: baseline; gap: 6px;
-    margin-bottom: 2px;
+
+  /* Header strip — Archivo display caps, confident but understated */
+  .header {
+    display: flex; align-items: center; gap: var(--s-3);
+    padding: var(--s-3) var(--s-4);
+    cursor: move;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
   }
+  .title {
+    flex: 1;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: calc(13px * var(--font-scale));
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg);
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--fg-dim);
+    box-shadow: 0 0 0 3px rgba(110, 215, 154, 0);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  .dot.live {
+    background: var(--acc-pos);
+    box-shadow: 0 0 0 3px rgba(110, 215, 154, 0.15);
+  }
+  .btn {
+    cursor: pointer;
+    padding: 0 var(--s-3);
+    color: var(--fg-dim);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    font-family: var(--font-mono);
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .btn:hover { color: var(--fg); border-color: var(--line-strong); }
+
+  /* --------------------------------------------------------------
+     Color pill — player name badge. Unified spec for self + opps
+     so every player chip has the same visual weight.
+     -------------------------------------------------------------- */
   .color-pill {
     display: inline-block;
-    padding: 1px 6px; border-radius: 3px;
-    color: #111; font-weight: 700;
+    padding: 1px var(--s-3);
+    border-radius: var(--radius);
+    color: #111;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: calc(12px * var(--font-scale));
+    letter-spacing: 0.02em;
+    vertical-align: middle;
   }
-  .hand { color: #d0d0d0; margin: 2px 0; }
-  /* Monopoly-risk highlight: amber text on the vulnerable stack so
-     the hand row itself shows exactly which resource is exposed, not
-     just the separate warning banner below. */
-  .hand .mono-risk { color: #f0a858; font-weight: 700;
-    text-shadow: 0 0 3px rgba(240,168,88,0.25); }
-  .mono-warn { color: #e69a5a; font-size: calc(11px * var(--font-scale));
-    margin: 0 0 4px 0; font-weight: 600; }
-  .afford { color: #b8e8b8; margin: 0 0 6px; }
-  .afford.none { color: #888; }
-  /* Nearest-miss hint — dimmer than affordable (not available yet)
-     but brighter than the "nothing buildable" dead-end. Amber ties
-     it to the opp .one-short visual family. */
-  .afford.near { color: #d4a35a; }
-  .vpb { color: #888; font-size: calc(11px * var(--font-scale)); }
-  .ports { color: #78b4d8; font-size: calc(11px * var(--font-scale));
-           margin: 0 0 4px; }
-  .prod { color: #9ecfaa; font-size: calc(11px * var(--font-scale));
-          margin: 0 0 4px; }
-  .hr { height: 1px; background: #2a2a32; margin: 6px 0; }
-  .opps { display: grid; grid-template-columns: 1fr; gap: 2px; }
-  .opp { color: #ccc; font-size: calc(13px * var(--font-scale)); }
-  .opp-hand { color: #b5c4d0; font-variant-numeric: tabular-nums; }
-  .opp.tracked .opp-hand { color: #a4ef9c; }
-  .opp.hot-knight { color: #ffaa55; }
-  /* Tag that shows builds an opp can definitely pay for right now.
-     Amber because it's a near-term threat (next-turn +VP in the
-     worst case) without being a red-alert on its own. */
-  .opp .can-afford { color: #ffb347; font-weight: 600; }
-  /* 1-card-short trailer. Same amber family as can-afford but dimmer
-     because it's leading-indicator, not already-flipped. */
-  .opp .one-short { color: #d4a35a; font-weight: 500;
-    font-variant-numeric: tabular-nums; }
-  /* 8+ cards — prime 7-roll discard target. Red so it pops out of
-     the muted row styling; weight kept normal so it doesn't eat the
-     rest of the row's whitespace at the HUD's default font scale.
-     Same class on self and opp rows: at 8+ cards the urgency is
-     symmetric (discard on a 7 hits whoever has too many cards). */
-  .opp .fat-hand, .you .fat-hand { color: #ff8a6e; font-weight: 600; }
-  /* Card-delta trailer. Up = accumulating (warning), down = just
-     spent (reactive but still informative). Small parenthetical so
-     it reads as a trailer, not an axis of its own. */
-  .opp .card-up { color: #ff8a6e; font-weight: 600;
-    font-variant-numeric: tabular-nums; }
-  .opp .card-dn { color: #7a8a7a; font-weight: 400;
-    font-variant-numeric: tabular-nums; }
-  /* Dev-card stash risk. Uniform grey at low VP blends into the muted
-     row; amber+bold when opp could plausibly be hiding enough VPs to
-     close the game. Lock emoji reinforces "something concealed here". */
-  .opp .dev-stash { color: #ffb347; font-weight: 600; }
-  .roll { margin: 4px 0 2px; color: #d8d8d8; }
-  .roll.you-rolled { color: #ffde7a; }
-  /* Yield breakdown appended to the roll line: "+2 whe +1 ore" style.
-     Green for positive because the color mirrors catanatron's resource
-     gain vibe; dimmer for the blocked portion so the eye lands on the
-     gains first, then notices what was missed. */
-  .roll .roll-yield { color: #a4ef9c; font-weight: 600;
-    font-variant-numeric: tabular-nums; }
-  .roll .roll-blocked { color: #d89c7a; font-weight: 500; }
-  /* Opponent-yields row: sits under the roll banner so the eye still
-     lands on "what I got" first. Dim base tone — this is context, not
-     the headline — but opp colors in the data still carry the color
-     cues via the text itself, not the row's background. */
-  .opp-yields { color: #888; font-size: calc(11px * var(--font-scale));
-    margin: 0 0 4px 0; font-variant-numeric: tabular-nums; }
-  .opp-yields .oy-blk { color: #d89c7a; font-weight: 500; }
-  /* Recent-rolls strip: last ~10 dice totals, with the most recent on
-     the right. Dimmer than the main roll banner so the live roll pops;
-     hits on self highlighted (green) and robber-blocked rolls flagged
-     (amber underline) so a dice drought on my numbers is visible at a
-     glance. */
-  .roll-history { color: #888; font-size: calc(11px * var(--font-scale));
-    margin: 0 0 4px 0; font-variant-numeric: tabular-nums;
-    letter-spacing: 0.5px; }
-  .roll-history .rh-label { color: #666; margin-right: 4px; }
-  .roll-history .rh { display: inline-block; margin-right: 4px;
-    padding: 0 2px; }
-  .roll-history .rh.hit { color: #a4ef9c; font-weight: 600; }
-  .roll-history .rh.blocked { color: #d89c7a;
-    text-decoration: underline; text-decoration-color: #d89c7a; }
-  .roll-history .rh.seven { color: #ff8a6e; font-weight: 600; }
-  /* Total-rolls tail on the history strip: dim so it reads as
-     metadata rather than a data point. Useful when the 10-entry
-     buffer saturates — tells you whether you're at roll 15 or 45. */
-  .roll-history .rh-count { color: #555; font-weight: 400; }
-  /* Yield summary trailer: aggregate cards got / blocked / expected
-     across the roll-history window. Dim so it reads as supporting
-     context to the strip rather than a primary alert; "behind" variant
-     (actual < expected by ~30%+) switches to warning amber so dice
-     droughts or robber chokes pop. */
-  .yield-sum { color: #8893a0; font-size: calc(11px * var(--font-scale));
-    margin: -2px 0 4px 0; font-variant-numeric: tabular-nums;
-    letter-spacing: 0.3px; }
-  .yield-sum.behind { color: #d8a872; }
-  .yield-sum .ys-sep { color: #555; margin: 0 4px; }
-  /* Production stall alert. Amber ramps up to red-ish orange the
-     longer the drought. Dedicated class so the user eye can learn
-     it: "this line = something actionable, consider trading/dev". */
-  .prod-stall { color: #e69a5a; font-size: calc(11px * var(--font-scale));
-    margin: 0 0 4px 0; font-weight: 600;
-    font-variant-numeric: tabular-nums; }
-  /* Sevens-hot warning. Red because the action cue is "hold less" —
-     more pointed than the amber stall warning. */
-  .sevens-hot { color: #ff8a6e; font-size: calc(11px * var(--font-scale));
-    margin: 0 0 4px 0; font-weight: 600;
-    font-variant-numeric: tabular-nums; }
-  /* Hot-numbers banner. Informational gold — the cue is "a productive
-     number is over-rolling; map it to your tiles mentally", not an
-     alert. Sits with the rolls strip and yield summary. */
-  .hot-numbers { color: #ffd47a; font-size: calc(11px * var(--font-scale));
-    margin: 0 0 4px 0; font-weight: 600;
-    font-variant-numeric: tabular-nums; }
-  /* Game progress header. Anchors all the tactical banners below
-     with "round N · phase". Dim because it's context, not action. */
-  .gprog { color: #9a9a9a; font-size: calc(10px * var(--font-scale));
-    margin: 0 0 4px 0; font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em; }
-  .gprog .ph-early { color: #8ec97a; }
-  .gprog .ph-mid { color: #ffd47a; }
-  .gprog .ph-late { color: #ff8a6e; }
-  /* Standings tags on the progress header. Self-leading is bright
-     gold (good news); gap-to-leader is dim red so it sits below
-     the opp name. Avoids making the header a wall of color. */
-  .gprog .stand-self { color: #ffde7a; font-weight: 600; }
-  .gprog .stand-gap { color: #b07070; }
-  .robber-h { color: #ff9066; font-weight: 600; margin-top: 4px; }
-  table.robber { width: 100%; border-collapse: collapse; margin-top: 2px; }
-  table.robber td { padding: 1px 4px 1px 0; vertical-align: top; }
-  .recs-h { color: #7ac74f; font-weight: 600; margin: 6px 0 2px; }
-  .rec { color: #d8d8d8; margin: 1px 0; }
-  .rec .kind {
-    display: inline-block; min-width: 56px; color: #ffde7a; font-weight: 600;
-  }
-  .rec.top { color: #fff; font-weight: 600; }
-  .rec .detail { color: #aaa; font-weight: 400; }
-  .rec .score {
-    display: inline-block; min-width: 52px;
-    padding: 0 5px; border-radius: 3px;
-    font-weight: 700; text-align: center;
+
+  /* --------------------------------------------------------------
+     Game-progress header: "round N · PHASE · standings"
+     Smaller, dim, tracked — reads as metadata anchoring everything
+     below it. The phase pill picks up the phase color, not the
+     whole line.
+     -------------------------------------------------------------- */
+  .gprog {
+    font-family: var(--font-display);
+    color: var(--fg-label);
+    font-size: calc(10px * var(--font-scale));
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 var(--s-3);
     font-variant-numeric: tabular-nums;
   }
-  .rec .score.strong { background: #1e4d2b; color: #a4ef9c; }
-  .rec .score.decent { background: #504620; color: #ffe07a; }
-  .rec .score.weak   { background: #2a2a32; color: #999; }
-  .rec .tiles { color: #b8c6d6; font-weight: 500; }
-  /* Tile chips: number-first so 6/8 "red pip" rolls pop visually.
-     Resource abbrev follows in a softer color; chips space out for
-     easier scan than dot-separated tokens. */
-  .tile-chip { display: inline-block; margin-right: 6px;
-               font-variant-numeric: tabular-nums; }
-  .tile-num { color: #ffd36e; font-weight: 700; }
-  .tile-num.hot { color: #ff7b7b; }
-  .tile-res { color: #b8c6d6; font-weight: 500; margin-left: 2px; }
-  .recs-h.plan-h { color: #7aa7d6; margin-top: 4px; }
-  .rec.plan { opacity: 0.85; font-style: italic; }
-  .rec.plan .kind { color: #a0c8f0; }
-  /* Road-direction hint under an opening-settlement pick. */
-  .rec-sub { color: #9ad0b5; font-size: calc(13px * var(--font-scale));
-             padding: 0 8px 3px 62px; opacity: 0.95; }
-  .rec-sub .warn { color: #f0a57a; font-weight: 500; }
-  .rec-sub .arrow { color: #7a9aa8; margin-right: 4px; }
-  /* Paired-2nd-settlement hint — blue accent to distinguish from road. */
-  .rec-sub.plan-second { color: #a0c0e8; }
-  .rec-sub.plan-second .arrow { color: #7a9ab8; }
-  .rec-sub.plan-second .cov { color: #8fb0d8; margin-left: 6px;
-                              font-variant: tabular-nums; }
-  /* Strategy-archetype tag (balanced / wood-first / ore-city / port /
-     dev-card). */
-  .rec-sub.plan-second .arch { background: rgba(160, 192, 232, 0.18);
-                               color: #d0e0f5; border-radius: 6px;
-                               padding: 1px 6px; margin-left: 6px;
-                               font-size: calc(11px * var(--font-scale)); font-weight: 500;
-                               text-transform: lowercase;
-                               letter-spacing: 0.02em; }
-  /* Option letter (A/B/C/D) shown before round-1 picks so Noah can
-     reference them by letter — "I'm taking Option B". */
-  .rec .opt { display: inline-block; min-width: 22px; margin-right: 6px;
-              padding: 1px 6px; border-radius: 4px;
-              background: rgba(255, 222, 122, 0.16); color: #ffde7a;
-              font-weight: 600; font-size: calc(12px * var(--font-scale));
-              font-variant: tabular-nums; text-align: center; }
-  /* Trade recs wear a distinct color so "spend 4 for 1" reads as
-     something other than a straight build action. */
-  .rec.trade .kind { color: #f0a57a; }
-  .turn-hint { color: #888; margin-top: 4px; font-style: italic; }
-  .drift { color: #ff9999; margin: 2px 0; font-size: calc(13px * var(--font-scale)); }
-  /* Incoming trade panel — pops up when an opponent makes an offer and
-     vanishes on the next roll/commit. Verdict pill color signals the
-     advice at a glance (green=accept, red=decline, muted=consider). */
-  .trade-offer {
-    border: 1px solid #3a3a4a; border-radius: 4px;
-    padding: 4px 6px; margin: 6px 0 4px;
-    background: #1a1d24;
+  .gprog .ph-early { color: var(--acc-pos); font-weight: 700; }
+  .gprog .ph-mid   { color: var(--acc-gold); font-weight: 700; }
+  .gprog .ph-late  { color: var(--acc-alert); font-weight: 700; }
+  .gprog .stand-self { color: var(--acc-gold); font-weight: 700; }
+  .gprog .stand-gap  { color: var(--fg-dim); }
+
+  /* --------------------------------------------------------------
+     Self block: identity + resources + action hints. More breathing
+     room than the dense original — the eye lands here first every
+     poll.
+     -------------------------------------------------------------- */
+  .you {
+    display: flex; align-items: center;
+    gap: var(--s-3);
+    padding-bottom: var(--s-2);
   }
-  .trade-offer .trade-h { color: #f0a57a; font-weight: 600;
-                          margin-bottom: 2px; }
-  .trade-offer .trade-body { color: #d8d8d8; font-size: calc(13px * var(--font-scale));
-                             margin: 1px 0; }
-  .trade-offer .trade-reason { color: #aaa; font-size: calc(13px * var(--font-scale));
-                               font-style: italic; margin-top: 2px; }
-  .trade-offer .verdict {
-    display: inline-block; padding: 1px 6px; border-radius: 3px;
-    font-weight: 700; letter-spacing: 0.5px; margin-right: 4px;
+  .you .color-pill {
+    font-size: calc(13px * var(--font-scale));
+    padding: 2px var(--s-3);
   }
-  .trade-offer .verdict.accept  { background: #1e4d2b; color: #a4ef9c; }
-  .trade-offer .verdict.decline { background: #4d1e1e; color: #ef9c9c; }
-  .trade-offer .verdict.consider{ background: #404040; color: #ddd; }
-  .trade-offer .swap-side { color: #b8c6d6; }
-  .trade-offer .swap-arrow { color: #7a9aa8; margin: 0 4px; }
-  .trade-offer .counter {
-    margin-top: 4px; padding: 3px 6px; border-radius: 3px;
-    background: #1c2b34; border-left: 2px solid #7ac7e8;
-    font-size: calc(13px * var(--font-scale)); color: #c8dde8;
-  }
-  .trade-offer .counter .counter-h {
-    color: #7ac7e8; font-weight: 600; margin-right: 4px;
-  }
-  .trade-offer .counter .counter-reason {
-    color: #8aa0ab; font-style: italic; margin-left: 4px;
-  }
-  .victim-top { color: #ffd36e; font-weight: 700; }
-  .knight-hint {
-    border: 1px solid #3a3a4a; border-radius: 4px;
-    padding: 4px 6px; margin: 6px 0 4px;
-    background: #1a1d24;
-  }
-  .knight-hint .kh-h {
-    color: #ffd36e; font-weight: 600; margin-bottom: 2px;
-  }
-  .knight-hint .kh-reason {
-    color: #d8d8d8; font-size: calc(13px * var(--font-scale)); margin: 1px 0;
-  }
-  .knight-hint .kh-verdict {
-    display: inline-block; padding: 1px 6px; border-radius: 3px;
-    font-weight: 700; letter-spacing: 0.5px; margin-right: 4px;
-  }
-  .knight-hint .kh-verdict.play { background: #1e4d2b; color: #a4ef9c; }
-  .knight-hint .kh-verdict.hold { background: #404040; color: #ddd; }
-  .dev-hint {
-    border: 1px solid #3a3a4a; border-radius: 4px;
-    padding: 4px 6px; margin: 4px 0;
-    background: #1a1d24;
-  }
-  .dev-hint .dv-h { color: #9ec7ff; font-weight: 600; margin-bottom: 2px; }
-  .dev-hint .dv-body { color: #d8d8d8; font-size: calc(13px * var(--font-scale)); }
-  .dev-hint .dv-unlock { color: #a4ef9c; font-style: italic; margin-left: 4px; }
-  .threat {
-    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
-    font-weight: 600;
-  }
-  .threat.mid { background: #2a2a18; color: #e0d480; border: 1px solid #555538; }
-  .threat.close { background: #3a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
-  .threat.win { background: #4a1414; color: #ff5e5e; border: 1px solid #8b3333; }
-  /* Self close-to-win banner — green family since "self wins soon"
-     is a goal signal, not a danger signal. close-1 is a tick brighter
-     than close; win is near-celebratory. */
-  .win-prox {
-    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
-    font-weight: 600;
-  }
-  .win-prox.close { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
-  .win-prox.close-1 { background: #1f3a22; color: #b4f0a8; border: 1px solid #3a7048; }
-  .win-prox.win { background: #14412a; color: #aaf0b0; border: 1px solid #2e7048; }
-  .robber-on-me {
-    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
-    background: #2a1a28; color: #d8a0d8; border: 1px solid #553355;
-    font-weight: 600;
-  }
-  .robber-on-me .rom-sub {
-    display: block; font-weight: 400; font-size: calc(12px * var(--font-scale));
-    color: #a88cb0; margin-top: 2px;
-  }
-  .lr-race {
-    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
-    font-weight: 600;
-  }
-  .lr-race.self_push { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
-  .lr-race.opp_threat { background: #2a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
-  .lr-race.contested { background: #1a1f2a; color: #9ecfff; border: 1px solid #2e3b55; }
-  .la-race {
-    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
-    font-weight: 600;
-  }
-  .la-race.self_push { background: #1a2a1f; color: #9be89e; border: 1px solid #2a5538; }
-  .la-race.opp_threat { background: #2a1f14; color: #ff9e5e; border: 1px solid #6b3828; }
-  .la-race.contested { background: #1a1f2a; color: #9ecfff; border: 1px solid #2e3b55; }
-  .bank-low {
-    border-radius: 4px; padding: 4px 6px; margin: 6px 0 4px;
-    background: #1f1f14; color: #e8d878; border: 1px solid #4a4028;
-    font-weight: 600;
-  }
-  .bank-low .bl-sub {
-    display: block; font-weight: 400; font-size: calc(12px * var(--font-scale));
-    color: #a89c68; margin-top: 2px;
-  }
-  .dev-deck {
-    color: #888; font-size: calc(11px * var(--font-scale));
-    margin: 2px 0;
-  }
-  .dev-deck.low { color: #e8d878; font-weight: 600; }
-  .discard-hint {
-    border: 1px solid #5a2a2a; border-radius: 4px;
-    padding: 4px 6px; margin: 6px 0 4px;
-    background: #2a1a1a;
-  }
-  .discard-hint .dh-h {
-    color: #ff9e5e; font-weight: 700; margin-bottom: 2px;
-  }
-  .discard-hint .dh-drops {
-    color: #f0d8c0; font-size: calc(13px * var(--font-scale));
-  }
-  .discard-hint .dh-reason {
-    color: #bfa68a; font-style: italic;
+  .you .muted {
+    color: var(--fg-mute);
+    font-variant-numeric: tabular-nums;
     font-size: calc(12px * var(--font-scale));
   }
-  .muted { color: #888; }
-  .err { color: #ff9999; }
+
+  /* Hand row — generous spacing between chip stacks so 5 resources
+     don't mash together. Grid with gap handles the rhythm. */
+  .hand {
+    display: flex; flex-wrap: wrap;
+    gap: var(--s-2) var(--s-4);
+    color: var(--fg);
+    padding: var(--s-2) 0;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  .hand span { display: inline-flex; align-items: center; gap: 2px; }
+  .hand .mono-risk {
+    color: var(--acc-warn);
+    font-weight: 700;
+    text-shadow: 0 0 6px rgba(232, 168, 96, 0.3);
+  }
+  .mono-warn {
+    color: var(--acc-warn);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 600;
+    margin: 0 0 var(--s-2);
+  }
+
+  /* Afford line — the "what can I actually do" action hint */
+  .afford {
+    color: var(--acc-pos);
+    font-weight: 600;
+    margin: var(--s-1) 0 var(--s-3);
+  }
+  .afford.none { color: var(--fg-dim); font-weight: 400; }
+  .afford.near { color: var(--acc-warn); font-weight: 500; }
+
+  .vpb {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    margin-bottom: var(--s-2);
+  }
+  .ports {
+    color: var(--acc-info);
+    font-size: calc(11px * var(--font-scale));
+    margin: 0 0 var(--s-2);
+    letter-spacing: 0.02em;
+  }
+  .prod {
+    color: var(--acc-pos);
+    font-size: calc(11px * var(--font-scale));
+    margin: 0 0 var(--s-2);
+    opacity: 0.9;
+  }
+
+  /* Section divider — hairline with vertical breathing room. Acts
+     as the primary rhythm between self / opps / recs / alerts. */
+  .hr {
+    height: 1px;
+    background: var(--line);
+    margin: var(--s-4) 0;
+  }
+
+  /* --------------------------------------------------------------
+     Opp rows: grid layout with the pill + core metadata on the top
+     line, hand + tags on a second line. Gives every opp a two-row
+     mini-card feel instead of a packed text blob.
+     -------------------------------------------------------------- */
+  .opps {
+    display: flex; flex-direction: column;
+    gap: var(--s-3);
+  }
+  .opp {
+    color: var(--fg-mute);
+    font-size: calc(12px * var(--font-scale));
+    padding: var(--s-2) 0;
+    border-left: 2px solid transparent;
+    padding-left: var(--s-3);
+    margin-left: calc(var(--s-3) * -1);
+    transition: border-color 0.2s ease;
+  }
+  .opp.tracked { border-left-color: var(--acc-pos); }
+  .opp.hot-knight { border-left-color: var(--acc-warn); }
+  .opp .opp-hand {
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    display: inline-flex; flex-wrap: wrap;
+    gap: var(--s-1) var(--s-3);
+    margin-top: var(--s-1);
+  }
+  .opp.tracked .opp-hand { color: var(--acc-pos); }
+  .opp .can-afford {
+    color: var(--acc-warn);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .opp .one-short {
+    color: var(--acc-warn);
+    opacity: 0.75;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .opp .fat-hand, .you .fat-hand {
+    color: var(--acc-alert);
+    font-weight: 700;
+  }
+  .opp .card-up {
+    color: var(--acc-alert);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .opp .card-dn {
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .opp .dev-stash {
+    color: var(--acc-warn);
+    font-weight: 700;
+  }
+
+  /* --------------------------------------------------------------
+     Roll banner — live dice read-out. Distinctively larger and
+     more airy than metadata. Yield trailer in green (gains) with a
+     dimmer tone for blocked portions.
+     -------------------------------------------------------------- */
+  .roll {
+    margin: var(--s-3) 0 var(--s-2);
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .roll.you-rolled {
+    color: var(--acc-gold);
+    font-weight: 600;
+  }
+  .roll .roll-yield {
+    color: var(--acc-pos);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin-left: var(--s-2);
+  }
+  .roll .roll-blocked {
+    color: var(--acc-alert);
+    opacity: 0.8;
+    font-weight: 500;
+    margin-left: var(--s-2);
+  }
+  .opp-yields {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    margin: 0 0 var(--s-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .opp-yields .oy-blk { color: var(--acc-alert); opacity: 0.75; }
+
+  /* Recent rolls strip — compact dice timeline. Cells use the
+     mono's tabular figures so the strip lines up perfectly. */
+  .roll-history {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    margin: 0 0 var(--s-2);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.06em;
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: var(--s-1);
+  }
+  .roll-history .rh-label {
+    font-family: var(--font-display);
+    color: var(--fg-label);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-right: var(--s-2);
+  }
+  .roll-history .rh {
+    display: inline-block;
+    min-width: 14px; text-align: center;
+    padding: 0 var(--s-1);
+    border-radius: 2px;
+    font-weight: 500;
+  }
+  .roll-history .rh.hit {
+    color: var(--acc-pos);
+    font-weight: 700;
+    background: rgba(110, 215, 154, 0.08);
+  }
+  .roll-history .rh.blocked {
+    color: var(--acc-alert);
+    opacity: 0.75;
+    text-decoration: underline;
+    text-decoration-color: var(--acc-alert);
+  }
+  .roll-history .rh.seven {
+    color: var(--acc-alert);
+    font-weight: 700;
+  }
+  .roll-history .rh-count {
+    color: var(--fg-dim);
+    opacity: 0.6;
+    margin-left: var(--s-2);
+  }
+  .yield-sum {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    margin: 0 0 var(--s-2);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+  }
+  .yield-sum.behind {
+    color: var(--acc-warn);
+    opacity: 1;
+  }
+  .yield-sum .ys-sep {
+    color: var(--fg-dim);
+    opacity: 0.5;
+    margin: 0 var(--s-2);
+  }
+
+  .prod-stall {
+    color: var(--acc-warn);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 600;
+    margin: 0 0 var(--s-2);
+    letter-spacing: 0.02em;
+  }
+  .sevens-hot {
+    color: var(--acc-alert);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 600;
+    margin: 0 0 var(--s-2);
+  }
+  .hot-numbers {
+    color: var(--acc-gold);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 600;
+    margin: 0 0 var(--s-2);
+    letter-spacing: 0.02em;
+  }
+
+  /* --------------------------------------------------------------
+     Recs block — section label in display face, then ranked list.
+     Score chip sits on the left as a fixed-width tabular tag; kind
+     label in Archivo; tiles in mono for alignment.
+     -------------------------------------------------------------- */
+  .recs-h {
+    font-family: var(--font-display);
+    color: var(--acc-teal);
+    font-weight: 700;
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: var(--s-4) 0 var(--s-2);
+  }
+  .recs-h.plan-h {
+    color: var(--acc-info);
+    margin-top: var(--s-3);
+  }
+  .rec {
+    color: var(--fg);
+    margin: var(--s-1) 0;
+    line-height: 1.5;
+  }
+  .rec.top { font-weight: 600; }
+  .rec .kind {
+    display: inline-block; min-width: 58px;
+    font-family: var(--font-display);
+    color: var(--acc-gold);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+  }
+  .rec .detail {
+    color: var(--fg-mute);
+    font-weight: 400;
+  }
+  .rec .score {
+    display: inline-block;
+    min-width: 54px;
+    padding: 1px var(--s-3);
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: calc(11px * var(--font-scale));
+    letter-spacing: 0.04em;
+  }
+  .rec .score.strong {
+    background: rgba(110, 215, 154, 0.14);
+    color: var(--acc-pos);
+  }
+  .rec .score.decent {
+    background: rgba(255, 200, 87, 0.14);
+    color: var(--acc-gold);
+  }
+  .rec .score.weak {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--fg-dim);
+  }
+  .rec .tiles { color: var(--fg-mute); font-weight: 500; }
+  .tile-chip {
+    display: inline-block;
+    margin-right: var(--s-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .tile-num { color: var(--acc-gold); font-weight: 700; }
+  .tile-num.hot { color: var(--acc-alert); }
+  .tile-res { color: var(--fg-mute); font-weight: 500; margin-left: 2px; }
+  .rec.plan { opacity: 0.78; }
+  .rec.plan .kind { color: var(--acc-info); font-style: italic; }
+
+  .rec-sub {
+    color: var(--acc-pos);
+    font-size: calc(12px * var(--font-scale));
+    padding: 0 0 var(--s-1) 66px;
+    opacity: 0.95;
+  }
+  .rec-sub .warn { color: var(--acc-warn); font-weight: 500; }
+  .rec-sub .arrow { color: var(--fg-dim); margin-right: var(--s-1); }
+  .rec-sub.plan-second { color: var(--acc-info); }
+  .rec-sub.plan-second .arrow { color: var(--fg-dim); }
+  .rec-sub.plan-second .cov {
+    color: var(--acc-info);
+    opacity: 0.75;
+    margin-left: var(--s-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .rec-sub.plan-second .arch {
+    background: rgba(126, 192, 245, 0.16);
+    color: var(--acc-info);
+    border-radius: var(--radius-lg);
+    padding: 1px var(--s-2);
+    margin-left: var(--s-2);
+    font-family: var(--font-display);
+    font-size: calc(10px * var(--font-scale));
+    font-weight: 600;
+    text-transform: lowercase;
+    letter-spacing: 0.08em;
+  }
+
+  .rec .opt {
+    display: inline-block;
+    min-width: 22px;
+    margin-right: var(--s-2);
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 200, 87, 0.14);
+    color: var(--acc-gold);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: calc(11px * var(--font-scale));
+    text-align: center;
+  }
+  .rec.trade .kind { color: var(--acc-warn); }
+  .turn-hint {
+    color: var(--fg-dim);
+    margin-top: var(--s-2);
+    font-style: italic;
+  }
+  .drift {
+    color: var(--acc-alert);
+    margin: var(--s-1) 0;
+    font-size: calc(12px * var(--font-scale));
+  }
+
+  /* --------------------------------------------------------------
+     BANNER FAMILY — the game-state signal system.
+
+     All tactical alerts (threat, win-prox, robber-on-me, road/army
+     race, bank, discard, trade, dev-card hints) share one visual
+     archetype: a subtle card with a 3px left-edge accent bar. The
+     bar color carries the level signal; the card background is a
+     near-uniform dark so the eye doesn't fight ten different
+     background hues. Consistent spacing (--s-3 padding, --s-3
+     vertical margin) gives them all the same rhythm.
+     -------------------------------------------------------------- */
+  .banner,
+  .threat, .win-prox, .robber-on-me,
+  .lr-race, .la-race, .bank-low,
+  .trade-offer, .knight-hint, .dev-hint, .discard-hint {
+    position: relative;
+    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+    margin: var(--s-3) 0;
+    border-radius: var(--radius);
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--fg-dim);
+    font-weight: 500;
+  }
+  .banner-h,
+  .threat > *:first-child, .win-prox > *:first-child,
+  .robber-on-me, .bank-low, .lr-race, .la-race {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+
+  /* Threat ladder — opp close to winning */
+  .threat {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+  .threat.mid   { border-left-color: var(--acc-gold);
+                  color: var(--acc-gold); }
+  .threat.close { border-left-color: var(--acc-alert);
+                  color: var(--acc-alert); }
+  .threat.win   { border-left-color: var(--acc-alert);
+                  background: linear-gradient(90deg,
+                    rgba(255, 107, 94, 0.1), var(--bg-1) 40%);
+                  color: var(--acc-alert);
+                  font-weight: 700; }
+
+  /* Self close-to-win — green symmetric */
+  .win-prox {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+  .win-prox.close   { border-left-color: var(--acc-pos);
+                      color: var(--acc-pos); }
+  .win-prox.close-1 { border-left-color: var(--acc-pos);
+                      color: var(--acc-pos);
+                      background: linear-gradient(90deg,
+                        rgba(110, 215, 154, 0.08), var(--bg-1) 50%); }
+  .win-prox.win     { border-left-color: var(--acc-pos);
+                      background: linear-gradient(90deg,
+                        rgba(110, 215, 154, 0.15), var(--bg-1) 50%);
+                      color: var(--acc-pos);
+                      font-weight: 700; }
+
+  /* Robber on me — purple/insight accent */
+  .robber-on-me {
+    border-left-color: var(--acc-insight);
+    color: var(--acc-insight);
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .robber-on-me .rom-sub {
+    display: block;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: calc(11px * var(--font-scale));
+    color: var(--fg-mute);
+    opacity: 0.85;
+    margin-top: var(--s-1);
+    letter-spacing: 0;
+  }
+
+  /* Road / Army race banners */
+  .lr-race, .la-race {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+  .lr-race.self_push, .la-race.self_push {
+    border-left-color: var(--acc-pos);
+    color: var(--acc-pos);
+  }
+  .lr-race.opp_threat, .la-race.opp_threat {
+    border-left-color: var(--acc-alert);
+    color: var(--acc-alert);
+  }
+  .lr-race.contested, .la-race.contested {
+    border-left-color: var(--acc-info);
+    color: var(--acc-info);
+  }
+
+  /* Bank low — gold warn */
+  .bank-low {
+    border-left-color: var(--acc-gold);
+    color: var(--acc-gold);
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+  .bank-low .bl-sub {
+    display: block;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: calc(11px * var(--font-scale));
+    color: var(--fg-mute);
+    opacity: 0.8;
+    margin-top: var(--s-1);
+    letter-spacing: 0;
+  }
+
+  .dev-deck {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    margin: var(--s-1) 0;
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .dev-deck.low {
+    color: var(--acc-gold);
+    font-weight: 700;
+  }
+
+  /* Discard hint — red accent, highest urgency */
+  .discard-hint {
+    border-left-color: var(--acc-alert);
+  }
+  .discard-hint .dh-h {
+    font-family: var(--font-display);
+    color: var(--acc-alert);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: var(--s-1);
+    font-size: calc(11px * var(--font-scale));
+  }
+  .discard-hint .dh-drops {
+    color: var(--fg);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .discard-hint .dh-reason {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    font-style: italic;
+    margin-top: var(--s-1);
+  }
+
+  /* Incoming trade panel — amber accent (same as rec.trade kind) */
+  .trade-offer {
+    border-left-color: var(--acc-warn);
+  }
+  .trade-offer .trade-h {
+    font-family: var(--font-display);
+    color: var(--acc-warn);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: calc(11px * var(--font-scale));
+    margin-bottom: var(--s-2);
+    display: flex; align-items: center; gap: var(--s-2);
+  }
+  .trade-offer .trade-h .muted {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    color: var(--fg-mute);
+    font-family: var(--font-mono);
+  }
+  .trade-offer .trade-body {
+    color: var(--fg);
+    font-size: calc(12px * var(--font-scale));
+    margin: var(--s-1) 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .trade-offer .trade-reason {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    font-style: italic;
+    margin-top: var(--s-2);
+    display: flex; align-items: center; gap: var(--s-2);
+  }
+  .trade-offer .verdict {
+    display: inline-block;
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: calc(9px * var(--font-scale));
+  }
+  .trade-offer .verdict.accept {
+    background: rgba(110, 215, 154, 0.18);
+    color: var(--acc-pos);
+  }
+  .trade-offer .verdict.decline {
+    background: rgba(255, 107, 94, 0.18);
+    color: var(--acc-alert);
+  }
+  .trade-offer .verdict.consider {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--fg-mute);
+  }
+  .trade-offer .swap-side { color: var(--fg); }
+  .trade-offer .swap-arrow {
+    color: var(--fg-dim);
+    margin: 0 var(--s-2);
+  }
+  .trade-offer .counter {
+    margin-top: var(--s-2);
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--radius-sm);
+    background: rgba(126, 192, 245, 0.06);
+    border-left: 2px solid var(--acc-info);
+    font-size: calc(12px * var(--font-scale));
+    color: var(--fg);
+  }
+  .trade-offer .counter .counter-h {
+    font-family: var(--font-display);
+    color: var(--acc-info);
+    font-weight: 700;
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-right: var(--s-2);
+  }
+  .trade-offer .counter .counter-reason {
+    color: var(--fg-dim);
+    font-style: italic;
+    margin-left: var(--s-2);
+    font-size: calc(11px * var(--font-scale));
+  }
+
+  /* Knight-play hint — gold accent */
+  .knight-hint {
+    border-left-color: var(--acc-gold);
+  }
+  .knight-hint .kh-h {
+    font-family: var(--font-display);
+    color: var(--acc-gold);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: calc(11px * var(--font-scale));
+    margin-bottom: var(--s-2);
+  }
+  .knight-hint .kh-reason {
+    color: var(--fg);
+    font-size: calc(12px * var(--font-scale));
+    margin: var(--s-1) 0;
+    display: flex; align-items: center; gap: var(--s-2);
+    flex-wrap: wrap;
+  }
+  .knight-hint .kh-verdict {
+    display: inline-block;
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: calc(9px * var(--font-scale));
+  }
+  .knight-hint .kh-verdict.play {
+    background: rgba(110, 215, 154, 0.18);
+    color: var(--acc-pos);
+  }
+  .knight-hint .kh-verdict.hold {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--fg-mute);
+  }
+
+  /* Dev-card (monopoly, YOP, road-building) hints — blue accent */
+  .dev-hint {
+    border-left-color: var(--acc-info);
+  }
+  .dev-hint .dv-h {
+    font-family: var(--font-display);
+    color: var(--acc-info);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: calc(11px * var(--font-scale));
+    margin-bottom: var(--s-2);
+  }
+  .dev-hint .dv-body {
+    color: var(--fg);
+    font-size: calc(12px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+  }
+  .dev-hint .dv-unlock {
+    color: var(--acc-pos);
+    font-style: italic;
+    margin-left: var(--s-2);
+  }
+
+  /* Robber targets table — compact ranked list */
+  .robber-h {
+    font-family: var(--font-display);
+    color: var(--acc-insight);
+    font-weight: 700;
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: var(--s-4) 0 var(--s-2);
+  }
+  table.robber {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: var(--s-2);
+    font-variant-numeric: tabular-nums;
+  }
+  table.robber td {
+    padding: var(--s-1) var(--s-2) var(--s-1) 0;
+    vertical-align: top;
+    font-size: calc(11px * var(--font-scale));
+  }
+  .victim-top {
+    color: var(--acc-gold);
+    font-weight: 700;
+  }
+
+  .muted { color: var(--fg-dim); }
+  .err { color: var(--acc-alert); }
 </style>
 <div class="panel" id="panel">
   <div class="header" id="header">
