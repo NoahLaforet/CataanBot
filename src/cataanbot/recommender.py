@@ -25,11 +25,88 @@ trade into), but the initial cut only fires when it's actually your turn.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
+
+
+# Pointy-top hex geometry. NodeRef offsets from tile center in "unit hex"
+# coordinates (radius=1). Cube coord (x,y,z) with x+y+z=0 maps to pixels via
+# px = √3·x + √3/2·z, py = 1.5·z. Used to compute a human-readable compass
+# direction ("upper-right", "down-left", etc.) for opening-road hints so the
+# overlay can show "↗ upper-right" instead of making Noah parse tile chips.
+_SQRT3 = math.sqrt(3.0)
+_NODEREF_OFFSETS = {
+    "NORTH":     (0.0, -1.0),
+    "NORTHEAST": (_SQRT3 / 2.0, -0.5),
+    "SOUTHEAST": (_SQRT3 / 2.0,  0.5),
+    "SOUTH":     (0.0,  1.0),
+    "SOUTHWEST": (-_SQRT3 / 2.0, 0.5),
+    "NORTHWEST": (-_SQRT3 / 2.0, -0.5),
+}
 
 
 def _clip(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
+
+
+def _node_positions(m) -> dict[int, tuple[float, float]]:
+    """Build node_id → (px, py) for the whole map.
+
+    Cheap — six lookups per tile, ~114 tiles total. Recomputed per call
+    since the map never changes mid-game we could cache, but the savings
+    aren't worth the global state."""
+    positions: dict[int, tuple[float, float]] = {}
+    for coord, tile in m.tiles.items():
+        x, _y, z = coord
+        cx = _SQRT3 * x + (_SQRT3 / 2.0) * z
+        cy = 1.5 * z
+        for nref, nid in tile.nodes.items():
+            if nid in positions:
+                continue
+            ox, oy = _NODEREF_OFFSETS[nref.name]
+            positions[int(nid)] = (cx + ox, cy + oy)
+    return positions
+
+
+# Pointy-top hex edges radiate at 30°/90°/150°/210°/270°/330° (not 0°/60°/…
+# — those would be flat-top edges). Using atan2 with a flipped y so
+# "upper" means up on screen, this gives us Noah's exact mental model:
+# up / down / upper-right / upper-left / lower-right / lower-left.
+_DIRECTION_BUCKETS = [
+    # (angle_deg, word, arrow)
+    (30.0,  "upper-right", "↗"),
+    (90.0,  "up",          "↑"),
+    (150.0, "upper-left",  "↖"),
+    (210.0, "lower-left",  "↙"),
+    (270.0, "down",        "↓"),
+    (330.0, "lower-right", "↘"),
+]
+
+
+def _direction_label(positions: dict[int, tuple[float, float]],
+                     from_node: int, to_node: int
+                     ) -> tuple[str, str] | None:
+    """Classify the road edge from_node→to_node into one of six compass
+    directions. Returns (word, arrow) or None if either endpoint is
+    missing from the position map (shouldn't happen for land nodes)."""
+    p1 = positions.get(int(from_node))
+    p2 = positions.get(int(to_node))
+    if p1 is None or p2 is None:
+        return None
+    dx = p2[0] - p1[0]
+    # Flip y so "upper" = up on screen: positive py is downward in pixel
+    # space, but humans read "upper" as top-of-board.
+    dy = -(p2[1] - p1[1])
+    # atan2 returns radians in (-π, π]. Convert to [0, 360) with 0° = east,
+    # 90° = north, etc., then snap to the nearest 60° bucket.
+    angle = math.degrees(math.atan2(dy, dx)) % 360.0
+    best: tuple[float, str, str] | None = None
+    for bucket_angle, word, arrow in _DIRECTION_BUCKETS:
+        diff = abs(((angle - bucket_angle + 180.0) % 360.0) - 180.0)
+        if best is None or diff < best[0]:
+            best = (diff, word, arrow)
+    assert best is not None
+    return (best[1], best[2])
 
 
 def _score_settlement(prod: float) -> float:
@@ -205,6 +282,30 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         1 for nid, (col, bt) in game.state.board.buildings.items()
         if col == c and bt == "SETTLEMENT"
     )
+    # Count my roads placed. catanatron stores each road under both
+    # (a,b) and (b,a) orderings, so dedup via frozenset. If my settlement
+    # count is ahead of my road count, the picker is in the
+    # just-settled-but-not-road-yet window — keep the F-card (or round-2
+    # rec) visible with its road hint instead of pivoting to the next
+    # settlement choice that would flicker in mid-placement.
+    my_roads_placed = 0
+    if c is not None:
+        seen_edges: set[frozenset[int]] = set()
+        for (a, b), col in game.state.board.roads.items():
+            if col != c:
+                continue
+            key = frozenset((int(a), int(b)))
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            my_roads_placed += 1
+    if c is not None and my_placed > my_roads_placed:
+        road_rec = _opening_road_followup(
+            game=game, c=c, neighbors=neighbors,
+            scored_by_node=full_scored, m=m,
+        )
+        if road_rec:
+            return road_rec
     recs: list[dict[str, Any]] = []
 
     # --- Round 2: complement-aware ranking against my placed F -----------
@@ -240,6 +341,11 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
                     "toward_node": int(s.best_road.landing_node),
                     "toward_tiles": s.best_road.landing_tiles,
                 }
+                positions = _node_positions(m)
+                lbl = _direction_label(
+                    positions, int(s.node_id), int(s.best_road.far_node))
+                if lbl is not None:
+                    road["direction"] = {"word": lbl[0], "arrow": lbl[1]}
             recs.append({
                 "kind": "opening_settlement",
                 "when": "now",
@@ -481,6 +587,10 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
         "toward_node": int(expansion),
         "toward_tiles": _tile_label(m, expansion),
     }
+    positions = _node_positions(m)
+    lbl = _direction_label(positions, int(settlement), int(far))
+    if lbl is not None:
+        out["direction"] = {"word": lbl[0], "arrow": lbl[1]}
     if contested:
         out["contested"] = True
     return out

@@ -587,8 +587,36 @@ def test_opening_road_followup_targets_red_settlement_without_road():
 
 
 def test_recommend_opening_flags_second_pick_context():
-    """When RED already has one settlement, the detail string should
+    """When RED has placed settlement+road, the detail string should
     signal "2nd pick" so Noah knows to weigh resource-complement."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import _build_node_neighbors
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=13,
+    )
+    # Place RED's first settlement on any node; also lay the matching
+    # road so we exit the "just-settled" gate and hit round-2 picks.
+    m = g.state.board.map
+    first = next(iter(m.land_nodes))
+    g.state.board.build_settlement(
+        Color.RED, first, initial_build_phase=True)
+    neighbor = next(iter(_build_node_neighbors(m)[first]))
+    g.state.board.build_road(Color.RED, (first, neighbor))
+    out = recommend_opening(g, "RED", top=3)
+    assert out
+    for r in out:
+        assert "2nd pick" in r["detail"]
+
+
+def test_recommend_opening_holds_on_settle_before_road():
+    """If RED has placed a settlement but not yet its matching road,
+    the rec should pin to that settlement with a 'lay your matching road'
+    hint instead of flickering forward to the round-2 settle choice —
+    that would wipe the F-card mid-placement."""
     from catanatron import Color, Game, RandomPlayer
     from cataanbot.recommender import recommend_opening
 
@@ -597,14 +625,17 @@ def test_recommend_opening_flags_second_pick_context():
                                     Color.WHITE, Color.ORANGE)],
         seed=13,
     )
-    # Place RED's first settlement on any node; rank the round-2 spots.
     first = next(iter(g.state.board.map.land_nodes))
     g.state.board.build_settlement(
         Color.RED, first, initial_build_phase=True)
     out = recommend_opening(g, "RED", top=3)
-    assert out
-    for r in out:
-        assert "2nd pick" in r["detail"]
+    assert out, "gate must emit a rec during settle-before-road window"
+    assert len(out) == 1
+    assert out[0]["node_id"] == first
+    assert "road" in out[0]["detail"].lower()
+    assert out[0]["road"] is not None
+    # Direction hint lets Noah pick the corner without parsing tile chips.
+    assert out[0]["road"].get("direction") is not None
 
 
 def test_recommend_opening_round_one_attaches_plan_second():
@@ -831,6 +862,7 @@ def test_recommend_opening_round_two_uses_complement_ranking():
     by contributing at least one resource F doesn't already produce."""
     from catanatron import Color, Game, RandomPlayer
     from catanatron.state import RESOURCES
+    from cataanbot.advisor import _build_node_neighbors
     from cataanbot.recommender import recommend_opening
 
     g = Game(
@@ -847,6 +879,11 @@ def test_recommend_opening_round_two_uses_complement_ranking():
     )
     first = nodes_by_pip[0]
     g.state.board.build_settlement(Color.RED, first, initial_build_phase=True)
+    # Also lay the matching road so we exit the settle-before-road gate
+    # and the recommender returns round-2 picks (rather than the
+    # "finish your road" hint pinned back at `first`).
+    neighbor = next(iter(_build_node_neighbors(m)[first]))
+    g.state.board.build_road(Color.RED, (first, neighbor))
 
     out = recommend_opening(g, "RED", top=3)
     assert out
