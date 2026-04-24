@@ -59,6 +59,40 @@ def test_road_affordable_surfaces_edge_suggestion():
     assert len(road["edge"]) == 2
 
 
+def test_in_game_road_sealed_fallback_still_emits_direction():
+    """When every buildable edge has its 2-hop settle target distance-2
+    blocked, the in-game road rec used to silently disappear. Now it
+    should fall back to the best-prod adjacent far-end with
+    ``sealed=True`` + a direction arrow so the HUD still says *something*.
+    Mirror of the opening-road sealed fallback."""
+    from catanatron import Color
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    # Plant opp settlements directly at every neighbor of RED's road
+    # endpoints. Each opp pin distance-2-blocks its own neighbors too,
+    # so by the time this finishes every 2-hop candidate reachable
+    # from RED's buildable edges is distance-2 blocked.
+    for n, col in (
+        (6, Color.BLUE), (2, Color.WHITE),
+        (19, Color.ORANGE), (22, Color.BLUE),
+        (16, Color.WHITE), (4, Color.ORANGE),
+    ):
+        try:
+            b.build_settlement(col, n, initial_build_phase=True)
+        except Exception:  # noqa: BLE001
+            continue
+    out = recommend_actions(g, "RED", {"WOOD": 1, "BRICK": 1}, top=6)
+    roads = [r for r in out if r["kind"] == "road"]
+    assert roads, f"road rec must survive full-seal: got {[r['kind'] for r in out]}"
+    road = roads[0]
+    assert road.get("sealed") is True, f"sealed fallback flag missing: {road}"
+    assert road.get("direction"), f"direction must be present on sealed rec: {road}"
+    assert road["direction"]["word"] in {"up", "down", "left", "right"}
+    assert "edge_from" in road and "edge_to" in road
+
+
 def test_full_settlement_hand_picks_settlement_over_dev():
     from cataanbot.recommender import recommend_actions
 

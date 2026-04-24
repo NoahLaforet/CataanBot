@@ -1021,9 +1021,40 @@ def recommend_actions(
         blocked = set(existing_buildings)
         for b in existing_buildings:
             blocked |= neighbors.get(b, set())
+        # self-network node set — anchor for direction labeling and for
+        # deciding which end of a fallback edge is the "far" one.
+        my_nodes: set[int] = set()
+        for (ea, eb), rc in game.state.board.roads.items():
+            if rc == c:
+                my_nodes.add(int(ea)); my_nodes.add(int(eb))
+        for nid, (bcol, _bt) in game.state.board.buildings.items():
+            if bcol == c:
+                my_nodes.add(int(nid))
         edge_scores: list[tuple[tuple[int, int], float, int | None]] = []
+        # Fallback bookkeeping: best buildable edge by its far-end tile
+        # production, regardless of whether any 2-hop settle spot is
+        # legal. Used when every corridor is sealed so we still emit a
+        # direction arrow instead of silently dropping the rec.
+        fallback_edge: tuple[tuple[int, int], float, int] | None = None
         for (a, b) in edges:
-            far = b if a in existing_buildings or a in blocked else b
+            ai, bi = int(a), int(b)
+            # Pick the "far" endpoint for the fallback: the one NOT
+            # already in self's network. If both or neither are in the
+            # net (rare — catanatron shouldn't emit an edge disconnected
+            # from self), prefer whichever has higher tile production.
+            if ai in my_nodes and bi not in my_nodes:
+                far_fb = bi
+            elif bi in my_nodes and ai not in my_nodes:
+                far_fb = ai
+            else:
+                pa = _node_pip_production(m, ai)
+                pb = _node_pip_production(m, bi)
+                far_fb = ai if pa >= pb else bi
+            far_prod = _node_pip_production(m, far_fb)
+            if far_prod > 0 and (
+                fallback_edge is None or far_prod > fallback_edge[1]
+            ):
+                fallback_edge = ((ai, bi), far_prod, far_fb)
             # Look at both endpoints' neighbors for new reachable spots.
             best_land_prod = 0.0
             best_land_node: int | None = None
@@ -1036,14 +1067,16 @@ def recommend_actions(
                         best_land_prod = p
                         best_land_node = nb
             if best_land_prod > 0 and best_land_node is not None:
-                edge_scores.append(((int(a), int(b)),
+                edge_scores.append(((ai, bi),
                                     best_land_prod, best_land_node))
         edge_scores.sort(key=lambda s: -s[1])
+
+        road_rec: dict[str, Any] | None = None
         if edge_scores:
             (edge, prod, landing) = edge_scores[0]
             # Road reaches a settle spot eventually — lower score than a
             # direct build since you still have to save for the settle.
-            road_rec: dict[str, Any] = {
+            road_rec = {
                 "kind": "road",
                 "when": "now",
                 "edge": list(edge),
@@ -1052,20 +1085,30 @@ def recommend_actions(
                 "detail": f"→ {prod:.2f}-prod spot",
                 "tiles": _tile_label(m, landing) if landing else [],
             }
+        elif fallback_edge is not None:
+            # Every corridor is sealed by distance-2 blocks. Emit a
+            # degraded rec pointing at the best-prod buildable far end
+            # so Noah still sees a direction arrow instead of nothing.
+            # LR-progression or simple network-extension can still
+            # justify the road even when no fresh settle slot exists.
+            (edge, prod, far) = fallback_edge
+            road_rec = {
+                "kind": "road",
+                "when": "now",
+                "edge": list(edge),
+                "landing_node": far,
+                "score": _score_road(prod) * 0.6,
+                "detail": "no open settle spot — extend network",
+                "tiles": _tile_label(m, far),
+                "sealed": True,
+            }
+        if road_rec is not None:
             # Direction label — same pattern as opening roads so the HUD
             # can say "lay → right toward [wheat 6]" instead of raw node
             # ids. Anchor direction from the endpoint that's attached
             # to self's network (the existing one), toward the new far
             # end.
-            from cataanbot.advisor import _build_node_neighbors as _bnn
-            nb = _bnn(m)
-            my_nodes: set[int] = set()
-            for (ea, eb), rc in game.state.board.roads.items():
-                if rc == c:
-                    my_nodes.add(int(ea)); my_nodes.add(int(eb))
-            for nid, (bcol, _bt) in game.state.board.buildings.items():
-                if bcol == c:
-                    my_nodes.add(int(nid))
+            edge = tuple(road_rec["edge"])
             a, b = int(edge[0]), int(edge[1])
             if a in my_nodes and b not in my_nodes:
                 from_n, to_n = a, b
