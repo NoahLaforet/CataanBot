@@ -1274,6 +1274,275 @@ def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
     return out
 
 
+def _compute_game_plan(
+    game, self_color: str, hand: dict[str, int],
+) -> dict[str, Any] | None:
+    """Compose a multi-step plan toward the next meaningful goal.
+
+    Reads like a chess principal variation — "2 roads then settle · 4
+    wood→brick if stuck" — so Noah can mid-turn stay on a plan instead
+    of picking from a flat list each time.
+
+    Search finds the highest pip-prod settlement spot within 2 road
+    hops of self's network (0-hop = already connected, 1-hop = one
+    road away, 2-hop = two roads away). Costs out the full plan
+    (roads + settlement), diffs against self's hand, and if short
+    picks a trade-fallback the user could lean on: prefers a port 2:1
+    or 3:1 when self owns one, falling back to 4:1 bank. Falls back
+    to a city plan when no settle is reachable.
+
+    Returns ``None`` during setup or when we can't compute anything
+    meaningful. Otherwise ``{goal_kind, goal_label, goal_node?,
+    goal_tiles, roads_needed, missing, trade_plan?, summary}``.
+    """
+    from catanatron import Color
+    try:
+        my_enum = (self_color if isinstance(self_color, Color)
+                   else Color[str(self_color).upper()])
+    except Exception:  # noqa: BLE001
+        return None
+
+    # Setup phase plans live in the opening recs, not here.
+    try:
+        my_idx = game.tracker.game.state.color_to_index.get(my_enum)
+        if my_idx is None:
+            return None
+        placed = int(game.tracker.game.state.player_state.get(
+            f"P{my_idx}_SETTLEMENTS_AVAILABLE", 5))
+        # Fewer than 3 means we've played at least 2 settles (opening
+        # done). If we still have 4+ available, we're mid-setup.
+        if placed >= 4:
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+
+    from cataanbot.advisor import _build_node_neighbors, player_ports
+    from cataanbot.recommender import (
+        _SETTLEMENT_COST, _CITY_COST, _ROAD_COST,
+        _node_pip_production, _tile_label,
+    )
+
+    cat = game.tracker.game
+    board = cat.state.board
+    m = board.map
+    neighbors = _build_node_neighbors(m)
+    land = set(m.land_nodes)
+
+    # Distance-2 blocked nodes — can't settle adjacent to any building.
+    buildings = board.buildings
+    blocked: set[int] = {int(x) for x in buildings.keys()}
+    for nid in list(buildings.keys()):
+        blocked |= {int(x) for x in neighbors.get(int(nid), set())}
+
+    # My road-network nodes + my building nodes; enemy settles/cities
+    # break road-legality the same way they block adjacent settlement
+    # placement.
+    my_nodes: set[int] = set()
+    for (a, b), rc in board.roads.items():
+        if rc == my_enum:
+            my_nodes.add(int(a)); my_nodes.add(int(b))
+    for nid, (col, _bt) in buildings.items():
+        if col == my_enum:
+            my_nodes.add(int(nid))
+    enemy_bld_nodes: set[int] = {
+        int(nid) for nid, (col, _bt) in buildings.items()
+        if col != my_enum
+    }
+    my_edges: set[frozenset[int]] = {
+        frozenset((int(a), int(b))) for (a, b), rc in board.roads.items()
+        if rc == my_enum
+    }
+
+    def reach_hops(target: int) -> int | None:
+        """BFS from my network to target — minimum roads needed to
+        reach it. Returns 0 if already connected, 1 or 2 for roads
+        needed, None when further than 2 hops. Stops at enemy buildings
+        (they block road-legality)."""
+        if target in my_nodes:
+            return 0
+        frontier: list[tuple[int, int]] = [(n, 0) for n in my_nodes]
+        visited = set(my_nodes)
+        while frontier:
+            node, hops = frontier.pop(0)
+            if hops >= 2:
+                continue
+            for nb in neighbors.get(node, ()):
+                if nb in visited:
+                    continue
+                visited.add(nb)
+                if nb == target:
+                    return hops + 1
+                if nb in enemy_bld_nodes:
+                    continue
+                frontier.append((nb, hops + 1))
+        return None
+
+    # Rank candidate settlement targets: prefer fewer hops, then higher
+    # pip production. Filter to reachable-in-2 land nodes that aren't
+    # distance-2 blocked and aren't already my own building.
+    best: tuple[int, int, float] | None = None  # (hops, node, prod)
+    for nid in land:
+        if nid in blocked:
+            continue
+        hops = reach_hops(int(nid))
+        if hops is None:
+            continue
+        prod = _node_pip_production(m, int(nid))
+        if prod <= 0:
+            continue
+        # Sort key: (hops, -prod). Lower hops win ties go to higher prod.
+        if best is None:
+            best = (hops, int(nid), prod)
+        else:
+            if (hops, -prod) < (best[0], -best[2]):
+                best = (hops, int(nid), prod)
+
+    # No reachable settle within 2 hops → fall back to city goal.
+    if best is None:
+        # Pick my highest-prod settlement as the city target.
+        city_best: tuple[int, float] | None = None
+        for nid, (col, bt) in buildings.items():
+            if col != my_enum or bt != "SETTLEMENT":
+                continue
+            prod = _node_pip_production(m, int(nid))
+            if city_best is None or prod > city_best[1]:
+                city_best = (int(nid), prod)
+        if city_best is None:
+            return None
+        node, prod = city_best
+        cost = _CITY_COST
+        missing = {r: max(0, cost.get(r, 0) - hand.get(r, 0))
+                   for r in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")}
+        missing = {r: n for r, n in missing.items() if n > 0}
+        trade_plan = _plan_trade_fallback(cat, my_enum, hand, cost, missing)
+        tiles = _tile_label(m, node)
+        if missing:
+            summary = (f"city at {_short_tile_label(tiles)} · "
+                       f"{_format_missing_short(missing)}")
+        else:
+            summary = f"city at {_short_tile_label(tiles)} now"
+        if trade_plan:
+            summary += (f" · {trade_plan['ratio']}:1 "
+                        f"{trade_plan['from_res'].lower()}"
+                        f"→{trade_plan['to_res'].lower()} if stuck")
+        return {
+            "goal_kind": "city",
+            "goal_label": f"city at {_short_tile_label(tiles)}",
+            "goal_node": node,
+            "goal_tiles": tiles,
+            "roads_needed": 0,
+            "missing": missing,
+            "trade_plan": trade_plan,
+            "summary": summary,
+        }
+
+    hops, node, prod = best
+    # Total plan cost = hops × road + 1 settlement.
+    cost: dict[str, int] = {
+        k: 0 for k in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")}
+    for r, n in _ROAD_COST.items():
+        cost[r] += n * hops
+    for r, n in _SETTLEMENT_COST.items():
+        cost[r] += n
+    missing = {r: max(0, cost[r] - hand.get(r, 0)) for r in cost}
+    missing = {r: n for r, n in missing.items() if n > 0}
+    trade_plan = _plan_trade_fallback(cat, my_enum, hand, cost, missing)
+
+    tiles = _tile_label(m, node)
+    # Compose a short plan string. Reads like Noah's example:
+    # "2 roads then settle · 4 wood→brick if stuck".
+    parts: list[str] = []
+    if hops > 0:
+        parts.append(f"{hops} road{'s' if hops > 1 else ''}")
+    parts.append(f"settle at {_short_tile_label(tiles)}")
+    summary = " → ".join(parts)
+    if missing:
+        summary += " · " + _format_missing_short(missing)
+    if trade_plan:
+        summary += (f" · {trade_plan['ratio']}:1 "
+                    f"{trade_plan['from_res'].lower()}"
+                    f"→{trade_plan['to_res'].lower()} if stuck")
+
+    return {
+        "goal_kind": "settlement",
+        "goal_label": f"settle at {_short_tile_label(tiles)}",
+        "goal_node": node,
+        "goal_tiles": tiles,
+        "roads_needed": hops,
+        "missing": missing,
+        "trade_plan": trade_plan,
+        "summary": summary,
+    }
+
+
+def _short_tile_label(tiles: list[tuple[str, int]] | None) -> str:
+    """One-line tile label: "wheat 6 + ore 11". Skip desert (no num)."""
+    if not tiles:
+        return "?"
+    parts = []
+    for t in tiles:
+        if not t or t[0] == "DESERT":
+            continue
+        res, num = t[0], t[1]
+        parts.append(f"{res.lower()[:3]}{num}" if num else res.lower()[:3])
+    return "+".join(parts) if parts else "?"
+
+
+def _format_missing_short(missing: dict[str, int]) -> str:
+    """Compact missing-cards string: "need 1b 1s"."""
+    if not missing:
+        return ""
+    parts = [f"{n}{r[0].lower()}" for r, n in missing.items()]
+    return "need " + " ".join(parts)
+
+
+def _plan_trade_fallback(
+    cat_game, my_enum, hand: dict[str, int], cost: dict[str, int],
+    missing: dict[str, int],
+) -> dict[str, Any] | None:
+    """Pick a single best trade plan to cover the first missing resource.
+
+    Chooses the cheapest ratio available given self's port ownership —
+    2:1 specific port, 3:1 generic port, otherwise 4:1 bank. The trade
+    source must be a resource we hold in excess (not needed for the
+    current plan). Returns None when no legal trade can bridge the gap.
+    """
+    if not missing:
+        return None
+    try:
+        from cataanbot.advisor import player_ports
+        ports = set(player_ports(cat_game, my_enum))
+    except Exception:  # noqa: BLE001
+        ports = set()
+    # "Excess" = hand minus what this plan needs.
+    surplus: dict[str, int] = {}
+    for r in ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"):
+        excess = hand.get(r, 0) - cost.get(r, 0)
+        if excess > 0:
+            surplus[r] = excess
+    missing_r = next(iter(missing.keys()))
+    best_from: str | None = None
+    best_ratio = 99
+    for from_r, excess in surplus.items():
+        if from_r in ports:
+            ratio = 2
+        elif "GENERIC" in ports:
+            ratio = 3
+        else:
+            ratio = 4
+        if excess >= ratio and ratio < best_ratio:
+            best_ratio = ratio
+            best_from = from_r
+    if best_from is None:
+        return None
+    return {
+        "from_res": best_from,
+        "from_count": best_ratio,
+        "to_res": missing_r,
+        "ratio": best_ratio,
+    }
+
+
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
@@ -2041,6 +2310,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "bank_supply": None,
         "dev_deck": None,
         "yield_summary": None,
+        "game_plan": None,
     }
     if not game.started:
         return snap
@@ -2560,6 +2830,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["rb_hint"] = _compute_rb_hint(game, self_color)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] rb_hint failed: {e!r}", flush=True)
+    # Multi-step plan banner — "2 roads → settle at whe6+ore11 · need
+    # 1b 1s · 4:1 wood→brick if stuck". Frames the rec list with a
+    # clear goal instead of just a flat ranking.
+    try:
+        snap["game_plan"] = _compute_game_plan(game, self_color, hand)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] game_plan failed: {e!r}", flush=True)
     # Discard-on-7 advice: fires whenever self's hand exceeds the discard
     # limit. The overlay should render it prominently on a 7-roll, but
     # we compute unconditionally — it's cheap and "you're over the limit"
