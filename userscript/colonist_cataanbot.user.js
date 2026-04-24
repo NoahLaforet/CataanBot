@@ -675,34 +675,36 @@
      of hits would be on the expected 36-facet distribution at the
      current roll count so droughts and streaks pop out visually. */
   .roll-dist {
-    margin: var(--s-2) 0;
+    margin: var(--s-3) 0 var(--s-2);
     font-variant-numeric: tabular-nums;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     color: var(--fg-dim);
   }
   .roll-dist .rd-h {
     display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: var(--s-1);
+    margin-bottom: var(--s-2);
   }
   .roll-dist .rd-label {
     color: var(--fg-label);
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(10px * var(--font-scale));
     font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
   }
   .roll-dist .rd-total {
     color: var(--fg-dim);
-    opacity: 0.7;
+    opacity: 0.8;
+    font-size: calc(11px * var(--font-scale));
   }
+  /* Colonist-style chart: solid filled bars, taller column, no dashed
+     expected overlay. The number axis is the visual anchor. */
   .roll-dist .rd-bars {
     display: grid;
     grid-template-columns: repeat(11, 1fr);
-    gap: 3px;
+    gap: 4px;
     align-items: end;
-    height: 54px;
+    height: 100px;
     padding: 0 1px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
   .roll-dist .rd-col {
     display: flex; flex-direction: column;
@@ -712,52 +714,49 @@
   }
   .roll-dist .rd-bar {
     width: 100%;
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(126, 217, 159, 0.55);
     border-radius: 2px 2px 0 0;
     min-height: 1px;
-    transition: background 0.15s ease;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   }
   .roll-dist .rd-col.seven .rd-bar {
-    background: rgba(245, 144, 129, 0.35);
+    background: rgba(245, 144, 129, 0.55);
   }
   .roll-dist .rd-col.last .rd-bar {
     background: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
   }
   .roll-dist .rd-col.last.seven .rd-bar {
     background: var(--alert);
-    box-shadow: 0 0 0 1px var(--alert);
   }
   .roll-dist .rd-count {
     position: absolute;
     bottom: 100%;
-    margin-bottom: 1px;
-    color: var(--fg-dim);
-    font-size: calc(9px * var(--font-scale));
-    opacity: 0.8;
+    margin-bottom: 2px;
+    color: var(--fg);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    opacity: 0.85;
   }
   .roll-dist .rd-col.last .rd-count { color: var(--accent); opacity: 1; }
   .roll-dist .rd-col.last.seven .rd-count { color: var(--alert); }
-  .roll-dist .rd-expected {
-    position: absolute; left: 0; right: 0;
-    border-top: 1px dashed rgba(255, 255, 255, 0.22);
-    pointer-events: none;
-  }
   .roll-dist .rd-axis {
     display: grid;
     grid-template-columns: repeat(11, 1fr);
-    gap: 3px;
-    margin-top: 2px;
+    gap: 4px;
+    margin-top: var(--s-1);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    padding-top: var(--s-1);
   }
   .roll-dist .rd-axis span {
     text-align: center;
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
+    font-weight: 600;
     color: var(--fg-dim);
   }
-  .roll-dist .rd-axis span.seven { color: var(--alert); opacity: 0.7; }
+  .roll-dist .rd-axis span.seven { color: var(--alert); opacity: 0.9; }
   .roll-dist .rd-axis span.last {
     color: var(--accent);
-    font-weight: 800;
+    font-weight: 900;
   }
   .roll-dist .rd-axis span.last.seven { color: var(--alert); }
   .yield-sum {
@@ -2434,31 +2433,30 @@
                 parts.push(`<div class="opp-yields">they: ${parts2}</div>`);
             }
         }
-        // Full-game roll distribution chart: one bar per 2..12, height
-        // scaled to the most-hit number this game. Last-rolled number
-        // highlighted in accent so Noah knows where we are; 7s tinted
-        // amber. Dashed overlay shows the expected count per number on
-        // an unbiased 36-facet distribution at the current roll count
-        // — droughts (bars short of the line) and streaks (bars above
-        // it) pop out visually.
+        // Full-game roll distribution chart, colonist-style: one tall
+        // bar per 2..12 with solid fill and count labels above. Last
+        // roll is accent-highlighted; 7s are tinted alert. Scale is
+        // anchored to expected-plus-headroom so each new roll visibly
+        // grows the target column instead of just rescaling the chart.
         const dist = snap.roll_histogram || {};
         const totalRolls = snap.total_rolls || 0;
         if (totalRolls > 0) {
-            // 2:1/36, 3:2/36, ..., 7:6/36, ..., 12:1/36
-            const facets = {
-                2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6,
-                8: 5, 9: 4, 10: 3, 11: 2, 12: 1,
-            };
             const lastRoll = snap.last_roll ? snap.last_roll.total : null;
             let maxCount = 0;
             for (let n = 2; n <= 12; n++) {
                 const c = Number(dist[n] || 0);
                 if (c > maxCount) maxCount = c;
             }
-            // Scale the bars to a clean number just above the tallest
-            // bar — also ensure expected line fits in the chart.
+            // Scale to expected-plus-headroom, not to maxCount. When a
+            // new roll lands on the leading bar, maxCount rises too —
+            // if scaleTop = maxCount, the bar's pct stays at 100% and
+            // we see NOTHING grow. Using 1.3× the expected count of 7
+            // (the most-likely number) leaves headroom so the leading
+            // bar visibly jumps on every new hit. Floor at 8 so a
+            // brand-new game has a legible chart from roll 1.
             const maxExpected = totalRolls * 6 / 36;
-            const scaleTop = Math.max(maxCount, maxExpected, 1);
+            const scaleTop = Math.max(
+                maxCount + 1, Math.ceil(maxExpected * 1.3), 8);
             const bars = [];
             const axis = [];
             // Stash target heights so the post-render animation pass can
@@ -2466,21 +2464,15 @@
             const nextBarPcts = Object.create(null);
             for (let n = 2; n <= 12; n++) {
                 const c = Number(dist[n] || 0);
-                const expected = (facets[n] / 36) * totalRolls;
                 const pct = Math.max(1, Math.round((c / scaleTop) * 100));
-                const expPct = Math.round((expected / scaleTop) * 100);
                 nextBarPcts[n] = pct;
                 let cls = 'rd-col';
                 if (n === 7) cls += ' seven';
                 if (n === lastRoll) cls += ' last';
                 const countLbl = c > 0
                     ? `<span class="rd-count">${c}</span>` : '';
-                const expLine = expected > 0
-                    ? `<span class="rd-expected" style="bottom:${expPct}%"></span>`
-                    : '';
                 bars.push(`<div class="${cls}" data-roll="${n}">`
                     + countLbl
-                    + expLine
                     + `<div class="rd-bar" style="height:${pct}%"></div>`
                     + '</div>');
                 let axCls = '';
