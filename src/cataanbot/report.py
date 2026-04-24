@@ -487,6 +487,43 @@ def _score_trade_side(delta: float) -> tuple[str, str] | None:
     return None
 
 
+def _username_for(color_map: ColorMap, color: str) -> str:
+    for user, c in color_map.as_dict().items():
+        if c == color:
+            return user
+    return color
+
+
+def _knight_outcome(
+    events: list[Event], play_idx: int, hands_at_play: dict,
+    color_map: ColorMap,
+) -> tuple[str, str]:
+    """Walk forward from a Knight play to find the steal outcome, then
+    score based on what the steal did to opps at that moment.
+
+    Returns a (glyph, note) tuple. We stop scanning at the next
+    DevCardPlayEvent or RollEvent — a knight always resolves before
+    the next action, so there's no ambiguity."""
+    for j in range(play_idx + 1, len(events)):
+        ev = events[j]
+        if isinstance(ev, (DevCardPlayEvent, RollEvent)):
+            break
+        if isinstance(ev, NoStealEvent):
+            return "?!", "robber moved but nothing to steal"
+        if isinstance(ev, StealEvent):
+            victim_color = color_map.get(ev.victim) or ""
+            victim_size = (
+                hands_at_play[victim_color].total
+                if victim_color in hands_at_play else 0
+            )
+            if victim_size >= 8:
+                return "!!", f"stole from fat opp ({victim_size} cards)"
+            if victim_size >= 4:
+                return "!", f"stole from {ev.victim} ({victim_size} cards)"
+            return "?!", f"stole from thin hand ({victim_size} cards)"
+    return "?!", "knight with no resolved outcome"
+
+
 def _collect_move_annotations(
     events: list[Event],
     trade_impacts: list[TradeImpact],
@@ -495,9 +532,9 @@ def _collect_move_annotations(
     """Heuristic per-move quality ratings for the postmortem.
 
     Walks the event stream alongside a live hand_tracker replay so
-    each RollEvent / MonopolyStealEvent / TradeCommitEvent can be
-    scored against the actual observable state at that moment —
-    no catanatron state reconstruction required.
+    each RollEvent / MonopolyStealEvent / TradeCommitEvent / knight
+    play can be scored against the actual observable state at that
+    moment — no catanatron state reconstruction required.
     """
     from cataanbot.hand_tracker import apply_event, init_hands
     hands = init_hands(color_map)
@@ -515,6 +552,29 @@ def _collect_move_annotations(
                 move_kind="monopoly",
                 glyph=glyph,
                 summary=f"Monopoly {event.resource} → {event.count}",
+                note=note,
+            ))
+        elif (isinstance(event, DevCardPlayEvent)
+                and event.card == "knight"):
+            color = color_map.get(event.player) or ""
+            # Use a shallow snapshot of hand sizes at the moment of the
+            # play so the outcome scorer sees the victim's hand size
+            # *before* the steal has applied.
+            snapshot = {
+                c: type(h)(color=h.color, cards=dict(h.cards),
+                           unknown=h.unknown, drift=h.drift)
+                for c, h in hands.items()
+            }
+            glyph, note = _knight_outcome(
+                events, i, snapshot, color_map,
+            )
+            out.append(MoveAnnotation(
+                event_index=i,
+                player=event.player,
+                color=color,
+                move_kind="knight",
+                glyph=glyph,
+                summary="played Knight",
                 note=note,
             ))
         elif isinstance(event, RollEvent) and event.total == 7:
@@ -552,6 +612,23 @@ def _collect_move_annotations(
                         summary=f"rolled 7 vs fat opp ({biggest[1]} cards)",
                         note="free discard damage",
                     ))
+            # Also annotate anyone ELSE carrying a fat hand into the
+            # 7-roll — they chose not to spend down and now have to
+            # discard half. This is about the victim's prior bad
+            # planning, not the roller's play.
+            for c, h in hands.items():
+                if c == color or h.total < 8:
+                    continue
+                victim_user = _username_for(color_map, c)
+                out.append(MoveAnnotation(
+                    event_index=i,
+                    player=victim_user,
+                    color=c,
+                    move_kind="fat_hand",
+                    glyph="?",
+                    summary=f"caught holding {h.total} cards",
+                    note="should have spent down before a 7",
+                ))
         elif isinstance(event, TradeCommitEvent) and event.receiver != "BANK":
             t = trade_by_idx.get(i)
             if t is not None:
