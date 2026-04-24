@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.6
+// @version      0.18.8
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -911,7 +911,7 @@
      the text is what communicates urgency. Headers inside banners
      are uppercase tracked labels.
      -------------------------------------------------------------- */
-  .threat, .win-prox, .robber-on-me,
+  .threat, .win-prox, .robber-on-me, .winning-move,
   .lr-race, .la-race, .bank-low,
   .trade-offer, .knight-hint, .dev-hint, .discard-hint {
     position: relative;
@@ -950,6 +950,47 @@
     font-weight: 700;
     background: linear-gradient(90deg,
       rgba(126, 217, 159, 0.16), var(--bg-1) 50%);
+  }
+
+  /* WIN THIS TURN — the loudest banner in the HUD. Renders above every
+     other element when a single action (settle / city / road→LR /
+     knight→LA) closes the game. Uses the "pos" green used for
+     win_prox.win plus a thicker accent bar + all-caps header to
+     distinguish it as the press-the-button-now signal. */
+  .winning-move {
+    border-left-width: 5px;
+    border-left-color: var(--pos);
+    color: var(--pos);
+    font-weight: 700;
+    background: linear-gradient(90deg,
+      rgba(126, 217, 159, 0.22), var(--bg-1) 60%);
+  }
+  .winning-move.hedge {
+    border-left-color: var(--accent);
+    color: var(--accent);
+    background: linear-gradient(90deg,
+      rgba(255, 207, 94, 0.16), var(--bg-1) 60%);
+  }
+  .winning-move .wm-head {
+    display: block;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-size: calc(12px * var(--font-scale));
+    margin-bottom: var(--s-1);
+  }
+  .winning-move .wm-detail {
+    color: var(--fg);
+    font-weight: 600;
+    font-size: calc(12px * var(--font-scale));
+    letter-spacing: 0;
+  }
+  .winning-move .wm-alts {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 400;
+    margin-top: var(--s-1);
+    letter-spacing: 0;
   }
 
   .robber-on-me {
@@ -1716,6 +1757,31 @@
             return;
         }
         const parts = [];
+        // WIN THIS TURN banner — highest-priority signal. Renders above
+        // every other HUD element so Noah never misses a single-move
+        // win. Covers: settle/city (+1 VP), road→LR (+2 VP), knight→LA
+        // (+2 VP). Confidence "medium" (road→LR) gets a hedge prefix
+        // since placement matters; "high" paths are unambiguous.
+        if (snap.winning_move && snap.winning_move.message) {
+            const wm = snap.winning_move;
+            const conf = wm.confidence === 'high' ? 'high' : 'hedge';
+            const headline = wm.confidence === 'high'
+                ? 'WIN THIS TURN'
+                : 'WIN THIS TURN (if placement works)';
+            const altFrag = (wm.alternatives || []).length > 0
+                ? '<div class="wm-alts">also: '
+                    + wm.alternatives.map(a =>
+                        `<span>${escapeHtml(a.detail)}</span>`
+                      ).join('; ')
+                    + '</div>'
+                : '';
+            parts.push(`<div class="winning-move ${conf}">`
+                + `<span class="wm-head">${escapeHtml(headline)}</span>`
+                + `<div class="wm-detail">${escapeHtml(wm.detail || '')}`
+                + ` · ${wm.vp}→${wm.vp_after} VP</div>`
+                + altFrag
+                + '</div>');
+        }
         // Game-progress header: anchors the tactical signals below.
         // Silent in setup — phase is self-evident then.
         const gp = snap.game_progress;
