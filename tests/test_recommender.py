@@ -636,6 +636,45 @@ def test_recommend_opening_holds_on_settle_before_road():
     assert out[0]["road"] is not None
     # Direction hint lets Noah pick the corner without parsing tile chips.
     assert out[0]["road"].get("direction") is not None
+    # Primary action is "road" so the overlay labels the hero rec as
+    # ROAD (not SETTLE) — matches what Noah's about to do next.
+    assert out[0].get("action") == "road"
+
+
+def test_recommend_opening_round2_holds_on_2nd_settle_before_2nd_road():
+    """Round-2 analog of the settle-before-road pin. RED has placed
+    1st settle + 1st road (round 1) plus 2nd settle but not yet the
+    2nd road. The followup must pin to the un-roaded settlement with
+    action='road' so the HUD doesn't flicker to the already-placed
+    settle's old context."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import _build_node_neighbors
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=13,
+    )
+    board = g.state.board
+    m = board.map
+    nbors = _build_node_neighbors(m)
+    first = next(iter(m.land_nodes))
+    board.build_settlement(Color.RED, first, initial_build_phase=True)
+    first_nb = next(iter(nbors[first]))
+    board.build_road(Color.RED, (first, first_nb))
+    # Second RED settle at distance ≥ 2 from first.
+    blocked = {first} | set(nbors[first])
+    second = next(iter(n for n in m.land_nodes if n not in blocked))
+    board.build_settlement(Color.RED, second, initial_build_phase=True)
+    # 2nd road NOT placed.
+    out = recommend_opening(g, "RED", top=3)
+    assert out, "followup must emit during round-2 settle-before-road"
+    assert len(out) == 1
+    assert out[0]["node_id"] == second
+    assert out[0].get("action") == "road"
+    assert out[0]["road"] is not None
+    assert out[0]["road"].get("direction") is not None
 
 
 def test_recommend_opening_round_one_attaches_plan_second():
