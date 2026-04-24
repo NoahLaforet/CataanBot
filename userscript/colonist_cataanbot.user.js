@@ -2028,10 +2028,10 @@
                 const tilesHtml = tilesToHtml(r.tiles);
                 // Roads lead to a landing spot — arrow makes it read as
                 // "this road → these tiles" rather than "on these tiles".
-                // When the recommender attaches a compass direction
-                // (upper-right / down / etc), lead with that instead of
-                // the bare right-arrow so Noah can read placement at a
-                // glance just like opening-road recs.
+                // When the recommender attaches a cardinal direction
+                // (up / down / left / right), lead with that instead
+                // of the bare right-arrow so Noah can read placement
+                // at a glance just like opening-road recs.
                 let arrowHtml = '';
                 if (r.kind === 'road') {
                     if (r.direction) {
@@ -2078,9 +2078,9 @@
                 // Opening-settlement picks include a nested road hint:
                 // "which direction to lay your road so it extends toward
                 // the best 2-hop expansion spot." Render as a sub-line.
-                // Leads with a compass arrow + direction word
-                // ("↗ upper-right") so Noah can read placement at a
-                // glance instead of parsing tile chips every time.
+                // Leads with a cardinal arrow + direction word
+                // ("↑ up" / "→ right" / etc) so Noah can read
+                // placement at a glance instead of parsing tile chips.
                 if (r.kind === 'opening_settlement' && r.road
                         && (r.road.direction || r.road.toward_tiles)) {
                     const towardHtml = tilesToHtml(
