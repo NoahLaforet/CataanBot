@@ -1274,6 +1274,120 @@ def test_compute_yop_hint_suggests_pair_to_unlock_build():
     assert h["have"] == 1
     assert h["unlock"] == "settlement"
     assert "WHEAT" in h["pair"]
+    # PLAY verdict: unlock-eligible hint with bank_ok default = True.
+    assert h["should_play"] is True
+    assert "unlocks settlement" in h["reason"]
+    assert h["bank_ok"] is True
+
+
+def test_compute_yop_hint_holds_when_no_unlock_in_reach():
+    """Hand is far from any build — YoP shouldn't vanish; surface HOLD
+    verdict with a pair pointed at the most-needed resource. The old
+    behavior returned None, which meant the overlay silently hid the
+    card; Noah wanted "when to play" coverage, so the hint now stays
+    visible with should_play=False."""
+    from cataanbot.bridge import _compute_yop_hint
+
+    class _FakeGame:
+        class _Tracker:
+            class _Game:
+                class _State:
+                    color_to_index: dict = {}
+                    player_state: dict = {}
+                state = _State()
+            game = _Game()
+        tracker = _Tracker()
+
+    from catanatron import Color
+    g = _FakeGame()
+    g.tracker.game.state.color_to_index = {Color.RED: 0}
+    g.tracker.game.state.player_state = {"P0_YEAR_OF_PLENTY_IN_HAND": 1}
+    # Rich hand: every build is already affordable, so every cost
+    # comparison hits "total == 0 (already affordable)" and skips.
+    # ``best`` stays None → HOLD branch. This models the real case
+    # where YoP just isn't valuable right now (you'd rather buy now
+    # and save the card for when you're deficit-stuck).
+    hand = {"WOOD": 5, "BRICK": 5, "SHEEP": 5, "WHEAT": 5, "ORE": 5}
+    h = _compute_yop_hint(g, "RED", hand)
+    assert h is not None
+    assert h["have"] == 1
+    assert h["should_play"] is False
+    assert "hold" in h["reason"].lower()
+    assert len(h["pair"]) == 2
+    # Unlock is None when no build is within reach.
+    assert h["unlock"] is None
+
+
+def test_compute_yop_hint_flags_bank_out_of_resource():
+    """If the bank is empty of one of the chosen pair resources, YoP
+    can't actually grant it — flip should_play to False and surface a
+    bank-short reason."""
+    from cataanbot.bridge import _compute_yop_hint
+
+    class _FakeGame:
+        class _Tracker:
+            class _Game:
+                class _State:
+                    color_to_index: dict = {}
+                    player_state: dict = {}
+                state = _State()
+            game = _Game()
+        tracker = _Tracker()
+
+    from catanatron import Color
+    g = _FakeGame()
+    g.tracker.game.state.color_to_index = {Color.RED: 0}
+    g.tracker.game.state.player_state = {"P0_YEAR_OF_PLENTY_IN_HAND": 1}
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 0, "ORE": 0}
+    bank_supply = {"remaining": {
+        "WOOD": 5, "BRICK": 5, "SHEEP": 5, "WHEAT": 0, "ORE": 5,
+    }}
+    h = _compute_yop_hint(g, "RED", hand, bank_supply=bank_supply)
+    assert h is not None
+    assert h["bank_ok"] is False
+    assert h["should_play"] is False
+    assert "bank short" in h["reason"].lower()
+
+
+def test_compute_monopoly_hint_attaches_verdict_and_top_holder():
+    """Monopoly hint should carry should_play + reason + top_holder.
+    PLAY fires on either a settlement-unlock or a 4+ card pot; HOLD
+    otherwise. top_holder points at the opp contributing the most to
+    the chosen resource."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_monopoly_hint
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names.get(sess.self_color_id)
+    color = game.color_map.get(self_user)
+    my_enum = Color[color.upper()]
+    cat = game.tracker.game
+    idx = cat.state.color_to_index[my_enum]
+    cat.state.player_state[f"P{idx}_MONOPOLY_IN_HAND"] = 1
+
+    display_colors = {"RED": "#d33", "BLUE": "#33d",
+                      "WHITE": "#eee", "ORANGE": "#e80"}
+    h = _compute_monopoly_hint(
+        game, color, dict(game.tracker.hand(color)),
+        display_colors=display_colors)
+    assert h is not None
+    assert "should_play" in h and isinstance(h["should_play"], bool)
+    assert isinstance(h["reason"], str) and h["reason"]
+    # top_holder is optional (None if no opp holds the chosen resource,
+    # but in midgame captures at least someone usually does).
+    if h["top_holder"] is not None:
+        assert h["top_holder"]["count"] > 0
+        assert h["top_holder"]["color"] in {"RED", "BLUE", "WHITE", "ORANGE"}
+        # display color should be hex string from the display_colors map.
+        assert h["top_holder"]["display"].startswith("#")
 
 
 def test_compute_rb_hint_fires_when_longest_road_in_reach():
