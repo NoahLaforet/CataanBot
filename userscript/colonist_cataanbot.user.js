@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.3
+// @version      0.18.4
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1082,6 +1082,51 @@
     color: var(--fg-mute);
   }
 
+  /* Game plan banner — principal-variation strip framing the rec list.
+     Reads "plan: 2 roads → settle at whe6+ore11 · need 1b 1s · 4:1
+     wood→brick if stuck" so Noah holds a through-line across turns. */
+  .game-plan {
+    margin: var(--s-2) 0 var(--s-2);
+    padding: var(--s-2) var(--s-3);
+    border-left: 3px solid var(--accent);
+    background: rgba(255, 255, 255, 0.025);
+    border-radius: var(--radius-sm);
+  }
+  .game-plan.ready {
+    border-left-color: var(--pos);
+    background: rgba(126, 217, 159, 0.06);
+  }
+  .game-plan .gp-h {
+    color: var(--accent);
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: calc(10px * var(--font-scale));
+    margin-bottom: var(--s-1);
+  }
+  .game-plan.ready .gp-h { color: var(--pos); }
+  .game-plan .gp-body {
+    color: var(--fg);
+    font-size: calc(12px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    align-items: center;
+  }
+  .game-plan .gp-kind {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--fg-mute);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .game-plan .gp-summary { color: var(--fg); }
+
   /* Robber targets table */
   table.robber {
     width: 100%;
@@ -1746,9 +1791,21 @@
                 const tilesHtml = tilesToHtml(r.tiles);
                 // Roads lead to a landing spot — arrow makes it read as
                 // "this road → these tiles" rather than "on these tiles".
-                const arrowHtml = r.kind === 'road'
-                    ? '<span class="arrow">→</span> '
-                    : '';
+                // When the recommender attaches a compass direction
+                // (upper-right / down / etc), lead with that instead of
+                // the bare right-arrow so Noah can read placement at a
+                // glance just like opening-road recs.
+                let arrowHtml = '';
+                if (r.kind === 'road') {
+                    if (r.direction) {
+                        arrowHtml = `<span class="arrow">${escapeHtml(
+                                r.direction.arrow)} ${escapeHtml(
+                                r.direction.word)}</span>`
+                            + ' <span class="muted">toward</span> ';
+                    } else {
+                        arrowHtml = '<span class="arrow">→</span> ';
+                    }
+                }
                 const loc = tilesHtml
                     ? ` ${arrowHtml}${tilesHtml}`
                     : '';
@@ -1818,6 +1875,29 @@
                         + '</div>');
                 }
             };
+            // Game plan banner — frames the rec list with a short
+            // principal variation: "2 roads → settle at whe6+ore11 ·
+            // need 1b 1s · 4:1 wood→brick if stuck". Only renders mid-
+            // game (setup owns opening picks separately).
+            if (!isSetup && snap.game_plan && snap.game_plan.summary) {
+                const gp = snap.game_plan;
+                const kindCls = gp.goal_kind === 'city'
+                    ? 'plan-city' : 'plan-settle';
+                const goalTiles = (gp.goal_tiles && gp.goal_tiles.length)
+                    ? ` ${tilesToHtml(gp.goal_tiles)}` : '';
+                const missingCount = gp.missing
+                    ? Object.keys(gp.missing).length : 0;
+                const readyCls = missingCount === 0 ? ' ready' : '';
+                let body = '<span class="gp-kind">'
+                    + escapeHtml(gp.goal_kind || '') + '</span>'
+                    + '<span class="gp-summary">'
+                    + escapeHtml(gp.summary) + '</span>'
+                    + goalTiles;
+                parts.push(`<div class="game-plan ${kindCls}${readyCls}">`
+                    + '<div class="gp-h">plan</div>'
+                    + `<div class="gp-body">${body}</div>`
+                    + '</div>');
+            }
             if (nowRecs.length) {
                 const header = isSetup
                     ? '→ opening picks'

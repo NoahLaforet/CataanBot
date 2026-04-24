@@ -894,7 +894,7 @@ def recommend_actions(
             (edge, prod, landing) = edge_scores[0]
             # Road reaches a settle spot eventually — lower score than a
             # direct build since you still have to save for the settle.
-            recs.append({
+            road_rec: dict[str, Any] = {
                 "kind": "road",
                 "when": "now",
                 "edge": list(edge),
@@ -902,7 +902,35 @@ def recommend_actions(
                 "score": _score_road(prod),
                 "detail": f"→ {prod:.2f}-prod spot",
                 "tiles": _tile_label(m, landing) if landing else [],
-            })
+            }
+            # Direction label — same pattern as opening roads so the HUD
+            # can say "lay ↗ upper-right toward [wheat 6]" instead of
+            # raw node ids. Anchor direction from the endpoint that's
+            # attached to self's network (the existing one), toward the
+            # new far end.
+            from cataanbot.advisor import _build_node_neighbors as _bnn
+            nb = _bnn(m)
+            my_nodes: set[int] = set()
+            for (ea, eb), rc in game.state.board.roads.items():
+                if rc == c:
+                    my_nodes.add(int(ea)); my_nodes.add(int(eb))
+            for nid, (bcol, _bt) in game.state.board.buildings.items():
+                if bcol == c:
+                    my_nodes.add(int(nid))
+            a, b = int(edge[0]), int(edge[1])
+            if a in my_nodes and b not in my_nodes:
+                from_n, to_n = a, b
+            elif b in my_nodes and a not in my_nodes:
+                from_n, to_n = b, a
+            else:
+                from_n, to_n = a, b
+            positions = _node_positions(m)
+            lbl = _direction_label(positions, from_n, to_n)
+            if lbl is not None:
+                road_rec["direction"] = {"word": lbl[0], "arrow": lbl[1]}
+            road_rec["edge_from"] = from_n
+            road_rec["edge_to"] = to_n
+            recs.append(road_rec)
 
     # --- Dev card --------------------------------------------------------
     # Always a sane fallback. Fixed score of 3 on the 1-10 scale — real

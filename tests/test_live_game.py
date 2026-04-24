@@ -4193,3 +4193,101 @@ def test_standings_ignores_pre_threshold_vp_noise():
     # Required fields always present regardless of VP totals.
     for k in ("leader", "self_vp", "gap_to_leader", "self_is_leader"):
         assert k in snap["standings"]
+
+
+def _wrap_for_game_plan(cat_game):
+    """Minimal LiveGame stand-in so ``_compute_game_plan`` can read
+    ``game.tracker.game`` against a raw catanatron ``Game``."""
+
+    class _FakeTracker:
+        pass
+
+    class _FakeGame:
+        pass
+
+    g = _FakeGame()
+    g.tracker = _FakeTracker()
+    g.tracker.game = cat_game
+    return g
+
+
+def test_compute_game_plan_returns_none_during_setup():
+    """A fresh game has SETTLEMENTS_AVAILABLE=5 per seat → we're still
+    mid-setup and the game plan is owned by opening-pick recs, not
+    this banner."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_game_plan
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    g = _wrap_for_game_plan(cat)
+    assert _compute_game_plan(g, "RED", {}) is None
+
+
+def test_compute_game_plan_proposes_settle_path_mid_game():
+    """Mid-game with a toe-hold settlement + one road: the plan should
+    surface a settle goal within 2 hops, return sensible tile labels,
+    and compose a summary string."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_game_plan
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    # Simulate both opening settlements placed — SETTLEMENTS_AVAILABLE
+    # drops below the setup gate.
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    b = cat.state.board
+    b.build_settlement(Color.RED, 0, initial_build_phase=True)
+    b.build_road(Color.RED, (0, 1))
+
+    g = _wrap_for_game_plan(cat)
+    plan = _compute_game_plan(g, "RED", {"WOOD": 1, "BRICK": 1})
+    assert plan is not None
+    assert plan["goal_kind"] in ("settlement", "city")
+    assert plan["summary"]
+    # goal_tiles is list of (resource, number|None) tuples — even a
+    # coastal node can have at least one tile. We don't lock the exact
+    # value since it depends on the board seed.
+    assert isinstance(plan["goal_tiles"], list)
+    if plan["goal_kind"] == "settlement":
+        assert plan["roads_needed"] in (0, 1, 2)
+        assert isinstance(plan["missing"], dict)
+
+
+def test_compute_game_plan_surfaces_trade_fallback_when_short():
+    """When the player is short on a needed resource but has surplus
+    of another, the plan should suggest a 4:1 (or cheaper) bank trade
+    as a fallback bridge."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_game_plan
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    b = cat.state.board
+    b.build_settlement(Color.RED, 0, initial_build_phase=True)
+    b.build_road(Color.RED, (0, 1))
+
+    g = _wrap_for_game_plan(cat)
+    # Rich in wood but dry on brick — guarantees 4:1 wood→brick is
+    # available when we're short.
+    plan = _compute_game_plan(g, "RED", {"WOOD": 8})
+    assert plan is not None
+    if plan["missing"]:
+        # Either a trade_plan exists (we had a 4+ surplus somewhere) or
+        # it's None; the contract is that when it exists it points at
+        # the first missing resource.
+        if plan["trade_plan"]:
+            assert plan["trade_plan"]["ratio"] in (2, 3, 4)
+            assert plan["trade_plan"]["to_res"] in plan["missing"]
+            assert plan["trade_plan"]["from_res"] != plan[
+                "trade_plan"]["to_res"]
