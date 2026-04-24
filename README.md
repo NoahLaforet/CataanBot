@@ -34,18 +34,25 @@ heuristics. No ML — strong handcrafted evaluation + search.
 
 ## Roadmap
 
-1. **Phase 1 — CLI + catanatron integration.** Load a game state, print it,
-   generate legal moves, score them with a simple EV heuristic. No UI yet.
-2. **Phase 2 — Visual board.** Python renderer (likely pygame or a small
-   Flask + canvas frontend) showing the live state.
-3. **Phase 3 — Manual state input.** Click tiles / edges / vertices to mirror
-   a real game into the app turn-by-turn.
-4. **Phase 4 — Stronger advisor.** Port JSettlers heuristics or wire MCTS over
-   catanatron's state machine.
-5. **Phase 5 — Screenshot CV path.** OpenCV + HSV classification for
-   automatic board ingestion.
-6. **Phase 6 — Chrome extension.** Read colonist.io DOM, talk to local
-   advisor over `localhost`.
+1. **Phase 1 — CLI + catanatron integration.** ✅ Load state, generate legal
+   moves, score with EV heuristic.
+2. **Phase 2 — Visual board.** ✅ Pillow renderer with hexes, ports, pieces,
+   robber, number tokens.
+3. **Phase 3 — Manual state input.** ✅ REPL tracker mirrors a live game
+   turn-by-turn.
+4. **Phase 4 — Stronger advisor.** ✅ EV scoring + 1-ply search rerank +
+   opponent-hand inference.
+5. **Phase 5 — Screenshot CV path.** ⏭️ Skipped in favor of direct DOM/WS
+   scraping from colonist (Phase 6 obsoleted the CV path).
+6. **Phase 6 — colonist.io bridge.** ✅ FastAPI + Tampermonkey userscript;
+   streams log events and raw WebSocket frames to a local advisor.
+7. **Phase 7 — Live HUD (current).** Real-time overlay that renders
+   recommendations, banners, and histograms while the game is running.
+   Shipped so far: winning-move detector, LR/LA race banners, robber
+   telemetry, roll histogram (live-animated), road directions on in-game
+   recs, hero-styled top rec. In flight: continued HUD density +
+   typography polish, knight play-timing surface, parallel-road fallback,
+   postmortem move-annotation.
 
 ---
 
