@@ -748,6 +748,61 @@ def test_format_report_includes_move_annotations_section():
     assert "Monopoly" in out
 
 
+def test_move_annotations_knight_steals_from_fat_opp():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        ProduceEvent(player="Bob", resources={"WOOD": 9}),   # Bob fat
+        DevCardPlayEvent(player="Alice", card="knight"),
+        RobberMoveEvent(player="Alice", tile_label="wheat tile", prob=6),
+        StealEvent(thief="Alice", victim="Bob", resource="WOOD"),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    knight_anns = [a for a in rep.move_annotations if a.move_kind == "knight"]
+    assert len(knight_anns) == 1
+    assert knight_anns[0].glyph == "!!"
+    assert knight_anns[0].player == "Alice"
+    assert "fat" in knight_anns[0].note.lower()
+
+
+def test_move_annotations_knight_fizzles_on_empty_tile():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        DevCardPlayEvent(player="Alice", card="knight"),
+        RobberMoveEvent(player="Alice", tile_label="ore tile", prob=8),
+        NoStealEvent(),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    knight_anns = [a for a in rep.move_annotations if a.move_kind == "knight"]
+    assert len(knight_anns) == 1
+    assert knight_anns[0].glyph == "?!"
+
+
+def test_move_annotations_fat_hand_victim_flagged_on_seven():
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        # Bob carries 9 cards. Alice (roller) has 2 — not her blunder,
+        # but Bob should have spent down. We flag Bob even though the
+        # roll annotation is the "!!" brilliant case for Alice.
+        ProduceEvent(player="Bob", resources={"WOOD": 9}),
+        ProduceEvent(player="Alice", resources={"WOOD": 2}),
+        RollEvent(player="Alice", d1=3, d2=4),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    fat_anns = [
+        a for a in rep.move_annotations if a.move_kind == "fat_hand"
+    ]
+    assert len(fat_anns) == 1
+    assert fat_anns[0].glyph == "?"
+    assert fat_anns[0].player == "Bob"
+    assert "9" in fat_anns[0].summary
+
+
 def test_format_report_move_annotations_empty_graceful():
     cm = ColorMap({"Alice": "RED"})
     events = [
