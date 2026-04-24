@@ -2529,6 +2529,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "yield_summary": None,
         "game_plan": None,
         "strategic_options": None,
+        "winning_move": None,
     }
     if not game.started:
         return snap
@@ -3089,6 +3090,17 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] win_proximity failed: {e!r}", flush=True)
         snap["win_proximity"] = None
+    # Winning-move banner — fires when a single action (settle / city /
+    # road→LR / knight→LA) closes the game THIS turn. Deliberately above
+    # the rec list in the HUD so Noah never misses "press the button"
+    # moments. Silent most turns.
+    try:
+        if self_color is not None:
+            snap["winning_move"] = _compute_winning_move(
+                game, self_color, hand, snap)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] winning_move failed: {e!r}", flush=True)
+        snap["winning_move"] = None
     # Persistent robber-on-me warning — visible every snapshot while
     # the robber sits on a self tile, not just during a 7-roll or when
     # a knight is in hand.
@@ -3340,6 +3352,166 @@ def _compute_win_proximity(
         "dev_cards_held": int(dev_cards_held),
         "level": level,
         "message": msg,
+    }
+
+
+def _compute_winning_move(
+    game, self_color, hand: dict[str, int], snap: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Detect when a single immediate action reaches VP_TARGET.
+
+    Fires only when self is exactly 1 or 2 VP short and a concrete
+    same-turn action closes the gap:
+
+    * **+1 VP (settle / city)** — affordable and a legal spot exists.
+    * **+2 VP (road → LR)** — self is 1 segment shy of qualifying (5
+      segs minimum, strictly more than any opp), holds road cost, and
+      has at least one buildable edge.
+    * **+2 VP (knight → LA)** — self is 1 played knight shy of
+      qualifying (3 min, strictly more than any opp), holds a KNIGHT
+      in hand, not yet played this turn.
+
+    Returns the highest-confidence option (single-build wins preferred
+    over conditional LR/LA flips) or ``None`` when no winning move is
+    reachable. Game_plan/win_proximity stay responsible for multi-step
+    narrative; this is the **"press the button now"** banner.
+    """
+    from cataanbot.config import VP_TARGET
+    from cataanbot.recommender import (
+        _SETTLEMENT_COST, _CITY_COST, _ROAD_COST,
+        _hand_can_afford,
+    )
+    from catanatron import Color
+
+    self_snap = snap.get("self") or {}
+    vp = int(self_snap.get("vp", 0) or 0)
+    gap = VP_TARGET - vp
+    if gap <= 0 or gap > 2:
+        return None
+
+    try:
+        my_enum = (self_color if isinstance(self_color, Color)
+                   else Color[str(self_color).upper()])
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        state = game.tracker.game.state
+        board = state.board
+    except Exception:  # noqa: BLE001
+        return None
+    my_idx = state.color_to_index.get(my_enum)
+    if my_idx is None:
+        return None
+    ps = state.player_state
+    # Setup phase is self-filtering via the gap check above: VP=0-2 in
+    # setup means gap=8-10, always >2 and already rejected. No extra
+    # SETTLEMENTS_AVAILABLE guard — LiveGame doesn't track that key.
+
+    candidates: list[dict[str, Any]] = []
+
+    # +1 VP path: affordable settlement on a legal spot.
+    if gap == 1 and _hand_can_afford(hand, _SETTLEMENT_COST):
+        try:
+            spots = list(board.buildable_node_ids(my_enum))
+        except Exception:  # noqa: BLE001
+            spots = []
+        if spots:
+            candidates.append({
+                "kind": "settle",
+                "confidence": "high",
+                "vp_after": vp + 1,
+                "detail": "settle now — +1 VP wins the game",
+            })
+
+    # +1 VP path: city upgrade on an existing self settlement.
+    if gap == 1 and _hand_can_afford(hand, _CITY_COST):
+        own_settles = [
+            int(nid) for nid, (col, bt) in board.buildings.items()
+            if col == my_enum and str(bt).upper() == "SETTLEMENT"
+        ]
+        if own_settles:
+            candidates.append({
+                "kind": "city",
+                "confidence": "high",
+                "vp_after": vp + 1,
+                "detail": "upgrade to city — +1 VP wins the game",
+            })
+
+    # +2 VP path: road that flips longest road.
+    if gap == 2 and _hand_can_afford(hand, _ROAD_COST):
+        self_len = int(ps.get(f"P{my_idx}_LONGEST_ROAD_LENGTH", 0))
+        self_has_lr = bool(ps.get(f"P{my_idx}_HAS_ROAD", False))
+        opp_max = 0
+        for col, idx in state.color_to_index.items():
+            if col == my_enum:
+                continue
+            ol = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0))
+            if ol > opp_max:
+                opp_max = ol
+        # +1 road must qualify us (>= 5) and strictly beat opp max.
+        qualifies = self_len + 1 >= max(5, opp_max + 1)
+        if qualifies and not self_has_lr:
+            try:
+                edges = list(board.buildable_edges(my_enum))
+            except Exception:  # noqa: BLE001
+                edges = []
+            if edges:
+                # Confidence "medium": +1 road usually extends the LR
+                # chain when we're already leading, but a branch off the
+                # tail won't grow it. Noah can eyeball placement — we'd
+                # need a full LR recompute to be certain.
+                candidates.append({
+                    "kind": "road_to_lr",
+                    "confidence": "medium",
+                    "vp_after": vp + 2,
+                    "detail": (f"road extending your {self_len}-chain → "
+                               "LR (+2 VP) wins the game"),
+                })
+
+    # +2 VP path: knight play that flips largest army.
+    if gap == 2:
+        knights_played = int(ps.get(f"P{my_idx}_PLAYED_KNIGHT", 0))
+        knights_in_hand = int(ps.get(f"P{my_idx}_KNIGHT_IN_HAND", 0))
+        played_this_turn = bool(ps.get(
+            f"P{my_idx}_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN", False))
+        self_has_la = bool(ps.get(f"P{my_idx}_HAS_ARMY", False))
+        opp_knights_max = 0
+        for col, idx in state.color_to_index.items():
+            if col == my_enum:
+                continue
+            ok = int(ps.get(f"P{idx}_PLAYED_KNIGHT", 0))
+            if ok > opp_knights_max:
+                opp_knights_max = ok
+        la_threshold = max(3, opp_knights_max + 1)
+        qualifies = knights_played + 1 >= la_threshold
+        if (qualifies and not self_has_la
+                and knights_in_hand >= 1 and not played_this_turn):
+            candidates.append({
+                "kind": "knight_to_la",
+                "confidence": "high",
+                "vp_after": vp + 2,
+                "detail": (f"play a Knight ({knights_played+1}/"
+                           f"{la_threshold}) → LA (+2 VP) wins the game"),
+            })
+
+    if not candidates:
+        return None
+
+    # High confidence first (direct +1 builds, knight play), then road.
+    conf_rank = {"high": 0, "medium": 1, "low": 2}
+    candidates.sort(key=lambda c: conf_rank.get(c["confidence"], 9))
+    top = candidates[0]
+    return {
+        "kind": top["kind"],
+        "vp": vp,
+        "vp_after": top["vp_after"],
+        "confidence": top["confidence"],
+        "detail": top["detail"],
+        "alternatives": [
+            {"kind": c["kind"], "detail": c["detail"]}
+            for c in candidates[1:]
+        ],
+        "message": "WIN THIS TURN — " + top["detail"],
     }
 
 

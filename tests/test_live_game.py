@@ -951,6 +951,218 @@ def test_win_proximity_filters_non_vp_builds_from_afford():
     assert "keep pushing" in w["message"]
 
 
+# --- _compute_winning_move --------------------------------------------
+#
+# The winning-move detector fires at the top of the HUD whenever a
+# SINGLE immediate action closes the game. It's the loudest signal —
+# Noah specifically asked for it because he'd miss a "build a road and
+# win" moment while scanning the lower panels. Tests cover the four
+# closing paths (settle, city, road→LR, knight→LA) plus the guardrails
+# that keep it silent when the gap is wrong or the action doesn't
+# actually finish the game.
+
+
+def _winning_move_fixture():
+    """Common setup: replay the live captures to get a real game/board/
+    state, then hand the test the color + indices it needs to script VP
+    and player_state values synthetically."""
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.started
+    sess = game.session
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = game.color_map.get(self_user)
+    my_enum = Color[self_color.upper()]
+    cat = game.tracker.game
+    my_idx = cat.state.color_to_index[my_enum]
+    opp_indices = [i for c, i in cat.state.color_to_index.items()
+                   if c != my_enum]
+    return game, self_color, my_enum, my_idx, opp_indices
+
+
+def test_winning_move_silent_when_gap_too_wide():
+    """Gap >2 means no single action can close — detector stays dark.
+    The HUD already has win_proximity for the 8+ VP "push" framing;
+    winning-move is specifically for the 1–2 VP killshot."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, *_ = _winning_move_fixture()
+    # Gap=3 (VP=7, target=10 default) — no single action wins.
+    snap = {"self": {"vp": 7}}
+    hand = {"WOOD": 5, "BRICK": 5, "SHEEP": 5, "WHEAT": 5, "ORE": 5}
+    assert _compute_winning_move(game, self_color, hand, snap) is None
+
+
+def test_winning_move_silent_when_already_won():
+    """VP already ≥ target — game is over, banner has nothing to add."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, *_ = _winning_move_fixture()
+    snap = {"self": {"vp": 10}}
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 1}
+    assert _compute_winning_move(game, self_color, hand, snap) is None
+
+
+def test_winning_move_fires_settle_at_9_vp():
+    """VP=9 + settlement cost in hand + at least one legal node →
+    detector flags settle as the +1 VP closer. ``confidence`` is high
+    (the build is unconditional)."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, *_ = _winning_move_fixture()
+    snap = {"self": {"vp": 9}}
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 0}
+    wm = _compute_winning_move(game, self_color, hand, snap)
+    # The fixture may or may not leave a buildable node for self — if
+    # not, a city alternative should still be present. Either way the
+    # function must not crash. We specifically assert the settle path
+    # fires when any legal node exists.
+    my_enum = game.color_map.get(
+        game.session.player_names[game.session.self_color_id])
+    from catanatron import Color
+    board = game.tracker.game.state.board
+    spots = list(board.buildable_node_ids(Color[my_enum.upper()]))
+    if spots:
+        assert wm is not None
+        # Either settle directly OR settle is in alternatives if a
+        # city path outranked it. With hand lacking ORE, only settle
+        # can fire → it must be the primary kind.
+        assert wm["kind"] == "settle"
+        assert wm["vp"] == 9 and wm["vp_after"] == 10
+        assert wm["confidence"] == "high"
+        assert "WIN THIS TURN" in wm["message"]
+
+
+def test_winning_move_fires_city_at_9_vp():
+    """VP=9 + city cost + at least one own settlement → detector flags
+    city upgrade as +1 VP closer. Tests the own-settlement enumeration
+    path (distinct from settle's buildable_node_ids path)."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    from catanatron import Color
+    game, self_color, *_ = _winning_move_fixture()
+    board = game.tracker.game.state.board
+    my_enum = Color[self_color.upper()]
+    own_settles = [
+        nid for nid, (col, bt) in board.buildings.items()
+        if col == my_enum and str(bt).upper() == "SETTLEMENT"
+    ]
+    if not own_settles:
+        pytest.skip("fixture has no self settlements to upgrade")
+    snap = {"self": {"vp": 9}}
+    # No settle hand (missing BRICK) but city hand present.
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 2, "ORE": 3}
+    wm = _compute_winning_move(game, self_color, hand, snap)
+    assert wm is not None
+    assert wm["kind"] == "city"
+    assert wm["vp_after"] == 10
+    assert wm["confidence"] == "high"
+
+
+def test_winning_move_fires_road_to_lr_at_8_vp():
+    """VP=8 + road cost + self 1 seg shy of qualifying LR + no opp
+    ahead + not already holding LR → road→LR closes +2 VP. Confidence
+    is "medium" because the +1 road might be a branch (not extending
+    the chain). Banner uses the hedge framing."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
+    ps = game.tracker.game.state.player_state
+    # Script LR state: self at 4 segs (→ 5 after build, qualifies),
+    # opps at 0, self not yet holding LR.
+    for i in (my_idx, *opp_indices):
+        ps[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
+        ps[f"P{i}_HAS_ROAD"] = False
+    ps[f"P{my_idx}_LONGEST_ROAD_LENGTH"] = 4
+    snap = {"self": {"vp": 8}}
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
+    wm = _compute_winning_move(game, self_color, hand, snap)
+    assert wm is not None
+    assert wm["kind"] == "road_to_lr"
+    assert wm["vp"] == 8 and wm["vp_after"] == 10
+    assert wm["confidence"] == "medium"
+    assert "LR" in wm["detail"]
+
+
+def test_winning_move_silent_when_already_holds_lr():
+    """Self already holds LR → building another road doesn't add VP
+    (LR bonus is already counted). Detector must not fire even if the
+    math looks superficially like a +2 path."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
+    ps = game.tracker.game.state.player_state
+    for i in (my_idx, *opp_indices):
+        ps[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
+        ps[f"P{i}_HAS_ROAD"] = False
+    ps[f"P{my_idx}_LONGEST_ROAD_LENGTH"] = 10
+    ps[f"P{my_idx}_HAS_ROAD"] = True
+    snap = {"self": {"vp": 8}}
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
+    # Road with no +2 path; no +1 build affordable either → None.
+    assert _compute_winning_move(game, self_color, hand, snap) is None
+
+
+def test_winning_move_fires_knight_to_la_at_8_vp():
+    """VP=8 + KNIGHT in hand + self 1 played knight from qualifying LA
+    + no opp ahead + not already holding LA + not played dev this turn
+    → knight→LA closes +2 VP."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
+    ps = game.tracker.game.state.player_state
+    # Self at 2 played knights → 3 after play (qualifies). Opps at 1.
+    for i in (my_idx, *opp_indices):
+        ps[f"P{i}_PLAYED_KNIGHT"] = 1
+        ps[f"P{i}_HAS_ARMY"] = False
+        ps[f"P{i}_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN"] = False
+    ps[f"P{my_idx}_PLAYED_KNIGHT"] = 2
+    ps[f"P{my_idx}_KNIGHT_IN_HAND"] = 1
+    snap = {"self": {"vp": 8}}
+    # Hand has no build materials — forces knight path to dominate.
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
+    wm = _compute_winning_move(game, self_color, hand, snap)
+    assert wm is not None
+    assert wm["kind"] == "knight_to_la"
+    assert wm["vp_after"] == 10
+    assert wm["confidence"] == "high"
+    assert "LA" in wm["detail"]
+
+
+def test_winning_move_silent_when_knight_already_played_this_turn():
+    """Dev-card-per-turn rule: if self already played a dev card this
+    turn, a second knight can't be played. Detector must respect this
+    even if every other gate passes."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
+    ps = game.tracker.game.state.player_state
+    for i in (my_idx, *opp_indices):
+        ps[f"P{i}_PLAYED_KNIGHT"] = 1
+        ps[f"P{i}_HAS_ARMY"] = False
+        ps[f"P{i}_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN"] = False
+    ps[f"P{my_idx}_PLAYED_KNIGHT"] = 2
+    ps[f"P{my_idx}_KNIGHT_IN_HAND"] = 1
+    # Dev-card flag tripped → knight unavailable.
+    ps[f"P{my_idx}_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN"] = True
+    snap = {"self": {"vp": 8}}
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
+    assert _compute_winning_move(game, self_color, hand, snap) is None
+
+
 def test_closest_missing_build_points_at_smallest_gap():
     """With hand = {WOOD:1, BRICK:1, SHEEP:0, WHEAT:1}, settlement is
     1 sheep away (gap=1), road is already affordable (gap=0, skipped),
