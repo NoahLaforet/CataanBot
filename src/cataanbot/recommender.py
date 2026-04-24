@@ -1171,7 +1171,7 @@ def recommend_actions(
                     "score": _score_settlement(prod),
                     "missing": missing,
                     "detail": (f"{_format_missing(missing)} "
-                               f"· {prod:.2f}/roll target"),
+                               f"· {prod:.2f}/roll"),
                     "tiles": _tile_label(m, node),
                     "rationale": _settle_rationale(
                         m, node, self_expected),
