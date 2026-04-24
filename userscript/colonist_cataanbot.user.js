@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.5
+// @version      0.18.6
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1218,6 +1218,33 @@
   }
   .game-plan .gp-summary { color: var(--fg); }
 
+  /* Long-horizon / riskier plays — LR push, LA push, dev-card dive. */
+  .strat-opt {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: var(--s-2);
+    padding: var(--s-1) var(--s-2);
+    margin: 2px 0;
+    font-variant-numeric: tabular-nums;
+    font-size: calc(11px * var(--font-scale));
+    border-left: 2px solid rgba(255, 255, 255, 0.12);
+  }
+  .strat-opt .strat-vp {
+    color: var(--pos);
+    font-weight: 800;
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.08em;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background: rgba(126, 217, 159, 0.14);
+  }
+  .strat-opt .strat-label {
+    color: var(--fg);
+    font-weight: 700;
+  }
+  .strat-opt .strat-detail {
+    color: var(--fg-mute);
+  }
+
   /* Robber targets table */
   table.robber {
     width: 100%;
@@ -2011,6 +2038,24 @@
                 parts.push('<div class="recs-h plan-h">'
                     + '→ planning ahead</div>');
                 soonRecs.forEach(r => renderRec(r, false));
+            }
+            // Longer-horizon / riskier plays — LR push, LA push, dev-
+            // card dive. VP swing is the headline so these read as
+            // "what's the most I can gain by committing pieces?"
+            // rather than disappearing into the affordable-now list.
+            const strat = snap.strategic_options;
+            if (!isSetup && strat && strat.length) {
+                parts.push('<div class="recs-h plan-h">'
+                    + '→ long game</div>');
+                for (const s of strat) {
+                    parts.push('<div class="strat-opt">'
+                        + `<span class="strat-vp">+${s.vp_swing}VP</span>`
+                        + `<span class="strat-label">`
+                        + escapeHtml(s.label) + '</span>'
+                        + `<span class="strat-detail">`
+                        + escapeHtml(s.detail) + '</span>'
+                        + '</div>');
+                }
             }
         } else if (snap.my_turn) {
             parts.push('<div class="turn-hint">your turn — '

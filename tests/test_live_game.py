@@ -4320,3 +4320,79 @@ def test_compute_game_plan_surfaces_trade_fallback_when_short():
             assert plan["trade_plan"]["to_res"] in plan["missing"]
             assert plan["trade_plan"]["from_res"] != plan[
                 "trade_plan"]["to_res"]
+
+
+def test_strategic_options_surfaces_longest_road_push():
+    """Self at 4 roads, nobody else close → a push-LR option should
+    appear with +2VP swing and 1 piece needed."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_LONGEST_ROAD_LENGTH"] = 4
+    cat.state.player_state["P0_HAS_ROAD"] = False
+    cat.state.player_state["P1_LONGEST_ROAD_LENGTH"] = 2
+    cat.state.player_state["P1_HAS_ROAD"] = False
+    cat.state.player_state["P2_LONGEST_ROAD_LENGTH"] = 0
+    cat.state.player_state["P2_HAS_ROAD"] = False
+    cat.state.player_state["P3_LONGEST_ROAD_LENGTH"] = 0
+    cat.state.player_state["P3_HAS_ROAD"] = False
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {"WOOD": 0, "BRICK": 0})
+    assert opts is not None
+    kinds = {o["kind"] for o in opts}
+    assert "longest_road_push" in kinds
+    lr = next(o for o in opts if o["kind"] == "longest_road_push")
+    assert lr["vp_swing"] == 2
+    assert lr["pieces"] == 1
+
+
+def test_strategic_options_surfaces_largest_army_push():
+    """Self with 1 played knight + 2 held (total 3, LA threshold) and
+    nobody holding LA → push-LA option with +2VP."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_PLAYED_KNIGHT"] = 1
+    cat.state.player_state["P0_KNIGHT_IN_HAND"] = 2
+    cat.state.player_state["P0_HAS_ARMY"] = False
+    # Opps all below threshold, nobody holds LA.
+    for i in range(1, 4):
+        cat.state.player_state[f"P{i}_PLAYED_KNIGHT"] = 0
+        cat.state.player_state[f"P{i}_HAS_ARMY"] = False
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {})
+    assert opts is not None
+    la = next((o for o in opts if o["kind"] == "largest_army_push"), None)
+    assert la is not None
+    assert la["vp_swing"] == 2
+    assert la["pieces"] == 2
+
+
+def test_strategic_options_returns_none_when_nothing_actionable():
+    """No LR, no LA threat, sparse hand → nothing to surface, returns
+    None so the overlay hides the section."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    g = _wrap_for_game_plan(cat)
+    assert _compute_strategic_options(g, "RED", {"WOOD": 1}) is None

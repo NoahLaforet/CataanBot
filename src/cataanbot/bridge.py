@@ -1555,6 +1555,138 @@ def _plan_trade_fallback(
     }
 
 
+def _compute_strategic_options(
+    game, self_color: str, hand: dict[str, int],
+) -> list[dict[str, Any]] | None:
+    """Surface riskier / longer-horizon plays that the flat rec list
+    doesn't cover.
+
+    The default recommender ranks what's affordable **right now** and
+    fans out "save for X" plans for 1-2 cards away. That's tight but
+    conservative — it misses VP-swing plays that take pieces and turns
+    but materially change the endgame:
+
+        * **Longest road push** — when self is at 4 roads (1 away from
+          qualifying) and the race is open.
+        * **Largest army push** — when self has knights played + held
+          ≥ 3 and the LA holder is within 1.
+        * **Dev-card dive** — when self is flush on ore+wheat+sheep and
+          no higher-value build fits, surface a multi-card buy toward
+          hidden VP + the dev-card engine.
+
+    Returns a list of ``{kind, label, detail, vp_swing, pieces}``
+    options ordered by expected VP impact. ``None`` when nothing is
+    actionable so the overlay can hide the section silently.
+    """
+    from catanatron import Color
+    try:
+        my_enum = (self_color if isinstance(self_color, Color)
+                   else Color[str(self_color).upper()])
+    except Exception:  # noqa: BLE001
+        return None
+
+    state = game.tracker.game.state
+    my_idx = state.color_to_index.get(my_enum)
+    if my_idx is None:
+        return None
+
+    # Stay quiet during setup.
+    try:
+        placed = int(state.player_state.get(
+            f"P{my_idx}_SETTLEMENTS_AVAILABLE", 5))
+        if placed >= 4:
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+
+    ps = state.player_state
+    options: list[dict[str, Any]] = []
+
+    # ---- Longest road push -------------------------------------------
+    self_len = int(ps.get(f"P{my_idx}_LONGEST_ROAD_LENGTH", 0))
+    self_has_lr = bool(ps.get(f"P{my_idx}_HAS_ROAD", False))
+    opp_lr_max = 0
+    opp_lr_holder = False
+    for col, idx in state.color_to_index.items():
+        if col == my_enum:
+            continue
+        ol = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0))
+        oh = bool(ps.get(f"P{idx}_HAS_ROAD", False))
+        if ol > opp_lr_max:
+            opp_lr_max = ol
+        if oh:
+            opp_lr_holder = True
+    if (self_len >= 3 and not self_has_lr
+            and self_len + 1 >= max(5, opp_lr_max + 1)):
+        # 1 more segment qualifies us (5+) and beats the current opp.
+        roads_needed = max(1, max(5, opp_lr_max + 1) - self_len)
+        vp_swing = 2 if not opp_lr_holder else 4  # take + denial
+        options.append({
+            "kind": "longest_road_push",
+            "label": "push longest road",
+            "detail": (f"+{roads_needed} road"
+                       f"{'s' if roads_needed > 1 else ''}"
+                       f" to take LR"
+                       + (" (denies opp)" if opp_lr_holder else "")),
+            "vp_swing": vp_swing,
+            "pieces": roads_needed,
+        })
+
+    # ---- Largest army push -------------------------------------------
+    knights_played = int(ps.get(f"P{my_idx}_PLAYED_KNIGHT", 0))
+    knights_held = int(ps.get(f"P{my_idx}_KNIGHT_IN_HAND", 0))
+    self_has_la = bool(ps.get(f"P{my_idx}_HAS_ARMY", False))
+    opp_knights_max = 0
+    opp_la_holder = False
+    for col, idx in state.color_to_index.items():
+        if col == my_enum:
+            continue
+        ok = int(ps.get(f"P{idx}_PLAYED_KNIGHT", 0))
+        oh = bool(ps.get(f"P{idx}_HAS_ARMY", False))
+        if ok > opp_knights_max:
+            opp_knights_max = ok
+        if oh:
+            opp_la_holder = True
+    la_threshold = max(3, opp_knights_max + 1)
+    needed_plays = max(0, la_threshold - knights_played)
+    if (not self_has_la and knights_held >= 1
+            and knights_played + knights_held >= la_threshold
+            and needed_plays > 0):
+        vp_swing = 2 if not opp_la_holder else 4
+        options.append({
+            "kind": "largest_army_push",
+            "label": "push largest army",
+            "detail": (f"play {needed_plays} knight"
+                       f"{'s' if needed_plays > 1 else ''} to take LA"
+                       + (" (denies opp)" if opp_la_holder else "")),
+            "vp_swing": vp_swing,
+            "pieces": needed_plays,
+        })
+
+    # ---- Dev-card dive ------------------------------------------------
+    # When self has multiple dev-card buys stacked (3+ full bundles of
+    # ore+wheat+sheep) and the board has nothing better to spend them
+    # on — worth surfacing as a hidden-VP play.
+    bundles = min(hand.get("ORE", 0),
+                  hand.get("WHEAT", 0),
+                  hand.get("SHEEP", 0))
+    if bundles >= 3:
+        options.append({
+            "kind": "dev_card_dive",
+            "label": "dev-card dive",
+            "detail": (f"buy {min(bundles, 4)} dev cards — hidden VP"
+                       " + knight/RB/YoP engine"),
+            "vp_swing": 1,
+            "pieces": 0,
+        })
+
+    if not options:
+        return None
+    # Higher VP swing first, then by fewer pieces needed (cheaper path).
+    options.sort(key=lambda o: (-o["vp_swing"], o["pieces"]))
+    return options
+
+
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
@@ -2325,6 +2457,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "dev_deck": None,
         "yield_summary": None,
         "game_plan": None,
+        "strategic_options": None,
     }
     if not game.started:
         return snap
@@ -2851,6 +2984,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["game_plan"] = _compute_game_plan(game, self_color, hand)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] game_plan failed: {e!r}", flush=True)
+    # Long-horizon / riskier plays the flat rec list doesn't surface:
+    # longest-road push, largest-army push, dev-card dive. VP-swing
+    # driven so Noah can weigh piece commitment against potential gain.
+    try:
+        snap["strategic_options"] = _compute_strategic_options(
+            game, self_color, hand)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] strategic_options failed: {e!r}", flush=True)
     # Discard-on-7 advice: fires whenever self's hand exceeds the discard
     # limit. The overlay should render it prominently on a 7-roll, but
     # we compute unconditionally — it's cheap and "you're over the limit"
