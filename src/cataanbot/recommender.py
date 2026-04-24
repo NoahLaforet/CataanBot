@@ -740,8 +740,8 @@ _DEV_COST = {"SHEEP": 1, "WHEAT": 1, "ORE": 1}
 _PLAN_MAX_MISSING = 2
 
 _RES_TITLE = {
-    "WOOD": "Wood", "BRICK": "Brick", "SHEEP": "Sheep",
-    "WHEAT": "Wheat", "ORE": "Ore",
+    "WOOD": "🌲", "BRICK": "🧱", "SHEEP": "🐑",
+    "WHEAT": "🌾", "ORE": "⛰️",
 }
 
 # Human-friendly labels for rec kinds — used anywhere a `kind` key gets
