@@ -535,7 +535,18 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     adj = neighbors.get(settlement, set())
     best: tuple[float, int, int, bool] | None = None
     # (score, far, expansion, contested)
+    # Fallback: best `far` direction even when no 2-hop expansion is
+    # legal. When every corridor is sealed by enemy settlements or opp
+    # roads we still want to emit a direction arrow so Noah isn't
+    # looking at a blank rec — pointing at the highest-prod unblocked
+    # far node is better than no rec at all.
+    fallback: tuple[float, int] | None = None
     for far in adj:
+        far_int = int(far)
+        # Opp road on (settlement, far) — can't lay our opening road
+        # through an opp piece that's already there.
+        if frozenset((int(settlement), far_int)) in opp_edges:
+            continue
         # Best reachable 2-hop settlement spot via (settlement -> far -> x).
         exp_score = 0.0
         exp_node: int | None = None
@@ -567,32 +578,51 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
                 exp_score = ns.score
                 exp_node = x
                 exp_contested = contested
-        # Skip far-candidates that lead nowhere legal — the whole point
-        # of the opening road is to point at a future settlement spot,
-        # and `far` itself is distance-1 from our new settlement so it
-        # can never be one. Better to return no road than to recommend
-        # one that breaks the distance-2 rule.
-        if exp_node is None:
-            continue
-        # Tiebreaker: far-node's own pip production.
+        # Every direction contributes to the fallback: we rank fars by
+        # the far node's own tile production so that if no 2-hop spot
+        # is legal we still pick the most productive direction to aim at.
         far_prod = _node_pip_production(m, far)
+        if fallback is None or far_prod > fallback[0]:
+            fallback = (far_prod, far_int)
+        if exp_node is None:
+            # No 2-hop expansion through this far. Keep scanning other
+            # fars — another direction might have a legal expansion.
+            continue
         combined = exp_score * 100.0 + far_prod
         if best is None or combined > best[0]:
             best = (combined, far, exp_node, exp_contested)
-    if best is None:
+    if best is not None:
+        _, far, expansion, contested = best
+        out: dict[str, Any] = {
+            "edge": [int(settlement), int(far)],
+            "toward_node": int(expansion),
+            "toward_tiles": _tile_label(m, expansion),
+        }
+        positions = _node_positions(m)
+        lbl = _direction_label(positions, int(settlement), int(far))
+        if lbl is not None:
+            out["direction"] = {"word": lbl[0], "arrow": lbl[1]}
+        if contested:
+            out["contested"] = True
+        return out
+    # No legal 2-hop corridor — every expansion target is sealed. Emit
+    # a degraded rec pointing at the highest-prod unblocked adjacent
+    # far node so the user still sees a direction arrow and a tile hint.
+    # toward_tiles describes the far node itself (it's not a legal
+    # settlement spot, just the placement target for this road).
+    if fallback is None:
         return None
-    _, far, expansion, contested = best
-    out: dict[str, Any] = {
+    _, far = fallback
+    out = {
         "edge": [int(settlement), int(far)],
-        "toward_node": int(expansion),
-        "toward_tiles": _tile_label(m, expansion),
+        "toward_node": int(far),
+        "toward_tiles": _tile_label(m, far),
+        "sealed": True,
     }
     positions = _node_positions(m)
     lbl = _direction_label(positions, int(settlement), int(far))
     if lbl is not None:
         out["direction"] = {"word": lbl[0], "arrow": lbl[1]}
-    if contested:
-        out["contested"] = True
     return out
 
 def _sell_rate(resource: str, owned_nodes: set[int], port_nodes) -> int:
