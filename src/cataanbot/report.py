@@ -154,6 +154,33 @@ class HandDynamics:
 
 
 @dataclass
+class MoveAnnotation:
+    """Chess-style quality glyph attached to a single decision in the log.
+
+    `glyph` uses the chess-annotation vocabulary:
+      !!  brilliant   — exceptional outcome (e.g. monopoly haul ≥ 5)
+      !   good        — positive outcome
+      !?  interesting — worth noting, slightly favorable
+      ?!  dubious     — slightly bad; could have done better
+      ?   mistake     — clearly negative outcome
+      ??  blunder     — self-inflicted damage (e.g. rolled a 7 on a fat hand)
+
+    These are *heuristic* and log-derived — we score each move on the
+    observable consequences (what opps actually held for a monopoly,
+    your own hand size when you rolled a 7, the trade-value delta),
+    not on a rerun of recommend_actions. Still enough signal to spot
+    the standout plays and mistakes at a glance.
+    """
+    event_index: int
+    player: str
+    color: str
+    move_kind: str
+    glyph: str
+    summary: str
+    note: str
+
+
+@dataclass
 class ReplayReport:
     """Everything build_report collected for one game."""
     jsonl_path: str | None
@@ -173,6 +200,7 @@ class ReplayReport:
     hand_dynamics: dict[str, HandDynamics] | None = None
     sevens: list[SevenImpact] = field(default_factory=list)
     trade_impacts: list[TradeImpact] = field(default_factory=list)
+    move_annotations: list[MoveAnnotation] = field(default_factory=list)
 
 
 def build_report(
@@ -353,6 +381,7 @@ def build_report(
         color_map.get(winner_username) if winner_username else None
     )
     hands, dynamics = _walk_hands_with_dynamics(events, color_map)
+    annotations = _collect_move_annotations(events, trade_impacts, color_map)
     return ReplayReport(
         jsonl_path=jsonl_path,
         winner_username=winner_username,
@@ -368,6 +397,7 @@ def build_report(
         hand_dynamics=dynamics,
         sevens=sevens,
         trade_impacts=trade_impacts,
+        move_annotations=annotations,
     )
 
 
@@ -429,6 +459,125 @@ def _walk_hands_with_dynamics(
     return hands, dynamics
 
 
+def _score_monopoly_haul(haul: int) -> tuple[str, str]:
+    if haul >= 5:
+        return "!!", f"{haul}-card haul — huge swing"
+    if haul >= 3:
+        return "!", f"{haul}-card haul"
+    if haul >= 1:
+        return "?!", f"only {haul} card — thin value"
+    return "??", "whiffed — opps held none"
+
+
+def _score_trade_side(delta: float) -> tuple[str, str] | None:
+    """Map a trade-delta to a glyph/note, or None if near-even.
+
+    Uses the same 0.15 cutoff that _format_trade_impacts uses to suppress
+    near-even noise, so a move annotation fires iff the trade was a
+    visibly lopsided one from that side's perspective.
+    """
+    if delta >= 0.5:
+        return "!!", f"got +{delta:.2f} scarcity delta"
+    if delta >= 0.15:
+        return "!", f"got +{delta:.2f}"
+    if delta <= -0.5:
+        return "??", f"gave up {-delta:.2f} scarcity delta"
+    if delta <= -0.15:
+        return "?", f"gave up {-delta:.2f}"
+    return None
+
+
+def _collect_move_annotations(
+    events: list[Event],
+    trade_impacts: list[TradeImpact],
+    color_map: ColorMap,
+) -> list[MoveAnnotation]:
+    """Heuristic per-move quality ratings for the postmortem.
+
+    Walks the event stream alongside a live hand_tracker replay so
+    each RollEvent / MonopolyStealEvent / TradeCommitEvent can be
+    scored against the actual observable state at that moment —
+    no catanatron state reconstruction required.
+    """
+    from cataanbot.hand_tracker import apply_event, init_hands
+    hands = init_hands(color_map)
+    out: list[MoveAnnotation] = []
+    trade_by_idx = {t.event_index: t for t in trade_impacts}
+
+    for i, event in enumerate(events):
+        if isinstance(event, MonopolyStealEvent):
+            glyph, note = _score_monopoly_haul(event.count)
+            color = color_map.get(event.player) or ""
+            out.append(MoveAnnotation(
+                event_index=i,
+                player=event.player,
+                color=color,
+                move_kind="monopoly",
+                glyph=glyph,
+                summary=f"Monopoly {event.resource} → {event.count}",
+                note=note,
+            ))
+        elif isinstance(event, RollEvent) and event.total == 7:
+            color = color_map.get(event.player) or ""
+            my_total = hands[color].total if color in hands else 0
+            # Self-blunder: rolling a 7 while you're sitting on 8+ cards
+            # forces your own discard. Small hands mean the 7 is a free
+            # shot at opps, so we only flag the own-goal case.
+            if my_total >= 8:
+                out.append(MoveAnnotation(
+                    event_index=i,
+                    player=event.player,
+                    color=color,
+                    move_kind="rolled_7",
+                    glyph="??",
+                    summary=f"rolled 7 holding {my_total} cards",
+                    note="self-discard blunder",
+                ))
+            else:
+                # Opposite case — you rolled a 7 with a light hand while
+                # an opp was sitting fat. Free damage, worth flagging.
+                opp_fat = [
+                    (c, h.total)
+                    for c, h in hands.items()
+                    if c != color and h.total >= 8
+                ]
+                if opp_fat:
+                    biggest = max(opp_fat, key=lambda kv: kv[1])
+                    out.append(MoveAnnotation(
+                        event_index=i,
+                        player=event.player,
+                        color=color,
+                        move_kind="rolled_7",
+                        glyph="!!",
+                        summary=f"rolled 7 vs fat opp ({biggest[1]} cards)",
+                        note="free discard damage",
+                    ))
+        elif isinstance(event, TradeCommitEvent) and event.receiver != "BANK":
+            t = trade_by_idx.get(i)
+            if t is not None:
+                for player, delta in (
+                    (t.giver, t.giver_delta),
+                    (t.receiver, t.receiver_delta),
+                ):
+                    scored = _score_trade_side(delta)
+                    if scored is None:
+                        continue
+                    glyph, note = scored
+                    color = color_map.get(player) or ""
+                    counterparty = t.receiver if player == t.giver else t.giver
+                    out.append(MoveAnnotation(
+                        event_index=i,
+                        player=player,
+                        color=color,
+                        move_kind="trade",
+                        glyph=glyph,
+                        summary=f"trade w/ {counterparty}",
+                        note=note,
+                    ))
+        apply_event(hands, event, color_map)
+    return out
+
+
 def format_report(report: ReplayReport) -> str:
     """Render a ReplayReport as a readable multi-line string."""
     lines: list[str] = []
@@ -463,8 +612,43 @@ def format_report(report: ReplayReport) -> str:
     lines.append("")
     lines.extend(_format_trade_impacts(report))
     lines.append("")
+    lines.extend(_format_move_annotations(report))
+    lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
+
+
+def _format_move_annotations(report: ReplayReport) -> list[str]:
+    """Chess-style move annotations section — shows glyph + summary per
+    flagged decision, grouped by player so you can scan each side's
+    standout plays and mistakes at a glance.
+
+    Only surfaces annotated moves (no noise rows for neutral plays);
+    if a player had no flagged moves they're omitted entirely.
+    """
+    lines = ["Move annotations (heuristic; !=good ?=mistake):"]
+    if not report.move_annotations:
+        lines.append("  (no flagged moves)")
+        return lines
+    by_color: dict[str, list[MoveAnnotation]] = {}
+    for a in report.move_annotations:
+        by_color.setdefault(a.color, []).append(a)
+    players = _players_in_color_order(report.players)
+    any_shown = False
+    for color, stats in players:
+        anns = by_color.get(color)
+        if not anns:
+            continue
+        any_shown = True
+        lines.append(f"  {stats.username} ({color}):")
+        for a in anns:
+            lines.append(
+                f"    {a.glyph:<3} #{a.event_index:<4}  "
+                f"{a.summary:<36}  {a.note}"
+            )
+    if not any_shown:
+        lines.append("  (no flagged moves)")
+    return lines
 
 
 def _format_reconstructed_hands(report: ReplayReport) -> list[str]:
