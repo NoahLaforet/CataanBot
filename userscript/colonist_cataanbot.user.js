@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.18.0
+// @version      0.18.1
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -230,7 +230,11 @@
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-lg);
     width: var(--panel-w);
-    height: var(--panel-h);
+    /* Keep the whole HUD clamped to the viewport — header + drawer stay
+       pinned at the top, body scrolls when tactical content overflows. */
+    max-height: calc(100vh - 24px);
+    display: flex;
+    flex-direction: column;
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.03) inset,
       0 20px 50px rgba(0, 0, 0, 0.6),
@@ -247,6 +251,7 @@
     border-bottom: 1px solid var(--line);
     background: var(--bg-2);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    flex: 0 0 auto;
   }
   .title {
     flex: 1;
@@ -277,10 +282,27 @@
   }
   .btn:hover { color: var(--fg); border-color: var(--line-strong); }
 
-  /* Body container */
-  .body { padding: var(--s-4) var(--s-4) var(--s-6); }
+  /* Body container. Flex child so the panel's max-height clamps it
+     and tactical content scrolls rather than bleeding off the viewport
+     when the drawer is open. min-height:0 is the magic that lets a
+     flex child shrink below its natural size so overflow kicks in. */
+  .body {
+    padding: var(--s-4) var(--s-4) var(--s-6);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Thin, restrained scrollbar so the HUD doesn't look like a textarea. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-3) transparent;
+  }
+  .body::-webkit-scrollbar { width: 6px; }
+  .body::-webkit-scrollbar-track { background: transparent; }
+  .body::-webkit-scrollbar-thumb {
+    background: var(--bg-3);
+    border-radius: 3px;
+  }
+  .body::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
   .body.collapsed { display: none; }
-  .body.scrollable { overflow-y: auto; }
 
   /* --------------------------------------------------------------
      Resize grip — visible, grabbable. Three diagonal ticks in the
@@ -1063,15 +1085,16 @@
   .drawer {
     display: none;
     flex-direction: column;
-    gap: var(--s-3);
-    padding: var(--s-3) var(--s-4) var(--s-4);
+    gap: var(--s-2);
+    padding: var(--s-2) var(--s-3) var(--s-3);
     border-bottom: 1px solid var(--line);
     background: var(--bg-1);
+    flex: 0 0 auto;
   }
   .drawer.open { display: flex; }
   .drawer-row {
     display: flex; align-items: center;
-    gap: var(--s-3);
+    gap: var(--s-2);
     flex-wrap: wrap;
   }
   .drawer-label {
