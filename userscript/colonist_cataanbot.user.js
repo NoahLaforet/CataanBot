@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.22.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.22 reset the HUD: hero rec on top, slim self strip, single-row opps, taller live histogram, no section headers.
+// @version      0.23.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23 fixes hero rec showing only verb (now shows trade detail), replaces fragile bar-chart histogram with a one-row roll strip, drops more chrome.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -691,101 +691,70 @@
     margin-left: var(--s-2);
   }
 
-  /* Full-game roll distribution — 11 bars 2..12. Bar height scales to
-     the most-hit number this game; dashed guide shows what the number
-     of hits would be on the expected 36-facet distribution at the
-     current roll count so droughts and streaks pop out visually. */
-  .roll-dist {
+  /* Roll-strip — single-row text takeaway of the roll distribution.
+     Each token is a number-then-count pair (e.g. "6  3"); hot numbers
+     glow accent, just-rolled gets the alert ring, 7 tints alert.
+     Replaces the old animated bar chart that wouldn't tween reliably
+     across innerHTML rewrites. */
+  .roll-strip {
     margin: var(--s-3) 0 var(--s-2);
-    font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
-    color: var(--fg-dim);
+    display: flex; align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
   }
-  .roll-dist .rd-h {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: var(--s-2);
-  }
-  .roll-dist .rd-label {
+  .roll-strip .rs-label {
     color: var(--fg-label);
     font-size: calc(11px * var(--font-scale));
     font-weight: 700;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
+    white-space: nowrap;
   }
-  .roll-dist .rd-total {
-    color: var(--fg-dim);
-    opacity: 0.8;
-    font-size: calc(11px * var(--font-scale));
+  .roll-strip .rs-tokens {
+    display: flex; gap: var(--s-1);
+    flex: 1; flex-wrap: wrap;
+    justify-content: space-between;
   }
-  /* Colonist-style chart: solid filled bars, taller column, no dashed
-     expected overlay. The number axis is the visual anchor. Bumped to
-     180px so growth-per-roll reads as a real visual change instead of
-     a 1-2px nudge. */
-  .roll-dist .rd-bars {
-    display: grid;
-    grid-template-columns: repeat(11, 1fr);
-    gap: 6px;
-    align-items: end;
-    height: 180px;
-    padding: 0 1px;
+  .roll-strip .rs-tok {
+    display: inline-flex; flex-direction: column;
+    align-items: center;
+    padding: var(--s-1) var(--s-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    min-width: 32px;
+    font-variant-numeric: tabular-nums;
   }
-  .roll-dist .rd-col {
-    display: flex; flex-direction: column;
-    justify-content: flex-end; align-items: center;
-    position: relative;
-    height: 100%;
+  .roll-strip .rs-tok .rs-n {
+    color: var(--fg-mute);
+    font-size: calc(13px * var(--font-scale));
+    font-weight: 700;
+    line-height: 1;
   }
-  .roll-dist .rd-bar {
-    width: 100%;
-    background: rgba(74, 222, 128, 0.55);
-    border-radius: 3px 3px 0 0;
-    min-height: 1px;
-    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
-    /* WAAPI handles the live tween — see animateHistogramBars. CSS
-       transition is intentionally NOT used here because innerHTML
-       replacement destroys/recreates the element on every render, and
-       there's no previous element to transition FROM. */
-  }
-  .roll-dist .rd-col.seven .rd-bar {
-    background: rgba(248, 113, 113, 0.55);
-  }
-  .roll-dist .rd-col.last .rd-bar {
-    background: var(--accent);
-  }
-  .roll-dist .rd-col.last.seven .rd-bar {
-    background: var(--alert);
-  }
-  .roll-dist .rd-count {
-    position: absolute;
-    bottom: 100%;
-    margin-bottom: 3px;
+  .roll-strip .rs-tok .rs-c {
     color: var(--fg);
-    font-size: calc(12px * var(--font-scale));
-    font-weight: 700;
-    opacity: 0.9;
+    font-size: calc(15px * var(--font-scale));
+    font-weight: 800;
+    line-height: 1.1;
+    margin-top: 2px;
   }
-  .roll-dist .rd-col.last .rd-count { color: var(--accent); opacity: 1; }
-  .roll-dist .rd-col.last.seven .rd-count { color: var(--alert); }
-  .roll-dist .rd-axis {
-    display: grid;
-    grid-template-columns: repeat(11, 1fr);
-    gap: 4px;
-    margin-top: var(--s-1);
-    border-top: 1px solid rgba(255, 255, 255, 0.15);
-    padding-top: var(--s-1);
+  .roll-strip .rs-tok.rs-seven {
+    background: rgba(248, 113, 113, 0.10);
+    border-color: rgba(248, 113, 113, 0.25);
   }
-  .roll-dist .rd-axis span {
-    text-align: center;
-    font-size: calc(14px * var(--font-scale));
-    font-weight: 700;
-    color: var(--fg-dim);
+  .roll-strip .rs-tok.rs-seven .rs-n { color: var(--alert); }
+  .roll-strip .rs-tok.rs-hot {
+    background: rgba(167, 139, 250, 0.18);
+    border-color: rgba(167, 139, 250, 0.40);
   }
-  .roll-dist .rd-axis span.seven { color: var(--alert); opacity: 0.9; }
-  .roll-dist .rd-axis span.last {
-    color: var(--accent);
-    font-weight: 900;
+  .roll-strip .rs-tok.rs-hot .rs-c { color: var(--accent); }
+  .roll-strip .rs-tok.rs-last {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
-  .roll-dist .rd-axis span.last.seven { color: var(--alert); }
+  .roll-strip .rs-tok.rs-last .rs-c { color: var(--accent); }
+  .roll-strip .rs-tok.rs-last.rs-seven { outline-color: var(--alert); }
+  .roll-strip .rs-tok.rs-last.rs-seven .rs-c { color: var(--alert); }
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(12px * var(--font-scale));
@@ -887,8 +856,20 @@
     flex: 1 1 100%;
     opacity: 0.75;
   }
-  /* Hero drops prose entirely — verb + target is enough. */
-  .rec.top .detail { display: none; }
+  /* Hero shows detail by default — for trades/discards the verb alone
+     ("PROPOSE", "PORT/BANK") is meaningless without the actual ask
+     ("4 wheat → 1 ore"). Build recs override below to hide it since
+     the tile chips already say what to build on. */
+  .rec.top .detail {
+    display: block;
+    color: var(--fg-mute);
+    font-size: calc(17px * var(--font-scale));
+    font-weight: 600;
+    opacity: 0.95;
+    margin-top: var(--s-2);
+    width: 100%;
+  }
+  .rec.top.kind-build .detail { display: none; }
   .rec .score {
     min-width: 44px;
     padding: 1px var(--s-2);
@@ -1865,17 +1846,6 @@
         return { host, panel, body, content, dot };
     }
 
-    // Tracks each roll-bar's rendered height percentage across renders so
-    // the histogram can animate from its previous height to the new one
-    // when a fresh roll lands (or when scaleTop shifts and all bars
-    // rebalance). Populated after every successful render; read before
-    // setting up the next frame's animations. Keyed by roll total (2..12).
-    const prevHistogramPcts = Object.create(null);
-    // Tracks total_rolls across renders so the histogram can fire a glow
-    // pulse only on actually-fresh rolls (not on rescale-only re-renders
-    // or the very first render after game start).
-    let prevTotalRolls = 0;
-
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
         if (!snap) {
@@ -2150,13 +2120,22 @@
                 const planCls = r.when === 'soon' ? ' plan' : '';
                 const tradeCls = (r.kind === 'trade'
                     || r.kind === 'propose_trade') ? ' trade' : '';
+                // kind-build hides the detail prose on the hero — the
+                // tile chips already say what's being built. Trades /
+                // discards / dev cards keep detail visible because the
+                // verb alone ("PROPOSE", "PORT/BANK") is meaningless.
+                const buildKinds = new Set([
+                    'settlement', 'city', 'road',
+                    'opening_settlement']);
+                const buildCls = buildKinds.has(effectiveKind)
+                    ? ' kind-build' : '';
                 // Option A/B/C/D label — only during opening picks so
                 // Noah can say "I'm taking Option B" out loud with a
                 // friend across the table.
                 const optHtml = optLetter
                     ? `<span class="opt">${optLetter}</span>`
                     : '';
-                parts.push(`<div class="rec${topCls}${planCls}${tradeCls}">`
+                parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}">`
                     + optHtml
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}</span>`
                     + ` <span class="kind">${kindLabel}</span>`
@@ -2638,71 +2617,37 @@
                 parts.push(`<div class="opp-yields">they: ${parts2}</div>`);
             }
         }
-        // Full-game roll distribution chart, colonist-style: one tall
-        // bar per 2..12 with solid fill and count labels above. Last
-        // roll is accent-highlighted; 7s are tinted alert. Scale is
-        // anchored to expected-plus-headroom so each new roll visibly
-        // grows the target column instead of just rescaling the chart.
+        // Roll distribution as a one-row text strip — replaces the
+        // bar-chart histogram that kept failing to animate reliably.
+        // One token per 2..12: number with its count subscript. Hot
+        // numbers (>=1.5× expected) glow accent; the just-rolled
+        // number is highlighted; 7 is tinted alert when frequent.
+        // No SVG, no WAAPI, no flex/grid scaling games — just text.
         const dist = snap.roll_histogram || {};
         const totalRolls = snap.total_rolls || 0;
         if (totalRolls > 0) {
             const lastRoll = snap.last_roll ? snap.last_roll.total : null;
-            let maxCount = 0;
+            const tokens = [];
+            // Probabilities per number (×36 form for integer math):
+            // 2/12: 1, 3/11: 2, 4/10: 3, 5/9: 4, 6/8: 5, 7: 6
+            const w36 = { 2:1, 3:2, 4:3, 5:4, 6:5, 7:6,
+                          8:5, 9:4, 10:3, 11:2, 12:1 };
             for (let n = 2; n <= 12; n++) {
                 const c = Number(dist[n] || 0);
-                if (c > maxCount) maxCount = c;
+                const expected = totalRolls * w36[n] / 36;
+                const hot = c >= Math.max(2, expected * 1.5);
+                let cls = 'rs-tok';
+                if (n === 7) cls += ' rs-seven';
+                if (n === lastRoll) cls += ' rs-last';
+                if (hot) cls += ' rs-hot';
+                tokens.push(`<span class="${cls}">`
+                    + `<span class="rs-n">${n}</span>`
+                    + `<span class="rs-c">${c}</span>`
+                    + '</span>');
             }
-            // Scale to expected-plus-headroom, not to maxCount. When a
-            // new roll lands on the leading bar, maxCount rises too —
-            // if scaleTop = maxCount, the bar's pct stays at 100% and
-            // we see NOTHING grow. Using 1.3× the expected count of 7
-            // (the most-likely number) leaves headroom so the leading
-            // bar visibly jumps on every new hit. Floor at 8 so a
-            // brand-new game has a legible chart from roll 1.
-            const maxExpected = totalRolls * 6 / 36;
-            const scaleTop = Math.max(
-                maxCount + 1, Math.ceil(maxExpected * 1.3), 8);
-            const bars = [];
-            const axis = [];
-            // Stash target heights so the post-render animation pass can
-            // tween each bar from its previous pct to the new one.
-            const nextBarPcts = Object.create(null);
-            for (let n = 2; n <= 12; n++) {
-                const c = Number(dist[n] || 0);
-                const pct = Math.max(1, Math.round((c / scaleTop) * 100));
-                nextBarPcts[n] = pct;
-                let cls = 'rd-col';
-                if (n === 7) cls += ' seven';
-                if (n === lastRoll) cls += ' last';
-                const countLbl = c > 0
-                    ? `<span class="rd-count">${c}</span>` : '';
-                // Render bar at FINAL height so it's correct on first
-                // paint (and for browsers without WAAPI). animateHistogramBars
-                // then runs a WAAPI tween from prev → next on top, which
-                // overrides the inline style during playback. data-prev
-                // carries the previous percent so the tween knows where
-                // to start; first-ever render starts at 1% (floor).
-                const startPct = Object.prototype.hasOwnProperty.call(
-                    prevHistogramPcts, n) ? prevHistogramPcts[n] : 1;
-                bars.push(`<div class="${cls}" data-roll="${n}">`
-                    + countLbl
-                    + `<div class="rd-bar" style="height:${pct}%" `
-                    + `data-prev="${startPct}" `
-                    + `data-target="${pct}"></div>`
-                    + '</div>');
-                let axCls = '';
-                if (n === 7) axCls += ' seven';
-                if (n === lastRoll) axCls += ' last';
-                axis.push(`<span class="${axCls.trim()}">${n}</span>`);
-            }
-            snap.__histogramPcts = nextBarPcts;
-            parts.push('<div class="roll-dist">'
-                + '<div class="rd-h">'
-                + '<span class="rd-label">rolls</span>'
-                + `<span class="rd-total">${totalRolls} total</span>`
-                + '</div>'
-                + `<div class="rd-bars">${bars.join('')}</div>`
-                + `<div class="rd-axis">${axis.join('')}</div>`
+            parts.push('<div class="roll-strip">'
+                + `<span class="rs-label">rolls · ${totalRolls}</span>`
+                + `<span class="rs-tokens">${tokens.join('')}</span>`
                 + '</div>');
         }
         // Yield summary: actual vs expected cards across the roll
@@ -2904,94 +2849,10 @@
             parts.push('</table>');
         }
         ui.content.innerHTML = parts.join('');
-        animateHistogramBars(ui, snap);
     }
 
-    // Live histogram animation. innerHTML rewrite replaces the bar DOM
-    // every render, so a CSS transition has no "from" state to interpolate
-    // from — the new element renders at its inline height directly.
-    // WAAPI's element.animate() works regardless: we hand it explicit
-    // {from, to} keyframes and the browser tweens between them, ignoring
-    // the destroyed-old-element problem entirely. On a fresh roll we
-    // also fire a glow pulse + count pop so the live update is
-    // unmistakable.
-    function animateHistogramBars(ui, snap) {
-        const next = snap && snap.__histogramPcts;
-        if (!next) return;
-        const cols = ui.content.querySelectorAll(
-            '.roll-dist .rd-col[data-roll]');
-        if (!cols.length) return;
-        const totalRolls = Number(snap.total_rolls || 0);
-        const lastRoll = snap.last_roll ? snap.last_roll.total : null;
-        // Game reset (rolls drop to 0, e.g. new lobby/match) wipes prev
-        // state so the next render of the new game doesn't tween from
-        // last game's heights.
-        if (totalRolls < prevTotalRolls) {
-            for (const k in prevHistogramPcts) delete prevHistogramPcts[k];
-        }
-        const fresh = totalRolls > prevTotalRolls && lastRoll != null;
-        cols.forEach((col) => {
-            const bar = col.querySelector('.rd-bar');
-            if (!bar) return;
-            const fromPct = parseFloat(bar.dataset.prev || '1');
-            const toPct = parseFloat(bar.dataset.target || '1');
-            if (typeof bar.animate === 'function' && fromPct !== toPct) {
-                try {
-                    bar.animate(
-                        [
-                            { height: fromPct + '%' },
-                            { height: toPct + '%' },
-                        ],
-                        { duration: 650,
-                          easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
-                } catch (e) { /* ignore */ }
-            }
-        });
-        if (fresh) {
-            cols.forEach((col) => {
-                const n = Number(col.dataset.roll);
-                if (n !== lastRoll) return;
-                const bar = col.querySelector('.rd-bar');
-                if (!bar || typeof bar.animate !== 'function') return;
-                const glow = n === 7
-                    ? 'rgba(248, 113, 113, 0.7)'
-                    : 'rgba(167, 139, 250, 0.7)';
-                const baseShadow = 'inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
-                try {
-                    bar.animate(
-                        [
-                            { boxShadow:
-                                `${baseShadow}, 0 0 0 0 transparent` },
-                            { boxShadow:
-                                `${baseShadow}, 0 0 18px 4px ${glow}`,
-                              offset: 0.4 },
-                            { boxShadow:
-                                `${baseShadow}, 0 0 0 0 transparent` },
-                        ],
-                        { duration: 800, easing: 'ease-out' });
-                } catch (e) { /* ignore */ }
-                const countEl = col.querySelector('.rd-count');
-                if (countEl
-                    && typeof countEl.animate === 'function') {
-                    try {
-                        countEl.animate(
-                            [
-                                { transform: 'scale(1)' },
-                                { transform: 'scale(1.5)', offset: 0.35 },
-                                { transform: 'scale(1)' },
-                            ],
-                            { duration: 700,
-                              easing:
-                                  'cubic-bezier(0.34, 1.56, 0.64, 1)' });
-                    } catch (e) { /* ignore */ }
-                }
-            });
-        }
-        for (let n = 2; n <= 12; n++) {
-            prevHistogramPcts[n] = next[n];
-        }
-        prevTotalRolls = totalRolls;
-    }
+    // (histogram chart removed — replaced with simple text strip; the
+    // animated bar version proved unreliable across innerHTML rewrites)
 
     function escapeHtml(s) {
         return String(s == null ? '' : s)
