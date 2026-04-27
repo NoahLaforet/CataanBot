@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23 fixes hero rec showing only verb (now shows trade detail), replaces fragile bar-chart histogram with a one-row roll strip, drops more chrome.
+// @version      0.23.1
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.1 pulls the broken roll-strip out — chart returns once it has a design that actually works.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -691,70 +691,10 @@
     margin-left: var(--s-2);
   }
 
-  /* Roll-strip — single-row text takeaway of the roll distribution.
-     Each token is a number-then-count pair (e.g. "6  3"); hot numbers
-     glow accent, just-rolled gets the alert ring, 7 tints alert.
-     Replaces the old animated bar chart that wouldn't tween reliably
-     across innerHTML rewrites. */
-  .roll-strip {
-    margin: var(--s-3) 0 var(--s-2);
-    display: flex; align-items: center;
-    gap: var(--s-3);
-    flex-wrap: wrap;
-  }
-  .roll-strip .rs-label {
-    color: var(--fg-label);
-    font-size: calc(11px * var(--font-scale));
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .roll-strip .rs-tokens {
-    display: flex; gap: var(--s-1);
-    flex: 1; flex-wrap: wrap;
-    justify-content: space-between;
-  }
-  .roll-strip .rs-tok {
-    display: inline-flex; flex-direction: column;
-    align-items: center;
-    padding: var(--s-1) var(--s-2);
-    border-radius: var(--radius-sm);
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    min-width: 32px;
-    font-variant-numeric: tabular-nums;
-  }
-  .roll-strip .rs-tok .rs-n {
-    color: var(--fg-mute);
-    font-size: calc(13px * var(--font-scale));
-    font-weight: 700;
-    line-height: 1;
-  }
-  .roll-strip .rs-tok .rs-c {
-    color: var(--fg);
-    font-size: calc(15px * var(--font-scale));
-    font-weight: 800;
-    line-height: 1.1;
-    margin-top: 2px;
-  }
-  .roll-strip .rs-tok.rs-seven {
-    background: rgba(248, 113, 113, 0.10);
-    border-color: rgba(248, 113, 113, 0.25);
-  }
-  .roll-strip .rs-tok.rs-seven .rs-n { color: var(--alert); }
-  .roll-strip .rs-tok.rs-hot {
-    background: rgba(167, 139, 250, 0.18);
-    border-color: rgba(167, 139, 250, 0.40);
-  }
-  .roll-strip .rs-tok.rs-hot .rs-c { color: var(--accent); }
-  .roll-strip .rs-tok.rs-last {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-  .roll-strip .rs-tok.rs-last .rs-c { color: var(--accent); }
-  .roll-strip .rs-tok.rs-last.rs-seven { outline-color: var(--alert); }
-  .roll-strip .rs-tok.rs-last.rs-seven .rs-c { color: var(--alert); }
+  /* Roll distribution intentionally removed — bar chart wouldn't
+     tween reliably; the text-strip replacement looked terrible.
+     Coming back to this with a fresh design once HUD direction is
+     settled. Last-roll info still surfaces via the banner. */
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(12px * var(--font-scale));
@@ -2617,39 +2557,9 @@
                 parts.push(`<div class="opp-yields">they: ${parts2}</div>`);
             }
         }
-        // Roll distribution as a one-row text strip — replaces the
-        // bar-chart histogram that kept failing to animate reliably.
-        // One token per 2..12: number with its count subscript. Hot
-        // numbers (>=1.5× expected) glow accent; the just-rolled
-        // number is highlighted; 7 is tinted alert when frequent.
-        // No SVG, no WAAPI, no flex/grid scaling games — just text.
-        const dist = snap.roll_histogram || {};
-        const totalRolls = snap.total_rolls || 0;
-        if (totalRolls > 0) {
-            const lastRoll = snap.last_roll ? snap.last_roll.total : null;
-            const tokens = [];
-            // Probabilities per number (×36 form for integer math):
-            // 2/12: 1, 3/11: 2, 4/10: 3, 5/9: 4, 6/8: 5, 7: 6
-            const w36 = { 2:1, 3:2, 4:3, 5:4, 6:5, 7:6,
-                          8:5, 9:4, 10:3, 11:2, 12:1 };
-            for (let n = 2; n <= 12; n++) {
-                const c = Number(dist[n] || 0);
-                const expected = totalRolls * w36[n] / 36;
-                const hot = c >= Math.max(2, expected * 1.5);
-                let cls = 'rs-tok';
-                if (n === 7) cls += ' rs-seven';
-                if (n === lastRoll) cls += ' rs-last';
-                if (hot) cls += ' rs-hot';
-                tokens.push(`<span class="${cls}">`
-                    + `<span class="rs-n">${n}</span>`
-                    + `<span class="rs-c">${c}</span>`
-                    + '</span>');
-            }
-            parts.push('<div class="roll-strip">'
-                + `<span class="rs-label">rolls · ${totalRolls}</span>`
-                + `<span class="rs-tokens">${tokens.join('')}</span>`
-                + '</div>');
-        }
+        // Roll distribution removed entirely. Last-roll info is on
+        // the banner already; the chart will return when there's a
+        // design that actually works (animated + readable).
         // Yield summary: actual vs expected cards across the roll
         // window. Flags "behind" when expected is clearly above actual,
         // i.e. dice droughts or the robber have cost us.
