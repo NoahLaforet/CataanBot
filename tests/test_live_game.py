@@ -947,8 +947,9 @@ def test_win_proximity_filters_non_vp_builds_from_afford():
     w = _compute_win_proximity(snap)
     assert w is not None
     assert w["vp_builds_affordable"] == []
-    # No builds → message falls back to generic push framing.
-    assert "keep pushing" in w["message"]
+    # No builds → message stays VP-only, with no fake build name.
+    assert "ready" not in w["message"]
+    assert "VP to win" in w["message"]
 
 
 # --- _compute_winning_move --------------------------------------------

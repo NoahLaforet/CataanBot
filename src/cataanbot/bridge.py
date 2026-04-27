@@ -3329,16 +3329,15 @@ def _compute_win_proximity(
         if vp_builds:
             msg = f"1 VP to win — {'/'.join(vp_builds)} ready"
         elif dev_cards_held > 0:
-            msg = (f"1 VP to win — {dev_cards_held} dev in hand "
-                   f"(VP?)")
+            msg = f"1 VP to win — {dev_cards_held} dev in hand"
         else:
-            msg = "1 VP to win — close it out"
+            msg = "1 VP to win"
     else:
         if vp_builds:
             msg = (f"{gap_to_win} VP to win — "
                    f"{'/'.join(vp_builds)} ready")
         else:
-            msg = f"{gap_to_win} VP to win — keep pushing"
+            msg = f"{gap_to_win} VP to win"
     return {
         "vp": vp,
         "gap_to_win": gap_to_win,
