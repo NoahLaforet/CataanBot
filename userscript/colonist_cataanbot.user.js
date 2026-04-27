@@ -1996,9 +1996,9 @@
             if ((me.ports || []).length) {
                 const portSegs = me.ports.map(p => p === 'GENERIC'
                     ? '3:1'
-                    : `2:1 ${p.slice(0, 3).toLowerCase()}`);
+                    : `2:1 ${iconFor(p)}`);
                 parts.push(`<div class="ports">ports: `
-                    + escapeHtml(portSegs.join(' · ')) + '</div>');
+                    + portSegs.join(' · ') + '</div>');
             }
             // Production rate — expected cards per dice roll given
             // current builds. Skip at 0 (setup phase) to avoid a
@@ -2006,7 +2006,7 @@
             const prod = me.production;
             if (prod && prod.per_roll > 0) {
                 const top = prod.top_resource
-                    ? ` · strongest ${prod.top_resource.slice(0, 3).toLowerCase()}`
+                    ? ` · strongest ${iconFor(prod.top_resource)}`
                     : '';
                 parts.push(`<div class="prod">prod: `
                     + `${prod.per_roll.toFixed(2)}/roll${top}</div>`);
@@ -2258,7 +2258,7 @@
             if (kh.best_target) {
                 const t = kh.best_target;
                 const tile = t.resource
-                    ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
+                    ? `${iconFor(t.resource)}${t.number ?? ''}`
                     : 'DES';
                 const scoreTxt = (t.score > 0 ? '+' : '') + t.score;
                 tail = ` · top ${tile} (${scoreTxt})`;
@@ -2275,11 +2275,11 @@
         }
         if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
             const mh = snap.monopoly_hint;
-            const resLbl = mh.resource.slice(0, 3).toLowerCase();
+            const resLbl = iconFor(mh.resource);
             const verdictCls = mh.should_play ? 'play' : 'hold';
             const verdictLbl = mh.should_play ? 'PLAY' : 'HOLD';
             let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + `target <b>${escapeHtml(resLbl)}</b> · ~${mh.est_steal} cards`;
+                + `target <b>${resLbl}</b> · ~${mh.est_steal} cards`;
             if (mh.unlock) {
                 body += `<span class="dv-unlock">${escapeHtml(mh.unlock)}</span>`;
             }
@@ -2303,11 +2303,11 @@
         }
         if (snap.yop_hint && snap.yop_hint.have > 0) {
             const yh = snap.yop_hint;
-            const pair = (yh.pair || []).map(r => r.slice(0, 3).toLowerCase()).join(' + ');
+            const pair = (yh.pair || []).map(r => iconFor(r)).join(' + ');
             const verdictCls = yh.should_play ? 'play' : 'hold';
             const verdictLbl = yh.should_play ? 'PLAY' : 'HOLD';
             let body = `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + `pick <b>${escapeHtml(pair)}</b>`;
+                + `pick <b>${pair}</b>`;
             if (yh.unlock) {
                 body += `<span class="dv-unlock">unlocks ${escapeHtml(yh.unlock)}</span>`;
             }
@@ -2424,7 +2424,7 @@
                 if (Array.isArray(o.ports) && o.ports.length) {
                     const segs = o.ports.map(p => p === 'GENERIC'
                         ? '3'
-                        : p.slice(0, 3).toLowerCase());
+                        : iconFor(p));
                     opPortTag = ` · port:${segs.join(',')}`;
                 }
                 // Builds the inferred hand can already pay for. Skip
@@ -2707,8 +2707,7 @@
         }
         if (snap.robber_on_me) {
             const rom = snap.robber_on_me;
-            const res = (rom.resource || '').slice(0, 3).toLowerCase();
-            const tileLbl = `${res}${rom.number || ''}`;
+            const tileLbl = `${iconFor(rom.resource)}${rom.number || ''}`;
             const nBuilds = rom.buildings;
             const subParts = [];
             subParts.push(nBuilds > 1
@@ -2770,10 +2769,10 @@
         if (snap.bank_supply && (snap.bank_supply.low || []).length) {
             const low = snap.bank_supply.low;
             const lbl = low.map(e =>
-                `${e.resource.slice(0, 3).toLowerCase()} ${e.count}`
+                `${iconFor(e.resource)} ${e.count}`
             ).join(' · ');
             parts.push('<div class="bank-low">');
-            parts.push(`bank low: ${escapeHtml(lbl)}`);
+            parts.push(`bank low: ${lbl}`);
             parts.push('<span class="bl-sub">4:1 trades blocked at 0</span>');
             parts.push('</div>');
         }
@@ -2822,7 +2821,7 @@
             for (let i = 0; i < snap.robber_targets.length; i++) {
                 const t = snap.robber_targets[i];
                 const tile = t.resource
-                    ? `${t.resource.slice(0, 3)}${t.number ?? ''}`
+                    ? `${iconFor(t.resource)}${t.number ?? ''}`
                     : 'DES';
                 const victims = (t.victims || []).map(v => {
                     const bg = v.color_css || COLOR_HEX[v.color] || '#888';
