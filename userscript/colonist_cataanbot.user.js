@@ -1983,7 +1983,7 @@
                 // "nothing buildable" because it says what to aim for.
                 const nb = me.next_build;
                 const missingStr = Object.entries(nb.missing || {})
-                    .map(([r, n]) => `${n} ${r.toLowerCase().slice(0,3)}`)
+                    .map(([r, n]) => `${n} ${iconFor(r)}`)
                     .join(' + ');
                 parts.push(`<div class="afford near">→ ${escapeHtml(missingStr)}`
                     + ` from ${escapeHtml(nb.build)}</div>`);
@@ -2792,7 +2792,7 @@
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
             const dropText = Object.entries(dh.drop)
-                .map(([res, n]) => `${n} ${res.slice(0, 2).toLowerCase()}`)
+                .map(([res, n]) => `${n} ${iconFor(res)}`)
                 .join(' · ');
             parts.push('<div class="discard-hint">');
             parts.push(`<div class="dh-h">discard ${dh.need}</div>`);
