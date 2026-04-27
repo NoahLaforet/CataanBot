@@ -1835,6 +1835,10 @@
     // rebalance). Populated after every successful render; read before
     // setting up the next frame's animations. Keyed by roll total (2..12).
     const prevHistogramPcts = Object.create(null);
+    // Tracks total_rolls across renders so the histogram can fire a glow
+    // pulse only on actually-fresh rolls (not on rescale-only re-renders
+    // or the very first render after game start).
+    let prevTotalRolls = 0;
 
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
@@ -2852,15 +2856,24 @@
     // Live histogram animation. innerHTML rewrite replaces the bar DOM
     // every render, so CSS transitions can't tween — but Web Animations
     // API lets us schedule a from→to height animation on the fresh bar
-    // element, starting from the previous render's pct. The effect: when
-    // a new roll lands, the winning column visibly grows from its prior
-    // height to its new height (rather than snapping). When no counts
-    // changed, animations are no-ops so idle ticks stay quiet.
+    // element, starting from the previous render's pct. On a new roll
+    // we ALSO fire a glow pulse on the bar and a scale pop on the count
+    // label so the live update is unmistakable instead of a subtle 500ms
+    // height tween that's easy to miss mid-game.
     function animateHistogramBars(ui, snap) {
         const next = snap && snap.__histogramPcts;
         if (!next) return;
         const cols = ui.content.querySelectorAll(
             '.roll-dist .rd-col[data-roll]');
+        const totalRolls = Number(snap.total_rolls || 0);
+        const lastRoll = snap.last_roll ? snap.last_roll.total : null;
+        // Game reset (rolls drop to 0, e.g. new lobby/match) wipes prev
+        // state so the next render of the new game doesn't tween from
+        // last game's heights.
+        if (totalRolls < prevTotalRolls) {
+            for (const k in prevHistogramPcts) delete prevHistogramPcts[k];
+        }
+        const fresh = totalRolls > prevTotalRolls && lastRoll != null;
         cols.forEach((col) => {
             const n = Number(col.dataset.roll);
             const bar = col.querySelector('.rd-bar');
@@ -2868,24 +2881,63 @@
             const prevPct = prevHistogramPcts[n];
             const nextPct = next[n];
             if (nextPct == null) return;
-            if (prevPct == null || prevPct === nextPct) return;
             if (typeof bar.animate !== 'function') return;
-            try {
-                bar.animate(
-                    [
-                        { height: prevPct + '%' },
-                        { height: nextPct + '%' },
-                    ],
-                    {
-                        duration: 500,
-                        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-                        fill: 'backwards',
-                    });
-            } catch (e) { /* WAAPI unsupported — bar snaps to final pct */ }
+            if (prevPct != null && prevPct !== nextPct) {
+                try {
+                    bar.animate(
+                        [
+                            { height: prevPct + '%' },
+                            { height: nextPct + '%' },
+                        ],
+                        {
+                            duration: 500,
+                            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                            fill: 'backwards',
+                        });
+                } catch (e) { /* WAAPI unsupported — snap to final pct */ }
+            }
+            if (fresh && n === lastRoll) {
+                // Pulse the bar's drop-shadow with the bar's own hue
+                // (warm yellow normally, alert-red on a 7) so the
+                // newly-rolled column flashes for ~700ms.
+                const glow = n === 7
+                    ? 'rgba(255, 109, 97, 0.6)'
+                    : 'rgba(255, 207, 94, 0.6)';
+                const baseShadow = 'inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
+                try {
+                    bar.animate(
+                        [
+                            { boxShadow:
+                                `${baseShadow}, 0 0 0 0 transparent` },
+                            { boxShadow:
+                                `${baseShadow}, 0 0 14px 3px ${glow}`,
+                              offset: 0.4 },
+                            { boxShadow:
+                                `${baseShadow}, 0 0 0 0 transparent` },
+                        ],
+                        { duration: 700, easing: 'ease-out' });
+                } catch (e) { /* ignore */ }
+                const countEl = col.querySelector('.rd-count');
+                if (countEl
+                    && typeof countEl.animate === 'function') {
+                    try {
+                        countEl.animate(
+                            [
+                                { transform: 'scale(1)' },
+                                { transform: 'scale(1.4)', offset: 0.35 },
+                                { transform: 'scale(1)' },
+                            ],
+                            { duration: 600,
+                              easing:
+                                  'cubic-bezier(0.34, 1.56, 0.64, 1)' });
+                    } catch (e) { /* ignore */ }
+                }
+            }
         });
         for (let n = 2; n <= 12; n++) {
             prevHistogramPcts[n] = next[n];
         }
+        prevTotalRolls = totalRolls;
     }
 
     function escapeHtml(s) {
