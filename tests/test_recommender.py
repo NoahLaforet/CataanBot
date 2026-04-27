@@ -282,7 +282,7 @@ def test_propose_trade_dominates_port_rate_when_spare_exists():
         f"expected WOOD→ORE propose, got {[r['kind'] for r in out]}")
     t = proposals[0]
     assert t["give"] == {"WOOD": 1}, t
-    assert "propose" in t["detail"].lower()
+    assert t["variant"] == "1:1 fair"
     assert t["unlocks"] == "dev_card"
 
 

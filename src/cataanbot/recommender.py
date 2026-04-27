@@ -1284,10 +1284,10 @@ def recommend_actions(
             "give": give,
             "get": get,
             "unlocks": kind,
-            "detail": (f"{steps} · then build {label_word}"
+            "detail": (f"{steps} → {label_word}"
                        if len(plan) == 1
-                       else f"trade {_fmt_pack(give)} → {_fmt_pack(get)} "
-                            f"({rate_sum} cards) · then build {label_word}"),
+                       else f"{_fmt_pack(give)} → {_fmt_pack(get)} "
+                            f"({rate_sum} cards) → {label_word}"),
         }
         if node_or_none is not None:
             rec["node_id"] = int(node_or_none)
@@ -1402,10 +1402,10 @@ def recommend_actions(
                     "unlocks": kind,
                     "variant": label,
                     "detail": (
-                        f"propose {label}: {give_n} "
+                        f"{label}: {give_n} "
                         f"{_resource_title(best_src)} → "
                         f"{get_n} {_resource_title(need_res)} · "
-                        f"ask the table · toward {kind_word}"),
+                        f"→ {kind_word}"),
                 }
                 if node_or_none is not None:
                     rec["node_id"] = int(node_or_none)
