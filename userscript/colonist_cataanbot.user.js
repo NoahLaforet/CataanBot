@@ -176,13 +176,13 @@
        single archetype (3px left-edge bar + uniform dark bg).
      - 14px body base with a 4px spacing grid. Generous line-height.
      -------------------------------------------------------------- */
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
   :host, * { box-sizing: border-box; }
 
   .panel {
     /* layout */
-    --panel-w: 520px;
+    --panel-w: 540px;
     --panel-h: auto;
     --font-scale: 1;
 
@@ -195,32 +195,33 @@
     --s-6: 20px;
     --s-7: 24px;
 
-    /* surfaces */
-    --bg-0: #0c0d11;
-    --bg-1: #14161d;
-    --bg-2: #1c1e27;
-    --bg-3: #252834;
-    --line:        rgba(255, 255, 255, 0.06);
-    --line-strong: rgba(255, 255, 255, 0.12);
+    /* surfaces — cool slate-blue, dashboard-tool feel */
+    --bg-0: #0a0d14;
+    --bg-1: #11151f;
+    --bg-2: #161b29;
+    --bg-3: #1f2434;
+    --line:        rgba(255, 255, 255, 0.05);
+    --line-strong: rgba(255, 255, 255, 0.10);
 
     /* text ladder */
-    --fg:       #eef0f5;
-    --fg-mute:  #a9aeba;
-    --fg-dim:   #70768a;
-    --fg-label: #7a7fa0;
+    --fg:       #eef1f6;
+    --fg-mute:  #a8b0bf;
+    --fg-dim:   #6b7180;
+    --fg-label: #888ea1;
 
-    /* signal palette — only 5 */
-    --pos:    #7ed99f;
-    --warn:   #ecb06a;
-    --alert:  #ff6d61;
-    --info:   #7dc0f2;
-    --accent: #ffcf5e;
+    /* signal palette — vivid, electric */
+    --pos:    #4ade80;
+    --warn:   #fbbf24;
+    --alert:  #f87171;
+    --info:   #60a5fa;
+    --accent: #a78bfa;
 
-    --radius-sm: 3px;
-    --radius:    6px;
-    --radius-lg: 10px;
+    --radius-sm: 4px;
+    --radius:    8px;
+    --radius-lg: 12px;
 
-    --font: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 
     font-family: var(--font);
     font-size: calc(16px * var(--font-scale));
@@ -268,7 +269,7 @@
   }
   .dot.live {
     background: var(--pos);
-    box-shadow: 0 0 0 3px rgba(126, 217, 159, 0.18);
+    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18);
   }
   .btn {
     cursor: pointer;
@@ -467,7 +468,7 @@
   .hand .mono-risk {
     color: var(--warn);
     font-weight: 700;
-    text-shadow: 0 0 6px rgba(236, 176, 106, 0.3);
+    text-shadow: 0 0 6px rgba(251, 191, 36, 0.3);
   }
   .mono-warn {
     color: var(--warn);
@@ -653,7 +654,7 @@
   .roll-history .rh.hit {
     color: var(--pos);
     font-weight: 700;
-    background: rgba(126, 217, 159, 0.1);
+    background: rgba(74, 222, 128, 0.1);
   }
   .roll-history .rh.blocked {
     color: var(--alert);
@@ -698,13 +699,15 @@
     font-size: calc(11px * var(--font-scale));
   }
   /* Colonist-style chart: solid filled bars, taller column, no dashed
-     expected overlay. The number axis is the visual anchor. */
+     expected overlay. The number axis is the visual anchor. Bumped to
+     140px so growth-per-roll reads as a real visual change instead of
+     a 1-2px nudge. */
   .roll-dist .rd-bars {
     display: grid;
     grid-template-columns: repeat(11, 1fr);
-    gap: 4px;
+    gap: 5px;
     align-items: end;
-    height: 100px;
+    height: 140px;
     padding: 0 1px;
   }
   .roll-dist .rd-col {
@@ -715,13 +718,17 @@
   }
   .roll-dist .rd-bar {
     width: 100%;
-    background: rgba(126, 217, 159, 0.55);
-    border-radius: 2px 2px 0 0;
+    background: rgba(74, 222, 128, 0.55);
+    border-radius: 3px 3px 0 0;
     min-height: 1px;
     box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    /* WAAPI handles the live tween — see animateHistogramBars. CSS
+       transition is intentionally NOT used here because innerHTML
+       replacement destroys/recreates the element on every render, and
+       there's no previous element to transition FROM. */
   }
   .roll-dist .rd-col.seven .rd-bar {
-    background: rgba(245, 144, 129, 0.55);
+    background: rgba(248, 113, 113, 0.55);
   }
   .roll-dist .rd-col.last .rd-bar {
     background: var(--accent);
@@ -816,20 +823,24 @@
   }
   /* Hero top rec — this is the "what do I do NOW" block. Big kind
      label, big tile chips, gradient accent bar on the left. Score and
-     detail drop away so the eye only catches verb + target. */
+     detail drop away so the eye only catches verb + target.
+     Extra-bold treatment: 34px kind, deeper pad, glow accent — Noah
+     reads the play in one glance from across the desk. */
   .rec.top {
-    padding: var(--s-4) var(--s-5);
-    margin: var(--s-2) 0 var(--s-3);
+    padding: var(--s-5) var(--s-6);
+    margin: var(--s-3) 0 var(--s-4);
     background:
       linear-gradient(180deg,
-        rgba(126, 217, 159, 0.09),
-        rgba(126, 217, 159, 0.02) 60%,
+        rgba(74, 222, 128, 0.14),
+        rgba(74, 222, 128, 0.04) 60%,
         transparent);
     border-radius: var(--radius);
-    border-left: 5px solid var(--pos);
+    border-left: 6px solid var(--pos);
+    box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.08) inset,
+                0 6px 20px rgba(74, 222, 128, 0.05);
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--s-2);
+    gap: var(--s-3);
     opacity: 1;
     color: var(--fg);
   }
@@ -844,10 +855,11 @@
   .rec.top .kind {
     min-width: 0;
     color: var(--pos);
-    font-size: calc(26px * var(--font-scale));
+    font-size: calc(34px * var(--font-scale));
     font-weight: 900;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     line-height: 1;
+    text-shadow: 0 0 24px rgba(74, 222, 128, 0.25);
   }
   .rec .detail {
     color: var(--fg-dim);
@@ -873,23 +885,23 @@
     font-size: calc(11px * var(--font-scale));
     padding: 2px var(--s-3);
   }
-  .rec .score.strong { background: rgba(126, 217, 159, 0.16); color: var(--pos); }
-  .rec .score.decent { background: rgba(236, 176, 106, 0.16); color: var(--warn); }
+  .rec .score.strong { background: rgba(74, 222, 128, 0.16); color: var(--pos); }
+  .rec .score.decent { background: rgba(251, 191, 36, 0.16); color: var(--warn); }
   .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
   .rec .tiles { color: var(--fg-mute); font-size: calc(13px * var(--font-scale)); }
   .rec.top .tiles {
     color: var(--fg);
-    font-size: calc(16px * var(--font-scale));
-    font-weight: 600;
+    font-size: calc(19px * var(--font-scale));
+    font-weight: 700;
   }
-  .rec.top .tile-num { font-size: calc(17px * var(--font-scale)); }
+  .rec.top .tile-num { font-size: calc(20px * var(--font-scale)); }
   .rec.top .tile-chip {
     display: inline-block;
-    padding: 2px var(--s-2);
+    padding: 3px var(--s-3);
     margin-right: var(--s-2);
-    background: rgba(126, 217, 159, 0.08);
+    background: rgba(74, 222, 128, 0.12);
     border-radius: var(--radius-sm);
-    border: 1px solid rgba(126, 217, 159, 0.2);
+    border: 1px solid rgba(74, 222, 128, 0.28);
   }
   .tile-chip {
     display: inline-block;
@@ -908,12 +920,17 @@
 
   .rec-sub {
     color: var(--pos);
-    font-size: calc(13px * var(--font-scale));
-    padding: 0 0 var(--s-1) 62px;
-    opacity: 0.92;
+    font-size: calc(14px * var(--font-scale));
+    font-weight: 600;
+    padding: 0 0 var(--s-1) var(--s-5);
+    opacity: 0.95;
   }
-  .rec-sub .warn  { color: var(--warn); font-weight: 600; }
-  .rec-sub .arrow { color: var(--fg-dim); margin-right: var(--s-1); }
+  .rec-sub .warn  { color: var(--warn); font-weight: 700; }
+  .rec-sub .arrow {
+    color: var(--accent);
+    margin-right: var(--s-1);
+    font-weight: 700;
+  }
   .rec-sub.plan-second { color: var(--info); }
   .rec-sub.plan-second .arrow { color: var(--fg-dim); }
   .rec-sub.plan-second .cov {
@@ -923,7 +940,7 @@
     font-variant-numeric: tabular-nums;
   }
   .rec-sub.plan-second .arch {
-    background: rgba(125, 192, 242, 0.16);
+    background: rgba(96, 165, 250, 0.16);
     color: var(--info);
     border-radius: var(--radius-lg);
     padding: 1px var(--s-2);
@@ -937,7 +954,7 @@
     min-width: 22px;
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
-    background: rgba(255, 207, 94, 0.18);
+    background: rgba(167, 139, 250, 0.18);
     color: var(--accent);
     font-weight: 800;
     font-size: calc(11px * var(--font-scale));
@@ -980,7 +997,7 @@
     color: var(--alert);
     font-weight: 700;
     background: linear-gradient(90deg,
-      rgba(255, 109, 97, 0.08), var(--bg-1) 50%);
+      rgba(248, 113, 113, 0.08), var(--bg-1) 50%);
   }
 
   .win-prox.close   { border-left-color: var(--pos); color: var(--pos); }
@@ -989,14 +1006,14 @@
     color: var(--pos);
     font-weight: 600;
     background: linear-gradient(90deg,
-      rgba(126, 217, 159, 0.08), var(--bg-1) 50%);
+      rgba(74, 222, 128, 0.08), var(--bg-1) 50%);
   }
   .win-prox.win {
     border-left-color: var(--pos);
     color: var(--pos);
     font-weight: 700;
     background: linear-gradient(90deg,
-      rgba(126, 217, 159, 0.16), var(--bg-1) 50%);
+      rgba(74, 222, 128, 0.16), var(--bg-1) 50%);
   }
 
   /* WIN THIS TURN — the loudest element in the HUD, full stop. When
@@ -1010,13 +1027,13 @@
     font-weight: 700;
     padding: var(--s-4) var(--s-5);
     background: linear-gradient(90deg,
-      rgba(126, 217, 159, 0.26), var(--bg-1) 70%);
+      rgba(74, 222, 128, 0.26), var(--bg-1) 70%);
   }
   .winning-move.hedge {
     border-left-color: var(--accent);
     color: var(--accent);
     background: linear-gradient(90deg,
-      rgba(255, 207, 94, 0.18), var(--bg-1) 70%);
+      rgba(167, 139, 250, 0.18), var(--bg-1) 70%);
   }
   .winning-move .wm-head {
     display: block;
@@ -1150,8 +1167,8 @@
     letter-spacing: 0.12em;
     font-size: calc(11px * var(--font-scale));
   }
-  .trade-offer .verdict.accept   { background: rgba(126, 217, 159, 0.18); color: var(--pos); }
-  .trade-offer .verdict.decline  { background: rgba(255, 109, 97, 0.18);  color: var(--alert); }
+  .trade-offer .verdict.accept   { background: rgba(74, 222, 128, 0.18); color: var(--pos); }
+  .trade-offer .verdict.decline  { background: rgba(248, 113, 113, 0.18);  color: var(--alert); }
   .trade-offer .verdict.consider { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
   .trade-offer .swap-side { color: var(--fg); }
   .trade-offer .swap-arrow { color: var(--fg-dim); margin: 0 var(--s-2); }
@@ -1159,7 +1176,7 @@
     margin-top: var(--s-2);
     padding: var(--s-2) var(--s-3);
     border-radius: var(--radius-sm);
-    background: rgba(125, 192, 242, 0.08);
+    background: rgba(96, 165, 250, 0.08);
     border-left: 2px solid var(--info);
     color: var(--fg);
     font-size: calc(12px * var(--font-scale));
@@ -1201,7 +1218,7 @@
     letter-spacing: 0.12em;
     font-size: calc(9px * var(--font-scale));
   }
-  .knight-hint .kh-verdict.play { background: rgba(126, 217, 159, 0.18); color: var(--pos); }
+  .knight-hint .kh-verdict.play { background: rgba(74, 222, 128, 0.18); color: var(--pos); }
   .knight-hint .kh-verdict.hold { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
   /* "big" modifier: used when the hint cluster lives right under the
      rec list (instead of buried at the bottom of the HUD). Scales
@@ -1227,7 +1244,7 @@
   .knight-hint.should-play,
   .dev-hint.should-play {
     background: linear-gradient(90deg,
-      rgba(126, 217, 159, 0.14), var(--bg-1) 70%);
+      rgba(74, 222, 128, 0.14), var(--bg-1) 70%);
     border-left-color: var(--pos);
   }
   .knight-hint.should-play .kh-h,
@@ -1291,7 +1308,7 @@
     vertical-align: baseline;
   }
   .dev-hint .kh-verdict.play {
-    background: rgba(126, 217, 159, 0.18);
+    background: rgba(74, 222, 128, 0.18);
     color: var(--pos);
   }
   .dev-hint .kh-verdict.hold {
@@ -1311,7 +1328,7 @@
   }
   .game-plan.ready {
     border-left-color: var(--pos);
-    background: rgba(126, 217, 159, 0.06);
+    background: rgba(74, 222, 128, 0.06);
   }
   .game-plan .gp-h {
     color: var(--accent);
@@ -1361,7 +1378,7 @@
     letter-spacing: 0.08em;
     padding: 1px 5px;
     border-radius: 2px;
-    background: rgba(126, 217, 159, 0.14);
+    background: rgba(74, 222, 128, 0.14);
   }
   .strat-opt .strat-label {
     color: var(--fg);
@@ -1400,7 +1417,7 @@
     display: none;
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
-    background: rgba(236, 176, 106, 0.18);
+    background: rgba(251, 191, 36, 0.18);
     color: var(--warn);
     font-size: calc(9px * var(--font-scale));
     font-weight: 800;
@@ -1451,10 +1468,10 @@
   }
   .drawer-btn.danger {
     color: var(--alert);
-    border-color: rgba(255, 109, 97, 0.35);
+    border-color: rgba(248, 113, 113, 0.35);
   }
   .drawer-btn.danger:hover {
-    background: rgba(255, 109, 97, 0.12);
+    background: rgba(248, 113, 113, 0.12);
     border-color: var(--alert);
   }
   .drawer-btn.armed {
@@ -1465,11 +1482,11 @@
     animation: cataanbot-armed-pulse 0.7s ease-in-out infinite alternate;
   }
   @keyframes cataanbot-armed-pulse {
-    from { box-shadow: 0 0 0 0 rgba(255, 109, 97, 0.55); }
-    to   { box-shadow: 0 0 0 5px rgba(255, 109, 97, 0); }
+    from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55); }
+    to   { box-shadow: 0 0 0 5px rgba(248, 113, 113, 0); }
   }
   .drawer-btn.flash-ok {
-    background: rgba(126, 217, 159, 0.18);
+    background: rgba(74, 222, 128, 0.18);
     color: var(--pos);
     border-color: var(--pos);
   }
@@ -1504,7 +1521,7 @@
     transition: left 0.15s, background 0.15s;
   }
   .toggle input[type="checkbox"]:checked {
-    background: rgba(236, 176, 106, 0.3);
+    background: rgba(251, 191, 36, 0.3);
     border-color: var(--warn);
   }
   .toggle input[type="checkbox"]:checked::after {
@@ -1912,20 +1929,17 @@
             const fg = contrastText(bg);
             const pill = `<span class="color-pill" style="background:${bg};`
                 + `color:${fg};">${escapeHtml(me.username)}</span>`;
-            // Meta trailer: cards · pieces · knights. Uppercase tracked
-            // label pinned below the identity row so the main row stays
-            // clean — pill on the left, big VP on the right.
+            // Meta trailer: cards · knights. Piece counts (Xs/Yc/Zr)
+            // were dropped — they read as cryptic shorthand and Catan's
+            // own UI already shows them. Knights-played stays since it's
+            // a hidden-VP signal we surface elsewhere.
             const metaSegs = [];
             const meFatHand = (me.cards || 0) >= 8;
             metaSegs.push(meFatHand
-                ? `<span class="fat-hand">${me.cards}c</span>`
-                : `${me.cards}c`);
-            if (me.pieces) {
-                const p = me.pieces;
-                metaSegs.push(`${p.settle}s/${p.city}c/${p.road}r`);
-            }
+                ? `<span class="fat-hand">${me.cards} cards</span>`
+                : `${me.cards} cards`);
             if ((me.knights_played || 0) > 0) {
-                metaSegs.push(`${me.knights_played}k`);
+                metaSegs.push(`${me.knights_played} knights`);
             }
             const metaHtml = `<span class="self-meta">`
                 + metaSegs.join(' · ') + `</span>`;
@@ -2401,14 +2415,11 @@
                         ? ` · <span class="dev-stash">${o.dev_cards}dev🔒</span>`
                         : ` · ${o.dev_cards}dev`)
                     : '';
-                let piecesTag = '';
-                if (o.pieces) {
-                    const p = o.pieces;
-                    piecesTag = ` · ${p.settle}s/${p.city}c/${p.road}r`;
-                }
                 // Played-knights counter — silent at 0, flags at 2+
                 // (one away from largest army) so the overlay colors
-                // pick that opp out of the list.
+                // pick that opp out of the list. Piece counts
+                // ("Xs/Yc/Zr") removed — Catan's own UI shows them and
+                // they read as clutter on the HUD.
                 const kpTag = (o.knights_played || 0) > 0
                     ? ` · ${o.knights_played}k` : '';
                 const hotKnight = (o.knights_played || 0) >= 2;
@@ -2476,7 +2487,7 @@
                     cardsSpan += ` <span class="${cls}">(${sign}${o.card_delta})</span>`;
                 }
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${piecesTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}${oneShortTag}`
+                    + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}${oneShortTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
@@ -2632,9 +2643,19 @@
                 if (n === lastRoll) cls += ' last';
                 const countLbl = c > 0
                     ? `<span class="rd-count">${c}</span>` : '';
+                // Render bar at FINAL height so it's correct on first
+                // paint (and for browsers without WAAPI). animateHistogramBars
+                // then runs a WAAPI tween from prev → next on top, which
+                // overrides the inline style during playback. data-prev
+                // carries the previous percent so the tween knows where
+                // to start; first-ever render starts at 1% (floor).
+                const startPct = Object.prototype.hasOwnProperty.call(
+                    prevHistogramPcts, n) ? prevHistogramPcts[n] : 1;
                 bars.push(`<div class="${cls}" data-roll="${n}">`
                     + countLbl
-                    + `<div class="rd-bar" style="height:${pct}%"></div>`
+                    + `<div class="rd-bar" style="height:${pct}%" `
+                    + `data-prev="${startPct}" `
+                    + `data-target="${pct}"></div>`
                     + '</div>');
                 let axCls = '';
                 if (n === 7) axCls += ' seven';
@@ -2854,17 +2875,19 @@
     }
 
     // Live histogram animation. innerHTML rewrite replaces the bar DOM
-    // every render, so CSS transitions can't tween — but Web Animations
-    // API lets us schedule a from→to height animation on the fresh bar
-    // element, starting from the previous render's pct. On a new roll
-    // we ALSO fire a glow pulse on the bar and a scale pop on the count
-    // label so the live update is unmistakable instead of a subtle 500ms
-    // height tween that's easy to miss mid-game.
+    // every render, so a CSS transition has no "from" state to interpolate
+    // from — the new element renders at its inline height directly.
+    // WAAPI's element.animate() works regardless: we hand it explicit
+    // {from, to} keyframes and the browser tweens between them, ignoring
+    // the destroyed-old-element problem entirely. On a fresh roll we
+    // also fire a glow pulse + count pop so the live update is
+    // unmistakable.
     function animateHistogramBars(ui, snap) {
         const next = snap && snap.__histogramPcts;
         if (!next) return;
         const cols = ui.content.querySelectorAll(
             '.roll-dist .rd-col[data-roll]');
+        if (!cols.length) return;
         const totalRolls = Number(snap.total_rolls || 0);
         const lastRoll = snap.last_roll ? snap.last_roll.total : null;
         // Game reset (rolls drop to 0, e.g. new lobby/match) wipes prev
@@ -2875,34 +2898,31 @@
         }
         const fresh = totalRolls > prevTotalRolls && lastRoll != null;
         cols.forEach((col) => {
-            const n = Number(col.dataset.roll);
             const bar = col.querySelector('.rd-bar');
             if (!bar) return;
-            const prevPct = prevHistogramPcts[n];
-            const nextPct = next[n];
-            if (nextPct == null) return;
-            if (typeof bar.animate !== 'function') return;
-            if (prevPct != null && prevPct !== nextPct) {
+            const fromPct = parseFloat(bar.dataset.prev || '1');
+            const toPct = parseFloat(bar.dataset.target || '1');
+            if (typeof bar.animate === 'function' && fromPct !== toPct) {
                 try {
                     bar.animate(
                         [
-                            { height: prevPct + '%' },
-                            { height: nextPct + '%' },
+                            { height: fromPct + '%' },
+                            { height: toPct + '%' },
                         ],
-                        {
-                            duration: 500,
-                            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-                            fill: 'backwards',
-                        });
-                } catch (e) { /* WAAPI unsupported — snap to final pct */ }
+                        { duration: 650,
+                          easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+                } catch (e) { /* ignore */ }
             }
-            if (fresh && n === lastRoll) {
-                // Pulse the bar's drop-shadow with the bar's own hue
-                // (warm yellow normally, alert-red on a 7) so the
-                // newly-rolled column flashes for ~700ms.
+        });
+        if (fresh) {
+            cols.forEach((col) => {
+                const n = Number(col.dataset.roll);
+                if (n !== lastRoll) return;
+                const bar = col.querySelector('.rd-bar');
+                if (!bar || typeof bar.animate !== 'function') return;
                 const glow = n === 7
-                    ? 'rgba(255, 109, 97, 0.6)'
-                    : 'rgba(255, 207, 94, 0.6)';
+                    ? 'rgba(248, 113, 113, 0.7)'
+                    : 'rgba(167, 139, 250, 0.7)';
                 const baseShadow = 'inset 0 -1px 0 rgba(0, 0, 0, 0.15)';
                 try {
                     bar.animate(
@@ -2910,12 +2930,12 @@
                             { boxShadow:
                                 `${baseShadow}, 0 0 0 0 transparent` },
                             { boxShadow:
-                                `${baseShadow}, 0 0 14px 3px ${glow}`,
+                                `${baseShadow}, 0 0 18px 4px ${glow}`,
                               offset: 0.4 },
                             { boxShadow:
                                 `${baseShadow}, 0 0 0 0 transparent` },
                         ],
-                        { duration: 700, easing: 'ease-out' });
+                        { duration: 800, easing: 'ease-out' });
                 } catch (e) { /* ignore */ }
                 const countEl = col.querySelector('.rd-count');
                 if (countEl
@@ -2924,16 +2944,16 @@
                         countEl.animate(
                             [
                                 { transform: 'scale(1)' },
-                                { transform: 'scale(1.4)', offset: 0.35 },
+                                { transform: 'scale(1.5)', offset: 0.35 },
                                 { transform: 'scale(1)' },
                             ],
-                            { duration: 600,
+                            { duration: 700,
                               easing:
                                   'cubic-bezier(0.34, 1.56, 0.64, 1)' });
                     } catch (e) { /* ignore */ }
                 }
-            }
-        });
+            });
+        }
         for (let n = 2; n <= 12; n++) {
             prevHistogramPcts[n] = next[n];
         }
