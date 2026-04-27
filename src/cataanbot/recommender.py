@@ -1098,7 +1098,7 @@ def recommend_actions(
                 "edge": list(edge),
                 "landing_node": far,
                 "score": _score_road(prod) * 0.6,
-                "detail": "no open settle spot — extend network",
+                "detail": "extends network · no settle spot",
                 "tiles": _tile_label(m, far),
                 "sealed": True,
             }
