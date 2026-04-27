@@ -682,6 +682,37 @@ def test_recommend_opening_holds_on_settle_before_road():
     assert out[0].get("action") == "road"
 
 
+def test_recommend_opening_infers_self_color_when_unlatched():
+    """Bridge calls in with ``color=None`` until ``self_color_id``
+    latches (which can lag through the first settlement). When exactly
+    one color on the board has placed a settlement without its matching
+    road, that color is unambiguously the one needing the road hint —
+    fall back to it so the arrow-bearing road followup still renders.
+
+    Regression: without this fallback, the opening pick would clear to
+    generic round-1 settle picks the moment the user dropped their 1st
+    settlement, leaving them no direction arrow for the 1st road."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=13,
+    )
+    # RED placed a settlement, no road yet. self_color_id hasn't latched.
+    first = next(iter(g.state.board.map.land_nodes))
+    g.state.board.build_settlement(
+        Color.RED, first, initial_build_phase=True)
+    out = recommend_opening(g, None, top=3)
+    assert out, "must still return a rec when c=None but a player owes a road"
+    assert len(out) == 1
+    assert out[0]["node_id"] == first
+    assert out[0]["road"] is not None
+    assert out[0]["road"].get("direction") is not None
+    assert out[0].get("action") == "road"
+
+
 def test_recommend_opening_round2_holds_on_2nd_settle_before_2nd_road():
     """Round-2 analog of the settle-before-road pin. RED has placed
     1st settle + 1st road (round 1) plus 2nd settle but not yet the
