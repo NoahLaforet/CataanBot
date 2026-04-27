@@ -256,6 +256,32 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     # reachable node even when it's currently blocked by the proposed
     # settlement's distance rule — it'll reopen once someone moves.
     full_scored = {ns.node_id: ns for ns in score_opening_nodes(game)}
+
+    # Color-fallback: if self_color_id hasn't latched yet but exactly one
+    # color on the board has more settlements than roads, that color is
+    # the one whose road we'd recommend regardless. This keeps the
+    # arrow-bearing road followup visible during the place-settle →
+    # place-road window even before colonist has shipped a userId frame.
+    settles_by_color: dict[Any, int] = {}
+    for _nid, (col, bt) in game.state.board.buildings.items():
+        if bt == "SETTLEMENT":
+            settles_by_color[col] = settles_by_color.get(col, 0) + 1
+    roads_by_color: dict[Any, int] = {}
+    seen_edges_global: set[frozenset[int]] = set()
+    for (a, b), col in game.state.board.roads.items():
+        key = frozenset((int(a), int(b)))
+        if key in seen_edges_global:
+            continue
+        seen_edges_global.add(key)
+        roads_by_color[col] = roads_by_color.get(col, 0) + 1
+    if c is None:
+        pending = [
+            col for col, cnt in settles_by_color.items()
+            if cnt > roads_by_color.get(col, 0)
+        ]
+        if len(pending) == 1:
+            c = pending[0]
+
     if len(placed) >= 2 * num_players:
         if c is None:
             return []
@@ -264,27 +290,9 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             scored_by_node=full_scored, m=m,
         )
     # Note whether I already have a settlement down (round-2 context).
-    my_placed = 0 if c is None else sum(
-        1 for nid, (col, bt) in game.state.board.buildings.items()
-        if col == c and bt == "SETTLEMENT"
-    )
-    # Count my roads placed. catanatron stores each road under both
-    # (a,b) and (b,a) orderings, so dedup via frozenset. If my settlement
-    # count is ahead of my road count, the picker is in the
-    # just-settled-but-not-road-yet window — keep the F-card (or round-2
-    # rec) visible with its road hint instead of pivoting to the next
-    # settlement choice that would flicker in mid-placement.
-    my_roads_placed = 0
-    if c is not None:
-        seen_edges: set[frozenset[int]] = set()
-        for (a, b), col in game.state.board.roads.items():
-            if col != c:
-                continue
-            key = frozenset((int(a), int(b)))
-            if key in seen_edges:
-                continue
-            seen_edges.add(key)
-            my_roads_placed += 1
+    my_placed = 0 if c is None else settles_by_color.get(c, 0)
+    # Count my roads placed via the dedup'd map above.
+    my_roads_placed = 0 if c is None else roads_by_color.get(c, 0)
     if c is not None and my_placed > my_roads_placed:
         road_rec = _opening_road_followup(
             game=game, c=c, neighbors=neighbors,
