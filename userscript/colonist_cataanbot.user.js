@@ -19,7 +19,11 @@
     const BRIDGE_URL = 'http://127.0.0.1:8765/log';
     const BRIDGE_WS_URL = 'http://127.0.0.1:8765/ws';
     const BRIDGE_ADVISOR_URL = 'http://127.0.0.1:8765/advisor';
-    const ADVISOR_POLL_MS = 1000;
+    // 500ms poll: bridge bumps `seq` on every WS frame from colonist, so a
+    // shorter interval directly halves the worst-case lag between a roll
+    // landing in the game and the HUD reflecting it. The advisor endpoint
+    // is a cheap dict serialization; doubling the rate is a non-issue.
+    const ADVISOR_POLL_MS = 500;
     const LOG_PREFIX = '[cataanbot]';
 
     // Fire-and-forget POST. Used by both the DOM log forwarder (/log)
