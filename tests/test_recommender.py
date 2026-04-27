@@ -57,6 +57,13 @@ def test_road_affordable_surfaces_edge_suggestion():
     road = next(r for r in out if r["kind"] == "road")
     assert "edge" in road
     assert len(road["edge"]) == 2
+    # Direction must always render so the HUD can say "→ right toward
+    # [tiles]" instead of just an arrow. Noah has flagged this multiple
+    # times — pin a positive assertion on the normal (non-sealed) path.
+    assert road.get("direction"), (
+        f"direction must be present on every road rec: {road}")
+    assert road["direction"]["word"] in {"up", "down", "left", "right"}
+    assert road["direction"]["arrow"] in {"↑", "↓", "←", "→"}
 
 
 def test_in_game_road_sealed_fallback_still_emits_direction():
