@@ -1435,8 +1435,8 @@ def _compute_game_plan(
             summary = f"city at {_short_tile_label(tiles)} now"
         if trade_plan:
             summary += (f" · {trade_plan['ratio']}:1 "
-                        f"{trade_plan['from_res'].lower()}"
-                        f"→{trade_plan['to_res'].lower()} if stuck")
+                        f"{_emoji_for(trade_plan['from_res'])}"
+                        f"→{_emoji_for(trade_plan['to_res'])} if stuck")
         return {
             "goal_kind": "city",
             "goal_label": f"city at {_short_tile_label(tiles)}",
@@ -1472,8 +1472,8 @@ def _compute_game_plan(
         summary += " · " + _format_missing_short(missing)
     if trade_plan:
         summary += (f" · {trade_plan['ratio']}:1 "
-                    f"{trade_plan['from_res'].lower()}"
-                    f"→{trade_plan['to_res'].lower()} if stuck")
+                    f"{_emoji_for(trade_plan['from_res'])}"
+                    f"→{_emoji_for(trade_plan['to_res'])} if stuck")
 
     return {
         "goal_kind": "settlement",
@@ -1506,6 +1506,19 @@ def _format_missing_short(missing: dict[str, int]) -> str:
         return ""
     parts = [f"{n}{r[0].lower()}" for r, n in missing.items()]
     return "need " + " ".join(parts)
+
+
+_RES_EMOJI = {
+    "WOOD": "🌲", "BRICK": "🧱", "SHEEP": "🐑",
+    "WHEAT": "🌾", "ORE": "⛰️",
+}
+
+
+def _emoji_for(res: str | None) -> str:
+    """Resource → emoji used across game-plan + banner trade strings."""
+    if not res:
+        return "?"
+    return _RES_EMOJI.get(res.upper(), res[:3].lower())
 
 
 def _plan_trade_fallback(
