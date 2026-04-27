@@ -2450,7 +2450,7 @@
                     const os = o.one_short;
                     const tail = os.uncertain ? '?' : '';
                     oneShortTag = ` · <span class="one-short">1 `
-                        + `${os.need.toLowerCase().slice(0,3)} → `
+                        + `${iconFor(os.need)} → `
                         + `${os.build}${tail}</span>`;
                 }
                 // Fat-hand marker: opps carrying 8+ cards are primed
