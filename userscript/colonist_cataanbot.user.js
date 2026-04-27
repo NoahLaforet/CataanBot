@@ -2678,7 +2678,7 @@
         const sh = snap.sevens_hot;
         if (sh) {
             parts.push('<div class="sevens-hot">'
-                + `7s hot: ${sh.sevens}/${sh.window} recent — consider discarding`
+                + `7s hot · ${sh.sevens}/${sh.window} recent`
                 + '</div>');
         }
         // Hot numbers: productive dice (non-7) over-rolling at 2×+
@@ -2719,7 +2719,7 @@
             if (rom.rolls_recent != null && rom.blocks_recent != null
                 && rom.rolls_recent > 0) {
                 subParts.push(
-                    `${rom.blocks_recent}/${rom.rolls_recent} recent rolls lost`);
+                    `lost ${rom.blocks_recent}/${rom.rolls_recent} recent`);
             }
             // Persistence: how many rolls ago the robber landed here.
             // Complements the cost tally — 0 blocks over 5 rolls means
@@ -2795,7 +2795,7 @@
                 .map(([res, n]) => `${n} ${res.slice(0, 2).toLowerCase()}`)
                 .join(' · ');
             parts.push('<div class="discard-hint">');
-            parts.push(`<div class="dh-h">discard ${dh.need} (over 7)</div>`);
+            parts.push(`<div class="dh-h">discard ${dh.need}</div>`);
             parts.push(`<div class="dh-drops">${escapeHtml(dropText)}</div>`);
             if (dh.rationale) {
                 parts.push(`<div class="dh-reason">${escapeHtml(dh.rationale)}</div>`);
