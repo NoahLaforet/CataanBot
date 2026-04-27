@@ -1428,11 +1428,14 @@ def _compute_game_plan(
         missing = {r: n for r, n in missing.items() if n > 0}
         trade_plan = _plan_trade_fallback(cat, my_enum, hand, cost, missing)
         tiles = _tile_label(m, node)
+        # The goal_tiles chips render right after the summary in the
+        # HUD, so the location is already shown — drop "city at {tiles}"
+        # prose here to avoid duplicating the chips. Keep just the
+        # missing/ready state and any stuck-trade tail.
         if missing:
-            summary = (f"city at {_short_tile_label(tiles)} · "
-                       f"{_format_missing_short(missing)}")
+            summary = _format_missing_short(missing)
         else:
-            summary = f"city at {_short_tile_label(tiles)} now"
+            summary = "ready"
         if trade_plan:
             summary += (f" · {trade_plan['ratio']}:1 "
                         f"{_emoji_for(trade_plan['from_res'])}"
@@ -1461,15 +1464,18 @@ def _compute_game_plan(
     trade_plan = _plan_trade_fallback(cat, my_enum, hand, cost, missing)
 
     tiles = _tile_label(m, node)
-    # Compose a short plan string. Reads like Noah's example:
-    # "2 roads then settle · 4 wood→brick if stuck".
+    # The goal_tiles chips render right after the summary in the HUD,
+    # so location is already shown — drop "settle at {tiles}" prose to
+    # avoid duplicating the chips. Lead with the road hops when any,
+    # otherwise fall back to "ready"/missing-resource state.
     parts: list[str] = []
     if hops > 0:
         parts.append(f"{hops} road{'s' if hops > 1 else ''}")
-    parts.append(f"settle at {_short_tile_label(tiles)}")
-    summary = " → ".join(parts)
     if missing:
-        summary += " · " + _format_missing_short(missing)
+        parts.append(_format_missing_short(missing))
+    elif hops == 0:
+        parts.append("ready")
+    summary = " · ".join(parts)
     if trade_plan:
         summary += (f" · {trade_plan['ratio']}:1 "
                     f"{_emoji_for(trade_plan['from_res'])}"
