@@ -801,9 +801,10 @@
      primary CTA. Planning entries dim + italic.
      -------------------------------------------------------------- */
   /* Non-top recs: still secondary to the hero, but large enough to
-     read during a live game — bumped from 12px→13px and dropped the
-     opacity dimmer so the alternatives read as "real options", not
-     as disabled text. Hero still dominates via 26px kind + gradient. */
+     read during a live game. Bumped to 14px base + 13px kind/tiles so
+     the verb actually reads at a glance — the prior 11px kind was
+     smaller than the surrounding body, which inverted hierarchy.
+     Hero still dominates via 26px kind + gradient. */
   .rec {
     color: var(--fg-mute);
     padding: var(--s-2) 0;
@@ -811,7 +812,7 @@
     display: flex; flex-wrap: wrap;
     align-items: baseline;
     gap: var(--s-2);
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
   }
   /* Hero top rec — this is the "what do I do NOW" block. Big kind
      label, big tile chips, gradient accent bar on the left. Score and
@@ -837,7 +838,7 @@
     color: var(--fg-dim);
     font-weight: 700;
     letter-spacing: 0.04em;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     text-transform: uppercase;
   }
   .rec.top .kind {
@@ -850,7 +851,7 @@
   }
   .rec .detail {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 400;
     flex: 1 1 100%;
     opacity: 0.75;
@@ -864,7 +865,7 @@
     font-weight: 800;
     text-align: center;
     font-variant-numeric: tabular-nums;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     letter-spacing: 0.04em;
   }
   .rec.top .score {
@@ -875,7 +876,7 @@
   .rec .score.strong { background: rgba(126, 217, 159, 0.16); color: var(--pos); }
   .rec .score.decent { background: rgba(236, 176, 106, 0.16); color: var(--warn); }
   .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
-  .rec .tiles { color: var(--fg-mute); font-size: calc(11px * var(--font-scale)); }
+  .rec .tiles { color: var(--fg-mute); font-size: calc(13px * var(--font-scale)); }
   .rec.top .tiles {
     color: var(--fg);
     font-size: calc(16px * var(--font-scale));
