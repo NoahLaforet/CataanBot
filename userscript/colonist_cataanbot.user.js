@@ -1351,13 +1351,13 @@
     padding: var(--s-1) var(--s-2);
     margin: 2px 0;
     font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     border-left: 2px solid rgba(255, 255, 255, 0.12);
   }
   .strat-opt .strat-vp {
     color: var(--pos);
     font-weight: 800;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     letter-spacing: 0.08em;
     padding: 1px 5px;
     border-radius: 2px;
