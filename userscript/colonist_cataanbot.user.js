@@ -1035,7 +1035,7 @@
   }
   .winning-move .wm-alts {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 400;
     margin-top: var(--s-2);
     letter-spacing: 0;
@@ -1074,7 +1074,7 @@
   .bank-low .bl-sub {
     display: block;
     font-weight: 400;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     color: var(--fg-mute);
     opacity: 0.8;
     margin-top: var(--s-1);
@@ -1083,7 +1083,7 @@
 
   .dev-deck {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin: var(--s-2) 0;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -1110,7 +1110,7 @@
   }
   .discard-hint .dh-reason {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-1);
   }
@@ -1138,7 +1138,7 @@
   }
   .trade-offer .trade-reason {
     color: var(--fg-mute);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-2);
     display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
@@ -1148,7 +1148,7 @@
     border-radius: var(--radius-sm);
     font-weight: 800;
     letter-spacing: 0.12em;
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
   }
   .trade-offer .verdict.accept   { background: rgba(126, 217, 159, 0.18); color: var(--pos); }
   .trade-offer .verdict.decline  { background: rgba(255, 109, 97, 0.18);  color: var(--alert); }
@@ -1175,7 +1175,7 @@
   .trade-offer .counter .counter-reason {
     color: var(--fg-dim);
     font-style: italic;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin-left: var(--s-2);
   }
 
