@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.2
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.2 finally wires the in-game road-rec direction arrow (the render block was opening-only since forever).
+// @version      0.23.3
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.3 reformat opp ports as readable chips ("⚓ ⛰️ 2:1") instead of "port:⛰️,3" which read as "port mountain, 3".
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -602,6 +602,23 @@
   .opp .dev-stash {
     color: var(--warn);
     font-weight: 700;
+  }
+  /* Opp ports — chip group, scannable at a glance. The ⚓ acts as a
+     label glyph so the format isn't a comma-joined string of icons
+     that reads as "port mountain, 3" when icons don't render. */
+  .opp .op-ports {
+    color: var(--fg-mute);
+    font-variant-numeric: tabular-nums;
+    font-size: calc(11px * var(--font-scale));
+  }
+  .opp .op-port {
+    display: inline-block;
+    margin-left: var(--s-1);
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    color: var(--fg-mute);
   }
 
   /* --------------------------------------------------------------
@@ -2401,16 +2418,20 @@
                 if (o.production && o.production.per_roll > 0) {
                     prodTag = ` · ${o.production.per_roll.toFixed(2)}p`;
                 }
-                // Opp ports. Trade-partner signal: 2:1 on a resource
-                // means they'd rather bank-trade than swap with you.
-                // Silent when no ports. Format: "port:whe,shp,3" where
-                // 3 stands in for the generic 3:1.
+                // Opp ports — trade-partner signal. Drop the inline
+                // "port:" prefix and the comma joins; that format read
+                // as "port mountain, 3" when the ⛰️ ore icon failed to
+                // render (or got read aloud). Use ⚓ as a stable label
+                // glyph, then 2:1 chips per specific resource and 3:1
+                // for generic. Silent when no ports.
                 let opPortTag = '';
                 if (Array.isArray(o.ports) && o.ports.length) {
-                    const segs = o.ports.map(p => p === 'GENERIC'
-                        ? '3'
-                        : iconFor(p));
-                    opPortTag = ` · port:${segs.join(',')}`;
+                    const chips = o.ports.map(p => p === 'GENERIC'
+                        ? '<span class="op-port">3:1</span>'
+                        : `<span class="op-port">${iconFor(p)} 2:1</span>`
+                    ).join('');
+                    opPortTag = ` · <span class="op-ports">⚓ ${chips}`
+                        + '</span>';
                 }
                 // Builds the inferred hand can already pay for. Skip
                 // 'road' alone — too noisy, doesn't move VP on its own.
