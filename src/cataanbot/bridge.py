@@ -1639,8 +1639,7 @@ def _compute_strategic_options(
             "label": "push longest road",
             "detail": (f"+{roads_needed} road"
                        f"{'s' if roads_needed > 1 else ''}"
-                       f" to take LR"
-                       + (" (denies opp)" if opp_lr_holder else "")),
+                       + (" · denies opp" if opp_lr_holder else "")),
             "vp_swing": vp_swing,
             "pieces": roads_needed,
         })
@@ -1670,8 +1669,8 @@ def _compute_strategic_options(
             "kind": "largest_army_push",
             "label": "push largest army",
             "detail": (f"play {needed_plays} knight"
-                       f"{'s' if needed_plays > 1 else ''} to take LA"
-                       + (" (denies opp)" if opp_la_holder else "")),
+                       f"{'s' if needed_plays > 1 else ''}"
+                       + (" · denies opp" if opp_la_holder else "")),
             "vp_swing": vp_swing,
             "pieces": needed_plays,
         })
@@ -1687,8 +1686,7 @@ def _compute_strategic_options(
         options.append({
             "kind": "dev_card_dive",
             "label": "dev-card dive",
-            "detail": (f"buy {min(bundles, 4)} dev cards — hidden VP"
-                       " + knight/RB/YoP engine"),
+            "detail": f"buy {min(bundles, 4)} dev · hidden VP + engine",
             "vp_swing": 1,
             "pieces": 0,
         })
