@@ -968,7 +968,7 @@
     background: var(--bg-1);
     border: 1px solid var(--line);
     border-left: 3px solid var(--fg-dim);
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     font-weight: 500;
     letter-spacing: 0.01em;
   }
@@ -1049,7 +1049,7 @@
   .robber-on-me .rom-sub {
     display: block;
     font-weight: 400;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     color: var(--fg-mute);
     opacity: 0.85;
     margin-top: var(--s-1);
