@@ -636,7 +636,7 @@
   }
   .roll-history .rh-label {
     color: var(--fg-label);
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
