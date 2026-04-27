@@ -533,7 +533,7 @@
     border-left: 2px solid var(--fg-dim);
     border-radius: var(--radius);
     color: var(--fg-mute);
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     transition: border-left-color 0.2s ease;
     line-height: 1.5;
   }
@@ -546,7 +546,7 @@
   .opp .opp-hand {
     color: var(--fg);
     font-variant-numeric: tabular-nums;
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     display: inline-flex; flex-wrap: wrap;
     gap: var(--s-1) var(--s-3);
     margin-left: var(--s-2);
@@ -557,14 +557,14 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
   }
   .opp .one-short {
     color: var(--warn);
     opacity: 0.7;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
   }
   .opp .fat-hand, .you .fat-hand {
     color: var(--alert);
@@ -615,7 +615,7 @@
   }
   .opp-yields {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin: 0 0 var(--s-2);
     font-variant-numeric: tabular-nums;
   }
@@ -629,7 +629,7 @@
     display: flex; flex-wrap: wrap; align-items: baseline;
     gap: var(--s-1);
     font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     color: var(--fg-dim);
     margin: var(--s-2) 0;
     letter-spacing: 0.06em;
