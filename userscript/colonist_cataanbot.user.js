@@ -471,7 +471,7 @@
   }
   .mono-warn {
     color: var(--warn);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 700;
     margin: var(--s-1) 0;
     letter-spacing: 0.04em;
@@ -512,7 +512,7 @@
   /* Hand-drift warning — appears when tracker state disagrees */
   .drift {
     color: var(--alert);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin: var(--s-1) 0;
     font-weight: 600;
   }
@@ -762,7 +762,7 @@
   .roll-dist .rd-axis span.last.seven { color: var(--alert); }
   .yield-sum {
     color: var(--fg-mute);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin: 0 0 var(--s-2);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
@@ -772,7 +772,7 @@
 
   .prod-stall {
     color: var(--warn);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 700;
     margin: var(--s-1) 0;
     letter-spacing: 0.08em;
@@ -780,7 +780,7 @@
   }
   .sevens-hot {
     color: var(--alert);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 700;
     margin: var(--s-1) 0;
     letter-spacing: 0.08em;
@@ -788,7 +788,7 @@
   }
   .hot-numbers {
     color: var(--accent);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 700;
     margin: var(--s-1) 0;
     letter-spacing: 0.08em;
@@ -1262,7 +1262,7 @@
   }
   .dev-hint .dv-sub {
     color: var(--fg-mute);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin-top: var(--s-1);
   }
   .dev-hint .dv-sub .dv-arrow {
@@ -1381,7 +1381,7 @@
   table.robber td {
     padding: var(--s-1) var(--s-2) var(--s-1) 0;
     vertical-align: top;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
   }
   .victim-top { color: var(--accent); font-weight: 800; }
 
