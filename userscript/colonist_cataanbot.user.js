@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.1
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.1 pulls the broken roll-strip out — chart returns once it has a design that actually works.
+// @version      0.23.2
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.2 finally wires the in-game road-rec direction arrow (the render block was opening-only since forever).
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2114,6 +2114,24 @@
                     parts.push('<div class="rec-sub">'
                         + dirHtml
                         + tail
+                        + warn
+                        + '</div>');
+                }
+                // In-game road recs carry r.direction directly (not under
+                // r.road — that's opening-settlement only). Without this
+                // block the arrow data the bridge ships gets dropped on
+                // the floor and the rec reads as a bare "ROAD ⛰️ 5" with
+                // no indication of which way to lay it. This was Noah's
+                // repeated ask for months — the previous "fixes" only
+                // patched the opening path.
+                if (r.kind === 'road' && r.direction) {
+                    const dir = r.direction;
+                    let warn = r.sealed
+                        ? ' <span class="warn">⚠ corridor sealed</span>'
+                        : '';
+                    parts.push('<div class="rec-sub">'
+                        + `<span class="arrow">↳ ${escapeHtml(
+                            dir.arrow)} ${escapeHtml(dir.word)}</span>`
                         + warn
                         + '</div>');
                 }
