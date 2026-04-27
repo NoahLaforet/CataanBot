@@ -908,7 +908,7 @@
 
   .rec-sub {
     color: var(--pos);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     padding: 0 0 var(--s-1) 62px;
     opacity: 0.92;
   }
