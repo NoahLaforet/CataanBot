@@ -427,7 +427,7 @@
     letter-spacing: 0.02em;
   }
   .you .vp-big .lbl {
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     color: var(--fg-dim);
     letter-spacing: 0.18em;
     margin-left: var(--s-1);
@@ -1099,7 +1099,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-2);
   }
   .discard-hint .dh-drops {
@@ -1120,7 +1120,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-2);
     display: flex; align-items: center; gap: var(--s-2);
   }
@@ -1168,7 +1168,7 @@
     font-weight: 800;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-right: var(--s-2);
   }
   .trade-offer .counter .counter-reason {
@@ -1184,7 +1184,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-2);
   }
   .knight-hint .kh-reason {
@@ -1207,7 +1207,7 @@
      verdict + reason so PLAY/HOLD is the biggest thing on the card. */
   .knight-hint.big .kh-h,
   .dev-hint.big .dv-h {
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin-bottom: var(--s-3);
   }
   .knight-hint.big .kh-reason,
@@ -1246,7 +1246,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-2);
   }
   .dev-hint .dv-body {
@@ -1317,7 +1317,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-1);
   }
   .game-plan.ready .gp-h { color: var(--pos); }
