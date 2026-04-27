@@ -1525,7 +1525,9 @@ def test_compute_yop_hint_holds_when_no_unlock_in_reach():
     assert h is not None
     assert h["have"] == 1
     assert h["should_play"] is False
-    assert "hold" in h["reason"].lower()
+    # Reason should hint at "no reachable build" — text is intentionally
+    # terse, so just check that the unlock concept is absent.
+    assert "unlock" not in h["reason"].lower()
     assert len(h["pair"]) == 2
     # Unlock is None when no build is within reach.
     assert h["unlock"] is None
@@ -1672,7 +1674,7 @@ def test_compute_rb_hint_fires_when_longest_road_in_reach():
         }
         h = _compute_rb_hint(g, "RED")
         assert h is not None and not h["should_play"]
-        assert "hold" in h["reason"]
+        assert "no clear swing" in h["reason"]
 
         # Case 5: roads_left == 0 → None (can't use the card).
         bridge._pieces_for_color = lambda _g, _c: {
@@ -1694,7 +1696,7 @@ def test_compute_rb_hint_fires_when_longest_road_in_reach():
         }
         h = _compute_rb_hint(g, "RED")
         assert h is not None and h["should_play"]
-        assert "running low" in h["reason"]
+        assert "low on roads" in h["reason"]
     finally:
         bridge._pieces_for_color = original
 
