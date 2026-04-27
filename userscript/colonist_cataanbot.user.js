@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.21.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.16.0 rebuilds the HUD on a token-based design system: Archivo display font + JetBrains Mono, consistent spacing scale, role-based color palette, banner family with left-edge accent bars. v0.10.1 bumped HUD font 12→14px and width 280→340px; v0.10.0 added the incoming-trade panel.
+// @version      0.22.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.22 reset the HUD: hero rec on top, slim self strip, single-row opps, taller live histogram, no section headers.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -10,6 +10,8 @@
 // @grant        unsafeWindow
 // @connect      127.0.0.1
 // @connect      localhost
+// @updateURL    https://raw.githubusercontent.com/NoahLaforet/CataanBot/main/userscript/colonist_cataanbot.user.js
+// @downloadURL  https://raw.githubusercontent.com/NoahLaforet/CataanBot/main/userscript/colonist_cataanbot.user.js
 // ==/UserScript==
 
 /* eslint-disable no-console */
@@ -186,7 +188,7 @@
 
   .panel {
     /* layout */
-    --panel-w: 540px;
+    --panel-w: 620px;
     --panel-h: auto;
     --font-scale: 1;
 
@@ -228,8 +230,8 @@
     --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 
     font-family: var(--font);
-    font-size: calc(16px * var(--font-scale));
-    line-height: 1.5;
+    font-size: calc(17px * var(--font-scale));
+    line-height: 1.45;
     color: var(--fg);
     background: var(--bg-0);
     border: 1px solid var(--line-strong);
@@ -296,10 +298,19 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /* Flex column so children can be reordered via the order property
+       — the recs flow lifts above the self/opp panels regardless of
+       where it's emitted in the DOM. */
+    display: flex;
+    flex-direction: column;
     /* Thin, restrained scrollbar so the HUD doesn't look like a textarea. */
     scrollbar-width: thin;
     scrollbar-color: var(--bg-3) transparent;
   }
+  /* Banners outrank everything (winning move, game progress). */
+  .winning-move, .gprog { order: -2; }
+  /* Recs/dev-card cluster sits above the self card. */
+  .recs-flow { order: -1; }
   .body::-webkit-scrollbar { width: 6px; }
   .body::-webkit-scrollbar-track { background: transparent; }
   .body::-webkit-scrollbar-thumb {
@@ -419,12 +430,13 @@
     vertical-align: middle;
   }
   .you .color-pill {
-    font-size: calc(13px * var(--font-scale));
-    padding: 2px var(--s-3);
+    font-size: calc(15px * var(--font-scale));
+    padding: 3px var(--s-4);
+    font-weight: 800;
   }
   .you .vp-big {
-    font-size: calc(26px * var(--font-scale));
-    font-weight: 800;
+    font-size: calc(32px * var(--font-scale));
+    font-weight: 900;
     color: var(--accent);
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -455,13 +467,14 @@
     font-weight: 700;
   }
 
-  /* Hand row — resource counts, bigger and airier */
+  /* Hand row — resource counts, big and airy. Bumped to 17px so the
+     resource counts are legible at a glance without leaning in. */
   .hand {
     display: flex; flex-wrap: wrap;
-    gap: var(--s-2) var(--s-4);
+    gap: var(--s-2) var(--s-5);
     padding: var(--s-2) 0;
-    font-size: calc(15px * var(--font-scale));
-    font-weight: 500;
+    font-size: calc(17px * var(--font-scale));
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--fg);
   }
@@ -532,26 +545,28 @@
     gap: var(--s-2);
   }
   .opp {
-    padding: var(--s-3);
+    padding: var(--s-3) var(--s-4);
     background: var(--bg-1);
     border: 1px solid var(--line);
-    border-left: 2px solid var(--fg-dim);
+    border-left: 3px solid var(--fg-dim);
     border-radius: var(--radius);
     color: var(--fg-mute);
-    font-size: calc(14px * var(--font-scale));
+    font-size: calc(15px * var(--font-scale));
     transition: border-left-color 0.2s ease;
-    line-height: 1.5;
+    line-height: 1.4;
   }
   .opp.tracked    { border-left-color: var(--pos); }
   .opp.hot-knight { border-left-color: var(--warn); }
   .opp .color-pill {
-    font-size: calc(11px * var(--font-scale));
-    padding: 1px var(--s-2);
+    font-size: calc(13px * var(--font-scale));
+    padding: 2px var(--s-3);
+    font-weight: 800;
   }
   .opp .opp-hand {
     color: var(--fg);
     font-variant-numeric: tabular-nums;
-    font-size: calc(14px * var(--font-scale));
+    font-size: calc(16px * var(--font-scale));
+    font-weight: 600;
     display: inline-flex; flex-wrap: wrap;
     gap: var(--s-1) var(--s-3);
     margin-left: var(--s-2);
@@ -704,14 +719,14 @@
   }
   /* Colonist-style chart: solid filled bars, taller column, no dashed
      expected overlay. The number axis is the visual anchor. Bumped to
-     140px so growth-per-roll reads as a real visual change instead of
+     180px so growth-per-roll reads as a real visual change instead of
      a 1-2px nudge. */
   .roll-dist .rd-bars {
     display: grid;
     grid-template-columns: repeat(11, 1fr);
-    gap: 5px;
+    gap: 6px;
     align-items: end;
-    height: 140px;
+    height: 180px;
     padding: 0 1px;
   }
   .roll-dist .rd-col {
@@ -743,11 +758,11 @@
   .roll-dist .rd-count {
     position: absolute;
     bottom: 100%;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
     color: var(--fg);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-weight: 700;
-    opacity: 0.85;
+    opacity: 0.9;
   }
   .roll-dist .rd-col.last .rd-count { color: var(--accent); opacity: 1; }
   .roll-dist .rd-col.last.seven .rd-count { color: var(--alert); }
@@ -761,8 +776,8 @@
   }
   .roll-dist .rd-axis span {
     text-align: center;
-    font-size: calc(12px * var(--font-scale));
-    font-weight: 600;
+    font-size: calc(14px * var(--font-scale));
+    font-weight: 700;
     color: var(--fg-dim);
   }
   .roll-dist .rd-axis span.seven { color: var(--alert); opacity: 0.9; }
@@ -859,11 +874,11 @@
   .rec.top .kind {
     min-width: 0;
     color: var(--pos);
-    font-size: calc(34px * var(--font-scale));
+    font-size: calc(40px * var(--font-scale));
     font-weight: 900;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     line-height: 1;
-    text-shadow: 0 0 24px rgba(74, 222, 128, 0.25);
+    text-shadow: 0 0 28px rgba(74, 222, 128, 0.30);
   }
   .rec .detail {
     color: var(--fg-dim);
@@ -895,10 +910,10 @@
   .rec .tiles { color: var(--fg-mute); font-size: calc(13px * var(--font-scale)); }
   .rec.top .tiles {
     color: var(--fg);
-    font-size: calc(19px * var(--font-scale));
+    font-size: calc(22px * var(--font-scale));
     font-weight: 700;
   }
-  .rec.top .tile-num { font-size: calc(20px * var(--font-scale)); }
+  .rec.top .tile-num { font-size: calc(24px * var(--font-scale)); }
   .rec.top .tile-chip {
     display: inline-block;
     padding: 3px var(--s-3);
@@ -1809,12 +1824,12 @@
         // Width is the primary knob; font-scale follows a linear fit
         // from base 340px → 1.0 up to 640px → 1.5. Persisted to
         // localStorage so the size survives reloads.
-        const PANEL_W_MIN = 260, PANEL_W_MAX = 720;
-        const BASE_W = 380;
+        const PANEL_W_MIN = 320, PANEL_W_MAX = 820;
+        const BASE_W = 480;
         function scaleForWidth(w) {
-            // 380→1.0, 680→1.5 — linear, clamped to [0.85, 1.6].
-            const s = 1.0 + (w - BASE_W) * 0.5 / 300;
-            return Math.max(0.85, Math.min(1.6, s));
+            // 480→1.0, 800→1.6 — linear, clamped to [0.9, 1.7].
+            const s = 1.0 + (w - BASE_W) * 0.6 / 320;
+            return Math.max(0.9, Math.min(1.7, s));
         }
         function applySize(w) {
             const clamped = Math.max(PANEL_W_MIN, Math.min(PANEL_W_MAX, w));
@@ -2045,6 +2060,11 @@
         //   "best moves"      — things affordable right now
         //   "planning ahead"  — 1-2 cards from a better move; "save for X"
         // Both groups sorted by score desc within the list the backend sent.
+        // Wrap the whole rec block in .recs-flow — CSS gives it order:-1
+        // inside the flex body so the hero rec sits at the very top,
+        // above the self card and everything else. Banners (winning_move,
+        // gprog) keep order:-2 so they outrank even the recs.
+        parts.push('<div class="recs-flow">');
         if ((snap.my_turn || isSetup)
                 && (snap.recommendations || []).length) {
             const nowRecs = [];
@@ -2222,10 +2242,13 @@
                     + '</div>');
             }
             if (nowRecs.length) {
-                const header = isSetup
-                    ? '→ opening picks'
-                    : '→ best moves';
-                parts.push(`<div class="recs-h">${header}</div>`);
+                // Mid-game: skip the "best moves" header — the hero rec
+                // is huge already and the label adds chrome. Setup phase
+                // still gets the "opening picks" header so the A/B/C
+                // letters have a visual anchor.
+                if (isSetup) {
+                    parts.push('<div class="recs-h">→ opening picks</div>');
+                }
                 nowRecs.forEach((r, i) => {
                     // Only stamp A/B/C/... on opening picks — mid-game
                     // recs already read as a ranked action list.
@@ -2380,9 +2403,14 @@
                 + '</div>');
         }
         if (devBlocks.length) {
-            parts.push('<div class="sec-h sec-dev">dev cards in hand</div>');
+            // No section label — the dev-card hint cards carry their own
+            // header (knight ×N, monopoly ×N) and stand out visually.
             parts.push(devBlocks.join(''));
         }
+        // Close .recs-flow — everything above (recs, plan-ahead, long-game,
+        // dev-card hints) is "what to do this turn" and floats above the
+        // self/opps panels via CSS flex order.
+        parts.push('</div>');
         if ((snap.opps || []).length) {
             parts.push('<div class="sec-h sec-opps">opponents</div>');
             parts.push('<div class="opps">');
@@ -2549,7 +2577,8 @@
             parts.push('</div>');
         }
         if (snap.last_roll) {
-            parts.push('<div class="sec-h sec-roll">roll</div>');
+            // No section header — the last-roll banner is a chunky color
+            // block already; a label on top of it just adds chrome.
             const lr = snap.last_roll;
             let who;
             if (lr.is_you) {
