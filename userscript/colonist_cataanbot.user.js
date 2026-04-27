@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.3
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.3 reformat opp ports as readable chips ("⚓ ⛰️ 2:1") instead of "port:⛰️,3" which read as "port mountain, 3".
+// @version      0.23.4
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.4 drop the redundant direction word ("up"/"down"/"left"/"right") next to every road arrow, and stop double-rendering the in-game road arrow on a sub-line when it's already on the main rec line.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2050,13 +2050,11 @@
                 let arrowHtml = '';
                 if (r.kind === 'road') {
                     if (r.direction) {
+                        // Arrow alone — the glyph is the direction.
+                        // The word ("up"/"down"/"left"/"right") said the
+                        // same thing twice and Noah hated the redundancy.
                         arrowHtml = `<span class="arrow">${escapeHtml(
-                                r.direction.arrow)} ${escapeHtml(
-                                r.direction.word)}</span>`;
-                        // "toward [tiles]" tail is suppressed when no
-                        // tiles are attached (sealed corridor / empty
-                        // landing); keeping the direction standalone
-                        // still tells Noah WHICH way to lay the road.
+                                r.direction.arrow)}</span>`;
                         if (tilesHtml) {
                             arrowHtml += ' <span class="muted">toward</span> ';
                         }
@@ -2115,8 +2113,7 @@
                     // wants to show WHICH direction to lay the road.
                     const dirHtml = dir
                         ? `<span class="arrow">↳ ${escapeHtml(
-                            dir.arrow)} ${escapeHtml(
-                            dir.word)}</span> `
+                            dir.arrow)}</span> `
                         : '<span class="arrow">↳ road →</span> ';
                     let warn = r.road.contested
                         ? ' <span class="warn">⚠ contested</span>'
@@ -2134,22 +2131,14 @@
                         + warn
                         + '</div>');
                 }
-                // In-game road recs carry r.direction directly (not under
-                // r.road — that's opening-settlement only). Without this
-                // block the arrow data the bridge ships gets dropped on
-                // the floor and the rec reads as a bare "ROAD ⛰️ 5" with
-                // no indication of which way to lay it. This was Noah's
-                // repeated ask for months — the previous "fixes" only
-                // patched the opening path.
-                if (r.kind === 'road' && r.direction) {
-                    const dir = r.direction;
-                    let warn = r.sealed
-                        ? ' <span class="warn">⚠ corridor sealed</span>'
-                        : '';
+                // In-game road sealed-corridor warning. The direction
+                // arrow itself is already on the main rec line above
+                // (via arrowHtml); rendering it again here was a
+                // duplicate Noah flagged. Keep just the warn line when
+                // it applies.
+                if (r.kind === 'road' && r.sealed) {
                     parts.push('<div class="rec-sub">'
-                        + `<span class="arrow">↳ ${escapeHtml(
-                            dir.arrow)} ${escapeHtml(dir.word)}</span>`
-                        + warn
+                        + '<span class="warn">⚠ corridor sealed</span>'
                         + '</div>');
                 }
                 // Round-1 picks also carry plan.second — the best paired
