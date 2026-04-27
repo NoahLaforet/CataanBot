@@ -437,7 +437,7 @@
   }
   .you .self-meta {
     color: var(--fg-mute);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -491,20 +491,20 @@
      dim metadata that sits below the main self card. */
   .vpb {
     color: var(--fg-dim);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin-top: var(--s-1);
     letter-spacing: 0.02em;
   }
   .ports {
     color: var(--info);
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin-top: var(--s-1);
     letter-spacing: 0.04em;
   }
   .prod {
     color: var(--pos);
     opacity: 0.9;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     margin-top: var(--s-1);
     letter-spacing: 0.04em;
   }
