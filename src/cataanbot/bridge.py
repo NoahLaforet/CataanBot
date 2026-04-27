@@ -857,9 +857,9 @@ def _compute_monopoly_hint(
         reason = unlock_reason
     elif best_count >= 4:
         should_play = True
-        reason = f"large pot ({best_count} cards)"
+        reason = f"large pot · {best_count} cards"
     else:
-        reason = f"small pot ({best_count}) — wait for more"
+        reason = f"small pot · {best_count}"
 
     # Top holder: the single opp contributing the most to best_count.
     # Used by the overlay to render "drains 4 from noah" as a sub-line.
@@ -982,7 +982,7 @@ def _compute_yop_hint(
         return {
             "have": held,
             "should_play": False,
-            "reason": "no build within reach — hold",
+            "reason": "no build within reach",
             "pair": pair,
             "unlock": None,
             "bank_ok": True,
@@ -1006,7 +1006,7 @@ def _compute_yop_hint(
 
     reason = f"unlocks {build_name}"
     if not bank_ok:
-        reason = f"bank short on {' or '.join(sorted(set(pair)))} — verify"
+        reason = f"bank short on {' or '.join(sorted(set(pair)))}"
 
     return {
         "have": held,
@@ -1256,19 +1256,19 @@ def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
     qualify = 5  # base-game longest-road threshold
 
     should = False
-    reason = "hold — no clear swing yet"
+    reason = "no clear swing yet"
     if not self_has and projected >= max(qualify, opp_max + 1):
         should = True
-        reason = (f"secures longest road "
-                  f"({self_len}→{projected} vs opp {opp_max})")
+        reason = (f"secures longest road · "
+                  f"{self_len}→{projected} vs {opp_max}")
     elif opp_has and opp_max >= qualify and projected >= opp_max:
         should = True
-        reason = (f"catches opp longest road "
-                  f"(proj {projected} ≥ opp {opp_max})")
+        reason = (f"catches opp longest road · "
+                  f"proj {projected} ≥ {opp_max}")
     elif roads_left <= 2:
         # Almost out of roads — card loses value the longer you hold it.
         should = True
-        reason = f"road pieces running low ({roads_left} left)"
+        reason = f"low on roads · {roads_left} left"
 
     out: dict[str, Any] = {
         "have": held,
@@ -1777,16 +1777,16 @@ def _compute_knight_hint(
     top_score = float(top_target["score"]) if top_target else 0.0
 
     should = False
-    reason = "hold — no urgent block"
+    reason = "no urgent block"
     if self_blocked_pips > 0:
         should = True
-        reason = f"robber on your tile ({self_blocked_pips} pips blocked)"
+        reason = f"robber on you · {self_blocked_pips} pips blocked"
     elif largest_army_threat:
         should = True
-        reason = "opp closing on largest army — break their tempo"
+        reason = "opp closing on largest army"
     elif top_score >= 4.0:
         should = True
-        reason = f"strong block available (score {top_score:+.1f})"
+        reason = f"strong block · score {top_score:+.1f}"
 
     return {
         "have": knight_in_hand,
@@ -3280,7 +3280,7 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
 
     if level == "close":
         msg = (f"{leader.get('username')} at {leader_vp} VP — "
-               f"one build from winning{means}")
+               f"one build away{means}")
     elif level == "win":
         msg = f"{leader.get('username')} at {leader_vp} VP — game over"
     else:
