@@ -3263,6 +3263,39 @@ def test_snapshot_exposes_total_rolls_field():
     assert snap2["total_rolls"] == 3
 
 
+def test_snapshot_surfaces_vp_target_and_discard_limit():
+    """The overlay scales fat-hand and close-to-win thresholds against
+    snap.vp_target / snap.discard_limit. If either field disappears
+    from the snap, the overlay silently falls back to the 10-VP / 7-card
+    defaults — a real game with custom limits would render wrong
+    danger/watch tiers without any visible error. This test pins both
+    fields to current config.get_* values."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot import config
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live import ColorMap
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    st: dict = {
+        "seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [], "total_rolls": 0,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    assert snap["vp_target"] == config.get_vp_target()
+    assert snap["discard_limit"] == config.get_discard_limit()
+    # Both should be ints — the userscript does arithmetic on them
+    # (limit-2 for the watch tier, target-2 for the danger tier).
+    assert isinstance(snap["vp_target"], int)
+    assert isinstance(snap["discard_limit"], int)
+
+
 def test_yield_summary_none_on_empty_history():
     """Before any roll has been seen, yield_summary must be None. A
     "0/0 (0 rolls)" banner on turn 1 would just be visual noise — the
