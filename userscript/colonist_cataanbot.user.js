@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.5
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.5 strips five info-only banners (prod-stall, sevens-hot, hot-numbers, bank-low, dev-deck) that contributed nothing actionable but cluttered the bottom of the HUD. Bridge still computes the data; the live overlay just doesn't render it.
+// @version      0.23.6
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.6 collapses the five-color signal palette down to two — green for the hero rec, red for must-act/danger — and folds amber/blue/violet back into a single muted slate so the HUD stops fighting itself for attention.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -215,12 +215,16 @@
     --fg-dim:   #6b7180;
     --fg-label: #888ea1;
 
-    /* signal palette — vivid, electric */
-    --pos:    #4ade80;
-    --warn:   #fbbf24;
-    --alert:  #f87171;
-    --info:   #60a5fa;
-    --accent: #a78bfa;
+    /* signal palette — only two real signal colors so the eye knows
+       what matters at a glance. Green = the hero rec (your move).
+       Red = a thing you must respond to (discard, threat, robber).
+       Everything else folds back into the neutral text ladder so
+       five rivalrous accents don't fight each other. */
+    --pos:    #4ade80;   /* green: hero rec, positive marks       */
+    --alert:  #ef4444;   /* red: must-act / danger                */
+    --warn:   #8a93a6;   /* WAS amber — now muted slate           */
+    --info:   #8a93a6;   /* WAS blue  — now muted slate           */
+    --accent: #8a93a6;   /* WAS violet — now muted slate          */
 
     --radius-sm: 4px;
     --radius:    8px;
