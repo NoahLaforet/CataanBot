@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.10
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.10 pulls each opponent's VP and card-count out of the muted secondary tags and gives them their own visual weight — VP is the headline (close-to-winning signal), cards is the primary 7-roll/steal signal. VP tiers: white ≤5, amber 6-7, red 8+ so a leader pops at a glance.
+// @version      0.23.11
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.11 bumps the self affordability line from 13px to 16px when something is buildable — it's the primary "what can I do this turn" CTA and was reading too quietly. Near-miss (1 card away) and broke states stay smaller since they aren't actionable.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -518,15 +518,27 @@
     letter-spacing: 0.04em;
   }
 
+  /* Affordability line — immediate "what can I buy this turn" CTA.
+     Sized up to 16px so it's a primary scan target; the .none and
+     .near variants step back since those aren't actionable right now.
+     The arrow lead is dimmed so the build name is what reads. */
   .afford {
     color: var(--pos);
     font-weight: 700;
     margin: var(--s-2) 0 var(--s-1);
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(16px * var(--font-scale));
     letter-spacing: 0.02em;
   }
-  .afford.none { color: var(--fg-dim); font-weight: 400; }
-  .afford.near { color: var(--warn); font-weight: 600; }
+  .afford.none {
+    color: var(--fg-dim);
+    font-weight: 400;
+    font-size: calc(13px * var(--font-scale));
+  }
+  .afford.near {
+    color: var(--warn);
+    font-weight: 600;
+    font-size: calc(14px * var(--font-scale));
+  }
 
   /* Self sub-info row — VP breakdown, ports, production rate. All
      dim metadata that sits below the main self card. */
