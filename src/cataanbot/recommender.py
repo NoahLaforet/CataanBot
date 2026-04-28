@@ -1072,11 +1072,12 @@ def recommend_actions(
             if bcol == c:
                 my_nodes.add(int(nid))
         edge_scores: list[tuple[tuple[int, int], float, int | None]] = []
-        # Fallback bookkeeping: best buildable edge by its far-end tile
-        # production, regardless of whether any 2-hop settle spot is
-        # legal. Used when every corridor is sealed so we still emit a
-        # direction arrow instead of silently dropping the rec.
-        fallback_edge: tuple[tuple[int, int], float, int] | None = None
+        # Fallback bookkeeping: every buildable edge ranked by its
+        # far-end tile production. Used both for the all-sealed case
+        # (no edge opens a settle spot, so we emit the best of these
+        # as the primary rec) and for surfacing LR-extension alternates
+        # alongside landing-target roads.
+        fallback_candidates: list[tuple[tuple[int, int], float, int]] = []
         for (a, b) in edges:
             ai, bi = int(a), int(b)
             # Pick the "far" endpoint for the fallback: the one NOT
@@ -1092,10 +1093,8 @@ def recommend_actions(
                 pb = _node_pip_production(m, bi)
                 far_fb = ai if pa >= pb else bi
             far_prod = _node_pip_production(m, far_fb)
-            if far_prod > 0 and (
-                fallback_edge is None or far_prod > fallback_edge[1]
-            ):
-                fallback_edge = ((ai, bi), far_prod, far_fb)
+            if far_prod > 0:
+                fallback_candidates.append(((ai, bi), far_prod, far_fb))
             # Look at both endpoints' neighbors for new reachable spots.
             best_land_prod = 0.0
             best_land_node: int | None = None
@@ -1111,10 +1110,21 @@ def recommend_actions(
                 edge_scores.append(((ai, bi),
                                     best_land_prod, best_land_node))
         edge_scores.sort(key=lambda s: -s[1])
+        fallback_candidates.sort(key=lambda s: -s[1])
 
+        # Build the primary road rec from edge_scores[0], plus up to 2
+        # landing-target alternates from edge_scores[1:3]. After that,
+        # if we still have <3 road recs, top up with LR-extension
+        # alternates pulled from fallback_candidates (edges that don't
+        # open a settle spot but extend network into producing tiles).
+        # Late-game LR pushes are common and previously vanished from
+        # the audit because no settle target meant edge_scores excluded
+        # them entirely.
         road_rec: dict[str, Any] | None = None
+        road_alts: list[dict[str, Any]] = []
         if edge_scores:
             (edge, prod, landing) = edge_scores[0]
+            top_prod = prod
             # Road reaches a settle spot eventually — lower score than a
             # direct build since you still have to save for the settle.
             road_rec = {
@@ -1126,13 +1136,33 @@ def recommend_actions(
                 "detail": f"→ {prod:.2f}-prod spot",
                 "tiles": _edge_tiles(m, edge[0], edge[1]),
             }
-        elif fallback_edge is not None:
+            # Landing-target alternates: edges with their own future
+            # settle spot. Hard floor at 30% of the top edge's prod (or
+            # any positive prod when top is itself weak — late-game LR-
+            # push scenarios where every road only buys 0.1-0.2 prod).
+            # Take up to 3 alts so the audit can rank Noah's actual road
+            # against the next best 3 candidates, not just 2.
+            min_prod = max(0.0, 0.3 * top_prod) if top_prod > 0.5 else 0.0
+            for (alt_edge, alt_prod, alt_landing) in edge_scores[1:4]:
+                if alt_prod <= min_prod:
+                    break
+                road_alts.append({
+                    "kind": "road",
+                    "when": "now",
+                    "edge": list(alt_edge),
+                    "landing_node": alt_landing,
+                    "score": _score_road(alt_prod),
+                    "detail": f"→ {alt_prod:.2f}-prod spot",
+                    "tiles": _edge_tiles(m, alt_edge[0], alt_edge[1]),
+                    "alt": True,
+                })
+        elif fallback_candidates:
             # Every corridor is sealed by distance-2 blocks. Emit a
             # degraded rec pointing at the best-prod buildable far end
             # so Noah still sees a direction arrow instead of nothing.
             # LR-progression or simple network-extension can still
             # justify the road even when no fresh settle slot exists.
-            (edge, prod, far) = fallback_edge
+            (edge, prod, far) = fallback_candidates[0]
             road_rec = {
                 "kind": "road",
                 "when": "now",
@@ -1143,30 +1173,67 @@ def recommend_actions(
                 "tiles": _edge_tiles(m, edge[0], edge[1]),
                 "sealed": True,
             }
+        # Top up with LR-extension alternates from fallback_candidates
+        # when the rec list still has room. Skip edges already covered
+        # by road_rec / road_alts. Score capped at 60% of _score_road
+        # so an LR-extension never out-ranks an actual landing-target
+        # road. Cap is 3 alts total (1 primary + 3 alts = 4 road recs)
+        # so the audit can rank a wider slice of Noah's actual choices
+        # without flooding the live HUD.
+        if road_rec is not None:
+            taken = {tuple(sorted(road_rec["edge"]))}
+            for alt in road_alts:
+                taken.add(tuple(sorted(alt["edge"])))
+            for (fb_edge, fb_prod, fb_far) in fallback_candidates:
+                if len(road_alts) >= 3:
+                    break
+                key = tuple(sorted(fb_edge))
+                if key in taken:
+                    continue
+                taken.add(key)
+                road_alts.append({
+                    "kind": "road",
+                    "when": "now",
+                    "edge": list(fb_edge),
+                    "landing_node": fb_far,
+                    "score": _score_road(fb_prod) * 0.6,
+                    "detail": "extends network",
+                    "tiles": _edge_tiles(m, fb_edge[0], fb_edge[1]),
+                    "alt": True,
+                    "sealed": True,
+                })
         if road_rec is not None:
             # Direction label — same pattern as opening roads so the HUD
             # can say "lay → right toward [wheat 6]" instead of raw node
             # ids. Anchor direction from the endpoint that's attached
             # to self's network (the existing one), toward the new far
-            # end.
-            edge = tuple(road_rec["edge"])
-            a, b = int(edge[0]), int(edge[1])
-            if a in my_nodes and b not in my_nodes:
-                from_n, to_n = a, b
-            elif b in my_nodes and a not in my_nodes:
-                from_n, to_n = b, a
-            else:
-                from_n, to_n = a, b
+            # end. Apply uniformly across primary + alternates.
             positions = _node_positions(m)
-            lbl = _direction_label(positions, from_n, to_n)
-            if lbl is not None:
-                road_rec["direction"] = {"word": lbl[0], "arrow": lbl[1]}
-            road_rec["edge_from"] = from_n
-            road_rec["edge_to"] = to_n
+
+            def _label_road(rec: dict[str, Any]) -> None:
+                edge = tuple(rec["edge"])
+                a, b = int(edge[0]), int(edge[1])
+                if a in my_nodes and b not in my_nodes:
+                    from_n, to_n = a, b
+                elif b in my_nodes and a not in my_nodes:
+                    from_n, to_n = b, a
+                else:
+                    from_n, to_n = a, b
+                lbl = _direction_label(positions, from_n, to_n)
+                if lbl is not None:
+                    rec["direction"] = {"word": lbl[0], "arrow": lbl[1]}
+                rec["edge_from"] = from_n
+                rec["edge_to"] = to_n
+
+            _label_road(road_rec)
+            for alt in road_alts:
+                _label_road(alt)
             # LR-progression rationale: if this +1 road crosses a
             # meaningful LR threshold (qualifies at 5, ties/beats
             # opp_max), that's a more actionable "why build this" than
-            # the landing-spot prod alone.
+            # the landing-spot prod alone. Only attach to the primary —
+            # alternates carry the same LR bonus but the rationale line
+            # would be redundant noise on every alt row.
             try:
                 my_idx = game.state.color_to_index.get(c)
                 if my_idx is not None:
@@ -1182,6 +1249,7 @@ def recommend_actions(
             except Exception:  # noqa: BLE001
                 pass
             recs.append(road_rec)
+            recs.extend(road_alts)
 
     # --- Dev card --------------------------------------------------------
     # Always a sane fallback. Fixed score of 3 on the 1-10 scale — real
