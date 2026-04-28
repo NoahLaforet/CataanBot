@@ -746,7 +746,7 @@ def _compute_discard_hint(
     if preserve:
         rationale = f"keep enough to {preserve}"
     else:
-        rationale = "trim least-scarce cards"
+        rationale = "drop spares"
     return {
         "need": need,
         "drop": drops,
