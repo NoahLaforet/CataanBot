@@ -2848,7 +2848,7 @@
                         + ' cards bled)';
                 }
             } else {
-                headExtra = ` · ${rom.pips_blocked} pips suppressed`;
+                headExtra = ` · ${rom.pips_blocked} pips blocked`;
             }
             parts.push(`robber on your ${escapeHtml(tileLbl)}${headExtra}`);
             parts.push(`<span class="rom-sub">${escapeHtml(subParts.join(' · '))}</span>`);
