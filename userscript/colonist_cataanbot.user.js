@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.4
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.4 drop the redundant direction word ("up"/"down"/"left"/"right") next to every road arrow, and stop double-rendering the in-game road arrow on a sub-line when it's already on the main rec line.
+// @version      0.23.5
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.5 strips five info-only banners (prod-stall, sevens-hot, hot-numbers, bank-low, dev-deck) that contributed nothing actionable but cluttered the bottom of the HUD. Bridge still computes the data; the live overlay just doesn't render it.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -722,31 +722,6 @@
   .yield-sum.behind { color: var(--warn); }
   .yield-sum .ys-sep { color: var(--fg-dim); opacity: 0.4; margin: 0 var(--s-2); }
 
-  .prod-stall {
-    color: var(--warn);
-    font-size: calc(12px * var(--font-scale));
-    font-weight: 700;
-    margin: var(--s-1) 0;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .sevens-hot {
-    color: var(--alert);
-    font-size: calc(12px * var(--font-scale));
-    font-weight: 700;
-    margin: var(--s-1) 0;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .hot-numbers {
-    color: var(--accent);
-    font-size: calc(12px * var(--font-scale));
-    font-weight: 700;
-    margin: var(--s-1) 0;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
   /* --------------------------------------------------------------
      RECOMMENDATIONS — ranked action list. Top rec gets highlighted
      card treatment (green left border + card bg) so it reads as the
@@ -933,7 +908,7 @@
      are uppercase tracked labels.
      -------------------------------------------------------------- */
   .threat, .win-prox, .robber-on-me, .winning-move,
-  .lr-race, .la-race, .bank-low,
+  .lr-race, .la-race,
   .trade-offer, .knight-hint, .dev-hint, .discard-hint {
     position: relative;
     padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
@@ -1038,34 +1013,6 @@
   }
   .lr-race.contested, .la-race.contested {
     border-left-color: var(--info); color: var(--info);
-  }
-
-  .bank-low {
-    border-left-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-  }
-  .bank-low .bl-sub {
-    display: block;
-    font-weight: 400;
-    font-size: calc(12px * var(--font-scale));
-    color: var(--fg-mute);
-    opacity: 0.8;
-    margin-top: var(--s-1);
-    letter-spacing: 0;
-  }
-
-  .dev-deck {
-    color: var(--fg-dim);
-    font-size: calc(12px * var(--font-scale));
-    margin: var(--s-2) 0;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-weight: 600;
-  }
-  .dev-deck.low {
-    color: var(--accent);
-    font-weight: 800;
   }
 
   .discard-hint { border-left-color: var(--alert); }
@@ -2603,36 +2550,13 @@
                 + blockedFrag
                 + '</div>');
         }
-        // Production stall: surface a discrete banner when self has
-        // gone 3+ non-7 rolls without a gain AND has a real engine
-        // (per_roll > 0). yield_summary already shows the aggregate;
-        // this is the "right now" cue that pushes toward a trade or
-        // dev-card buy instead of just waiting for the next roll.
-        const ps = snap.production_stall;
-        if (ps && ps.rolls_dry >= 3) {
-            parts.push('<div class="prod-stall">'
-                + `dry ${ps.rolls_dry} rolls · ${ps.per_roll}/roll expected`
-                + '</div>');
-        }
-        // Sevens-hot: 7s are coming up at 2×+ expected rate in the
-        // recent window. Practical effect: lean toward holding fewer
-        // cards / spending before crossing the discard threshold.
-        const sh = snap.sevens_hot;
-        if (sh) {
-            parts.push('<div class="sevens-hot">'
-                + `7s hot · ${sh.sevens}/${sh.window} recent`
-                + '</div>');
-        }
-        // Hot numbers: productive dice (non-7) over-rolling at 2×+
-        // expected. Brief line showing top-2 most-anomalous so Noah
-        // can map them to his tiles. Stays active as long as the ratio
-        // holds — cools naturally as the window fills with other rolls.
-        const hn = snap.hot_numbers;
-        if (hn && hn.length > 0) {
-            const pieces = hn.map(h =>
-                `${h.number} (${h.count}× vs ${h.expected}×)`).join(', ');
-            parts.push('<div class="hot-numbers">hot: ' + pieces + '</div>');
-        }
+        // Removed: prod-stall, sevens-hot, hot-numbers banners.
+        // All three were info-only — they told Noah something was
+        // happening but didn't change his next move. With 5+ banners
+        // stacking the bottom of the HUD became unreadable noise.
+        // Bridge still computes the data (snap.production_stall,
+        // snap.sevens_hot, snap.hot_numbers); postmortems can surface
+        // them. The live HUD just doesn't.
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';
             parts.push(`<div class="threat ${lvl}">`
@@ -2708,29 +2632,10 @@
                 + escapeHtml(la.message || '')
                 + '</div>');
         }
-        if (snap.bank_supply && (snap.bank_supply.low || []).length) {
-            const low = snap.bank_supply.low;
-            const lbl = low.map(e =>
-                `${iconFor(e.resource)} ${e.count}`
-            ).join(' · ');
-            parts.push('<div class="bank-low">');
-            parts.push(`bank low: ${lbl}`);
-            parts.push('<span class="bl-sub">4:1 trades blocked at 0</span>');
-            parts.push('</div>');
-        }
-        if (snap.dev_deck) {
-            // Only surface when the deck is getting thin — at full
-            // stock it's just noise. Flashes amber at <=2 (same
-            // threshold the backend flags as `low`).
-            const dd = snap.dev_deck;
-            if (dd.remaining <= 10) {
-                const cls = dd.low ? 'dev-deck low' : 'dev-deck';
-                parts.push(`<div class="${cls}">`
-                    + `dev deck: ${dd.remaining} left`
-                    + (dd.low ? ' — last chance to buy' : '')
-                    + '</div>');
-            }
-        }
+        // Removed: bank-low and dev-deck banners. Bank running low on
+        // a resource almost never changes Noah's call (he just trades
+        // 3:1 instead of 4:1) and the dev-deck count belongs in the
+        // postmortem rather than competing for HUD real estate.
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
             const dropText = Object.entries(dh.drop)
