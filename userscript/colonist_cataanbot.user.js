@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.38
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.38 makes opp VP + card-count thresholds snap-driven (vp_target / discard_limit) and adds an amber "watch" tier — opps at vp_target-4 or discard_limit-2 turn amber before going red, instead of staying invisible until the cliff. v0.23.37 hotfixes a panelHTML template-literal break: two CSS comments contained raw backticks that closed the literal early, blocking the HUD from mounting.
+// @version      0.23.39
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.39 routes the "approaching threshold" warnings (mono-risk, dev-stash, can-afford, one-short, hot-knight, near-build, decent-rec, behind-yield, paused, signals header) to the new amber --watch color so they're visible again. v0.23.38 makes opp VP + card-count thresholds snap-driven (vp_target / discard_limit) and adds an amber "watch" tier — opps at vp_target-4 or discard_limit-2 turn amber before going red, instead of staying invisible until the cliff.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -446,7 +446,7 @@
   .robber-h        { color: var(--alert); }
   .sec-h.sec-opps  { color: var(--fg-label); }
   .sec-h.sec-roll  { color: var(--info); }
-  .sec-h.sec-signals { color: var(--warn); }
+  .sec-h.sec-signals { color: var(--watch); }
   .sec-h.sec-dev   { color: var(--accent); }
 
   /* Deprecated in v0.17 — section headers replace the raw hr */
@@ -540,12 +540,12 @@
     gap: 3px;
   }
   .hand .mono-risk {
-    color: var(--warn);
+    color: var(--watch);
     font-weight: 700;
     text-shadow: 0 0 6px rgba(251, 191, 36, 0.3);
   }
   .mono-warn {
-    color: var(--warn);
+    color: var(--watch);
     font-size: calc(13px * var(--font-scale));
     font-weight: 700;
     margin: var(--s-1) 0;
@@ -569,7 +569,7 @@
     font-size: calc(13px * var(--font-scale));
   }
   .afford.near {
-    color: var(--warn);
+    color: var(--watch);
     font-weight: 600;
     font-size: calc(14px * var(--font-scale));
   }
@@ -638,7 +638,7 @@
     line-height: 1.4;
   }
   .opp.tracked    { border-left-color: var(--pos); }
-  .opp.hot-knight { border-left-color: var(--warn); }
+  .opp.hot-knight { border-left-color: var(--watch); }
   .opp .color-pill {
     font-size: calc(13px * var(--font-scale));
     padding: 2px var(--s-3);
@@ -692,14 +692,14 @@
      Sized as readable content, not chrome — at 11px they were quieter
      than the muted dev/kp/prod tags they sit next to. */
   .opp .can-afford {
-    color: var(--warn);
+    color: var(--watch);
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     font-size: calc(13px * var(--font-scale));
   }
   .opp .one-short {
-    color: var(--warn);
+    color: var(--watch);
     opacity: 0.85;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -723,7 +723,7 @@
     font-variant-numeric: tabular-nums;
   }
   .opp .dev-stash {
-    color: var(--warn);
+    color: var(--watch);
     font-weight: 700;
   }
   /* Opp ports — chip group, scannable at a glance. The ⚓ acts as a
@@ -890,7 +890,7 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
   }
-  .yield-sum.behind { color: var(--warn); }
+  .yield-sum.behind { color: var(--watch); }
   .yield-sum .ys-sep { color: var(--fg-dim); opacity: 0.4; margin: 0 var(--s-2); }
 
   /* --------------------------------------------------------------
@@ -992,7 +992,7 @@
     padding: 2px var(--s-3);
   }
   .rec .score.strong { background: rgba(74, 222, 128, 0.16); color: var(--pos); }
-  .rec .score.decent { background: rgba(251, 191, 36, 0.16); color: var(--warn); }
+  .rec .score.decent { background: rgba(251, 191, 36, 0.16); color: var(--watch); }
   .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
   .rec .tiles { color: var(--fg-mute); font-size: calc(13px * var(--font-scale)); }
   /* Road direction arrow on the main rec line. Same .arrow class is
@@ -1054,7 +1054,7 @@
     padding: 0 0 var(--s-1) var(--s-5);
     opacity: 0.95;
   }
-  .rec-sub .warn  { color: var(--warn); font-weight: 700; }
+  .rec-sub .warn  { color: var(--watch); font-weight: 700; }
   .rec-sub .arrow {
     color: var(--accent);
     margin-right: var(--s-1);
@@ -1532,7 +1532,7 @@
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
     background: rgba(251, 191, 36, 0.18);
-    color: var(--warn);
+    color: var(--watch);
     font-size: calc(9px * var(--font-scale));
     font-weight: 800;
     letter-spacing: 0.18em;
