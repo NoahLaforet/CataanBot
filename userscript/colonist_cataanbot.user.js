@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.14
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.14 bumps the long-game strategic options block — the +VP swing pill goes from 11px to 14px (it's the headline number per option), the LR PUSH / LA PUSH / DEV DIVE label gets the small-caps treatment so it reads as a tag, and the detail trailer steps down to 13px so the eye lands on +VP first.
+// @version      0.23.15
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.15 tightens the self-card prod and ports lines for fewer words. Ports now render as a chip group (⚓ [3:1] [⛰️ 2:1]) matching the opp-row format so the eye doesn't have to learn two layouts; prod drops the "prod:" label and the word "strongest" — just "1.50/roll · 🌾". Both lines bump from 12px to 13px with tabular-nums so the rate aligns.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -548,18 +548,31 @@
     margin-top: var(--s-1);
     letter-spacing: 0.02em;
   }
+  /* Self ports — same chip group format as opp rows so the eye
+     doesn't have to learn two layouts. ⚓ glyph anchors the row. */
   .ports {
     color: var(--info);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin-top: var(--s-1);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+  }
+  .ports .port-chip {
+    display: inline-block;
+    margin-left: var(--s-1);
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    color: var(--info);
+    font-variant-numeric: tabular-nums;
   }
   .prod {
     color: var(--pos);
     opacity: 0.9;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin-top: var(--s-1);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
   }
 
   /* Hand-drift warning — appears when tracker state disagrees */
@@ -2039,25 +2052,27 @@
             } else {
                 parts.push('<div class="afford none">→ nothing buildable</div>');
             }
-            // Owned ports: "2:1 whe · 2:1 shp · 3:1". Reminds Noah to
-            // over-produce toward his cheap-trade resources. Skipped
-            // silently when no ports are claimed yet.
+            // Owned ports — chip group, ⚓ as label glyph. Matches the
+            // format used on opp rows so the eye doesn't have to learn
+            // two layouts. Silent until self owns at least one port.
             if ((me.ports || []).length) {
-                const portSegs = me.ports.map(p => p === 'GENERIC'
-                    ? '3:1'
-                    : `2:1 ${iconFor(p)}`);
-                parts.push(`<div class="ports">ports: `
-                    + portSegs.join(' · ') + '</div>');
+                const chips = me.ports.map(p => p === 'GENERIC'
+                    ? '<span class="port-chip">3:1</span>'
+                    : `<span class="port-chip">${iconFor(p)} 2:1</span>`
+                ).join('');
+                parts.push(`<div class="ports">⚓ ${chips}</div>`);
             }
             // Production rate — expected cards per dice roll given
-            // current builds. Skip at 0 (setup phase) to avoid a
-            // meaningless "0.00/roll" line.
+            // current builds. Terse format: "1.50/roll · 🌾" — the
+            // "prod:" label and "strongest" word are dropped since the
+            // /roll suffix is self-evident and the icon stands alone.
+            // Skipped at 0 (setup phase) to avoid a meaningless line.
             const prod = me.production;
             if (prod && prod.per_roll > 0) {
                 const top = prod.top_resource
-                    ? ` · strongest ${iconFor(prod.top_resource)}`
+                    ? ` · ${iconFor(prod.top_resource)}`
                     : '';
-                parts.push(`<div class="prod">prod: `
+                parts.push(`<div class="prod">`
                     + `${prod.per_roll.toFixed(2)}/roll${top}</div>`);
             }
             parts.push('</div>');  // .card.self
