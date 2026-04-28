@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.22
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.22 unifies the save-for-X rec details: `need 1 Wood, 1 Brick · 1.50/roll` becomes `need 1🌲 1🧱 · +1.50/roll`, and the soon-city form drops the `2×{prod}/roll + 1 VP` math in favor of `+{prod}/roll · +1 VP` matching the now-version. The icon convention now runs end-to-end across the rec list and the game-plan banner.
+// @version      0.23.23
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.23 brings opening-pick details into the same icon convention: `pip 1.50/roll · adds whe+ore` becomes `+1.50/roll · adds 🌾⛰️`. Round-1 and round-2 opening recs now match the in-game rec list — every detail string on the HUD speaks one vocabulary.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
