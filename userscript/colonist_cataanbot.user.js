@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.39
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.39 routes the "approaching threshold" warnings (mono-risk, dev-stash, can-afford, one-short, hot-knight, near-build, decent-rec, behind-yield, paused, signals header) to the new amber --watch color so they're visible again. v0.23.38 makes opp VP + card-count thresholds snap-driven (vp_target / discard_limit) and adds an amber "watch" tier — opps at vp_target-4 or discard_limit-2 turn amber before going red, instead of staying invisible until the cliff.
+// @version      0.23.40
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.40 adds a symbolic-vocabulary leading icon to every banner (mono-risk 🚨, opp-threat ⚠️, you-close 👑, robber-on-me 🚫, longest-road 🛣️, largest-army ⚔️, discard 🎲, can-afford ✅, near-build ⏳) so the eye learns the banner type at a glance instead of scanning sentences. v0.23.39 routes the "approaching threshold" warnings (mono-risk, dev-stash, can-afford, one-short, hot-knight, near-build, decent-rec, behind-yield, paused, signals header) to the new amber --watch color so they're visible again.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -550,6 +550,21 @@
     font-weight: 700;
     margin: var(--s-1) 0;
     letter-spacing: 0.04em;
+  }
+
+  /* Banner icon — shared visual token across mono-warn, threat,
+     win-prox, robber-on-me, lr-race, la-race, discard-hint, afford.
+     Sized slightly larger than the surrounding text so the icon
+     reads as the banner's anchor. font-style:normal because some
+     parent rules italicize. Margin-right gives consistent spacing
+     between icon and headline. */
+  .b-ico {
+    display: inline-block;
+    font-size: 1.15em;
+    font-style: normal;
+    margin-right: var(--s-1);
+    line-height: 1;
+    vertical-align: -1px;
   }
 
   /* Affordability line — immediate "what can I buy this turn" CTA.
@@ -2295,7 +2310,8 @@
             if (me.monopoly_risk) {
                 const mr = me.monopoly_risk;
                 parts.push('<div class="mono-warn">'
-                    + `⚠ ${mr.count} ${iconFor(mr.resource)} at monopoly risk`
+                    + `<span class="b-ico">🚨</span> ${mr.count} `
+                    + `${iconFor(mr.resource)} at monopoly risk`
                     + '</div>');
             }
             // Hand-drift warning. Tracker's event-reconstructed breakdown
@@ -2308,7 +2324,8 @@
             }
             const afford = (me.afford || []).join(' · ');
             if (afford) {
-                parts.push(`<div class="afford">→ ${afford}</div>`);
+                parts.push(`<div class="afford">`
+                    + `<span class="b-ico">✅</span> ${afford}</div>`);
             } else if (me.next_build) {
                 // Nearest-miss gap as a direction-of-travel hint:
                 // "1 brick from settlement" is more useful than
@@ -2317,10 +2334,11 @@
                 const missingStr = Object.entries(nb.missing || {})
                     .map(([r, n]) => `${n} ${iconFor(r)}`)
                     .join(' + ');
-                parts.push(`<div class="afford near">→ ${escapeHtml(missingStr)}`
+                parts.push(`<div class="afford near">`
+                    + `<span class="b-ico">⏳</span> ${escapeHtml(missingStr)}`
                     + ` from ${escapeHtml(nb.build)}</div>`);
             } else {
-                parts.push('<div class="afford none">→ nothing buildable</div>');
+                parts.push('<div class="afford none">– nothing buildable</div>');
             }
             // Owned ports — chip group, ⚓ as label glyph. Matches the
             // format used on opp rows so the eye doesn't have to learn
@@ -3017,6 +3035,7 @@
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';
             parts.push(`<div class="threat ${lvl}">`
+                + `<span class="b-ico">⚠️</span> `
                 + escapeHtml(snap.threat.message)
                 + '</div>');
         }
@@ -3025,6 +3044,7 @@
         if (snap.win_proximity && snap.win_proximity.message) {
             const wlvl = snap.win_proximity.level || 'close';
             parts.push(`<div class="win-prox ${wlvl}">`
+                + `<span class="b-ico">👑</span> `
                 + escapeHtml(snap.win_proximity.message)
                 + '</div>');
         }
@@ -3071,7 +3091,8 @@
             } else {
                 headExtra = ` · ${rom.pips_blocked} pips blocked`;
             }
-            parts.push(`robber on your ${escapeHtml(tileLbl)}${headExtra}`);
+            parts.push(`<span class="b-ico">🚫</span> `
+                + `robber on your ${escapeHtml(tileLbl)}${headExtra}`);
             parts.push(`<span class="rom-sub">${escapeHtml(subParts.join(' · '))}</span>`);
             parts.push('</div>');
         }
@@ -3079,6 +3100,7 @@
             const lr = snap.longest_road_race;
             const lvl = lr.level || 'contested';
             parts.push(`<div class="lr-race ${lvl}">`
+                + `<span class="b-ico">🛣️</span> `
                 + escapeHtml(lr.message || '')
                 + '</div>');
         }
@@ -3086,6 +3108,7 @@
             const la = snap.largest_army_race;
             const lvl = la.level || 'contested';
             parts.push(`<div class="la-race ${lvl}">`
+                + `<span class="b-ico">⚔️</span> `
                 + escapeHtml(la.message || '')
                 + '</div>');
         }
@@ -3099,7 +3122,8 @@
                 .map(([res, n]) => `${n} ${iconFor(res)}`)
                 .join(' · ');
             parts.push('<div class="discard-hint">');
-            parts.push(`<div class="dh-h">discard ${dh.need}</div>`);
+            parts.push(`<div class="dh-h">`
+                + `<span class="b-ico">🎲</span> discard ${dh.need}</div>`);
             parts.push(`<div class="dh-drops">${escapeHtml(dropText)}</div>`);
             if (dh.rationale) {
                 parts.push(`<div class="dh-reason">${escapeHtml(dh.rationale)}</div>`);
