@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.32
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.32 trims trade-offer header from "incoming from {player}" to "from {player}" — the verdict pill (ACCEPT/DECLINE/CONSIDER) already establishes that the banner is a tactical alert about an inbound trade, so "incoming" is redundant.
+// @version      0.23.33
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.33 tightens the hand-drift warning from "⚠ hand detail stale (waiting for resync)" to "⚠ stale hand · resyncing" — same diagnostic, half the words. Also trims dev-card-dive detail to drop the redundant "+ engine" benefit suffix.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2090,8 +2090,8 @@
             // per-resource detail is unreliable until the next HandSync
             // frame corrects us. Typically caused by a ws disconnect.
             if (me.hand_drift) {
-                parts.push('<div class="drift">⚠ hand detail stale '
-                    + '(waiting for resync)</div>');
+                parts.push('<div class="drift">⚠ stale hand · '
+                    + 'resyncing</div>');
             }
             const afford = (me.afford || []).join(' · ');
             if (afford) {
