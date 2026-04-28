@@ -512,12 +512,14 @@ def _knight_outcome(
         if isinstance(ev, NoStealEvent):
             return "?!", "robber moved but nothing to steal"
         if isinstance(ev, StealEvent):
+            from cataanbot.config import get_discard_limit
+            fat_threshold = get_discard_limit() + 1
             victim_color = color_map.get(ev.victim) or ""
             victim_size = (
                 hands_at_play[victim_color].total
                 if victim_color in hands_at_play else 0
             )
-            if victim_size >= 8:
+            if victim_size >= fat_threshold:
                 return "!!", f"stole from fat opp ({victim_size} cards)"
             if victim_size >= 4:
                 return "!", f"stole from {ev.victim} ({victim_size} cards)"
@@ -579,12 +581,14 @@ def _collect_move_annotations(
                 note=note,
             ))
         elif isinstance(event, RollEvent) and event.total == 7:
+            from cataanbot.config import get_discard_limit
+            fat_threshold = get_discard_limit() + 1
             color = color_map.get(event.player) or ""
             my_total = hands[color].total if color in hands else 0
-            # Self-blunder: rolling a 7 while you're sitting on 8+ cards
-            # forces your own discard. Small hands mean the 7 is a free
-            # shot at opps, so we only flag the own-goal case.
-            if my_total >= 8:
+            # Self-blunder: rolling a 7 while you're over the discard
+            # limit forces your own discard. Small hands mean the 7 is a
+            # free shot at opps, so we only flag the own-goal case.
+            if my_total >= fat_threshold:
                 out.append(MoveAnnotation(
                     event_index=i,
                     player=event.player,
@@ -600,7 +604,7 @@ def _collect_move_annotations(
                 opp_fat = [
                     (c, h.total)
                     for c, h in hands.items()
-                    if c != color and h.total >= 8
+                    if c != color and h.total >= fat_threshold
                 ]
                 if opp_fat:
                     biggest = max(opp_fat, key=lambda kv: kv[1])
@@ -618,7 +622,7 @@ def _collect_move_annotations(
             # discard half. This is about the victim's prior bad
             # planning, not the roller's play.
             for c, h in hands.items():
-                if c == color or h.total < 8:
+                if c == color or h.total < fat_threshold:
                     continue
                 victim_user = _username_for(color_map, c)
                 out.append(MoveAnnotation(
@@ -854,10 +858,12 @@ def _format_hand_dynamics(report: ReplayReport) -> list[str]:
         return []
     name_w = max((len(s.username) for _, s in players), default=8)
     name_w = max(name_w, 6)
+    fat = _discard_threshold()
+    fat_label = f"{fat}+ events"
     header = (
         f"  {'player':<{name_w}}  "
         f"{'peak':>4}  {'at event':>9}  "
-        f"{'8+ events':>10}  {'drift':>5}"
+        f"{fat_label:>10}  {'drift':>5}"
     )
     lines = [
         "Hand dynamics (from the event-stream reconstruction):",
@@ -880,12 +886,12 @@ def _format_hand_dynamics(report: ReplayReport) -> list[str]:
         )
     lines.append("")
     lines.append(
-        "  peak = max total cards held; 8+ events = hand-change samples at "
-        "8+ cards"
+        f"  peak = max total cards held; {fat}+ events = hand-change "
+        f"samples at {fat}+ cards"
     )
     lines.append(
-        "  (a 7 roll at 8+ forces a discard); drift ≥3 means the hand for "
-        "that color is approximate"
+        f"  (a 7 roll at {fat}+ forces a discard); drift ≥3 means the hand "
+        "for that color is approximate"
     )
     return lines
 
