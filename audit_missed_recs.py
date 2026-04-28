@@ -253,6 +253,54 @@ def summarize(audit_result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _aggregate_summary(all_decisions: list[dict[str, Any]],
+                       num_games: int) -> str:
+    """Cross-game tally — how does Noah classify against the bot when
+    you average over a session? Same buckets as ``summarize`` but the
+    denominator is decisions across N captures."""
+    if not all_decisions:
+        return "no qualifying decisions across all captures"
+
+    classes = {"!!": 0, "!": 0, "?!": 0, "?": 0, "??": 0}
+    by_piece: dict[str, dict[str, int]] = {}
+    for d in all_decisions:
+        c = d["classification"]
+        classes[c] = classes.get(c, 0) + 1
+        piece = d["piece"]
+        by_piece.setdefault(
+            piece, {"!!": 0, "!": 0, "?!": 0, "?": 0, "??": 0})
+        by_piece[piece][c] = by_piece[piece].get(c, 0) + 1
+
+    total = len(all_decisions)
+    lines = [
+        f"games audited: {num_games}",
+        f"total post-setup build decisions: {total}",
+        "",
+        "rank distribution (across all games):",
+    ]
+    labels = {
+        "!!": "top rec    ",
+        "!":  "top 3      ",
+        "?!": "top 4-6    ",
+        "?":  "top 7-10   ",
+        "??": "not in top10",
+    }
+    for sym in ("!!", "!", "?!", "?", "??"):
+        n = classes.get(sym, 0)
+        pct = (100.0 * n / total) if total else 0
+        lines.append(f"  {sym} {labels[sym]}: {n:3d}  {pct:5.1f}%")
+
+    lines.append("")
+    lines.append("by piece (across all games):")
+    for piece, dist in by_piece.items():
+        n = sum(dist.values())
+        breakdown = " ".join(
+            f"{sym}{dist.get(sym, 0)}" for sym in ("!!", "!", "?!", "?", "??"))
+        lines.append(f"  {piece:12s} ({n}): {breakdown}")
+
+    return "\n".join(lines)
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(
@@ -260,6 +308,8 @@ def main() -> int:
             file=sys.stderr)
         return 1
 
+    all_decisions: list[dict[str, Any]] = []
+    games_with_data = 0
     for arg in sys.argv[1:]:
         path = Path(arg).expanduser()
         if not path.exists():
@@ -279,6 +329,17 @@ def main() -> int:
             for d in result["decisions"]:
                 f.write(json.dumps(d) + "\n")
         print(f"\nwrote per-decision JSONL: {out_path}")
+        print()
+        if result["decisions"]:
+            all_decisions.extend(result["decisions"])
+            games_with_data += 1
+
+    # Cross-game aggregate, only when there's more than one capture with
+    # qualifying decisions. Single-capture runs already show the same
+    # numbers via ``summarize``, so this would just be duplication.
+    if games_with_data > 1:
+        print("=== aggregate across all captures ===")
+        print(_aggregate_summary(all_decisions, games_with_data))
         print()
     return 0
 
