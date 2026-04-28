@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.16
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.16 bumps the game-plan banner body from 12px to 14px so the through-line plan reads at the same priority as the strategic options block below it. The PLAN kind chip nudges from 9px to 10px (still chrome, just less squinty). The plan banner is what Noah carries between turns — it shouldn't be quieter than the alternatives below it.
+// @version      0.23.17
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.17 lifts the non-hero rec score pill from 11px to 13px so it reads at the same priority as the kind/tiles row — the score is the strength signal that lets Noah pick between alternatives, it shouldn't be the smallest thing on the row. Also bumps the Option A/B/C/D letter on opening picks to 13px since Noah reads those out loud at the table.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -912,6 +912,9 @@
     width: 100%;
   }
   .rec.top.kind-build .detail { display: none; }
+  /* Score pill — strength signal on non-hero recs. Sized to match
+     the kind/tiles row so it reads at the same priority. The hero
+     keeps its small score (the 40px kind already carries the weight). */
   .rec .score {
     min-width: 44px;
     padding: 1px var(--s-2);
@@ -919,7 +922,7 @@
     font-weight: 800;
     text-align: center;
     font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     letter-spacing: 0.04em;
   }
   .rec.top .score {
@@ -992,6 +995,8 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
+  /* Option letter (A/B/C/D) on opening picks — Noah reads this out
+     loud ("I'm taking Option B") so it shouldn't squint. */
   .rec .opt {
     min-width: 22px;
     padding: 1px var(--s-2);
@@ -999,7 +1004,7 @@
     background: rgba(167, 139, 250, 0.18);
     color: var(--accent);
     font-weight: 800;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     text-align: center;
   }
   .rec.trade .kind { color: var(--warn); }
