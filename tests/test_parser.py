@@ -425,3 +425,17 @@ def test_happy_settling_is_info():
               " List of commands: /help"),
     ]))
     assert isinstance(ev, InfoEvent)
+
+
+def test_insufficient_bank_distribute_is_info():
+    """Bank-shortage notice ("Insufficient in bank to distribute: 5 in
+    bank when 7 were required") has no player name, so it used to fall
+    through to UnknownEvent and pollute the userscript log scan as "?".
+    The actual partial yield already fires as a separate ProduceEvent —
+    this row is purely informational."""
+    ev = parse_event(_make([
+        _text("Insufficient in bank to distribute: 5 in bank when 7"
+              " were required"),
+        _icon("Grain"),
+    ]))
+    assert isinstance(ev, InfoEvent)
