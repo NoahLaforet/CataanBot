@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.20
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.20 trims verbose detail strings on rec rows. Settlement detail goes from `prod 1.50/roll` to `+1.50/roll` (kind label already says it's a settlement). City detail goes from `2× prod (1.50/roll) + 1 VP` to `+1.50/roll · +1 VP`. Winning-move details drop the trailing `wins the game` since the WIN THIS TURN banner header already conveys that.
+// @version      0.23.21
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.21 swaps the missing-cards format on the game-plan banner from letter abbreviations (`need 1b 1s`) to resource emojis (`need 1🧱 1🐑`) so the missing list visually matches the trade-fallback chips on the same banner (`4:1 🌾→⛰️ if stuck`). The two halves of the banner now use the same icon convention.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1342,8 +1342,8 @@
   }
 
   /* Game plan banner — principal-variation strip framing the rec list.
-     Reads "plan: 2 roads → settle at whe6+ore11 · need 1b 1s · 4:1
-     wood→brick if stuck" so Noah holds a through-line across turns. */
+     Reads "plan: 2 roads · need 1🧱 1🐑 · 4:1 🌾→⛰️ if stuck" so Noah
+     holds a through-line across turns. */
   .game-plan {
     margin: var(--s-2) 0 var(--s-2);
     padding: var(--s-2) var(--s-3);
@@ -2276,9 +2276,9 @@
                 }
             };
             // Game plan banner — frames the rec list with a short
-            // principal variation: "2 roads → settle at whe6+ore11 ·
-            // need 1b 1s · 4:1 wood→brick if stuck". Only renders mid-
-            // game (setup owns opening picks separately).
+            // principal variation: "2 roads · need 1🧱 1🐑 · 4:1 🌾→⛰️
+            // if stuck". Only renders mid-game (setup owns opening
+            // picks separately).
             if (!isSetup && snap.game_plan && snap.game_plan.summary) {
                 const gp = snap.game_plan;
                 const kindCls = gp.goal_kind === 'city'
