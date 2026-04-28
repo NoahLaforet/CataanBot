@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.36
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.36 refreshes the drawer's VP/discard inputs every time the drawer opens so values reflect the bridge's auto-detect after a fresh GameStart frame. v0.23.35 added the inputs themselves.
+// @version      0.23.37
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.37 hotfixes a panelHTML template-literal break: two CSS comments contained raw backticks that closed the literal early, blocking the HUD from mounting. v0.23.36 refreshes the drawer's VP/discard inputs every time the drawer opens.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -682,7 +682,7 @@
   }
   .opp.tracked .opp-hand { color: var(--pos); }
   /* Tactical signals on opp rows — these fire when an opp is about to
-     do something dangerous (`can buy settlement`, `1 wheat short of city`).
+     do something dangerous ('can buy settlement', '1 wheat short of city').
      Sized as readable content, not chrome — at 11px they were quieter
      than the muted dev/kp/prod tags they sit next to. */
   .opp .can-afford {
@@ -1305,7 +1305,7 @@
   }
 
   /* Knight / dev-card hint banners. Every render uses these sizes —
-     there used to be a smaller `.big`-less variant for when the hints
+     there used to be a smaller '.big'-less variant for when the hints
      lived buried at the bottom of the HUD, but the cluster has lived
      right under the rec list for several versions, so the smaller
      base sizes were dead code. Consolidated to the full size. */
