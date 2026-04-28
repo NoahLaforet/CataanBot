@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.25
+// @version      0.23.26
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.25 sweeps remaining content-bearing 11/12px elements that fell under the scan threshold: opp tactical signals (`can buy settlement` 12→13px), opp port chips (11→13px so the chip group reads as content not chrome), self piece-counts row + VP breakdown + monopoly-warning all 12→13px. Section-header chrome stays at 11px — only content lines lift.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -380,7 +380,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .gprog .ph-early { color: var(--pos); }
   .gprog .ph-mid   { color: var(--accent); }
@@ -448,7 +448,7 @@
     border-radius: var(--radius);
     color: #111;
     font-weight: 800;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     letter-spacing: 0.04em;
     vertical-align: middle;
   }
@@ -578,7 +578,7 @@
   /* Hand-drift warning — appears when tracker state disagrees */
   .drift {
     color: var(--alert);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin: var(--s-1) 0;
     font-weight: 600;
   }
@@ -737,7 +737,7 @@
   }
   .opp-yields {
     color: var(--fg-dim);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin: 0 0 var(--s-2);
     font-variant-numeric: tabular-nums;
   }
@@ -823,7 +823,7 @@
                 0 0 18px rgba(248, 113, 113, 0.65);
   }
   .hist-num {
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     color: var(--fg-mute);
     text-align: center;
     margin-top: 3px;
@@ -833,21 +833,21 @@
   .hist-col.seven .hist-num { color: var(--alert); }
   .hist-col.last .hist-num { color: var(--fg); }
   .hist-count {
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     color: var(--fg-dim);
     text-align: center;
-    height: 16px;
-    line-height: 16px;
+    height: 18px;
+    line-height: 18px;
     font-weight: 600;
   }
   .hist-col.last .hist-count {
     color: var(--fg);
     font-weight: 800;
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
   }
   .yield-sum {
     color: var(--fg-mute);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin: 0 0 var(--s-2);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
@@ -916,7 +916,7 @@
   }
   .rec .detail {
     color: var(--fg-dim);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     font-weight: 400;
     flex: 1 1 100%;
     opacity: 0.75;
@@ -1058,7 +1058,7 @@
     color: var(--fg-dim);
     font-style: italic;
     margin: var(--s-2) 0;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
 
   /* --------------------------------------------------------------
@@ -1145,7 +1145,7 @@
   }
   .winning-move .wm-alts {
     color: var(--fg-dim);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     font-weight: 400;
     margin-top: var(--s-2);
     letter-spacing: 0;
@@ -1197,7 +1197,7 @@
   }
   .discard-hint .dh-reason {
     color: var(--fg-dim);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-1);
   }
@@ -1234,7 +1234,7 @@
   }
   .trade-offer .trade-reason {
     color: var(--fg-mute);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-2);
   }
@@ -1259,7 +1259,7 @@
     background: rgba(96, 165, 250, 0.08);
     border-left: 2px solid var(--info);
     color: var(--fg);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .trade-offer .counter .counter-h {
     color: var(--info);
@@ -1272,7 +1272,7 @@
   .trade-offer .counter .counter-reason {
     color: var(--fg-dim);
     font-style: italic;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin-left: var(--s-2);
   }
 
@@ -1346,7 +1346,7 @@
   }
   .dev-hint .dv-sub {
     color: var(--fg-mute);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin-top: var(--s-1);
   }
   .dev-hint .dv-sub .dv-arrow {
@@ -1421,7 +1421,7 @@
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--fg-mute);
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     font-weight: 800;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -1457,7 +1457,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .strat-opt .strat-detail {
     color: var(--fg-mute);
@@ -1474,7 +1474,7 @@
   table.robber td {
     padding: var(--s-1) var(--s-2) var(--s-1) 0;
     vertical-align: top;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .victim-top { color: var(--accent); font-weight: 800; }
 
