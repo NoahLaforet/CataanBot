@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.27
+// @version      0.23.28
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.25 sweeps remaining content-bearing 11/12px elements that fell under the scan threshold: opp tactical signals (`can buy settlement` 12→13px), opp port chips (11→13px so the chip group reads as content not chrome), self piece-counts row + VP breakdown + monopoly-warning all 12→13px. Section-header chrome stays at 11px — only content lines lift.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1287,7 +1287,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-3);
   }
   .knight-hint .kh-reason {
@@ -1331,7 +1331,7 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(11px * var(--font-scale));
     margin-bottom: var(--s-3);
   }
   .dev-hint .dv-body {
