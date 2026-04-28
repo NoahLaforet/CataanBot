@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.34
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.33 tightens the hand-drift warning from "⚠ hand detail stale (waiting for resync)" to "⚠ stale hand · resyncing" — same diagnostic, half the words. Also trims dev-card-dive detail to drop the redundant "+ engine" benefit suffix.
+// @version      0.23.35
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.35 adds VP target + discard limit inputs to the settings drawer so 14-VP and other variant games can be played without restarting the bridge. Inputs persist to localStorage and POST to /config on change.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -78,6 +78,34 @@
             } else {
                 fetch(url, { mode: 'cors' })
                     .then(r => r.json()).then(resolve, reject);
+            }
+        });
+    }
+
+    // POST that returns a Promise resolving to the parsed JSON
+    // response — the synchronous postTo() above is fire-and-forget.
+    // Used by handlers that need to round-trip a confirmation
+    // (e.g., /config write-back).
+    function postJson(url, payload) {
+        return new Promise((resolve, reject) => {
+            if (typeof GM_xmlhttpRequest === 'function') {
+                GM_xmlhttpRequest({
+                    method: 'POST', url,
+                    headers: { 'Content-Type': 'application/json' },
+                    data: JSON.stringify(payload),
+                    onload: (r) => {
+                        try { resolve(JSON.parse(r.responseText)); }
+                        catch (e) { reject(e); }
+                    },
+                    onerror: (e) => reject(e),
+                });
+            } else {
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    mode: 'cors',
+                }).then(r => r.json()).then(resolve, reject);
             }
         });
     }
@@ -1639,6 +1667,44 @@
     text-align: right;
   }
 
+  .drawer-num {
+    display: inline-flex; align-items: center;
+    gap: var(--s-1);
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    letter-spacing: 0.02em;
+  }
+  .drawer-num-l {
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: calc(9px * var(--font-scale));
+  }
+  .drawer input[type="number"] {
+    width: 48px;
+    padding: 2px var(--s-1);
+    background: var(--bg-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: calc(11px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    outline: none;
+  }
+  .drawer input[type="number"]:focus {
+    border-color: var(--accent);
+  }
+  .drawer-num-status {
+    color: var(--fg-dim);
+    font-size: calc(10px * var(--font-scale));
+    font-style: italic;
+    min-width: 60px;
+  }
+  .drawer-num-status.ok { color: var(--pos); font-style: normal; }
+  .drawer-num-status.err { color: var(--alert); font-style: normal; }
+
   .drawer-help { margin-top: var(--s-1); }
   .drawer-hint {
     color: var(--fg-dim);
@@ -1673,6 +1739,16 @@
       <span class="drawer-label">opacity</span>
       <input type="range" id="opacity" min="40" max="100" step="5" value="100"/>
       <span class="opacity-val" id="opacity-val">100%</span>
+    </div>
+    <div class="drawer-row">
+      <span class="drawer-label">game</span>
+      <label class="drawer-num"><span class="drawer-num-l">VP</span>
+        <input type="number" id="vp-target" min="3" max="20" step="1"/>
+      </label>
+      <label class="drawer-num"><span class="drawer-num-l">discard</span>
+        <input type="number" id="discard-limit" min="3" max="20" step="1"/>
+      </label>
+      <span class="drawer-num-status" id="game-cfg-status"></span>
     </div>
     <div class="drawer-row drawer-help">
       <span class="drawer-label">keys</span>
@@ -1798,6 +1874,105 @@
         opacityInput.addEventListener('input', () => {
             applyOpacity(parseInt(opacityInput.value, 10));
         });
+
+        // Game mode config — VP target + discard limit. POSTs to the
+        // bridge's /config so a 14-VP / 10-discard variant can be
+        // played without restarting. Persisted to localStorage so the
+        // inputs reflect the last-used values immediately on reload;
+        // overwritten by the live bridge value after the GET /config
+        // round-trip lands. Debounced so spam-clicking the spinner
+        // arrows doesn't fire a POST per keystroke.
+        const vpInput = root.getElementById('vp-target');
+        const discardInput = root.getElementById('discard-limit');
+        const cfgStatus = root.getElementById('game-cfg-status');
+        const CFG_DEBOUNCE_MS = 350;
+        let cfgPostTimer = null;
+        let cfgStatusTimer = null;
+        function setCfgStatus(text, kind) {
+            cfgStatus.textContent = text || '';
+            cfgStatus.classList.remove('ok', 'err');
+            if (kind) cfgStatus.classList.add(kind);
+            if (cfgStatusTimer) clearTimeout(cfgStatusTimer);
+            if (text && kind === 'ok') {
+                cfgStatusTimer = setTimeout(() => {
+                    cfgStatus.textContent = '';
+                    cfgStatus.classList.remove('ok');
+                }, 1500);
+            }
+        }
+        function readCfgInputs() {
+            const vp = parseInt(vpInput.value, 10);
+            const dl = parseInt(discardInput.value, 10);
+            return {
+                vp_target: Number.isFinite(vp) ? vp : null,
+                discard_limit: Number.isFinite(dl) ? dl : null,
+            };
+        }
+        function persistCfgLocal(vp, dl) {
+            try {
+                if (Number.isFinite(vp)) {
+                    localStorage.setItem('cataanbot.vp_target', String(vp));
+                }
+                if (Number.isFinite(dl)) {
+                    localStorage.setItem(
+                        'cataanbot.discard_limit', String(dl));
+                }
+            } catch (_) { /* storage blocked */ }
+        }
+        function postCfg() {
+            const body = readCfgInputs();
+            if (body.vp_target === null && body.discard_limit === null) {
+                setCfgStatus('invalid', 'err');
+                return;
+            }
+            postJson('http://127.0.0.1:8765/config', body)
+                .then((res) => {
+                    if (!res || res.ok === false) {
+                        setCfgStatus('error', 'err');
+                        return;
+                    }
+                    if (Number.isFinite(res.vp_target)) {
+                        vpInput.value = String(res.vp_target);
+                    }
+                    if (Number.isFinite(res.discard_limit)) {
+                        discardInput.value = String(res.discard_limit);
+                    }
+                    persistCfgLocal(res.vp_target, res.discard_limit);
+                    setCfgStatus('saved', 'ok');
+                })
+                .catch(() => setCfgStatus('offline', 'err'));
+        }
+        function scheduleCfgPost() {
+            if (cfgPostTimer) clearTimeout(cfgPostTimer);
+            cfgPostTimer = setTimeout(postCfg, CFG_DEBOUNCE_MS);
+            setCfgStatus('…', null);
+        }
+        // Seed from localStorage immediately so the inputs aren't
+        // empty if the bridge hasn't responded yet.
+        try {
+            const lvp = parseInt(
+                localStorage.getItem('cataanbot.vp_target') || '', 10);
+            const ldl = parseInt(
+                localStorage.getItem('cataanbot.discard_limit') || '', 10);
+            if (Number.isFinite(lvp)) vpInput.value = String(lvp);
+            if (Number.isFinite(ldl)) discardInput.value = String(ldl);
+        } catch (_) { /* storage blocked */ }
+        // Then fetch the live bridge state and overwrite. If the
+        // bridge isn't up yet, leave the localStorage seed in place.
+        getJson('http://127.0.0.1:8765/config')
+            .then((cfg) => {
+                if (!cfg) return;
+                if (Number.isFinite(cfg.vp_target)) {
+                    vpInput.value = String(cfg.vp_target);
+                }
+                if (Number.isFinite(cfg.discard_limit)) {
+                    discardInput.value = String(cfg.discard_limit);
+                }
+                persistCfgLocal(cfg.vp_target, cfg.discard_limit);
+            })
+            .catch(() => { /* bridge offline — inputs keep the seed */ });
+        vpInput.addEventListener('change', scheduleCfgPost);
+        discardInput.addEventListener('change', scheduleCfgPost);
 
         // Copy Snapshot — fetches the current /advisor JSON and writes
         // it to the clipboard. Exists so Noah can paste exact tracker

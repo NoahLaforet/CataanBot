@@ -420,12 +420,12 @@ def _score_trade_delta(
 
 
 # First hand size that triggers discard on a 7 is DISCARD_LIMIT + 1
-# (colonist rounds down, so "more than N" = N+1 cards). Using that
-# threshold lets vulnerable_events line up with the chart's
-# discard-threshold dashed line and lets custom rules (e.g., Cities &
-# Knights' 9-card limit) scale cleanly via CATAANBOT_DISCARD_LIMIT.
-from cataanbot.config import DISCARD_LIMIT as _DISCARD_LIMIT
-_DISCARD_THRESHOLD = _DISCARD_LIMIT + 1
+# (colonist rounds down, so "more than N" = N+1 cards). Resolved at
+# call time from the live config so a mid-session change to a custom
+# discard limit (e.g., Cities & Knights' 9-card rule) propagates here.
+def _discard_threshold() -> int:
+    from cataanbot.config import get_discard_limit
+    return get_discard_limit() + 1
 
 
 def _walk_hands_with_dynamics(
@@ -442,6 +442,7 @@ def _walk_hands_with_dynamics(
     from cataanbot.hand_tracker import apply_event, init_hands
     hands = init_hands(color_map)
     dynamics = {c: HandDynamics() for c in hands}
+    threshold = _discard_threshold()
     for i, event in enumerate(events):
         changed = apply_event(hands, event, color_map)
         if not changed:
@@ -452,7 +453,7 @@ def _walk_hands_with_dynamics(
             if total > d.peak_size:
                 d.peak_size = total
                 d.peak_event_index = i
-            if total >= _DISCARD_THRESHOLD:
+            if total >= threshold:
                 d.vulnerable_events += 1
     for color, hand in hands.items():
         dynamics[color].final_drift = hand.drift
