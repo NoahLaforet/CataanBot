@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.11
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.11 bumps the self affordability line from 13px to 16px when something is buildable — it's the primary "what can I do this turn" CTA and was reading too quietly. Near-miss (1 card away) and broke states stay smaller since they aren't actionable.
+// @version      0.23.12
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.12 promotes the trade-offer verdict (ACCEPT/DECLINE/CONSIDER) from a tiny 11px chip buried in the reasoning line to a 16px hero pill at the top of the banner. The whole banner's left-edge accent color also now mirrors the verdict so green-or-red registers peripherally. Trade body bumps from default 14px to 16px.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1134,16 +1134,23 @@
   }
 
   .trade-offer { border-left-color: var(--warn); }
+  /* Verdict-driven left-border color so the banner's accent matches
+     the bot's recommendation (green=accept, red=decline, dim=consider). */
+  .trade-offer.verdict-accept  { border-left-color: var(--pos); }
+  .trade-offer.verdict-decline { border-left-color: var(--alert); }
   .trade-offer .trade-h {
-    color: var(--warn);
-    font-weight: 800;
+    display: flex; align-items: center; gap: var(--s-3);
+    margin-bottom: var(--s-2);
+  }
+  .trade-offer .trade-meta {
+    color: var(--fg-label);
+    font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     font-size: calc(11px * var(--font-scale));
-    margin-bottom: var(--s-2);
-    display: flex; align-items: center; gap: var(--s-2);
+    display: inline-flex; align-items: center; gap: var(--s-2);
   }
-  .trade-offer .trade-h .muted {
+  .trade-offer .trade-meta .muted {
     text-transform: none;
     letter-spacing: 0;
     color: var(--fg-mute);
@@ -1152,25 +1159,28 @@
   .trade-offer .trade-body {
     color: var(--fg);
     font-variant-numeric: tabular-nums;
-    margin: var(--s-1) 0;
+    font-size: calc(16px * var(--font-scale));
+    font-weight: 600;
+    margin: var(--s-2) 0;
   }
   .trade-offer .trade-reason {
     color: var(--fg-mute);
     font-size: calc(12px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-2);
-    display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
   }
+  /* Verdict hero pill — chunky, all-caps, color matches the action.
+     Sized up to 16px so it's the first thing the eye lands on. */
   .trade-offer .verdict {
-    padding: 1px var(--s-2);
+    padding: 4px var(--s-3);
     border-radius: var(--radius-sm);
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    font-size: calc(11px * var(--font-scale));
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    font-size: calc(16px * var(--font-scale));
   }
-  .trade-offer .verdict.accept   { background: rgba(74, 222, 128, 0.18); color: var(--pos); }
-  .trade-offer .verdict.decline  { background: rgba(248, 113, 113, 0.18);  color: var(--alert); }
-  .trade-offer .verdict.consider { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
+  .trade-offer .verdict.accept   { background: rgba(74, 222, 128, 0.22); color: var(--pos); }
+  .trade-offer .verdict.decline  { background: rgba(248, 113, 113, 0.22); color: var(--alert); }
+  .trade-offer .verdict.consider { background: rgba(255, 255, 255, 0.10); color: var(--fg-mute); }
   .trade-offer .swap-side { color: var(--fg); }
   .trade-offer .swap-arrow { color: var(--fg-dim); margin: 0 var(--s-2); }
   .trade-offer .counter {
@@ -2591,17 +2601,24 @@
             const verdictCls = ['accept', 'decline', 'consider']
                 .includes(t.verdict) ? t.verdict : 'consider';
             const verdictLabel = verdictCls.toUpperCase();
-            parts.push('<div class="trade-offer">');
-            parts.push(`<div class="trade-h">incoming trade ${offererPill}`
-                + `<span class="muted">${t.offerer_vp ?? 0} VP</span></div>`);
+            parts.push(`<div class="trade-offer verdict-${verdictCls}">`);
+            // Verdict is the headline — what's the bot saying to do.
+            // Promote it to the top of the banner so the eye lands on
+            // ACCEPT/DECLINE/CONSIDER first, then reads the deal terms.
+            parts.push('<div class="trade-h">'
+                + `<span class="verdict ${verdictCls}">${verdictLabel}</span>`
+                + `<span class="trade-meta">incoming from ${offererPill}`
+                + `<span class="muted">${t.offerer_vp ?? 0} VP</span></span>`
+                + '</div>');
             parts.push('<div class="trade-body">'
                 + '<span class="swap-side">gives ' + escapeHtml(fmtSide(t.give))
                 + '</span><span class="swap-arrow">↔</span>'
                 + '<span class="swap-side">wants ' + escapeHtml(fmtSide(t.want))
                 + '</span></div>');
-            parts.push('<div class="trade-reason">'
-                + `<span class="verdict ${verdictCls}">${verdictLabel}</span>`
-                + escapeHtml(t.reason || '') + '</div>');
+            if (t.reason) {
+                parts.push('<div class="trade-reason">'
+                    + escapeHtml(t.reason) + '</div>');
+            }
             if (t.counter) {
                 // Counter-offer is a fairer version we'd actually accept.
                 // Show give→want like the main offer so Noah can type it in.
