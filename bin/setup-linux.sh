@@ -34,8 +34,10 @@ if [ -z "$PY" ]; then
 fi
 have git || need_apt+=(git)
 
-# python3-venv is needed even if python3 itself is present (Ubuntu splits it).
-if [ -n "$PY" ] && ! "$PY" -c 'import venv' 2>/dev/null; then
+# python3-venv is needed even if python3 itself is present (Ubuntu splits
+# it). `import venv` succeeds without it — the actual gate is ensurepip,
+# which Ubuntu ships in the python3.x-venv package.
+if [ -n "$PY" ] && ! "$PY" -m ensurepip --version >/dev/null 2>&1; then
     need_apt+=("${PY#python}-venv" "${PY#python}-dev")
 fi
 
@@ -58,7 +60,14 @@ fi
 
 echo ">> using $PY ($($PY --version))"
 
-if [ ! -d .venv ]; then
+# A failed prior run can leave a stub .venv/ with no bin/activate. Treat
+# the activate script as the marker for "venv finished" and rebuild if
+# missing.
+if [ ! -f .venv/bin/activate ]; then
+    if [ -d .venv ]; then
+        echo ">> .venv is incomplete — rebuilding"
+        rm -rf .venv
+    fi
     echo ">> creating .venv"
     "$PY" -m venv .venv
 fi
