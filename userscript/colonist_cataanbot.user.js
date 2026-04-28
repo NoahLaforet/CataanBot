@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.21
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.21 swaps the missing-cards format on the game-plan banner from letter abbreviations (`need 1b 1s`) to resource emojis (`need 1🧱 1🐑`) so the missing list visually matches the trade-fallback chips on the same banner (`4:1 🌾→⛰️ if stuck`). The two halves of the banner now use the same icon convention.
+// @version      0.23.22
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.22 unifies the save-for-X rec details: `need 1 Wood, 1 Brick · 1.50/roll` becomes `need 1🌲 1🧱 · +1.50/roll`, and the soon-city form drops the `2×{prod}/roll + 1 VP` math in favor of `+{prod}/roll · +1 VP` matching the now-version. The icon convention now runs end-to-end across the rec list and the game-plan banner.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
