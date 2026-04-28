@@ -501,8 +501,10 @@ CALLOUT_TEXT = (250, 245, 230)
 def _draw_vp_callout(draw, state, colors_seated, w: int, board_h: int,
                      legend_h: int, hex_size: float) -> int:
     """Render a single-line banner across the top of the legend strip when
-    some player is at 8+ VP. Returns the banner height in pixels (0 when
-    silent, so the caller can shift per-color columns down accordingly)."""
+    some player is within two VP of the win line. Returns the banner height
+    in pixels (0 when silent, so the caller can shift per-color columns
+    down accordingly)."""
+    from cataanbot.config import VP_TARGET
     per_color: dict[str, int] = {}
     for cname in colors_seated:
         idx = _find_player_index(state, cname)
@@ -512,13 +514,13 @@ def _draw_vp_callout(draw, state, colors_seated, w: int, board_h: int,
     if not per_color:
         return 0
     top = max(per_color.values())
-    if top < 8:
+    if top < VP_TARGET - 2:
         return 0
     leaders = "/".join(c for c, v in per_color.items() if v == top)
-    if top >= 10:
+    if top >= VP_TARGET:
         bg = CALLOUT_WINNER_BG
         text = f"*  {leaders} WINS at {top} VP  *"
-    elif top >= 9:
+    elif top >= VP_TARGET - 1:
         bg = CALLOUT_ONE_AWAY_BG
         text = f"!  {leaders} at {top} VP — one turn from winning  !"
     else:
