@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.9
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.9 fattens the game-progress strip from 11px small-caps chrome to 14px readable content — round number bumps to bold, phase keeps its small-caps accent. Also drops dead CSS for the recent-rolls strip (was pulled in v0.22 but the styles were left orphaned).
+// @version      0.23.10
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.10 pulls each opponent's VP and card-count out of the muted secondary tags and gives them their own visual weight — VP is the headline (close-to-winning signal), cards is the primary 7-roll/steal signal. VP tiers: white ≤5, amber 6-7, red 8+ so a leader pops at a glance.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -584,6 +584,39 @@
     font-size: calc(13px * var(--font-scale));
     padding: 2px var(--s-3);
     font-weight: 800;
+  }
+  /* VP is the headline number per opp — it's how close they are to
+     winning. Tier the color: dim grey at low VP (most of the game),
+     amber at 6+ (getting close), red at 8+ (one move could end it).
+     The "VP" label rides smaller alongside so the number is what
+     the eye actually grabs. */
+  .opp .opp-vp {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    color: var(--fg);
+    font-size: calc(18px * var(--font-scale));
+    margin: 0 var(--s-2);
+    letter-spacing: 0.01em;
+  }
+  .opp .opp-vp .lbl {
+    font-size: calc(10px * var(--font-scale));
+    margin-left: 2px;
+    font-weight: 600;
+    color: var(--fg-mute);
+    letter-spacing: 0.08em;
+  }
+  .opp .opp-vp.warn   { color: var(--warn); }
+  .opp .opp-vp.warn   .lbl { color: var(--warn); opacity: 0.7; }
+  .opp .opp-vp.danger { color: var(--alert); }
+  .opp .opp-vp.danger .lbl { color: var(--alert); opacity: 0.7; }
+  /* Card count: also a primary signal (steal target / 7-roll discard
+     pool). Sits next to VP with similar weight; fat-hand colors
+     applied separately by .fat-hand on the inner span. */
+  .opp .opp-cards {
+    color: var(--fg);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-size: calc(15px * var(--font-scale));
   }
   .opp .opp-hand {
     color: var(--fg);
@@ -2499,8 +2532,27 @@
                     const cls = o.card_delta > 0 ? 'card-up' : 'card-dn';
                     cardsSpan += ` <span class="${cls}">(${sign}${o.card_delta})</span>`;
                 }
+                // VP and card count own their own visual weight — those
+                // are the two highest-priority signals per opp (close to
+                // winning + discard/steal target). Other tags stay
+                // muted so the eye picks out the primary numbers first.
+                const vpCls = o.vp >= 8 ? 'opp-vp danger'
+                    : (o.vp >= 6 ? 'opp-vp warn' : 'opp-vp');
+                const vpHtml = `<span class="${vpCls}">${o.vp}`
+                    + '<span class="lbl">VP</span></span>';
+                // Strip the leading " · " each conditional tag carries
+                // and rejoin with a single separator. Prevents a stray
+                // leading dot when the first applicable tag is missing.
+                const mutedTags = [devTag, kpTag, prodTag, opPortTag]
+                    .map(t => t.replace(/^ · /, ''))
+                    .filter(Boolean)
+                    .join(' · ');
+                const mutedHtml = mutedTags
+                    ? ` <span class="muted">· ${mutedTags}</span>` : '';
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
-                    + ` <span class="muted">${cardsSpan} · ${o.vp}VP${devTag}${kpTag}${prodTag}${opPortTag}</span>${affordTag}${oneShortTag}`
+                    + ` ${vpHtml} <span class="opp-cards">${cardsSpan}</span>`
+                    + mutedHtml
+                    + `${affordTag}${oneShortTag}`
                     + (breakdown ? ` ${breakdown}` : '')
                     + `</div>`);
             }
