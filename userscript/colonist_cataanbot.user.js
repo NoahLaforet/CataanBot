@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.30
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.30 abbreviates LR/LA race banner messages to match the strategic-options shorthand: "longest road · you 4 / alice 5" → "LR · you 4 / alice 5". The visual treatment (border color + level class) is enough context for "LR" / "LA" to read clearly without spelled-out labels.
+// @version      0.23.31
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.31 swaps the empty-rec hint from "your turn — nothing affordable" to "nothing affordable · save up" — the user already knows it's their turn, what's missing is the next action ("save up", explicit advice) rather than the state restatement.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2386,8 +2386,8 @@
                 }
             }
         } else if (snap.my_turn) {
-            parts.push('<div class="turn-hint">your turn — '
-                + 'nothing affordable</div>');
+            parts.push('<div class="turn-hint">nothing affordable '
+                + '· save up</div>');
         }
         // --- Dev-card play-timing cluster ---
         // Knight / Monopoly / YoP / Road-Building hints are all "should I
