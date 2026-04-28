@@ -123,6 +123,13 @@ def parse_event(payload: dict[str, Any]) -> Event:
         return InfoEvent(text=_text_join(parts))
     if text.startswith("no player to steal from"):
         return NoStealEvent()
+    # Bank-shortage notice: "Insufficient in bank to distribute: 5 in
+    # bank when 7 were required" + a resource icon. The partial yield
+    # already fired as a separate ProduceEvent — this line is purely
+    # informational, so demote it from UnknownEvent to InfoEvent so it
+    # stops landing as a "?" line in the userscript log scan.
+    if text.startswith("insufficient in bank to distribute"):
+        return InfoEvent(text=_text_join(parts))
 
     # --- Disconnect / reconnect (may render as plain text without a name span)
     disc = _DISCONNECT_RE.search(_text_join(parts))
