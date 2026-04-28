@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.8
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.8 brings back the live roll histogram — 11 vertical bars (2..12) that grow as new rolls land, with the most recent column outlined and 6/8 highlighted. The bars persist across innerHTML rewrites so CSS height transitions actually fire on roll deltas instead of replaying from 0 every poll tick.
+// @version      0.23.9
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.9 fattens the game-progress strip from 11px small-caps chrome to 14px readable content — round number bumps to bold, phase keeps its small-caps accent. Also drops dead CSS for the recent-rolls strip (was pulled in v0.22 but the styles were left orphaned).
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -355,21 +355,37 @@
      Game-progress strip — "ROUND 7 · MID · YOU +1". Sits at the top
      under the header, separated from content by a hairline.
      -------------------------------------------------------------- */
+  /* The progress strip carries real data (round, phase, who's
+     leading), not just a label — so it scales up to 14px and
+     drops the all-caps/letter-spacing chrome that made it feel
+     like a header. Section dividers below still own the small-caps
+     style; this row reads as content above them. */
   .gprog {
-    font-size: calc(11px * var(--font-scale));
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--fg-label);
+    font-size: calc(14px * var(--font-scale));
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--fg-mute);
     font-variant-numeric: tabular-nums;
     margin: 0 0 var(--s-4);
     padding-bottom: var(--s-3);
     border-bottom: 1px solid var(--line);
   }
+  .gprog .gp-round {
+    color: var(--fg);
+    font-weight: 700;
+  }
+  .gprog .ph-early,
+  .gprog .ph-mid,
+  .gprog .ph-late {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: calc(12px * var(--font-scale));
+  }
   .gprog .ph-early { color: var(--pos); }
   .gprog .ph-mid   { color: var(--accent); }
   .gprog .ph-late  { color: var(--alert); }
-  .gprog .stand-self { color: var(--accent); }
+  .gprog .stand-self { color: var(--accent); font-weight: 700; }
   .gprog .stand-gap  { color: var(--fg-dim); }
 
   /* --------------------------------------------------------------
@@ -666,53 +682,6 @@
   .opp-yields .oy-blk {
     color: var(--alert);
     opacity: 0.7;
-  }
-
-  /* Recent rolls strip */
-  .roll-history {
-    display: flex; flex-wrap: wrap; align-items: baseline;
-    gap: var(--s-1);
-    font-variant-numeric: tabular-nums;
-    font-size: calc(12px * var(--font-scale));
-    color: var(--fg-dim);
-    margin: var(--s-2) 0;
-    letter-spacing: 0.06em;
-  }
-  .roll-history .rh-label {
-    color: var(--fg-label);
-    font-size: calc(11px * var(--font-scale));
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin-right: var(--s-2);
-  }
-  .roll-history .rh {
-    display: inline-block;
-    min-width: 16px;
-    padding: 1px var(--s-1);
-    border-radius: 2px;
-    text-align: center;
-    font-weight: 500;
-  }
-  .roll-history .rh.hit {
-    color: var(--pos);
-    font-weight: 700;
-    background: rgba(74, 222, 128, 0.1);
-  }
-  .roll-history .rh.blocked {
-    color: var(--alert);
-    opacity: 0.8;
-    text-decoration: underline;
-    text-decoration-color: var(--alert);
-  }
-  .roll-history .rh.seven {
-    color: var(--alert);
-    font-weight: 800;
-  }
-  .roll-history .rh-count {
-    color: var(--fg-dim);
-    opacity: 0.55;
-    margin-left: var(--s-2);
   }
 
   /* --------------------------------------------------------------
@@ -1927,7 +1896,7 @@
                 }
             }
             parts.push('<div class="gprog">'
-                + `round ${gp.round} · `
+                + `round <span class="gp-round">${gp.round}</span> · `
                 + `<span class="ph-${gp.phase}">${gp.phase}</span>`
                 + standingsTag
                 + '</div>');
