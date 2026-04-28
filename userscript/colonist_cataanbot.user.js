@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.17
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.17 lifts the non-hero rec score pill from 11px to 13px so it reads at the same priority as the kind/tiles row — the score is the strength signal that lets Noah pick between alternatives, it shouldn't be the smallest thing on the row. Also bumps the Option A/B/C/D letter on opening picks to 13px since Noah reads those out loud at the table.
+// @version      0.23.18
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.18 lifts the opp-row tactical signals — `.can-afford` (the "OPP CAN BUY SETTLEMENT" warning) goes from 11px to 12px, and `.one-short` (the "1 wood from city" threat info) goes from 12px to 13px with a stronger weight and less opacity. These fire when an opp is one resource away from a VP-flipping move; they shouldn't be quieter than the muted dev/kp tags they sit next to.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -653,19 +653,23 @@
     margin-left: var(--s-2);
   }
   .opp.tracked .opp-hand { color: var(--pos); }
+  /* Tactical signals on opp rows — these fire when an opp is about to
+     do something dangerous (`can buy settlement`, `1 wheat short of city`).
+     Sized as readable content, not chrome — at 11px they were quieter
+     than the muted dev/kp/prod tags they sit next to. */
   .opp .can-afford {
     color: var(--warn);
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
   }
   .opp .one-short {
     color: var(--warn);
-    opacity: 0.7;
-    font-weight: 500;
+    opacity: 0.85;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .opp .fat-hand, .you .fat-hand {
     color: var(--alert);
