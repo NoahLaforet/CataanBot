@@ -4626,3 +4626,85 @@ def test_strategic_options_returns_none_when_nothing_actionable():
     cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
     g = _wrap_for_game_plan(cat)
     assert _compute_strategic_options(g, "RED", {"WOOD": 1}) is None
+
+
+def test_apply_game_settings_picks_up_variant_targets():
+    """A GameStart body with ``victoryPointsToWin: 14`` /
+    ``cardDiscardLimit: 10`` (the 14-VP variant Noah played) must drive
+    config.set_vp_target / set_discard_limit so the heuristics scale to
+    the right game mode."""
+    from cataanbot import config
+    from cataanbot.live_game import _apply_game_settings
+
+    saved_vp = config.get_vp_target()
+    saved_dl = config.get_discard_limit()
+    try:
+        body = {
+            "gameSettings": {
+                "victoryPointsToWin": 14,
+                "cardDiscardLimit": 10,
+            }
+        }
+        _apply_game_settings(body)
+        assert config.get_vp_target() == 14
+        assert config.get_discard_limit() == 10
+    finally:
+        config.set_vp_target(saved_vp)
+        config.set_discard_limit(saved_dl)
+
+
+def test_apply_game_settings_silent_on_missing_keys():
+    """Old captures from before the auto-detect work may not carry
+    ``gameSettings`` at all. Helper must no-op rather than raise so
+    ws-replay still chews through legacy logs."""
+    from cataanbot import config
+    from cataanbot.live_game import _apply_game_settings
+
+    saved_vp = config.get_vp_target()
+    saved_dl = config.get_discard_limit()
+    try:
+        # No gameSettings key at all.
+        _apply_game_settings({})
+        assert config.get_vp_target() == saved_vp
+        # gameSettings present but partial.
+        _apply_game_settings({"gameSettings": {"victoryPointsToWin": 12}})
+        assert config.get_vp_target() == 12
+        assert config.get_discard_limit() == saved_dl
+        # Garbage values silently ignored, not propagated.
+        _apply_game_settings({"gameSettings": {
+            "victoryPointsToWin": 0,            # rejected by setter
+            "cardDiscardLimit": "ten",          # not int
+        }})
+        assert config.get_vp_target() == 12
+        assert config.get_discard_limit() == saved_dl
+    finally:
+        config.set_vp_target(saved_vp)
+        config.set_discard_limit(saved_dl)
+
+
+def test_game_start_capture_applies_standard_10_vp():
+    """Smoke test against the real WS capture: a 10-VP standard game
+    must leave config at 10 / 7 after start_from_game_state runs."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot import config
+    from cataanbot.live_game import LiveGame
+
+    saved_vp = config.get_vp_target()
+    saved_dl = config.get_discard_limit()
+    # Start in a deliberately-wrong state so we can prove the boot
+    # actually overwrote it.
+    config.set_vp_target(14)
+    config.set_discard_limit(10)
+    try:
+        game = LiveGame()
+        for payload in _iter_payloads(CAPTURE_EARLY):
+            game.feed(payload)
+            if game.started:
+                break
+        assert game.started
+        assert config.get_vp_target() == 10
+        assert config.get_discard_limit() == 7
+    finally:
+        config.set_vp_target(saved_vp)
+        config.set_discard_limit(saved_dl)
