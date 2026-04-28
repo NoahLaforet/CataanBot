@@ -83,9 +83,13 @@ def _direction_label(positions: dict[int, tuple[float, float]],
     if p1 is None or p2 is None:
         return None
     dx = p2[0] - p1[0]
-    # Flip y so positive dy = up-on-screen (catanatron's y grows
-    # downward in layout coordinates).
-    dy = -(p2[1] - p1[1])
+    # On colonist.io's screen, catanatron's "north" (smaller cube z,
+    # smaller internal py) actually renders at the BOTTOM of the board
+    # — colonist flips the vertical axis relative to catanatron's PNG
+    # renderer. So we DON'T negate dy: positive dy_raw = positive dy
+    # on colonist's screen = down for catanatron = "up" on colonist.
+    # Net result: keep dy_raw as-is and call positive dy "up".
+    dy = p2[1] - p1[1]
     # Catan's pointy-top edges are either near-vertical (|dy|≈1, dx≈0)
     # or diagonal (|dx|≈0.87, |dy|≈0.5). The vertical axis wins when
     # |dy| > |dx|; otherwise it's a diagonal that's visually more
