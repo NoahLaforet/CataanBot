@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.31
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.31 swaps the empty-rec hint from "your turn — nothing affordable" to "nothing affordable · save up" — the user already knows it's their turn, what's missing is the next action ("save up", explicit advice) rather than the state restatement.
+// @version      0.23.32
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.32 trims trade-offer header from "incoming from {player}" to "from {player}" — the verdict pill (ACCEPT/DECLINE/CONSIDER) already establishes that the banner is a tactical alert about an inbound trade, so "incoming" is redundant.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2675,7 +2675,7 @@
             // ACCEPT/DECLINE/CONSIDER first, then reads the deal terms.
             parts.push('<div class="trade-h">'
                 + `<span class="verdict ${verdictCls}">${verdictLabel}</span>`
-                + `<span class="trade-meta">incoming from ${offererPill}`
+                + `<span class="trade-meta">from ${offererPill}`
                 + `<span class="muted">${t.offerer_vp ?? 0} VP</span></span>`
                 + '</div>');
             parts.push('<div class="trade-body">'
