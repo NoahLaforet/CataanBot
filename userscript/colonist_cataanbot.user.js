@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.40
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.40 adds a symbolic-vocabulary leading icon to every banner (mono-risk 🚨, opp-threat ⚠️, you-close 👑, robber-on-me 🚫, longest-road 🛣️, largest-army ⚔️, discard 🎲, can-afford ✅, near-build ⏳) so the eye learns the banner type at a glance instead of scanning sentences. v0.23.39 routes the "approaching threshold" warnings (mono-risk, dev-stash, can-afford, one-short, hot-knight, near-build, decent-rec, behind-yield, paused, signals header) to the new amber --watch color so they're visible again.
+// @version      0.23.41
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.41 adds a faint expected-count tick on each histogram column (the 36-roll baseline for that number — 6 wants 5/36, 8 wants 5/36, etc.) so cold/hot deviations show as the bar undershooting/overshooting the dashed line instead of needing mental math. v0.23.40 adds a symbolic-vocabulary leading icon to every banner (mono-risk 🚨, opp-threat ⚠️, you-close 👑, robber-on-me 🚫, longest-road 🛣️, largest-army ⚔️, discard 🎲, can-afford ✅, near-build ⏳).
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -848,7 +848,24 @@
     flex-direction: column;
     justify-content: flex-end;
     min-height: 0;
+    position: relative;
   }
+  /* Expected-count reference tick. Floats at the y-position the bar
+     would reach if rolls had landed exactly on their 36-roll baseline
+     so far. Bar overshooting the tick = hot; bar under the tick =
+     cold. Quiet treatment (1px dashed) so it informs without competing
+     with the live bar. */
+  .hist-exp {
+    position: absolute;
+    left: 0; right: 0;
+    height: 0;
+    bottom: 0;
+    border-top: 1px dashed var(--fg-dim);
+    opacity: 0.35;
+    pointer-events: none;
+    transition: bottom 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .hist-col.seven .hist-exp { display: none; }
   .hist-bar {
     width: 100%;
     background: var(--info);
@@ -2162,6 +2179,7 @@
             return `<div class="${cls.join(' ')}" data-n="${n}">`
                 + `<div class="hist-count" data-count></div>`
                 + `<div class="hist-bar-wrap">`
+                + `<div class="hist-exp" data-exp></div>`
                 + `<div class="hist-bar" data-bar style="height:0%"></div>`
                 + `</div>`
                 + `<div class="hist-num">${n}</div>`
@@ -3179,6 +3197,15 @@
     // Live roll histogram. Mutates bar heights + class flags on the
     // pre-built persistent column DOM so CSS height transitions fire
     // when a roll lands. Hidden until the first roll arrives.
+    // 36-roll baseline weights — number of dice combos that produce
+    // each total. 7 is excluded because the bar wraps that case in CSS;
+    // the column's still rendered for hot-7 alarming, but the expected
+    // tick would just say "yes, 7s happen" which isn't actionable.
+    const HIST_WEIGHTS = {
+        2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
+        8: 5, 9: 4, 10: 3, 11: 2, 12: 1,
+    };
+
     function renderHistogram(ui, snap) {
         if (!ui || !ui.hist || !ui.histHost) return;
         const hg = (snap && snap.roll_histogram) || null;
@@ -3203,8 +3230,24 @@
             const pct = (c / max) * 100;
             const bar = col.querySelector('[data-bar]');
             const cnt = col.querySelector('[data-count]');
+            const exp = col.querySelector('[data-exp]');
             if (bar) bar.style.height = pct + '%';
             if (cnt) cnt.textContent = c > 0 ? String(c) : '';
+            // Expected tick: % of bar height where this column would sit
+            // if dice obeyed the 36-roll baseline. Same denominator (max)
+            // as the actual bar so the two are directly comparable.
+            if (exp) {
+                const w = HIST_WEIGHTS[n];
+                if (w) {
+                    const expectedCount = total * w / 36;
+                    const expPct = Math.min(
+                        100, (expectedCount / max) * 100);
+                    exp.style.bottom = expPct + '%';
+                    exp.style.display = '';
+                } else {
+                    exp.style.display = 'none';
+                }
+            }
             col.classList.toggle('last', n === lastTotal);
         }
     }
