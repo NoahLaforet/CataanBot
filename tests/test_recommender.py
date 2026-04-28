@@ -62,8 +62,8 @@ def test_road_affordable_surfaces_edge_suggestion():
     # times — pin a positive assertion on the normal (non-sealed) path.
     assert road.get("direction"), (
         f"direction must be present on every road rec: {road}")
-    assert road["direction"]["word"] in {"up", "down", "left", "right"}
-    assert road["direction"]["arrow"] in {"↑", "↓", "←", "→"}
+    assert road["direction"]["word"] in {"N", "S", "NE", "NW", "SE", "SW"}
+    assert road["direction"]["arrow"] in {"↑", "↓", "↗", "↖", "↘", "↙"}
 
 
 def test_in_game_road_sealed_fallback_still_emits_direction():
@@ -96,7 +96,7 @@ def test_in_game_road_sealed_fallback_still_emits_direction():
     road = roads[0]
     assert road.get("sealed") is True, f"sealed fallback flag missing: {road}"
     assert road.get("direction"), f"direction must be present on sealed rec: {road}"
-    assert road["direction"]["word"] in {"up", "down", "left", "right"}
+    assert road["direction"]["word"] in {"N", "S", "NE", "NW", "SE", "SW"}
     assert "edge_from" in road and "edge_to" in road
 
 
@@ -423,9 +423,9 @@ def test_recommend_opening_attaches_road_direction():
         assert edge[0] == r["node_id"], f"road must start at settlement: {r}"
         assert edge[1] != edge[0]
         assert isinstance(road["toward_node"], int)
-        # Tile list may be empty if the landing spot is pure-desert,
-        # but in practice the best expansion spot has production.
-        assert isinstance(road["toward_tiles"], list)
+        # Tile list describes the 2 hexes flanking the road edge so
+        # Noah can identify it as "the road between the 6 and the 8".
+        assert isinstance(road["edge_tiles"], list)
 
 
 def test_recommend_opening_road_skips_distance_blocked_expansions():

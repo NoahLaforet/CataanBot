@@ -71,32 +71,48 @@ def _node_positions(m) -> dict[int, tuple[float, float]]:
 def _direction_label(positions: dict[int, tuple[float, float]],
                      from_node: int, to_node: int
                      ) -> tuple[str, str] | None:
-    """Classify the road edge from_node→to_node into one of 4 cardinal
-    directions (up / down / left / right). Noah specifically asked for
-    only these — from any Catan vertex only 3 outgoing edges exist,
-    one vertical-axis and two diagonals, and diagonals read cleaner as
-    "left/right" than as "upper-left/lower-right/etc." Returns
-    (word, arrow) or None if either endpoint is missing from the
-    position map (shouldn't happen for land nodes)."""
+    """Compass label (N/NE/SE/S/SW/NW) for a road edge from_node→to_node
+    on a pointy-top hex grid. Six edges meet at every vertex but only
+    three leave any given corner — so the six compass directions
+    uniquely identify the edge without "up vs up-right" ambiguity."""
     p1 = positions.get(int(from_node))
     p2 = positions.get(int(to_node))
     if p1 is None or p2 is None:
         return None
     dx = p2[0] - p1[0]
-    # On colonist.io's screen, catanatron's "north" (smaller cube z,
-    # smaller internal py) actually renders at the BOTTOM of the board
-    # — colonist flips the vertical axis relative to catanatron's PNG
-    # renderer. So we DON'T negate dy: positive dy_raw = positive dy
-    # on colonist's screen = down for catanatron = "up" on colonist.
-    # Net result: keep dy_raw as-is and call positive dy "up".
+    # Colonist flips the vertical axis relative to catanatron's PNG
+    # renderer, so positive dy reads as "north" on screen.
     dy = p2[1] - p1[1]
-    # Catan's pointy-top edges are either near-vertical (|dy|≈1, dx≈0)
-    # or diagonal (|dx|≈0.87, |dy|≈0.5). The vertical axis wins when
-    # |dy| > |dx|; otherwise it's a diagonal that's visually more
-    # horizontal, so label by the sign of dx.
     if abs(dy) > abs(dx):
-        return ("up", "↑") if dy > 0 else ("down", "↓")
-    return ("right", "→") if dx > 0 else ("left", "←")
+        return ("N", "↑") if dy > 0 else ("S", "↓")
+    if dy > 0:
+        return ("NE", "↗") if dx > 0 else ("NW", "↖")
+    return ("SE", "↘") if dx > 0 else ("SW", "↙")
+
+
+def _edge_tiles(m, a: int, b: int) -> list[tuple[str, int | None]]:
+    """The 2 tiles flanking a road edge (a, b) — one on each side.
+    For interior edges this returns 2 tiles; for board-boundary edges
+    (where one side is ocean) it returns 1.
+
+    Why these and not the 3 tiles around the landing node: Noah
+    identifies a road by the tiles its edge actually touches ("the
+    road between the 6 and the 8"). The far-landing's tile triplet
+    describes the strategic 2-hop target, which is one hop further
+    out and only correlates loosely with where the road sits."""
+    tiles_a = set(t.id for t in m.adjacent_tiles.get(int(a), [])
+                  if hasattr(t, "resource"))
+    tiles_b = set(t.id for t in m.adjacent_tiles.get(int(b), [])
+                  if hasattr(t, "resource"))
+    shared_ids = tiles_a & tiles_b
+    out: list[tuple[str, int | None]] = []
+    seen: set[int] = set()
+    for t in m.adjacent_tiles.get(int(a), []):
+        if t.id in shared_ids and t.id not in seen:
+            seen.add(t.id)
+            label = t.resource if t.resource else "DESERT"
+            out.append((label, t.number))
+    return out
 
 
 def _score_settlement(prod: float) -> float:
@@ -337,7 +353,8 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
                 road = {
                     "edge": [int(s.node_id), int(s.best_road.far_node)],
                     "toward_node": int(s.best_road.landing_node),
-                    "toward_tiles": s.best_road.landing_tiles,
+                    "edge_tiles": _edge_tiles(
+                        m, int(s.node_id), int(s.best_road.far_node)),
                 }
                 positions = _node_positions(m)
                 lbl = _direction_label(
@@ -598,7 +615,7 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
         out: dict[str, Any] = {
             "edge": [int(settlement), int(far)],
             "toward_node": int(expansion),
-            "toward_tiles": _tile_label(m, expansion),
+            "edge_tiles": _edge_tiles(m, int(settlement), int(far)),
         }
         positions = _node_positions(m)
         lbl = _direction_label(positions, int(settlement), int(far))
@@ -610,15 +627,13 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     # No legal 2-hop corridor — every expansion target is sealed. Emit
     # a degraded rec pointing at the highest-prod unblocked adjacent
     # far node so the user still sees a direction arrow and a tile hint.
-    # toward_tiles describes the far node itself (it's not a legal
-    # settlement spot, just the placement target for this road).
     if fallback is None:
         return None
     _, far = fallback
     out = {
         "edge": [int(settlement), int(far)],
         "toward_node": int(far),
-        "toward_tiles": _tile_label(m, far),
+        "edge_tiles": _edge_tiles(m, int(settlement), int(far)),
         "sealed": True,
     }
     positions = _node_positions(m)
@@ -1095,7 +1110,7 @@ def recommend_actions(
                 "landing_node": landing,
                 "score": _score_road(prod),
                 "detail": f"→ {prod:.2f}-prod spot",
-                "tiles": _tile_label(m, landing) if landing else [],
+                "tiles": _edge_tiles(m, edge[0], edge[1]),
             }
         elif fallback_edge is not None:
             # Every corridor is sealed by distance-2 blocks. Emit a
@@ -1111,7 +1126,7 @@ def recommend_actions(
                 "landing_node": far,
                 "score": _score_road(prod) * 0.6,
                 "detail": "extends network · no settle spot",
-                "tiles": _tile_label(m, far),
+                "tiles": _edge_tiles(m, edge[0], edge[1]),
                 "sealed": True,
             }
         if road_rec is not None:

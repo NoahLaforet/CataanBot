@@ -1738,8 +1738,8 @@ def test_suggest_rb_placement_returns_edges_and_direction():
     # direction is optional (a degenerate 0-length edge could drop it),
     # but real boards always yield one.
     assert "direction" in out
-    assert out["direction"]["word"] in {"up", "down", "left", "right"}
-    assert out["direction"]["arrow"] in {"↑", "↓", "←", "→"}
+    assert out["direction"]["word"] in {"N", "S", "NE", "NW", "SE", "SW"}
+    assert out["direction"]["arrow"] in {"↑", "↓", "↗", "↖", "↘", "↙"}
 
 
 def test_suggest_rb_placement_prefers_single_edge_unlock():

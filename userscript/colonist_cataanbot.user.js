@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.6
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.6 collapses the five-color signal palette down to two — green for the hero rec, red for must-act/danger — and folds amber/blue/violet back into a single muted slate so the HUD stops fighting itself for attention.
+// @version      0.23.7
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.7 swaps road-direction labels to compass notation (NE/NW/SE/SW) so mixed-axis edges read unambiguously, and reframes road tile chips to the two hexes flanking the edge itself ("the road between the 6 and the 8") rather than the 3-tile triangle around the far landing.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2002,12 +2002,13 @@
                 if (r.kind === 'road') {
                     if (r.direction) {
                         // Arrow alone — the glyph is the direction.
-                        // The word ("up"/"down"/"left"/"right") said the
-                        // same thing twice and Noah hated the redundancy.
+                        // The compass word (NE/SW/etc) is on the
+                        // direction object but doesn't render here;
+                        // the arrow already encodes it.
                         arrowHtml = `<span class="arrow">${escapeHtml(
                                 r.direction.arrow)}</span>`;
                         if (tilesHtml) {
-                            arrowHtml += ' <span class="muted">toward</span> ';
+                            arrowHtml += ' <span class="muted">between</span> ';
                         }
                     } else {
                         arrowHtml = '<span class="arrow">→</span> ';
@@ -2055,9 +2056,9 @@
                 // ("↑ up" / "→ right" / etc) so Noah can read
                 // placement at a glance instead of parsing tile chips.
                 if (r.kind === 'opening_settlement' && r.road
-                        && (r.road.direction || r.road.toward_tiles)) {
+                        && (r.road.direction || r.road.edge_tiles)) {
                     const towardHtml = tilesToHtml(
-                        r.road.toward_tiles || []);
+                        r.road.edge_tiles || []);
                     const dir = r.road.direction;
                     // Always lead with the compass arrow when we have one —
                     // even a "sealed" fallback rec (no legal 2-hop) still
@@ -2074,7 +2075,7 @@
                             + '</span>';
                     }
                     const tail = towardHtml
-                        ? '<span class="muted">toward</span> ' + towardHtml
+                        ? '<span class="muted">between</span> ' + towardHtml
                         : '';
                     parts.push('<div class="rec-sub">'
                         + dirHtml
