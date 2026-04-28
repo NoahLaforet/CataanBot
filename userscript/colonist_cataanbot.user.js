@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.37
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.37 hotfixes a panelHTML template-literal break: two CSS comments contained raw backticks that closed the literal early, blocking the HUD from mounting. v0.23.36 refreshes the drawer's VP/discard inputs every time the drawer opens.
+// @version      0.23.38
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.38 makes opp VP + card-count thresholds snap-driven (vp_target / discard_limit) and adds an amber "watch" tier — opps at vp_target-4 or discard_limit-2 turn amber before going red, instead of staying invisible until the cliff. v0.23.37 hotfixes a panelHTML template-literal break: two CSS comments contained raw backticks that closed the literal early, blocking the HUD from mounting.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -246,13 +246,15 @@
     --fg-dim:   #6b7180;
     --fg-label: #888ea1;
 
-    /* signal palette — only two real signal colors so the eye knows
+    /* signal palette — three real signal colors so the eye knows
        what matters at a glance. Green = the hero rec (your move).
        Red = a thing you must respond to (discard, threat, robber).
-       Everything else folds back into the neutral text ladder so
-       five rivalrous accents don't fight each other. */
+       Amber (--watch) = approaching a threshold but not there yet
+       (6-7 cards, 6-7 VP at default). The remaining accents fold
+       back into the neutral text ladder so they don't compete. */
     --pos:    #4ade80;   /* green: hero rec, positive marks       */
     --alert:  #ef4444;   /* red: must-act / danger                */
+    --watch:  #f59e0b;   /* amber: approaching a threshold        */
     --warn:   #8a93a6;   /* WAS amber — now muted slate           */
     --info:   #8a93a6;   /* WAS blue  — now muted slate           */
     --accent: #8a93a6;   /* WAS violet — now muted slate          */
@@ -517,6 +519,10 @@
     color: var(--alert);
     font-weight: 700;
   }
+  .you .self-meta .watch-hand {
+    color: var(--watch);
+    font-weight: 700;
+  }
 
   /* Hand row — resource counts, big and airy. Bumped to 17px so the
      resource counts are legible at a glance without leaning in. */
@@ -658,8 +664,8 @@
     color: var(--fg-mute);
     letter-spacing: 0.08em;
   }
-  .opp .opp-vp.warn   { color: var(--warn); }
-  .opp .opp-vp.warn   .lbl { color: var(--warn); opacity: 0.7; }
+  .opp .opp-vp.watch  { color: var(--watch); }
+  .opp .opp-vp.watch  .lbl { color: var(--watch); opacity: 0.7; }
   .opp .opp-vp.danger { color: var(--alert); }
   .opp .opp-vp.danger .lbl { color: var(--alert); opacity: 0.7; }
   /* Card count: also a primary signal (steal target / 7-roll discard
@@ -701,6 +707,10 @@
   }
   .opp .fat-hand, .you .fat-hand {
     color: var(--alert);
+    font-weight: 700;
+  }
+  .opp .watch-hand, .you .watch-hand {
+    color: var(--watch);
     font-weight: 700;
   }
   .opp .card-up {
@@ -2228,9 +2238,18 @@
             // own UI already shows them. Knights-played stays since it's
             // a hidden-VP signal we surface elsewhere.
             const metaSegs = [];
-            const meFatHand = (me.cards || 0) >= 8;
-            metaSegs.push(meFatHand
-                ? `<span class="fat-hand">${me.cards} cards</span>`
+            // discard_limit follows the catanatron/colonist convention:
+            // first hand size that triggers discard on a 7 is limit+1.
+            // So at default 7, cards > 7 (i.e. 8+) goes red. Two values
+            // below the cliff (6,7) goes amber — one bad roll from
+            // halving. Default 7 if the snap hasn't surfaced a value
+            // yet, which preserves prior >=8 behavior.
+            const discardLimit = snap.discard_limit || 7;
+            const cardsCount = me.cards || 0;
+            const cardsTier = cardsCount > discardLimit ? 'fat-hand'
+                : (cardsCount > discardLimit - 2 ? 'watch-hand' : '');
+            metaSegs.push(cardsTier
+                ? `<span class="${cardsTier}">${me.cards} cards</span>`
                 : `${me.cards} cards`);
             if ((me.knights_played || 0) > 0) {
                 metaSegs.push(`${me.knights_played} knights`);
@@ -2799,13 +2818,18 @@
                         + `${iconFor(os.need)} → `
                         + `${os.build}${tail}</span>`;
                 }
-                // Fat-hand marker: opps carrying 8+ cards are primed
-                // for a 7-roll — they discard half AND are likely steal
-                // targets. Color the cards count so Noah eyeballs it
-                // without doing the addition.
-                const fatHand = (o.cards || 0) >= 8;
-                let cardsSpan = fatHand
-                    ? `<span class="fat-hand">${o.cards}c</span>`
+                // Fat-hand marker: opps over the discard cliff are primed
+                // for a 7-roll — they lose half AND are likely steal
+                // targets. Two below the cliff is amber "watch" — same
+                // logic as the self row, kept symmetric so the eye reads
+                // both sides with one rule. (See self-row note for why
+                // it's > limit, not >= limit.)
+                const oppDiscardLimit = snap.discard_limit || 7;
+                const oppCardCount = o.cards || 0;
+                const oppCardTier = oppCardCount > oppDiscardLimit ? 'fat-hand'
+                    : (oppCardCount > oppDiscardLimit - 2 ? 'watch-hand' : '');
+                let cardsSpan = oppCardTier
+                    ? `<span class="${oppCardTier}">${o.cards}c</span>`
                     : `${o.cards}c`;
                 // Hand-growth trailer: +3 means accumulating, -2 means
                 // just spent/got-stolen-from. Only surface when abs>=2
@@ -2818,10 +2842,13 @@
                 }
                 // VP and card count own their own visual weight — those
                 // are the two highest-priority signals per opp (close to
-                // winning + discard/steal target). Other tags stay
-                // muted so the eye picks out the primary numbers first.
-                const vpCls = o.vp >= 8 ? 'opp-vp danger'
-                    : (o.vp >= 6 ? 'opp-vp warn' : 'opp-vp');
+                // winning + discard/steal target). Tier off the live
+                // VP target so a VP-12 mode pushes the danger line out
+                // to 10 instead of red-flagging 8 (which is mid-game in
+                // longer modes). Defaults to the standard 10-VP target.
+                const vpTarget = snap.vp_target || 10;
+                const vpCls = o.vp >= vpTarget - 2 ? 'opp-vp danger'
+                    : (o.vp >= vpTarget - 4 ? 'opp-vp watch' : 'opp-vp');
                 const vpHtml = `<span class="${vpCls}">${o.vp}`
                     + '<span class="lbl">VP</span></span>';
                 // Strip the leading " · " each conditional tag carries

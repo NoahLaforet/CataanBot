@@ -2546,11 +2546,18 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     unconditionally re-render if they prefer. All fields are safe to
     render even before a game has booted — `self` is None until then."""
     game = st["game"]
+    from cataanbot import config
     snap: dict[str, Any] = {
         "seq": st["seq"],
         "game_started": game.started,
         "ws_frames": st["ws_count"],
         "log_events": st["log_count"],
+        # Surface the runtime VP target + discard limit on every snap
+        # so the userscript can scale danger/watch thresholds without
+        # a separate /config round-trip and without going stale when
+        # the values shift mid-game (auto-detect from GameStart).
+        "vp_target": config.get_vp_target(),
+        "discard_limit": config.get_discard_limit(),
         "self": None,
         "opps": [],
         "last_roll": st.get("last_roll"),
