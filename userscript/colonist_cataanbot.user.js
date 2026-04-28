@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.28
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.25 sweeps remaining content-bearing 11/12px elements that fell under the scan threshold: opp tactical signals (`can buy settlement` 12→13px), opp port chips (11→13px so the chip group reads as content not chrome), self piece-counts row + VP breakdown + monopoly-warning all 12→13px. Section-header chrome stays at 11px — only content lines lift.
+// @version      0.23.29
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.29 trims the standings trailer from "alice leading at 7 (you 4, -3)" to "alice 7 · you 4 (-3)" and "you leading at 6" to "you 6 (lead)" — same info, fewer linking words. Header line now reads round/phase/scores in pure tabular shorthand.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2007,12 +2007,13 @@
             const st = snap.standings;
             if (st && st.leader && (st.self_vp >= 3 || st.leader.vp >= 3)) {
                 if (st.self_is_leader) {
-                    standingsTag = ` · <span class="stand-self">you leading `
-                        + `at ${st.self_vp}</span>`;
+                    standingsTag = ` · <span class="stand-self">you `
+                        + `${st.self_vp} (lead)</span>`;
                 } else {
                     const leadName = escapeHtml(st.leader.username || '?');
-                    standingsTag = ` · ${leadName} leading at ${st.leader.vp}`
-                        + ` <span class="stand-gap">(you ${st.self_vp}, -${st.gap_to_leader})</span>`;
+                    standingsTag = ` · ${leadName} ${st.leader.vp}`
+                        + ` <span class="stand-gap">· you ${st.self_vp}`
+                        + ` (-${st.gap_to_leader})</span>`;
                 }
             }
             parts.push('<div class="gprog">'
