@@ -799,10 +799,22 @@ def _missing_for(hand: dict[str, int],
             if hand.get(r, 0) < n}
 
 
+_MISSING_EMOJI = {
+    "WOOD": "🌲", "BRICK": "🧱", "SHEEP": "🐑",
+    "WHEAT": "🌾", "ORE": "⛰️",
+}
+
+
 def _format_missing(missing: dict[str, int]) -> str:
-    parts = [f"{n} {_RES_TITLE.get(r, r.title())}"
+    """Compact missing-cards string for rec details: "need 1🧱 1🐑".
+
+    Uses resource emojis to match the rest of the HUD's icon convention
+    (game-plan banner, opp ports, hand chips). The old verbose form
+    "need 1 Wood, 1 Brick" inflated rec details unnecessarily.
+    """
+    parts = [f"{n}{_MISSING_EMOJI.get(r, r[:3].lower())}"
              for r, n in missing.items()]
-    return "need " + ", ".join(parts)
+    return "need " + " ".join(parts)
 
 
 def _node_pip_production(m, node_id: int) -> float:
@@ -1198,7 +1210,7 @@ def recommend_actions(
                     "score": _score_settlement(prod),
                     "missing": missing,
                     "detail": (f"{_format_missing(missing)} "
-                               f"· {prod:.2f}/roll"),
+                               f"· +{prod:.2f}/roll"),
                     "tiles": _tile_label(m, node),
                     "rationale": _settle_rationale(
                         m, node, self_expected),
@@ -1216,7 +1228,7 @@ def recommend_actions(
                     "score": _score_city(prod),
                     "missing": missing,
                     "detail": (f"{_format_missing(missing)} "
-                               f"· 2×{prod:.2f}/roll + 1 VP"),
+                               f"· +{prod:.2f}/roll · +1 VP"),
                     "tiles": _tile_label(m, node),
                     "rationale": _city_rationale(m, node),
                 })
