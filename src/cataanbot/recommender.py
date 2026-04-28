@@ -1009,7 +1009,7 @@ def recommend_actions(
                 "when": "now",
                 "node_id": int(node),
                 "score": _score_settlement(prod),
-                "detail": f"prod {prod:.2f}/roll",
+                "detail": f"+{prod:.2f}/roll",
                 "tiles": _tile_label(m, int(node)),
                 "rationale": _settle_rationale(m, int(node), self_expected),
             })
@@ -1026,7 +1026,7 @@ def recommend_actions(
                 "when": "now",
                 "node_id": int(node_id),
                 "score": _score_city(prod),
-                "detail": f"2× prod ({prod:.2f}/roll) + 1 VP",
+                "detail": f"+{prod:.2f}/roll · +1 VP",
                 "tiles": _tile_label(m, int(node_id)),
                 "rationale": _city_rationale(m, int(node_id)),
             })
