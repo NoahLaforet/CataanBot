@@ -80,9 +80,10 @@ def _direction_label(positions: dict[int, tuple[float, float]],
     if p1 is None or p2 is None:
         return None
     dx = p2[0] - p1[0]
-    # Colonist flips the vertical axis relative to catanatron's PNG
-    # renderer, so positive dy reads as "north" on screen.
-    dy = p2[1] - p1[1]
+    # _node_positions puts NORTH offset at py=-1, SOUTH at py=+1 — same
+    # as colonist's screen (smaller py = visually up). Going SOUTH→NORTH
+    # gives raw dy = -2; we want that labeled "↑/N", so negate.
+    dy = -(p2[1] - p1[1])
     if abs(dy) > abs(dx):
         return ("N", "↑") if dy > 0 else ("S", "↓")
     if dy > 0:
