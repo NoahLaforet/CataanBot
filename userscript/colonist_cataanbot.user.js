@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.23
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.23 brings opening-pick details into the same icon convention: `pip 1.50/roll · adds whe+ore` becomes `+1.50/roll · adds 🌾⛰️`. Round-1 and round-2 opening recs now match the in-game rec list — every detail string on the HUD speaks one vocabulary.
+// @version      0.23.24
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.24 fixes the two repeat-unresolved asks: (1) road direction arrow on the in-game rec was being rendered but had no styling — now bigger (18px / 32px on hero), accent-colored, with a green glow on the hero so Noah reads "lay road this way" instantly; (2) roll histogram bars taller (72px → 110px) with a glowing 2px outline + lift on the last-rolled column so the active number visibly punches out as the bars grow.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -776,8 +776,8 @@
   .hist {
     display: grid;
     grid-template-columns: repeat(11, 1fr);
-    gap: 3px;
-    height: 72px;
+    gap: 4px;
+    height: 110px;
     align-items: end;
     font-variant-numeric: tabular-nums;
   }
@@ -799,33 +799,52 @@
   .hist-bar {
     width: 100%;
     background: var(--info);
-    border-radius: 2px 2px 0 0;
+    border-radius: 3px 3px 0 0;
     transition: height 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
                 background 0.2s ease;
     min-height: 1px;
   }
   .hist-col.hot .hist-bar { background: var(--pos); }
   .hist-col.seven .hist-bar { background: var(--alert); }
+  /* Last-roll column: bright outline + glow + small lift so the eye
+     lands on whichever number just rolled. Replaces the old 1px
+     border which Noah couldn't see during play. */
   .hist-col.last .hist-bar {
-    box-shadow: 0 0 0 1px var(--fg);
+    box-shadow: 0 0 0 2px var(--fg),
+                0 0 16px rgba(96, 165, 250, 0.55);
+    transform: translateY(-2px);
+  }
+  .hist-col.last.hot .hist-bar {
+    box-shadow: 0 0 0 2px var(--fg),
+                0 0 18px rgba(74, 222, 128, 0.65);
+  }
+  .hist-col.last.seven .hist-bar {
+    box-shadow: 0 0 0 2px var(--fg),
+                0 0 18px rgba(248, 113, 113, 0.65);
   }
   .hist-num {
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     color: var(--fg-mute);
     text-align: center;
-    margin-top: 2px;
-    font-weight: 600;
+    margin-top: 3px;
+    font-weight: 700;
   }
   .hist-col.hot .hist-num { color: var(--pos); }
   .hist-col.seven .hist-num { color: var(--alert); }
+  .hist-col.last .hist-num { color: var(--fg); }
   .hist-count {
-    font-size: calc(10px * var(--font-scale));
+    font-size: calc(12px * var(--font-scale));
     color: var(--fg-dim);
     text-align: center;
-    height: 14px;
-    line-height: 14px;
+    height: 16px;
+    line-height: 16px;
+    font-weight: 600;
   }
-  .hist-col.last .hist-count { color: var(--fg); font-weight: 700; }
+  .hist-col.last .hist-count {
+    color: var(--fg);
+    font-weight: 800;
+    font-size: calc(13px * var(--font-scale));
+  }
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(12px * var(--font-scale));
@@ -938,10 +957,33 @@
   .rec .score.decent { background: rgba(251, 191, 36, 0.16); color: var(--warn); }
   .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
   .rec .tiles { color: var(--fg-mute); font-size: calc(13px * var(--font-scale)); }
+  /* Road direction arrow on the main rec line. Same .arrow class is
+     reused across rec sub-lines and dev-card hints, but here it's
+     load-bearing — it tells Noah which way to lay the road. Sized
+     bigger than the surrounding tile chips so the arrow leads the
+     eye, plus accent-colored so it pops against the dim tile chips. */
+  .rec .tiles .arrow {
+    color: var(--accent);
+    font-weight: 800;
+    font-size: calc(18px * var(--font-scale));
+    margin-right: var(--s-1);
+  }
+  .rec .tiles .muted {
+    color: var(--fg-dim);
+    font-weight: 500;
+    margin-right: var(--s-1);
+    opacity: 0.7;
+  }
   .rec.top .tiles {
     color: var(--fg);
     font-size: calc(22px * var(--font-scale));
     font-weight: 700;
+  }
+  .rec.top .tiles .arrow {
+    font-size: calc(32px * var(--font-scale));
+    text-shadow: 0 0 18px rgba(74, 222, 128, 0.45);
+    margin-right: var(--s-2);
+    line-height: 1;
   }
   .rec.top .tile-num { font-size: calc(24px * var(--font-scale)); }
   .rec.top .tile-chip {
