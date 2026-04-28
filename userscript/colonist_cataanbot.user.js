@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.12
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.12 promotes the trade-offer verdict (ACCEPT/DECLINE/CONSIDER) from a tiny 11px chip buried in the reasoning line to a 16px hero pill at the top of the banner. The whole banner's left-edge accent color also now mirrors the verdict so green-or-red registers peripherally. Trade body bumps from default 14px to 16px.
+// @version      0.23.13
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.13 collapses the dead `.big`-modifier path on the knight-hint and dev-hint banners — every render used `.big` already, the smaller base sizes were leftover from when these hints lived buried lower in the HUD. The PLAY/HOLD verdict pill bumps from 9px to 14px so it actually registers when the bot wants you to fire a knight or play a YoP.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1207,48 +1207,35 @@
     margin-left: var(--s-2);
   }
 
+  /* Knight / dev-card hint banners. Every render uses these sizes —
+     there used to be a smaller `.big`-less variant for when the hints
+     lived buried at the bottom of the HUD, but the cluster has lived
+     right under the rec list for several versions, so the smaller
+     base sizes were dead code. Consolidated to the full size. */
   .knight-hint { border-left-color: var(--accent); }
   .knight-hint .kh-h {
     color: var(--accent);
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(11px * var(--font-scale));
-    margin-bottom: var(--s-2);
+    font-size: calc(12px * var(--font-scale));
+    margin-bottom: var(--s-3);
   }
   .knight-hint .kh-reason {
     color: var(--fg);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     margin: var(--s-1) 0;
     display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
   }
   .knight-hint .kh-verdict {
-    padding: 1px var(--s-2);
+    padding: var(--s-1) var(--s-3);
     border-radius: var(--radius-sm);
     font-weight: 800;
-    letter-spacing: 0.12em;
-    font-size: calc(9px * var(--font-scale));
+    letter-spacing: 0.1em;
+    font-size: calc(14px * var(--font-scale));
   }
   .knight-hint .kh-verdict.play { background: rgba(74, 222, 128, 0.18); color: var(--pos); }
   .knight-hint .kh-verdict.hold { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
-  /* "big" modifier: used when the hint cluster lives right under the
-     rec list (instead of buried at the bottom of the HUD). Scales
-     verdict + reason so PLAY/HOLD is the biggest thing on the card. */
-  .knight-hint.big .kh-h,
-  .dev-hint.big .dv-h {
-    font-size: calc(12px * var(--font-scale));
-    margin-bottom: var(--s-3);
-  }
-  .knight-hint.big .kh-reason,
-  .dev-hint.big .dv-body {
-    font-size: calc(14px * var(--font-scale));
-  }
-  .knight-hint.big .kh-verdict,
-  .dev-hint.big .kh-verdict {
-    padding: var(--s-1) var(--s-3);
-    font-size: calc(12px * var(--font-scale));
-    letter-spacing: 0.1em;
-  }
   /* should-play pops with a green gradient background so Noah sees it
      on first scan without parsing text. The verdict chip gets a darker
      solid background (no translucency) so the label reads at distance. */
@@ -1275,13 +1262,13 @@
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    font-size: calc(11px * var(--font-scale));
-    margin-bottom: var(--s-2);
+    font-size: calc(12px * var(--font-scale));
+    margin-bottom: var(--s-3);
   }
   .dev-hint .dv-body {
     color: var(--fg);
     font-variant-numeric: tabular-nums;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
   }
   .dev-hint .dv-unlock {
     color: var(--pos);
@@ -1310,11 +1297,11 @@
   }
   .dev-hint .kh-verdict {
     display: inline-block;
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     font-weight: 800;
-    letter-spacing: 0.12em;
-    padding: 1px 5px;
-    border-radius: 2px;
+    letter-spacing: 0.1em;
+    padding: var(--s-1) var(--s-3);
+    border-radius: var(--radius-sm);
     margin-right: var(--s-2);
     vertical-align: baseline;
   }
@@ -2342,7 +2329,7 @@
                 tail = ` · top ${tile} (${scoreTxt})`;
             }
             const hintCls = kh.should_play
-                ? 'knight-hint big should-play' : 'knight-hint big';
+                ? 'knight-hint should-play' : 'knight-hint';
             devBlocks.push('<div class="' + hintCls + '">'
                 + `<div class="kh-h">knight ×${kh.have}</div>`
                 + '<div class="kh-reason">'
@@ -2373,7 +2360,7 @@
                     + '</div>';
             }
             const hintCls = mh.should_play
-                ? 'dev-hint big should-play' : 'dev-hint big';
+                ? 'dev-hint should-play' : 'dev-hint';
             devBlocks.push('<div class="' + hintCls + '">'
                 + `<div class="dv-h">monopoly ×${mh.have}</div>`
                 + `<div class="dv-body">${body}${sub}</div>`
@@ -2394,7 +2381,7 @@
                     + escapeHtml(yh.reason || 'bank short on pair') + '</div>';
             }
             const hintCls = yh.should_play
-                ? 'dev-hint big should-play' : 'dev-hint big';
+                ? 'dev-hint should-play' : 'dev-hint';
             devBlocks.push('<div class="' + hintCls + '">'
                 + `<div class="dv-h">year of plenty ×${yh.have}</div>`
                 + `<div class="dv-body">${body}</div>`
@@ -2428,7 +2415,7 @@
             }
             body += '</div>';
             const hintCls = rh.should_play
-                ? 'dev-hint big should-play' : 'dev-hint big';
+                ? 'dev-hint should-play' : 'dev-hint';
             devBlocks.push('<div class="' + hintCls + '">'
                 + `<div class="dv-h">road building ×${rh.have}</div>`
                 + body
