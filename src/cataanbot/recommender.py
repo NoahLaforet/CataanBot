@@ -1190,7 +1190,7 @@ def recommend_actions(
             "kind": "dev_card",
             "when": "now",
             "score": _DEV_CARD_SCORE,
-            "detail": "knight / VP / road / YoP / mono",
+            "detail": "draw a card",
         })
 
     # --- "Save for X" plans ---------------------------------------------
@@ -1241,8 +1241,7 @@ def recommend_actions(
                 "when": "soon",
                 "score": _DEV_CARD_SCORE,
                 "missing": missing,
-                "detail": (f"{_format_missing(missing)} "
-                           f"· knight / VP / road / YoP / mono"),
+                "detail": _format_missing(missing),
             })
 
     # --- Bank / port trade unlocks --------------------------------------
@@ -1324,10 +1323,10 @@ def recommend_actions(
             "give": give,
             "get": get,
             "unlocks": kind,
-            "detail": (f"{steps} → {label_word}"
+            "detail": (f"{steps} · {label_word}"
                        if len(plan) == 1
                        else f"{_fmt_pack(give)} → {_fmt_pack(get)} "
-                            f"({rate_sum} cards) → {label_word}"),
+                            f"· {label_word}"),
         }
         if node_or_none is not None:
             rec["node_id"] = int(node_or_none)
@@ -1442,10 +1441,9 @@ def recommend_actions(
                     "unlocks": kind,
                     "variant": label,
                     "detail": (
-                        f"{label}: {give_n} "
-                        f"{_resource_title(best_src)} → "
-                        f"{get_n} {_resource_title(need_res)} · "
-                        f"→ {kind_word}"),
+                        f"{label} · {give_n}{_resource_title(best_src)}"
+                        f"→{get_n}{_resource_title(need_res)} · "
+                        f"{kind_word}"),
                 }
                 if node_or_none is not None:
                     rec["node_id"] = int(node_or_none)
