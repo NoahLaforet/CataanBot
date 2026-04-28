@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.15
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.15 tightens the self-card prod and ports lines for fewer words. Ports now render as a chip group (⚓ [3:1] [⛰️ 2:1]) matching the opp-row format so the eye doesn't have to learn two layouts; prod drops the "prod:" label and the word "strongest" — just "1.50/roll · 🌾". Both lines bump from 12px to 13px with tabular-nums so the rate aligns.
+// @version      0.23.16
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.16 bumps the game-plan banner body from 12px to 14px so the through-line plan reads at the same priority as the strategic options block below it. The PLAN kind chip nudges from 9px to 10px (still chrome, just less squinty). The plan banner is what Noah carries between turns — it shouldn't be quieter than the alternatives below it.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1352,7 +1352,7 @@
   .game-plan.ready .gp-h { color: var(--pos); }
   .game-plan .gp-body {
     color: var(--fg);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     font-variant-numeric: tabular-nums;
     display: flex;
     flex-wrap: wrap;
@@ -1361,11 +1361,11 @@
   }
   .game-plan .gp-kind {
     display: inline-block;
-    padding: 1px 5px;
+    padding: 1px 6px;
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--fg-mute);
-    font-size: calc(9px * var(--font-scale));
+    font-size: calc(10px * var(--font-scale));
     font-weight: 800;
     letter-spacing: 0.12em;
     text-transform: uppercase;
