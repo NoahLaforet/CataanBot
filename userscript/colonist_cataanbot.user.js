@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.13
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.13 collapses the dead `.big`-modifier path on the knight-hint and dev-hint banners — every render used `.big` already, the smaller base sizes were leftover from when these hints lived buried lower in the HUD. The PLAY/HOLD verdict pill bumps from 9px to 14px so it actually registers when the bot wants you to fire a knight or play a YoP.
+// @version      0.23.14
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.14 bumps the long-game strategic options block — the +VP swing pill goes from 11px to 14px (it's the headline number per option), the LR PUSH / LA PUSH / DEV DIVE label gets the small-caps treatment so it reads as a tag, and the detail trailer steps down to 13px so the eye lands on +VP first.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1360,30 +1360,39 @@
   .game-plan .gp-summary { color: var(--fg); }
 
   /* Long-horizon / riskier plays — LR push, LA push, dev-card dive. */
+  /* Strategic options — long-game alternatives ("+3VP · LR PUSH ·
+     need 4 wood"). The +VP swing is the headline number per option,
+     so it gets a chunkier pill (14px tabular-nums) and the row body
+     bumps to 14px so labels read at the same priority as the rec
+     list above them. The detail trailer stays muted/secondary. */
   .strat-opt {
     display: flex; flex-wrap: wrap; align-items: baseline;
     gap: var(--s-2);
-    padding: var(--s-1) var(--s-2);
+    padding: var(--s-2) var(--s-2);
     margin: 2px 0;
     font-variant-numeric: tabular-nums;
-    font-size: calc(13px * var(--font-scale));
+    font-size: calc(14px * var(--font-scale));
     border-left: 2px solid rgba(255, 255, 255, 0.12);
   }
   .strat-opt .strat-vp {
     color: var(--pos);
     font-weight: 800;
-    font-size: calc(11px * var(--font-scale));
-    letter-spacing: 0.08em;
-    padding: 1px 5px;
-    border-radius: 2px;
+    font-size: calc(14px * var(--font-scale));
+    letter-spacing: 0.04em;
+    padding: 2px var(--s-2);
+    border-radius: var(--radius-sm);
     background: rgba(74, 222, 128, 0.14);
   }
   .strat-opt .strat-label {
     color: var(--fg);
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: calc(12px * var(--font-scale));
   }
   .strat-opt .strat-detail {
     color: var(--fg-mute);
+    font-size: calc(13px * var(--font-scale));
   }
 
   /* Robber targets table */
