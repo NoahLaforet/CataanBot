@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.33
+// @version      0.23.34
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.33 tightens the hand-drift warning from "⚠ hand detail stale (waiting for resync)" to "⚠ stale hand · resyncing" — same diagnostic, half the words. Also trims dev-card-dive detail to drop the redundant "+ engine" benefit suffix.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -2359,8 +2359,8 @@
                     renderRec(r, i === 0, optLetter);
                 });
             } else if (!isSetup) {
-                parts.push('<div class="turn-hint">your turn — '
-                    + 'nothing affordable</div>');
+                parts.push('<div class="turn-hint">nothing affordable '
+                    + '· save up</div>');
             }
             if (soonRecs.length) {
                 parts.push('<div class="recs-h plan-h">'
