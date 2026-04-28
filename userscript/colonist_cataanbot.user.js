@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.19
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.19 lifts the robber-on-me sub-line from 12px to 13px with tabular-nums and stronger weight. The sub-line carries bleed quantification (`-0.45/roll · 3 turns blocked`) — that's the cost of leaving the robber where it is, not chrome under the headline. Sits at the same priority now as one-short / opp-row tactical signals.
+// @version      0.23.20
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.20 trims verbose detail strings on rec rows. Settlement detail goes from `prod 1.50/roll` to `+1.50/roll` (kind label already says it's a settlement). City detail goes from `2× prod (1.50/roll) + 1 VP` to `+1.50/roll · +1 VP`. Winning-move details drop the trailing `wins the game` since the WIN THIS TURN banner header already conveys that.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start

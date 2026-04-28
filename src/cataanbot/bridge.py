@@ -3430,7 +3430,7 @@ def _compute_winning_move(
                 "kind": "settle",
                 "confidence": "high",
                 "vp_after": vp + 1,
-                "detail": "settle now — +1 VP wins the game",
+                "detail": "settle now — +1 VP",
             })
 
     # +1 VP path: city upgrade on an existing self settlement.
@@ -3444,7 +3444,7 @@ def _compute_winning_move(
                 "kind": "city",
                 "confidence": "high",
                 "vp_after": vp + 1,
-                "detail": "upgrade to city — +1 VP wins the game",
+                "detail": "upgrade to city — +1 VP",
             })
 
     # +2 VP path: road that flips longest road.
@@ -3474,8 +3474,8 @@ def _compute_winning_move(
                     "kind": "road_to_lr",
                     "confidence": "medium",
                     "vp_after": vp + 2,
-                    "detail": (f"road extending your {self_len}-chain → "
-                               "LR (+2 VP) wins the game"),
+                    "detail": (f"+1 road on your {self_len}-chain → "
+                               "LR (+2 VP)"),
                 })
 
     # +2 VP path: knight play that flips largest army.
@@ -3500,8 +3500,8 @@ def _compute_winning_move(
                 "kind": "knight_to_la",
                 "confidence": "high",
                 "vp_after": vp + 2,
-                "detail": (f"play a Knight ({knights_played+1}/"
-                           f"{la_threshold}) → LA (+2 VP) wins the game"),
+                "detail": (f"play Knight ({knights_played+1}/"
+                           f"{la_threshold}) → LA (+2 VP)"),
             })
 
     if not candidates:
