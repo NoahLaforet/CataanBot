@@ -363,7 +363,7 @@ def test_recommend_opening_on_fresh_game_returns_top_picks():
         assert r["when"] == "now"
         assert isinstance(r["node_id"], int)
         assert 2.0 <= float(r["score"]) <= 10.0
-        assert "pip" in r["detail"]
+        assert "/roll" in r["detail"]
     # Scores must be monotonically non-increasing — top pick first.
     scores = [r["score"] for r in out]
     assert scores == sorted(scores, reverse=True)

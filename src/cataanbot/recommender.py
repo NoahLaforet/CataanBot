@@ -339,10 +339,11 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         for s in pair_scored[:top]:
             new_res = _resources_added(F_prod, s.resources)
             coverage = len(_resources_covered(F_prod, s.resources))
-            detail_parts = [f"pip {s.raw_production:.2f}/roll"]
+            detail_parts = [f"+{s.raw_production:.2f}/roll"]
             if new_res:
-                added_abbrev = "+".join(r[:3].lower() for r in new_res)
-                detail_parts.append(f"adds {added_abbrev}")
+                added_emoji = "".join(
+                    _MISSING_EMOJI.get(r, r[:3].lower()) for r in new_res)
+                detail_parts.append(f"adds {added_emoji}")
             detail_parts.append(f"covers {coverage}/5")
             if s.port:
                 detail_parts.append(f"port {s.port}")
@@ -385,7 +386,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     scored = score_opening_nodes(game, legal_nodes=legal)
     pair_color = c.name if c is not None else "RED"
     for s in scored[:top]:
-        detail_parts = [f"pip {s.raw_production:.2f}/roll"]
+        detail_parts = [f"+{s.raw_production:.2f}/roll"]
         if s.port:
             detail_parts.append(f"port {s.port}")
         F_prod = {r: s.resources.get(r, 0.0) for r in RESOURCES}
