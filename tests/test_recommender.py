@@ -1240,3 +1240,35 @@ def test_trade_no_counter_when_trimmed_still_bad():
     )
     assert verdict["verdict"] == "decline"
     assert verdict["counter"] is None, verdict
+
+
+def test_direction_label_matches_screen_orientation():
+    """A road's compass label must match what Noah sees on colonist's
+    screen — NORTH at top, SOUTH at bottom. This test pins the geometry
+    after a history of off-by-flip regressions (#111, #118, #123, #126,
+    #130, #140, #150). If anyone "fixes" _direction_label by inverting
+    the dy sign, every case below flips and the test catches it."""
+    from cataanbot.recommender import _node_positions, _direction_label
+    from cataanbot.tracker import Tracker
+
+    m = Tracker().game.state.board.map
+    positions = _node_positions(m)
+    center = m.tiles[(0, 0, 0)]
+
+    def node(name: str) -> int:
+        for nref, nid in center.nodes.items():
+            if nref.name == name:
+                return nid
+        raise AssertionError(name)
+
+    cases = [
+        ("SOUTH",     "NORTH",     ("N",  "↑")),
+        ("NORTH",     "SOUTH",     ("S",  "↓")),
+        ("SOUTHWEST", "NORTHEAST", ("NE", "↗")),
+        ("NORTHEAST", "SOUTHWEST", ("SW", "↙")),
+        ("SOUTHEAST", "NORTHWEST", ("NW", "↖")),
+        ("NORTHWEST", "SOUTHEAST", ("SE", "↘")),
+    ]
+    for fr, to, want in cases:
+        got = _direction_label(positions, node(fr), node(to))
+        assert got == want, f"{fr}→{to}: want {want}, got {got}"
