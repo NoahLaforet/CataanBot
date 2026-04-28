@@ -1698,7 +1698,7 @@ def _compute_strategic_options(
         options.append({
             "kind": "dev_card_dive",
             "label": "dev-card dive",
-            "detail": f"buy {min(bundles, 4)} dev · hidden VP + engine",
+            "detail": f"buy {min(bundles, 4)} dev · hidden VP",
             "vp_swing": 1,
             "pieces": 0,
         })
