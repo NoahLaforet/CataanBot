@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.41
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.41 adds a faint expected-count tick on each histogram column (the 36-roll baseline for that number — 6 wants 5/36, 8 wants 5/36, etc.) so cold/hot deviations show as the bar undershooting/overshooting the dashed line instead of needing mental math. v0.23.40 adds a symbolic-vocabulary leading icon to every banner (mono-risk 🚨, opp-threat ⚠️, you-close 👑, robber-on-me 🚫, longest-road 🛣️, largest-army ⚔️, discard 🎲, can-afford ✅, near-build ⏳).
+// @version      0.23.42
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.42 adds phase-aware visual demotion: the panel root now carries a data-phase attribute (setup/early/mid/late), and in late game the production-rate stats and yield-window summary dim to ~62% opacity so VP threats and the rec list dominate the eye. v0.23.41 adds a faint expected-count tick on each histogram column (6 wants 5/36, etc.) so cold/hot deviations read as bar overshooting/undershooting the line instead of needing mental math.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1758,6 +1758,22 @@
   /* Paused render filter: keep the game-progress strip and the self
      card, hide every tactical section (opps, recs, banners, rolls). */
   .panel[data-paused="1"] #content > div:not(.gprog):not(.card) { display: none; }
+
+  /* Phase-aware visual demotion. The HUD shows the same content across
+     phases (everything is gated by self-conditions already), but a few
+     elements lose load-bearing weight in late game: production rate
+     and yield-vs-baseline informed early planning, but with 1-2 turns
+     to victory the rec list and threat banners are what matter.
+     Conservative treatment — opacity dim, no display:none, so nothing
+     that was visible disappears. Setup phase gets the same treatment
+     for the histogram-host's empty state, which currently leaves a
+     visible gap until the first roll arrives. */
+  .panel[data-phase="late"] .prod,
+  .panel[data-phase="late"] .yield-sum,
+  .panel[data-phase="late"] .opp-prod {
+    opacity: 0.62;
+  }
+  .panel[data-phase="setup"] #hist-host { display: none; }
 </style>
 <div class="panel" id="panel">
   <div class="header" id="header">
@@ -2203,8 +2219,20 @@
             ui.content.innerHTML =
                 '<span class="muted">waiting for game start…</span>';
             if (ui.histHost) ui.histHost.classList.add('hidden');
+            ui.panel.dataset.phase = 'pre';
             return;
         }
+        // Phase tag drives [data-phase=...] CSS hooks for visual demotion
+        // of phase-irrelevant content. setup→opening picks dominate; late
+        // → production/yield breakdown dimmed since the game is decided
+        // by VP threats, not long-horizon planning. The bridge already
+        // computes phase from rounds (≤5 early, ≤12 mid, >12 late) and
+        // skips the field during setup, so we use snap.setup_phase as
+        // the explicit setup signal and fall back to "early" until the
+        // first roll lands.
+        ui.panel.dataset.phase = snap.setup_phase
+            ? 'setup'
+            : (snap.game_progress && snap.game_progress.phase) || 'early';
         const parts = [];
         // WIN THIS TURN banner — highest-priority signal. Renders above
         // every other HUD element so Noah never misses a single-move
@@ -2811,7 +2839,8 @@
                 // out). 'p' is short for per-roll production.
                 let prodTag = '';
                 if (o.production && o.production.per_roll > 0) {
-                    prodTag = ` · ${o.production.per_roll.toFixed(2)}p`;
+                    prodTag = ` · <span class="opp-prod">`
+                        + `${o.production.per_roll.toFixed(2)}p</span>`;
                 }
                 // Opp ports — trade-partner signal. Drop the inline
                 // "port:" prefix and the comma joins; that format read
