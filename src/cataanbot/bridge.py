@@ -1259,11 +1259,11 @@ def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
     reason = "no clear swing yet"
     if not self_has and projected >= max(qualify, opp_max + 1):
         should = True
-        reason = (f"secures longest road · "
+        reason = (f"secures LR · "
                   f"{self_len}→{projected} vs {opp_max}")
     elif opp_has and opp_max >= qualify and projected >= opp_max:
         should = True
-        reason = (f"catches opp longest road · "
+        reason = (f"catches opp LR · "
                   f"proj {projected} ≥ {opp_max}")
     elif roads_left <= 2:
         # Almost out of roads — card loses value the longer you hold it.
@@ -1793,7 +1793,7 @@ def _compute_knight_hint(
         reason = f"robber on you · {self_blocked_pips} pips blocked"
     elif largest_army_threat:
         should = True
-        reason = "opp closing on largest army"
+        reason = "opp closing on LA"
     elif top_score >= 4.0:
         should = True
         reason = f"strong block · score {top_score:+.1f}"
