@@ -1897,7 +1897,7 @@ def _compute_longest_road_race(
             "opp_username": top_opp_name,
             "holder_username": holder_name,
             "message": (
-                f"longest road · you {self_len} / "
+                f"LR · you {self_len} / "
                 f"{top_opp_name} {opp_max} · {holder} holds"),
         }
     # Self pushing: we're on 4+, nobody else is close.
@@ -1907,18 +1907,18 @@ def _compute_longest_road_race(
             "self_len": self_len,
             "opp_len": opp_max,
             "opp_username": top_opp_name,
-            "message": f"1 road → longest road ({self_len})",
+            "message": f"1 road → LR ({self_len})",
         }
     # Opp threat: someone else is on 4+ and ahead of us.
     if opp_max >= 4 and opp_max >= self_len and not self_has:
         gap = opp_max - self_len
         if opp_holder:
             msg = (
-                f"{holder_name or top_opp_name} has longest road"
+                f"{holder_name or top_opp_name} has LR"
                 f" · {opp_max} (+{gap})"
             )
         else:
-            msg = f"{top_opp_name} 1 → longest road ({opp_max})"
+            msg = f"{top_opp_name} 1 → LR ({opp_max})"
         return {
             "level": "opp_threat",
             "self_len": self_len,
@@ -2345,7 +2345,7 @@ def _compute_largest_army_race(
             "opp_username": top_opp_name,
             "holder_username": holder_name,
             "message": (
-                f"largest army · you {self_n} / "
+                f"LA · you {self_n} / "
                 f"{top_opp_name} {opp_max} · {holder} holds"),
         }
     if self_n >= 2 and not self_has and opp_max < self_n:
@@ -2354,17 +2354,17 @@ def _compute_largest_army_race(
             "self_n": self_n,
             "opp_n": opp_max,
             "opp_username": top_opp_name,
-            "message": f"1 knight → largest army ({self_n})",
+            "message": f"1 knight → LA ({self_n})",
         }
     if opp_max >= 2 and opp_max >= self_n and not self_has:
         gap = opp_max - self_n
         if opp_holder:
             msg = (
-                f"{holder_name or top_opp_name} has largest army"
+                f"{holder_name or top_opp_name} has LA"
                 f" · {opp_max} (+{gap})"
             )
         else:
-            msg = f"{top_opp_name} 1 → largest army ({opp_max})"
+            msg = f"{top_opp_name} 1 → LA ({opp_max})"
         return {
             "level": "opp_threat",
             "self_n": self_n,

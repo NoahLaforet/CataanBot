@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.29
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.29 trims the standings trailer from "alice leading at 7 (you 4, -3)" to "alice 7 · you 4 (-3)" and "you leading at 6" to "you 6 (lead)" — same info, fewer linking words. Header line now reads round/phase/scores in pure tabular shorthand.
+// @version      0.23.30
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.30 abbreviates LR/LA race banner messages to match the strategic-options shorthand: "longest road · you 4 / alice 5" → "LR · you 4 / alice 5". The visual treatment (border color + level class) is enough context for "LR" / "LA" to read clearly without spelled-out labels.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
