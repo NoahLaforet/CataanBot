@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.24
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.24 fixes the two repeat-unresolved asks: (1) road direction arrow on the in-game rec was being rendered but had no styling — now bigger (18px / 32px on hero), accent-colored, with a green glow on the hero so Noah reads "lay road this way" instantly; (2) roll histogram bars taller (72px → 110px) with a glowing 2px outline + lift on the last-rolled column so the active number visibly punches out as the bars grow.
+// @version      0.23.25
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.25 sweeps remaining content-bearing 11/12px elements that fell under the scan threshold: opp tactical signals (`can buy settlement` 12→13px), opp port chips (11→13px so the chip group reads as content not chrome), self piece-counts row + VP breakdown + monopoly-warning all 12→13px. Section-header chrome stays at 11px — only content lines lift.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -477,11 +477,11 @@
   }
   .you .self-meta {
     color: var(--fg-mute);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    opacity: 0.8;
+    opacity: 0.85;
     width: 100%;
     margin-top: var(--s-1);
   }
@@ -512,7 +512,7 @@
   }
   .mono-warn {
     color: var(--warn);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     font-weight: 700;
     margin: var(--s-1) 0;
     letter-spacing: 0.04em;
@@ -544,7 +544,7 @@
      dim metadata that sits below the main self card. */
   .vpb {
     color: var(--fg-dim);
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
     margin-top: var(--s-1);
     letter-spacing: 0.02em;
   }
@@ -662,7 +662,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    font-size: calc(12px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .opp .one-short {
     color: var(--warn);
@@ -694,7 +694,7 @@
   .opp .op-ports {
     color: var(--fg-mute);
     font-variant-numeric: tabular-nums;
-    font-size: calc(11px * var(--font-scale));
+    font-size: calc(13px * var(--font-scale));
   }
   .opp .op-port {
     display: inline-block;
