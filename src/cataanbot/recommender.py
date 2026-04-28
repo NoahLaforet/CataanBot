@@ -877,7 +877,7 @@ def _settle_rationale(m, node_id: int, self_expected: dict | None) -> str:
         top_res = max(prod_map.items(), key=lambda kv: kv[1])[0]
         if float(self_expected.get(top_res, 0.0)) <= 0.05:
             line = line + (f" · fills {_RES_LETTER.get(top_res, top_res[:1])}"
-                           " (your weakest)")
+                           " (weak)")
     return line
 
 
@@ -895,7 +895,7 @@ def _city_rationale(m, node_id: int) -> str:
         return ""
     items.sort(key=lambda kv: -kv[1])
     parts = [f"+{v:.2f} {_RES_LETTER.get(r, r[:1])}" for r, v in items]
-    return "adds " + " ".join(parts) + " /roll (doubles yield)"
+    return "adds " + " ".join(parts) + " /roll"
 
 
 def _road_rationale(state, color, self_len: int, has_lr: bool) -> str:
@@ -927,9 +927,9 @@ def _road_rationale(state, color, self_len: int, has_lr: bool) -> str:
             return f"extends to {next_len} → FLIPS LR (+2 VP)"
         return f"extends to {next_len} → claims LR (+2 VP)"
     if not has_lr and next_len >= 5 and next_len == opp_max:
-        return f"extends to {next_len} — ties LR leader"
+        return f"extends to {next_len} — ties LR"
     if has_lr and next_len > opp_max + 1:
-        return f"extends to {next_len}, pads LR lead"
+        return f"extends to {next_len}, pads LR"
     if self_len >= 3:
         return f"extends {self_len}-chain to {next_len}"
     return ""
