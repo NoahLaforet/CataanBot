@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.7
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.7 swaps road-direction labels to compass notation (NE/NW/SE/SW) so mixed-axis edges read unambiguously, and reframes road tile chips to the two hexes flanking the edge itself ("the road between the 6 and the 8") rather than the 3-tile triangle around the far landing.
+// @version      0.23.8
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.8 brings back the live roll histogram — 11 vertical bars (2..12) that grow as new rolls land, with the most recent column outlined and 6/8 highlighted. The bars persist across innerHTML rewrites so CSS height transitions actually fire on roll deltas instead of replaying from 0 every poll tick.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -156,6 +156,9 @@
                 body: root.getElementById('body'),
                 content: root.getElementById('content'),
                 dot: root.getElementById('dot'),
+                histHost: root.getElementById('hist-host'),
+                hist: root.getElementById('hist'),
+                histTotal: root.getElementById('hist-total'),
             };
         }
         host = document.createElement('div');
@@ -712,10 +715,86 @@
     margin-left: var(--s-2);
   }
 
-  /* Roll distribution intentionally removed — bar chart wouldn't
-     tween reliably; the text-strip replacement looked terrible.
-     Coming back to this with a fresh design once HUD direction is
-     settled. Last-roll info still surfaces via the banner. */
+  /* --------------------------------------------------------------
+     Live roll histogram. 11 vertical columns (2..12). Each column
+     persists across innerHTML rewrites because the histogram lives
+     in its own DOM host outside ui.content's tree — render() mutates
+     bar heights in place, so the height transition fires when a new
+     roll lands instead of replaying from 0 every tick.
+     -------------------------------------------------------------- */
+  .hist-host {
+    margin: var(--s-3) 0 var(--s-2);
+  }
+  .hist-host.hidden { display: none; }
+  .hist-host .hist-h {
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+    margin: 0 0 var(--s-2);
+    display: flex; align-items: center;
+    gap: var(--s-3);
+  }
+  .hist-host .hist-h .hist-total {
+    color: var(--fg-dim);
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: none;
+  }
+  .hist {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    gap: 3px;
+    height: 72px;
+    align-items: end;
+    font-variant-numeric: tabular-nums;
+  }
+  .hist-col {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    height: 100%;
+    justify-content: flex-end;
+    position: relative;
+  }
+  .hist-bar-wrap {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 0;
+  }
+  .hist-bar {
+    width: 100%;
+    background: var(--info);
+    border-radius: 2px 2px 0 0;
+    transition: height 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                background 0.2s ease;
+    min-height: 1px;
+  }
+  .hist-col.hot .hist-bar { background: var(--pos); }
+  .hist-col.seven .hist-bar { background: var(--alert); }
+  .hist-col.last .hist-bar {
+    box-shadow: 0 0 0 1px var(--fg);
+  }
+  .hist-num {
+    font-size: calc(11px * var(--font-scale));
+    color: var(--fg-mute);
+    text-align: center;
+    margin-top: 2px;
+    font-weight: 600;
+  }
+  .hist-col.hot .hist-num { color: var(--pos); }
+  .hist-col.seven .hist-num { color: var(--alert); }
+  .hist-count {
+    font-size: calc(10px * var(--font-scale));
+    color: var(--fg-dim);
+    text-align: center;
+    height: 14px;
+    line-height: 14px;
+  }
+  .hist-col.last .hist-count { color: var(--fg); font-weight: 700; }
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(12px * var(--font-scale));
@@ -1513,6 +1592,14 @@
   </div>
   <div class="body" id="body">
     <div id="content"><span class="muted">waiting for bridge&hellip;</span></div>
+    <!-- Live roll histogram. Lives outside #content so its DOM
+         persists across innerHTML rewrites — that's the only way to
+         get the bar height transitions to fire on actual roll events
+         instead of replaying every poll tick. -->
+    <div id="hist-host" class="hist-host hidden">
+      <div class="hist-h">rolls <span class="hist-total" id="hist-total">0</span></div>
+      <div class="hist" id="hist"></div>
+    </div>
   </div>
   <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
 </div>`;
@@ -1751,7 +1838,31 @@
         });
         window.addEventListener('mouseup', () => { resizing = null; });
 
-        return { host, panel, body, content, dot };
+        const histHost = root.getElementById('hist-host');
+        const hist = root.getElementById('hist');
+        const histTotal = root.getElementById('hist-total');
+        // Pre-populate the 11 columns once. renderOverlay only mutates
+        // bar heights + class flags from here on — the column DOM never
+        // gets rebuilt, which is what lets CSS height transitions fire
+        // on actual roll deltas instead of replaying from 0 each tick.
+        const HIST_NUMS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        const HIST_HOT = new Set([6, 8]);
+        hist.innerHTML = HIST_NUMS.map((n) => {
+            const cls = ['hist-col'];
+            if (n === 7) cls.push('seven');
+            else if (HIST_HOT.has(n)) cls.push('hot');
+            return `<div class="${cls.join(' ')}" data-n="${n}">`
+                + `<div class="hist-count" data-count></div>`
+                + `<div class="hist-bar-wrap">`
+                + `<div class="hist-bar" data-bar style="height:0%"></div>`
+                + `</div>`
+                + `<div class="hist-num">${n}</div>`
+                + `</div>`;
+        }).join('');
+        return {
+            host, panel, body, content, dot,
+            histHost, hist, histTotal,
+        };
     }
 
     function renderOverlay(ui, snap, live) {
@@ -1759,11 +1870,13 @@
         if (!snap) {
             ui.content.innerHTML =
                 '<span class="err">bridge unreachable</span>';
+            if (ui.histHost) ui.histHost.classList.add('hidden');
             return;
         }
         if (!snap.game_started) {
             ui.content.innerHTML =
                 '<span class="muted">waiting for game start…</span>';
+            if (ui.histHost) ui.histHost.classList.add('hidden');
             return;
         }
         const parts = [];
@@ -2697,10 +2810,41 @@
             parts.push('</table>');
         }
         ui.content.innerHTML = parts.join('');
+        renderHistogram(ui, snap);
     }
 
-    // (histogram chart removed — replaced with simple text strip; the
-    // animated bar version proved unreliable across innerHTML rewrites)
+    // Live roll histogram. Mutates bar heights + class flags on the
+    // pre-built persistent column DOM so CSS height transitions fire
+    // when a roll lands. Hidden until the first roll arrives.
+    function renderHistogram(ui, snap) {
+        if (!ui || !ui.hist || !ui.histHost) return;
+        const hg = (snap && snap.roll_histogram) || null;
+        const total = (snap && snap.total_rolls) || 0;
+        if (!hg || total <= 0) {
+            ui.histHost.classList.add('hidden');
+            return;
+        }
+        ui.histHost.classList.remove('hidden');
+        if (ui.histTotal) ui.histTotal.textContent = String(total);
+        let max = 1;
+        for (let n = 2; n <= 12; n++) {
+            const c = Number(hg[n] || 0);
+            if (c > max) max = c;
+        }
+        const lastTotal = (snap.last_roll && snap.last_roll.total) || null;
+        const cols = ui.hist.children;
+        for (let i = 0; i < cols.length; i++) {
+            const col = cols[i];
+            const n = Number(col.dataset.n);
+            const c = Number(hg[n] || 0);
+            const pct = (c / max) * 100;
+            const bar = col.querySelector('[data-bar]');
+            const cnt = col.querySelector('[data-count]');
+            if (bar) bar.style.height = pct + '%';
+            if (cnt) cnt.textContent = c > 0 ? String(c) : '';
+            col.classList.toggle('last', n === lastTotal);
+        }
+    }
 
     function escapeHtml(s) {
         return String(s == null ? '' : s)
