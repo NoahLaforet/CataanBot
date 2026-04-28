@@ -1648,7 +1648,7 @@ def _compute_strategic_options(
         vp_swing = 2 if not opp_lr_holder else 4  # take + denial
         options.append({
             "kind": "longest_road_push",
-            "label": "push longest road",
+            "label": "LR push",
             "detail": (f"+{roads_needed} road"
                        f"{'s' if roads_needed > 1 else ''}"
                        + (" · denies opp" if opp_lr_holder else "")),
@@ -1679,7 +1679,7 @@ def _compute_strategic_options(
         vp_swing = 2 if not opp_la_holder else 4
         options.append({
             "kind": "largest_army_push",
-            "label": "push largest army",
+            "label": "LA push",
             "detail": (f"play {needed_plays} knight"
                        f"{'s' if needed_plays > 1 else ''}"
                        + (" · denies opp" if opp_la_holder else "")),
