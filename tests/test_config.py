@@ -87,3 +87,62 @@ def test_helpers_default_to_module_target():
     assert largest_army_threat_vp() == largest_army_threat_vp(config.VP_TARGET)
     assert mid_late_vp() == mid_late_vp(config.VP_TARGET)
     assert early_game_baseline_vp() == early_game_baseline_vp(config.VP_TARGET)
+
+
+def test_runtime_vp_mutation_propagates():
+    """``set_vp_target`` must update both the module attribute and the
+    no-arg behavior of the scaling helpers — that's the whole point of
+    the runtime-mutable refactor (the userscript drawer flips a 14-VP
+    game on without restarting the bridge)."""
+    from cataanbot import config
+
+    original = config.get_vp_target()
+    try:
+        config.set_vp_target(14)
+        assert config.VP_TARGET == 14
+        assert config.get_vp_target() == 14
+        # 14 * 0.80 = 11.2 → 11
+        assert close_to_win_vp() == 11
+        # 14 * 0.70 = 9.8 → 10
+        assert largest_army_threat_vp() == 10
+        # 14 * 0.60 = 8.4 → 8
+        assert mid_late_vp() == 8
+        # 14 * 0.30 = 4.2 → 4
+        assert early_game_baseline_vp() == 4
+    finally:
+        config.set_vp_target(original)
+
+
+def test_runtime_discard_limit_mutation_propagates():
+    """``set_discard_limit`` must update both the module attribute and
+    the eval / report lazy reads."""
+    from cataanbot import config
+
+    original = config.get_discard_limit()
+    try:
+        config.set_discard_limit(10)
+        assert config.DISCARD_LIMIT == 10
+        assert config.get_discard_limit() == 10
+    finally:
+        config.set_discard_limit(original)
+
+
+def test_set_vp_target_rejects_invalid():
+    """Bad userscript POSTs (zero, negative, non-int strings) must
+    raise rather than silently zeroing the live target."""
+    import pytest
+
+    from cataanbot import config
+
+    original = config.get_vp_target()
+    try:
+        with pytest.raises(ValueError):
+            config.set_vp_target(0)
+        with pytest.raises(ValueError):
+            config.set_vp_target(-3)
+        with pytest.raises((TypeError, ValueError)):
+            config.set_vp_target("not a number")
+        # State unchanged after failed sets.
+        assert config.get_vp_target() == original
+    finally:
+        config.set_vp_target(original)

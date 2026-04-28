@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cataanbot.config import DISCARD_LIMIT, VP_TARGET
+from cataanbot import config
 
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 _DEV_PLAYABLE = ("KNIGHT", "MONOPOLY", "YEAR_OF_PLENTY", "ROAD_BUILDING")
@@ -95,7 +95,7 @@ def _player_score(state, board, m, color) -> float:
     hand_total = sum(
         int(ps.get(f"P{idx}_{r}_IN_HAND", 0)) for r in _RESOURCES
     )
-    cap = DISCARD_LIMIT
+    cap = config.get_discard_limit()
     score += min(hand_total, cap) * 1.5
     if hand_total > cap:
         # Discard risk — each card above the limit is half-lost-value in

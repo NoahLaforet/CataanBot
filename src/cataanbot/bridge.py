@@ -195,6 +195,48 @@ def _build_app(jsonl_path: Path | None = None,
                 game, results, st["ws_count"], advisor=advisor)
         return {"ok": True, "results": len(results or [])}
 
+    @app.get("/config")
+    def get_config() -> dict[str, Any]:
+        """Current VP target + discard limit. Userscript drawer reads
+        this on init to reflect server-side state in its inputs."""
+        from cataanbot import config
+        return {
+            "vp_target": config.get_vp_target(),
+            "discard_limit": config.get_discard_limit(),
+        }
+
+    @app.post("/config")
+    def post_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Update VP target and/or discard limit at runtime. Either
+        field is optional; missing fields are left untouched. Returns
+        the new full state so the userscript can confirm what stuck."""
+        from cataanbot import config
+        errors: list[str] = []
+        if "vp_target" in payload and payload["vp_target"] is not None:
+            try:
+                config.set_vp_target(int(payload["vp_target"]))
+            except (TypeError, ValueError) as e:
+                errors.append(f"vp_target: {e}")
+        if "discard_limit" in payload and payload["discard_limit"] is not None:
+            try:
+                config.set_discard_limit(int(payload["discard_limit"]))
+            except (TypeError, ValueError) as e:
+                errors.append(f"discard_limit: {e}")
+        result = {
+            "ok": not errors,
+            "vp_target": config.get_vp_target(),
+            "discard_limit": config.get_discard_limit(),
+        }
+        if errors:
+            result["errors"] = errors
+        else:
+            print(
+                f"[bridge] config: vp_target={result['vp_target']} "
+                f"discard_limit={result['discard_limit']}",
+                flush=True,
+            )
+        return result
+
     @app.post("/reset")
     def reset() -> dict[str, Any]:
         st["log_count"] = 0
