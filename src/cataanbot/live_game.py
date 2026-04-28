@@ -37,6 +37,39 @@ _CITY_COST = {"WHEAT": 2, "ORE": 3}
 _ROAD_COST = {"WOOD": 1, "BRICK": 1}
 
 
+def _apply_game_settings(body: dict[str, Any]) -> None:
+    """Push the game's variant settings (VP target, discard limit) into
+    the live config so heuristics scale to non-standard games.
+
+    Colonist's GameStart frame ships these in ``gameSettings``:
+
+        gameSettings.victoryPointsToWin   — int (default 10)
+        gameSettings.cardDiscardLimit     — int (default 7)
+
+    Old captures from before the auto-detect work may be missing
+    ``gameSettings`` entirely or carry only a partial dict — silently
+    skip whatever is absent so ws-replay still chews through old logs.
+    Any value already set via the userscript drawer gets overwritten,
+    which is the right semantic: the colonist game is the authority.
+    """
+    gs = body.get("gameSettings")
+    if not isinstance(gs, dict):
+        return
+    from cataanbot import config
+    vp = gs.get("victoryPointsToWin")
+    if isinstance(vp, int) and vp >= 1:
+        try:
+            config.set_vp_target(vp)
+        except (TypeError, ValueError):
+            pass
+    discard = gs.get("cardDiscardLimit")
+    if isinstance(discard, int) and discard >= 1:
+        try:
+            config.set_discard_limit(discard)
+        except (TypeError, ValueError):
+            pass
+
+
 @dataclass
 class LiveGame:
     """Container for one in-progress colonist game.
@@ -67,6 +100,7 @@ class LiveGame:
         order so catanatron seats match what the live game shows.
         """
         self.session = LiveSession.from_game_start(body)
+        _apply_game_settings(body)
         game_state = body.get("gameState") if "gameState" in body else body
         map_state = game_state.get("mapState")
         if not isinstance(map_state, dict):

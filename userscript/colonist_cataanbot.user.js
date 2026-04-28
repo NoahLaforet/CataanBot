@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.35
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.35 adds VP target + discard limit inputs to the settings drawer so 14-VP and other variant games can be played without restarting the bridge. Inputs persist to localStorage and POST to /config on change.
+// @version      0.23.36
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.36 refreshes the drawer's VP/discard inputs every time the drawer opens so values reflect the bridge's auto-detect after a fresh GameStart frame. v0.23.35 added the inputs themselves.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1791,9 +1791,25 @@
         // --------------------------------------------------------------
         const settingsBtn = root.getElementById('settings');
         const drawer = root.getElementById('drawer');
+        function openDrawer() {
+            drawer.classList.add('open');
+            // Re-fetch /config so the VP / discard inputs reflect the
+            // bridge's current state — auto-detect from GameStart may
+            // have changed it since the userscript first booted.
+            if (typeof refreshCfgFromBridge === 'function') {
+                refreshCfgFromBridge();
+            }
+        }
+        function toggleDrawer() {
+            if (drawer.classList.contains('open')) {
+                drawer.classList.remove('open');
+            } else {
+                openDrawer();
+            }
+        }
         settingsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            drawer.classList.toggle('open');
+            toggleDrawer();
         });
 
         // New Game = two-click confirm. First click arms the button for
@@ -1879,9 +1895,11 @@
         // bridge's /config so a 14-VP / 10-discard variant can be
         // played without restarting. Persisted to localStorage so the
         // inputs reflect the last-used values immediately on reload;
-        // overwritten by the live bridge value after the GET /config
-        // round-trip lands. Debounced so spam-clicking the spinner
-        // arrows doesn't fire a POST per keystroke.
+        // refreshed from the bridge every time the drawer opens, so
+        // values stay current with the bridge's auto-detect (a fresh
+        // GameStart frame stamps in colonist's gameSettings). Debounced
+        // POST on change so spam-clicking the spinner arrows doesn't
+        // fire a POST per keystroke.
         const vpInput = root.getElementById('vp-target');
         const discardInput = root.getElementById('discard-limit');
         const cfgStatus = root.getElementById('game-cfg-status');
@@ -1919,6 +1937,21 @@
                 }
             } catch (_) { /* storage blocked */ }
         }
+        function applyCfgToInputs(cfg) {
+            if (!cfg) return;
+            if (Number.isFinite(cfg.vp_target)) {
+                vpInput.value = String(cfg.vp_target);
+            }
+            if (Number.isFinite(cfg.discard_limit)) {
+                discardInput.value = String(cfg.discard_limit);
+            }
+            persistCfgLocal(cfg.vp_target, cfg.discard_limit);
+        }
+        function refreshCfgFromBridge() {
+            getJson('http://127.0.0.1:8765/config')
+                .then(applyCfgToInputs)
+                .catch(() => { /* offline — keep current */ });
+        }
         function postCfg() {
             const body = readCfgInputs();
             if (body.vp_target === null && body.discard_limit === null) {
@@ -1931,13 +1964,7 @@
                         setCfgStatus('error', 'err');
                         return;
                     }
-                    if (Number.isFinite(res.vp_target)) {
-                        vpInput.value = String(res.vp_target);
-                    }
-                    if (Number.isFinite(res.discard_limit)) {
-                        discardInput.value = String(res.discard_limit);
-                    }
-                    persistCfgLocal(res.vp_target, res.discard_limit);
+                    applyCfgToInputs(res);
                     setCfgStatus('saved', 'ok');
                 })
                 .catch(() => setCfgStatus('offline', 'err'));
@@ -1957,20 +1984,12 @@
             if (Number.isFinite(lvp)) vpInput.value = String(lvp);
             if (Number.isFinite(ldl)) discardInput.value = String(ldl);
         } catch (_) { /* storage blocked */ }
-        // Then fetch the live bridge state and overwrite. If the
-        // bridge isn't up yet, leave the localStorage seed in place.
-        getJson('http://127.0.0.1:8765/config')
-            .then((cfg) => {
-                if (!cfg) return;
-                if (Number.isFinite(cfg.vp_target)) {
-                    vpInput.value = String(cfg.vp_target);
-                }
-                if (Number.isFinite(cfg.discard_limit)) {
-                    discardInput.value = String(cfg.discard_limit);
-                }
-                persistCfgLocal(cfg.vp_target, cfg.discard_limit);
-            })
-            .catch(() => { /* bridge offline — inputs keep the seed */ });
+        // Initial fetch on userscript boot — covers the case where
+        // the user never opens the drawer but the values still need
+        // to stay synced (e.g., for localStorage persistence). After
+        // this, every drawer open re-fetches via the click handler so
+        // auto-detected values from a fresh GameStart show up live.
+        refreshCfgFromBridge();
         vpInput.addEventListener('change', scheduleCfgPost);
         discardInput.addEventListener('change', scheduleCfgPost);
 
@@ -2024,11 +2043,11 @@
                 body.classList.toggle('collapsed');
             } else if (e.code === 'KeyS') {
                 e.preventDefault();
-                drawer.classList.toggle('open');
+                toggleDrawer();
             } else if (e.code === 'KeyN') {
                 e.preventDefault();
                 if (!drawer.classList.contains('open')) {
-                    drawer.classList.add('open');
+                    openDrawer();
                 }
                 if (newGameBtn.classList.contains('armed')) fireNewGame();
                 else armNewGame();
