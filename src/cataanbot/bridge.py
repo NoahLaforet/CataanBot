@@ -1507,10 +1507,16 @@ def _short_tile_label(tiles: list[tuple[str, int]] | None) -> str:
 
 
 def _format_missing_short(missing: dict[str, int]) -> str:
-    """Compact missing-cards string: "need 1b 1s"."""
+    """Compact missing-cards string: "need 1🧱 1🐑".
+
+    Uses resource emojis to match the rest of the HUD (opp ports, prod
+    top resource, trade fallback on the same banner). The old "1b 1s"
+    letter abbreviations were tight but inconsistent with the icon
+    convention used elsewhere.
+    """
     if not missing:
         return ""
-    parts = [f"{n}{r[0].lower()}" for r, n in missing.items()]
+    parts = [f"{n}{_emoji_for(r)}" for r, n in missing.items()]
     return "need " + " ".join(parts)
 
 
