@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.43
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.42 adds phase-aware visual demotion: the panel root now carries a data-phase attribute (setup/early/mid/late), and in late game the production-rate stats and yield-window summary dim to ~62% opacity so VP threats and the rec list dominate the eye. v0.23.41 adds a faint expected-count tick on each histogram column (6 wants 5/36, etc.) so cold/hot deviations read as bar overshooting/undershooting the line instead of needing mental math.
+// @version      0.23.44
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.44 adds a chess-eval-bar-style EV pill next to each rec's heuristic score, showing the 1-ply state-eval delta from search_rerank. Green for clearly-positive moves, red for clearly-negative, neutral for tiny deltas. Pairs with the eval.py fix that made search_rerank actually work in replay/live games (it was silently no-op'ing before). v0.23.42 adds phase-aware visual demotion: the panel root now carries a data-phase attribute (setup/early/mid/late), and in late game the production-rate stats and yield-window summary dim to ~62% opacity so VP threats and the rec list dominate the eye.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1026,6 +1026,31 @@
   .rec .score.strong { background: rgba(74, 222, 128, 0.16); color: var(--pos); }
   .rec .score.decent { background: rgba(251, 191, 36, 0.16); color: var(--watch); }
   .rec .score.weak   { background: var(--bg-3); color: var(--fg-dim); }
+  /* EV pill — chess-eval-bar analogue. Lives next to the heuristic
+     score pill so you can read both at a glance: heuristic strength
+     (the score) plus 1-ply state-eval delta (the EV). Sign + colour
+     together: bright green for clearly-positive moves, red for
+     clearly-negative, neutral grey for tiny deltas. Sized one notch
+     smaller than the score so it reads as a secondary annotation. */
+  .rec .ev {
+    display: inline-block;
+    margin-left: var(--s-1);
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-size: calc(11px * var(--font-scale));
+    letter-spacing: 0.04em;
+  }
+  .rec .ev.pos-strong { background: rgba(74, 222, 128, 0.20); color: var(--pos); }
+  .rec .ev.pos        { background: rgba(74, 222, 128, 0.10); color: var(--pos); }
+  .rec .ev.neutral    { background: var(--bg-3); color: var(--fg-dim); }
+  .rec .ev.neg        { background: rgba(248, 113, 113, 0.10); color: var(--alert); }
+  .rec .ev.neg-strong { background: rgba(248, 113, 113, 0.22); color: var(--alert); }
+  .rec.top .ev {
+    font-size: calc(13px * var(--font-scale));
+    padding: 2px var(--s-3);
+  }
   .rec .tiles { color: var(--fg-mute); font-size: calc(13px * var(--font-scale)); }
   /* Road direction arrow on the main rec line. Same .arrow class is
      reused across rec sub-lines and dev-card hints, but here it's
@@ -2527,6 +2552,26 @@
                 const s = Number(r.score || 0);
                 const scoreCls = s >= 8 ? 'strong'
                     : (s >= 5 ? 'decent' : 'weak');
+                // Search delta from 1-ply rerank: how much the bot's
+                // state-eval moves if you play this rec. Chess-eval-bar
+                // analogue, scaled to mid-game range (~0-150). Hidden
+                // when null (unsimulatable kinds: propose_trade, etc.)
+                // or 0 (no information). Sign + magnitude both inform
+                // colour; +20 reads as "real upside", -10 as "active
+                // negative."
+                let evHtml = '';
+                if (r.search_delta != null
+                        && Number.isFinite(r.search_delta)
+                        && Math.abs(r.search_delta) >= 0.5) {
+                    const ev = Number(r.search_delta);
+                    const evCls = ev >= 20 ? 'pos-strong'
+                        : (ev >= 5 ? 'pos'
+                            : (ev > -5 ? 'neutral'
+                                : (ev > -20 ? 'neg' : 'neg-strong')));
+                    const sign = ev > 0 ? '+' : '';
+                    evHtml = `<span class="ev ${evCls}" title="1-ply EV">`
+                        + `${sign}${ev.toFixed(0)}</span>`;
+                }
                 const planCls = r.when === 'soon' ? ' plan' : '';
                 const tradeCls = (r.kind === 'trade'
                     || r.kind === 'propose_trade') ? ' trade' : '';
@@ -2554,6 +2599,7 @@
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}${altCls}">`
                     + optHtml
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}</span>`
+                    + evHtml
                     + ` <span class="kind">${kindLabel}</span>`
                     + `<span class="tiles">${loc}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
