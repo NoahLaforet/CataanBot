@@ -156,6 +156,14 @@ class LiveSession:
     # "this looks like a variant — recs may not be tuned for it" until
     # variant-specific strategy lands.
     game_settings: dict[str, Any] = field(default_factory=dict)
+    # Self-only "developmentCardsBoughtThisTurn" cache. Colonist
+    # reports authoritatively which card(s) were bought during the
+    # current turn (typed for self) — clears to null on turn flip.
+    # We mirror that here so the advisor snapshot can compute a
+    # just-bought carve-out without homemade tracking. List of type
+    # ints; empty when nothing was bought this turn or we haven't
+    # latched yet.
+    self_dev_bought_this_turn: list[int] = field(default_factory=list)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -563,15 +571,28 @@ def _dev_card_buy_events(
     for cid_str, pstate in players.items():
         if not isinstance(pstate, dict):
             continue
+        try:
+            cid = int(cid_str)
+        except (TypeError, ValueError):
+            continue
+        # Sync self's bought-this-turn carve-out from colonist's
+        # authoritative ``developmentCardsBoughtThisTurn`` — list of
+        # type ints when set, null when cleared (turn flip). Replaces
+        # the homemade DOM-log buy-counter + turn-flip-reset
+        # bookkeeping so the just-bought carve-out doesn't drift if
+        # any DOM-log buy line gets dropped.
+        if cid == sess.self_color_id and "developmentCardsBoughtThisTurn" in pstate:
+            bought = pstate.get("developmentCardsBoughtThisTurn")
+            if isinstance(bought, list):
+                sess.self_dev_bought_this_turn = [
+                    int(x) for x in bought if isinstance(x, int)]
+            else:
+                sess.self_dev_bought_this_turn = []
         dev = pstate.get("developmentCards")
         if not isinstance(dev, dict):
             continue
         cards = dev.get("cards")
         if not isinstance(cards, list):
-            continue
-        try:
-            cid = int(cid_str)
-        except (TypeError, ValueError):
             continue
         prev_count = sess.dev_card_counts.get(cid, 0)
         new_count = len(cards)

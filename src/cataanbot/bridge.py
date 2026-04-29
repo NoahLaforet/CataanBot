@@ -3334,13 +3334,26 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # a VP card, this under-counts non-VP playable for one turn —
     # acceptable false-negative since hints reappear on the next flip.
     dev_held = int(st.get("dev_cards_held") or 0)
-    dev_just = int(st.get("dev_cards_bought_this_turn") or 0)
-    vp_held = 0
+    # Prefer colonist's authoritative just-bought-this-turn list
+    # (sess.self_dev_bought_this_turn) when present — clears
+    # cleanly on turn flip without our homemade EndTurn detection.
+    # Falls back to the DOM-log-driven counter when the WS frame
+    # hasn't surfaced the field yet (very early game).
     sess = game.session
+    if sess is not None and sess.self_dev_bought_this_turn:
+        dev_just = len(sess.self_dev_bought_this_turn)
+    else:
+        dev_just = int(st.get("dev_cards_bought_this_turn") or 0)
+    vp_held = 0
     if sess is not None and sess.self_color_id is not None:
         vp_held = int((sess.victory_points_state
                        .get(sess.self_color_id, {})
                        .get(2, 0)) or 0)
+    # Whether we trusted colonist's authoritative carve-out vs the
+    # homemade fallback. Userscript can show "(authoritative)" when
+    # sess-driven so the user knows the just-bought signal is solid.
+    snap["dev_cards_just_bought_authoritative"] = (
+        sess is not None and sess.self_dev_bought_this_turn != [])
     non_vp_held = max(0, dev_held - vp_held)
     dev_playable = max(0, non_vp_held - dev_just)
     # Type-known check: when the WS diff parser successfully decoded

@@ -173,6 +173,33 @@ def test_opp_dev_card_buy_emits_untyped_event():
     assert typed == []
 
 
+def test_self_dev_bought_this_turn_syncs_from_colonist():
+    """Colonist authoritatively reports self's
+    ``developmentCardsBoughtThisTurn`` per turn — list of typed ints
+    when bought, null when cleared on turn flip. The diff parser
+    mirrors that to ``sess.self_dev_bought_this_turn`` so the
+    advisor's just-bought carve-out tracks colonist's view exactly,
+    no homemade end-turn detection required."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    self_cid = sess.self_color_id
+    # Self bought a knight (int 11) this turn
+    diff_buy = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {
+            "developmentCards": {"cards": [11]},
+            "developmentCardsBoughtThisTurn": [11],
+        }}}}
+    events_from_diff(sess, diff_buy)
+    assert sess.self_dev_bought_this_turn == [11]
+
+    # Turn flips — colonist clears the list to null
+    diff_clear = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {
+            "developmentCardsBoughtThisTurn": None,
+        }}}}
+    events_from_diff(sess, diff_clear)
+    assert sess.self_dev_bought_this_turn == []
+
+
 def test_self_unknown_dev_card_int_emits_no_event():
     """If colonist sends an int we haven't decoded (e.g. a future
     expansion adds a new type), the parser silently skips it
