@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.48
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.48 makes the four dev-card play hints (knight / monopoly / year-of-plenty / road-building) actually fire for the local player. The bridge now tracks self's dev-card holdings as an aggregate count (colonist hides the type from the DOM log) and gates the hints on this count, so the PLAY/HOLD verdicts surface every time you hold any dev card. Also enforces Catan's no-play-on-buy-turn delay — a card bought this turn is shown with a "play next turn" pill instead of a misleading PLAY verdict. v0.23.47 dropped the compass road-direction arrow.
+// @version      0.23.49
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.49 separates VP dev cards from playable dev cards in the HUD — colonist reports self's VP-dev-card count separately (it counts toward your displayed VP), so the play hints only fire when you hold at least one non-VP card (knight / monopoly / YoP / RB). The summary pill shows the breakdown ("3 dev cards (2 VP, 1 playable)"). v0.23.48 made the four dev-card play hints actually fire for the local player. v0.23.47 dropped the compass road-direction arrow.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2940,17 +2940,31 @@
         // that matches what's actually in their dev card panel.
         const devBlocks = [];
         const devHeld = Number(snap.dev_cards_held || 0);
+        const devVpHeld = Number(snap.dev_cards_vp_held || 0);
+        const devNonVp = Number(snap.dev_cards_non_vp_held || 0);
         const devJust = Number(snap.dev_cards_just_bought || 0);
         const devPlayable = Number(snap.dev_cards_playable || 0);
         if (devHeld > 0) {
+            // Header pill: total cards, broken down VP / non-VP when
+            // we have any VPs (colonist's victoryPointsState reports
+            // self's VP-dev count separately so we can subtract).
+            // Non-VP cards are the only ones that can be PLAYED —
+            // VP cards just sit in your hand contributing to victory.
             let pill = `<div class="dev-summary">`
                 + `<span class="dev-summary-h">dev cards</span> `
                 + `<b>${devHeld}</b>`;
+            if (devVpHeld > 0 && devNonVp > 0) {
+                pill += ` <span class="dev-summary-pl">`
+                    + `(${devVpHeld} VP, ${devNonVp} playable)</span>`;
+            } else if (devVpHeld > 0 && devNonVp === 0) {
+                pill += ` <span class="dev-summary-pl">`
+                    + `(all VP — nothing to play)</span>`;
+            }
             if (devJust > 0) {
                 pill += ` <span class="dev-summary-j">`
-                    + `(${devJust} just bought, play next turn)</span>`;
-            }
-            if (devPlayable > 0 && devJust === 0) {
+                    + `· ${devJust} just bought, play next turn`
+                    + `</span>`;
+            } else if (devPlayable > 0 && devVpHeld === 0) {
                 pill += ` <span class="dev-summary-pl">`
                     + `pick the matching block below</span>`;
             }
