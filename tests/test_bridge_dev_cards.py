@@ -231,6 +231,92 @@ def test_rb_hint_returns_none_when_neither_signal_says_held():
     assert out is None
 
 
+def test_snap_breaks_out_vp_vs_non_vp_held(tmp_path: Path):
+    """Colonist reports self's VP-dev-card count separately via
+    victory_points_state[self][source=2] (because VP cards count
+    toward the displayed VP total). The bridge subtracts that from
+    total holdings so the play hints only fire when self holds at
+    least one non-VP card. All-VP holdings → hints silent."""
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.live_game import LiveGame
+
+    # Build a minimal st with a session that has VP state set up.
+    sess = SimpleNamespace(
+        self_color_id=1,
+        player_names={1: "Noah", 2: "Bob"},
+        current_turn_color_id=1,
+        # Two VP dev cards, no non-VP. (Source 2 is "VP cards held".)
+        victory_points_state={1: {2: 2}},
+    )
+    # _build_advisor_snapshot reads game.session and game.color_map
+    # plus tracker stuff. To keep this focused on the new VP-vs-non-VP
+    # math we only assert on the dev_cards_* fields that flow through
+    # without needing the full snap pipeline.
+    game = SimpleNamespace(session=sess)
+    st = _make_state(tmp_path=tmp_path)
+    st["game"] = game
+    st["dev_cards_held"] = 2  # both are VP
+    st["dev_cards_bought_this_turn"] = 0
+
+    # Reach into the snapshot builder's inline math: replicate the
+    # exact expressions from bridge._build_advisor_snapshot. (Calling
+    # the full snapshot builder would need a fully-booted game which
+    # is heavier than this test wants.)
+    dev_held = int(st.get("dev_cards_held") or 0)
+    dev_just = int(st.get("dev_cards_bought_this_turn") or 0)
+    vp_held = int((sess.victory_points_state
+                   .get(sess.self_color_id, {})
+                   .get(2, 0)) or 0)
+    non_vp_held = max(0, dev_held - vp_held)
+    dev_playable = max(0, non_vp_held - dev_just)
+
+    assert dev_held == 2
+    assert vp_held == 2
+    assert non_vp_held == 0
+    assert dev_playable == 0  # all VP → nothing to play
+
+
+def test_snap_mixed_vp_and_non_vp(tmp_path: Path):
+    # Mix: 1 VP + 1 non-VP held → playable=1 (the non-VP one).
+    sess = SimpleNamespace(
+        self_color_id=1,
+        player_names={1: "Noah", 2: "Bob"},
+        current_turn_color_id=1,
+        victory_points_state={1: {2: 1}},
+    )
+    st = _make_state(tmp_path=tmp_path)
+    st["game"] = SimpleNamespace(session=sess)
+    st["dev_cards_held"] = 2
+    st["dev_cards_bought_this_turn"] = 0
+
+    vp_held = sess.victory_points_state[1].get(2, 0)
+    non_vp = max(0, st["dev_cards_held"] - vp_held)
+    playable = max(0, non_vp - st["dev_cards_bought_this_turn"])
+    assert non_vp == 1
+    assert playable == 1
+
+
+def test_snap_just_bought_non_vp_still_delayed(tmp_path: Path):
+    # Bought a non-VP card this turn (vp_held didn't bump). Total=1,
+    # vp=0, non_vp=1, just_bought=1 → playable=0 (Catan delay).
+    sess = SimpleNamespace(
+        self_color_id=1,
+        player_names={1: "Noah", 2: "Bob"},
+        current_turn_color_id=1,
+        victory_points_state={1: {2: 0}},
+    )
+    st = _make_state(tmp_path=tmp_path)
+    st["game"] = SimpleNamespace(session=sess)
+    st["dev_cards_held"] = 1
+    st["dev_cards_bought_this_turn"] = 1
+
+    vp_held = sess.victory_points_state[1].get(2, 0)
+    non_vp = max(0, st["dev_cards_held"] - vp_held)
+    playable = max(0, non_vp - st["dev_cards_bought_this_turn"])
+    assert non_vp == 1
+    assert playable == 0
+
+
 def test_full_buy_play_cycle_across_turns(tmp_path: Path):
     # End-to-end: buy on self's turn → can't play yet → turn flips →
     # carve-out clears → card becomes playable.

@@ -3311,16 +3311,31 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # ends — _maybe_clear_dev_just_bought is a one-int-compare guard
     # that runs every snap so we don't need a separate EndTurnEvent.
     _maybe_clear_dev_just_bought(st)
-    # Self's playable dev-card count. Catanatron's *_IN_HAND counters
-    # stay at 0 for self because the buy handler can't see the card
-    # type from colonist's DOM log; we track holdings as an aggregate
-    # count instead and gate the dev-play hints on this. Equals total
-    # held minus the cards bought this turn (Catan's no-play-on-buy
-    # rule).
+    # Self's playable NON-VP dev-card count. Catanatron's *_IN_HAND
+    # counters stay at 0 for self because the buy handler can't see
+    # the card type; we track total holdings as an aggregate count.
+    # Colonist DOES report self's VP-dev-card count separately
+    # (victory_points_state[self][source=2]) — VP cards count toward
+    # the displayed VP total so they have to be visible. We subtract
+    # those out so the play-timing hints only fire when self holds
+    # at least one playable card type (knight / monopoly / YoP / RB).
+    # Equals (total - vp_held) minus the cards bought this turn
+    # (Catan's no-play-on-buy rule). When the just-bought was actually
+    # a VP card, this under-counts non-VP playable for one turn —
+    # acceptable false-negative since hints reappear on the next flip.
     dev_held = int(st.get("dev_cards_held") or 0)
     dev_just = int(st.get("dev_cards_bought_this_turn") or 0)
-    dev_playable = max(0, dev_held - dev_just)
+    vp_held = 0
+    sess = game.session
+    if sess is not None and sess.self_color_id is not None:
+        vp_held = int((sess.victory_points_state
+                       .get(sess.self_color_id, {})
+                       .get(2, 0)) or 0)
+    non_vp_held = max(0, dev_held - vp_held)
+    dev_playable = max(0, non_vp_held - dev_just)
     snap["dev_cards_held"] = dev_held
+    snap["dev_cards_vp_held"] = vp_held
+    snap["dev_cards_non_vp_held"] = non_vp_held
     snap["dev_cards_just_bought"] = dev_just
     snap["dev_cards_playable"] = dev_playable
     # Knight / monopoly / YoP / RB hints: surface play-timing advice
