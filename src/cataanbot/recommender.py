@@ -1140,8 +1140,9 @@ def recommend_actions(
             # settle spot. Hard floor at 30% of the top edge's prod (or
             # any positive prod when top is itself weak — late-game LR-
             # push scenarios where every road only buys 0.1-0.2 prod).
-            # Take up to 3 alts so the audit can rank Noah's actual road
-            # against the next best 3 candidates, not just 2.
+            # Take up to 3 here; the LR-extension top-up below uses a
+            # higher total-alts ceiling so it still gets at least one
+            # slot when fallbacks exist.
             min_prod = max(0.0, 0.3 * top_prod) if top_prod > 0.5 else 0.0
             for (alt_edge, alt_prod, alt_landing) in edge_scores[1:4]:
                 if alt_prod <= min_prod:
@@ -1168,24 +1169,28 @@ def recommend_actions(
                 "when": "now",
                 "edge": list(edge),
                 "landing_node": far,
-                "score": _score_road(prod) * 0.6,
+                # Floor at 1.0 — UI score contract is 1-10. The 0.6×
+                # multiplier signals "this is a sealed/extension play"
+                # but the displayed score must still be in range.
+                "score": round(max(1.0, _score_road(prod) * 0.6), 1),
                 "detail": "extends network · no settle spot",
                 "tiles": _edge_tiles(m, edge[0], edge[1]),
                 "sealed": True,
             }
-        # Top up with LR-extension alternates from fallback_candidates
-        # when the rec list still has room. Skip edges already covered
-        # by road_rec / road_alts. Score capped at 60% of _score_road
-        # so an LR-extension never out-ranks an actual landing-target
-        # road. Cap is 3 alts total (1 primary + 3 alts = 4 road recs)
-        # so the audit can rank a wider slice of Noah's actual choices
-        # without flooding the live HUD.
+        # Top up with LR-extension alternates from fallback_candidates.
+        # Skip edges already covered by road_rec / road_alts. Score
+        # capped at 60% of _score_road so an LR-extension never
+        # out-ranks an actual landing-target road. Total alt cap is 4
+        # (1 primary + 4 alts = up to 5 road recs) — bumping past 5
+        # crowds out "save for X" soon-plans when the hand only
+        # affords a road, which a regression test already protects
+        # against.
         if road_rec is not None:
             taken = {tuple(sorted(road_rec["edge"]))}
             for alt in road_alts:
                 taken.add(tuple(sorted(alt["edge"])))
             for (fb_edge, fb_prod, fb_far) in fallback_candidates:
-                if len(road_alts) >= 3:
+                if len(road_alts) >= 4:
                     break
                 key = tuple(sorted(fb_edge))
                 if key in taken:
@@ -1196,7 +1201,10 @@ def recommend_actions(
                     "when": "now",
                     "edge": list(fb_edge),
                     "landing_node": fb_far,
-                    "score": _score_road(fb_prod) * 0.6,
+                    # Floor at 1.0 — same UI score-range contract as
+                    # the all-sealed primary above.
+                    "score": round(
+                        max(1.0, _score_road(fb_prod) * 0.6), 1),
                     "detail": "extends network",
                     "tiles": _edge_tiles(m, fb_edge[0], fb_edge[1]),
                     "alt": True,
