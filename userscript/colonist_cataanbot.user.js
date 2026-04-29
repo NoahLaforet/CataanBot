@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.42
+// @version      0.23.43
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.42 adds phase-aware visual demotion: the panel root now carries a data-phase attribute (setup/early/mid/late), and in late game the production-rate stats and yield-window summary dim to ~62% opacity so VP threats and the rec list dominate the eye. v0.23.41 adds a faint expected-count tick on each histogram column (6 wants 5/36, etc.) so cold/hot deviations read as bar overshooting/undershooting the line instead of needing mental math.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1078,6 +1078,27 @@
     padding: var(--s-1) 0;
   }
   .rec.plan .kind { color: var(--info); }
+
+  /* Road-rec alternates: the recommender attaches alt:true to the
+     2-3 road edges below the hero. Dim them so the eye reads "hero
+     says do this; these are backups" instead of "four equal road
+     options." Same line shape as a regular rec — just smaller, more
+     transparent, and indented under the hero. */
+  .rec.alt {
+    padding: 1px 0 1px var(--s-4);
+    font-size: calc(12px * var(--font-scale));
+    opacity: 0.62;
+  }
+  .rec.alt .score {
+    background: transparent;
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    min-width: 32px;
+  }
+  .rec.alt .kind {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+  }
 
   .rec-sub {
     color: var(--pos);
@@ -2509,6 +2530,12 @@
                 const planCls = r.when === 'soon' ? ' plan' : '';
                 const tradeCls = (r.kind === 'trade'
                     || r.kind === 'propose_trade') ? ' trade' : '';
+                // Recommender flags road alternates with `alt: true` —
+                // they're "if the hero road is blocked, here are the
+                // next-best edges" entries. Dim them so they don't
+                // compete visually with the hero or the rest of the
+                // ranked rec list. Never apply to the hero itself.
+                const altCls = (r.alt && !isTop) ? ' alt' : '';
                 // kind-build hides the detail prose on the hero — the
                 // tile chips already say what's being built. Trades /
                 // discards / dev cards keep detail visible because the
@@ -2524,7 +2551,7 @@
                 const optHtml = optLetter
                     ? `<span class="opt">${optLetter}</span>`
                     : '';
-                parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}">`
+                parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}${altCls}">`
                     + optHtml
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}</span>`
                     + ` <span class="kind">${kindLabel}</span>`
