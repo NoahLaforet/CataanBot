@@ -73,7 +73,14 @@ def _player_score(state, board, m, color) -> float:
     idx = state.color_to_index[color]
     ps = state.player_state
 
-    vp = int(ps.get(f"P{idx}_ACTUAL_VICTORY_POINTS", 0))
+    # Read public VP + hidden VP cards separately because the colonist→
+    # catanatron tracker only maintains ``VICTORY_POINTS`` (public:
+    # buildings + LR + LA); ``ACTUAL_VICTORY_POINTS`` is never updated
+    # in tracker-driven games and stays 0, which silently breaks every
+    # eval that relied on it.
+    vp_public = int(ps.get(f"P{idx}_VICTORY_POINTS", 0))
+    hidden_vp = int(ps.get(f"P{idx}_VICTORY_POINT_IN_HAND", 0))
+    vp = vp_public + hidden_vp
     # Quadratic VP emphasis so the last few VPs matter disproportionately.
     # At vp=0: contribution 0. At vp=target: contribution 20*target^2.
     # Between those the closer to target, the more every VP is worth.
@@ -102,15 +109,12 @@ def _player_score(state, board, m, color) -> float:
         # expectation (7-roll probability × half rounded down).
         score -= (hand_total - cap) * 3.0
 
-    # Dev cards: playable dev cards are latent action potential, VP
-    # cards are direct hidden VP.
+    # Dev cards: playable dev cards are latent action potential. VP
+    # cards already count via ``hidden_vp`` above (linear + quadratic).
     playable_dev = sum(
         int(ps.get(f"P{idx}_{kind}_IN_HAND", 0)) for kind in _DEV_PLAYABLE
     )
-    dev_vp = int(ps.get(f"P{idx}_VICTORY_POINT_IN_HAND", 0))
-    # Weight VP cards like actual VP since they count toward the win
-    # target the moment you hit it.
-    score += playable_dev * 2.5 + dev_vp * 20.0
+    score += playable_dev * 2.5
 
     # Largest-army race: each played knight is worth half a VP in
     # expectation (3 knights unlock the +2 VP, but opponents can race).
@@ -118,8 +122,9 @@ def _player_score(state, board, m, color) -> float:
     score += played_knights * 1.5
 
     # Longest-road race: once a player hits 5 road segments they're in
-    # contention. Raw length past 4 is a proxy; actual +2 VP is already
-    # reflected in ACTUAL_VICTORY_POINTS so avoid double-counting.
+    # contention. Raw length past 4 is a proxy; the actual +2 VP for
+    # holding the card is already reflected in ``vp_public`` (tracker
+    # awards HAS_ROAD which feeds VICTORY_POINTS) so avoid double-count.
     road_len = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0))
     if road_len >= 4:
         score += (road_len - 3) * 1.0
@@ -164,15 +169,49 @@ def _rec_to_action(rec: dict[str, Any], color) -> Any | None:
     return None
 
 
+def _force_our_play_turn(state, c) -> None:
+    """Pin a copied state to "our color's regular play turn" so
+    ``state.execute(action)`` won't reject our recs as out-of-turn.
+
+    The colonist→catanatron tracker mutates buildings and hands directly
+    but never advances the turn/phase machinery — ``current_player_index``
+    and ``is_initial_build_phase`` stay frozen at game-start values. Without
+    this normalization, ``playable_actions`` is locked to whatever the
+    state was before ``start_from_game_state`` returned (typically RED's
+    initial-settlement set), and every simulation in ``search_rerank``
+    raises ``ValueError("not in playable actions")`` — which silently
+    drops every rec to the heuristic-only tail bucket.
+
+    Side-effect: regenerates ``state.playable_actions`` for our color
+    in PLAY_TURN.
+    """
+    from catanatron.models.enums import ActionPrompt
+    from catanatron.state import generate_playable_actions
+    state.is_initial_build_phase = False
+    state.is_discarding = False
+    state.is_moving_knight = False
+    state.is_road_building = False
+    state.free_roads_available = 0
+    idx = state.color_to_index[c]
+    state.current_player_index = idx
+    state.current_turn_index = idx
+    state.current_prompt = ActionPrompt.PLAY_TURN
+    # Mark our color as already-rolled so playable_actions exposes the
+    # full build menu instead of just ROLL.
+    state.player_state[f"P{idx}_HAS_ROLLED"] = True
+    state.playable_actions = generate_playable_actions(state)
+
+
 def search_rerank(game, my_color, recs: list[dict[str, Any]]) -> None:
     """Annotate each rec with ``search_delta`` and reorder in place.
 
     For each rec that maps to a simulatable catanatron action, copies
-    the game, executes the action, evaluates the resulting state, and
-    records ``post_eval − pre_eval`` as ``search_delta``. Recs are
-    then sorted so search-scored picks come first (best delta first),
-    followed by unsearchable picks (trade/propose_trade) ordered by
-    their existing heuristic score.
+    the game, normalizes the state to our regular play turn, executes
+    the action, evaluates the resulting state, and records
+    ``post_eval − pre_eval`` as ``search_delta``. Recs are then sorted
+    so search-scored picks come first (best delta first), followed by
+    unsearchable picks (trade/propose_trade) ordered by their existing
+    heuristic score.
 
     Safe to call with recs from ``recommend_actions`` — any rec whose
     action can't be constructed or executed keeps ``search_delta=None``
@@ -191,6 +230,7 @@ def search_rerank(game, my_color, recs: list[dict[str, Any]]) -> None:
             continue
         try:
             gc = game.copy()
+            _force_our_play_turn(gc.state, c)
             gc.execute(action)
             post = evaluate_state(gc, c)
             rec["search_delta"] = post - pre
