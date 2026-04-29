@@ -165,6 +165,13 @@ class LiveSession:
     # ints; empty when nothing was bought this turn or we haven't
     # latched yet.
     self_dev_bought_this_turn: list[int] = field(default_factory=list)
+    # Self-only "developmentCardsUsed" cache. Colonist ships the
+    # full play history with types each game (e.g. [11, 14, 11]
+    # after self played two knights and a road-building). Used to
+    # cross-check catanatron's PLAYED_{type} counters and as the
+    # authoritative source if the DOM-log play handler missed an
+    # event. Empty until self plays their first card.
+    self_dev_used: list[int] = field(default_factory=list)
     # Per-cid snapshot of the most-recent ``developmentCards.cards``
     # list (typed for self, placeholder ints for opps). Used to
     # multiset-diff against the new list when self's count grows so
@@ -610,6 +617,23 @@ def _dev_card_buy_events(
                     int(x) for x in bought if isinstance(x, int)]
             else:
                 sess.self_dev_bought_this_turn = []
+        # Same for ``developmentCardsUsed`` — colonist ships self's
+        # full play history with types each game, so we can mirror
+        # it as authoritative per-type played counts. Useful for
+        # the LA / VP / advisor heuristics that read PLAYED_KNIGHT
+        # etc. (the DOM-log path also populates these, but it can
+        # lag or drop a line; this is the source-of-truth.)
+        if cid == sess.self_color_id and "developmentCardsUsed" in pstate:
+            used = pstate.get("developmentCardsUsed")
+            if isinstance(used, list):
+                sess.self_dev_used = [
+                    int(x) for x in used if isinstance(x, int)]
+            elif used is None:
+                # Diff that doesn't ship the field — leave cached
+                # value alone. Colonist clears bought_this_turn to
+                # null on turn flip but never used (it's permanent
+                # game history).
+                pass
         dev = pstate.get("developmentCards")
         if not isinstance(dev, dict):
             continue

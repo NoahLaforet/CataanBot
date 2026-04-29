@@ -198,6 +198,34 @@ def test_opp_dev_card_buy_emits_untyped_event():
     assert typed == []
 
 
+def test_self_dev_used_syncs_from_colonist():
+    """Colonist ships ``developmentCardsUsed`` as the full play
+    history for self (typed list, append-only). Mirror it on the
+    session so downstream code has authoritative per-type played
+    counts without trusting DOM-log play events."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    self_cid = sess.self_color_id
+    assert sess.self_dev_used == []
+
+    # Self played a knight (int 11), then a road building (int 14)
+    diff = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {
+            "developmentCards": {"cards": []},
+            "developmentCardsUsed": [11, 14],
+        }}}}
+    events_from_diff(sess, diff)
+    assert sess.self_dev_used == [11, 14]
+
+    # Subsequent diff with one more played
+    diff2 = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {
+            "developmentCards": {"cards": []},
+            "developmentCardsUsed": [11, 14, 11],
+        }}}}
+    events_from_diff(sess, diff2)
+    assert sess.self_dev_used == [11, 14, 11]
+
+
 def test_self_dev_bought_this_turn_syncs_from_colonist():
     """Colonist authoritatively reports self's
     ``developmentCardsBoughtThisTurn`` per turn — list of typed ints

@@ -3387,6 +3387,23 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     snap["dev_cards_non_vp_held"] = non_vp_held
     snap["dev_cards_just_bought"] = dev_just
     snap["dev_cards_playable"] = dev_playable
+    # Authoritative played-history counts per type, derived from
+    # colonist's developmentCardsUsed list. Empty dict until self
+    # plays their first card. Useful for downstream consumers to
+    # cross-check catanatron's PLAYED_{type} state without trusting
+    # the DOM-log lag.
+    if sess is not None and sess.self_dev_used:
+        from collections import Counter
+        c = Counter(sess.self_dev_used)
+        from cataanbot.colonist_diff import _DEV_CARD_TYPE
+        played_by_type: dict[str, int] = {}
+        for type_int, n in c.items():
+            name = _DEV_CARD_TYPE.get(int(type_int))
+            if name:
+                played_by_type[name] = played_by_type.get(name, 0) + n
+        snap["dev_cards_played_by_type"] = played_by_type
+    else:
+        snap["dev_cards_played_by_type"] = {}
     snap["dev_cards_type_known"] = typed_held > 0
     # When type is known, the playable_count fallback in each hint
     # would falsely fire for the non-matching types — pass 0 so the
