@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.44
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.44 adds a chess-eval-bar-style EV pill next to each rec's heuristic score, showing the 1-ply state-eval delta from search_rerank. Green for clearly-positive moves, red for clearly-negative, neutral for tiny deltas. Pairs with the eval.py fix that made search_rerank actually work in replay/live games (it was silently no-op'ing before). v0.23.42 adds phase-aware visual demotion: the panel root now carries a data-phase attribute (setup/early/mid/late), and in late game the production-rate stats and yield-window summary dim to ~62% opacity so VP threats and the rec list dominate the eye.
+// @version      0.23.45
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.45 adds a chess-style eval sparkline (HUD principle #6) under the roll histogram — one line chart of the bridge's per-roll evaluate_state samples so you can see momentum across the game at a glance. Line goes green when ahead, red when behind, with a current-eval pill in the header. v0.23.44 added an EV pill next to each rec's heuristic score, showing the 1-ply state-eval delta from search_rerank. Pairs with the eval.py fix that made search_rerank actually work in replay/live games (it was silently no-op'ing before).
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -915,6 +915,69 @@
     font-weight: 800;
     font-size: calc(14px * var(--font-scale));
   }
+
+  /* --------------------------------------------------------------
+     Eval sparkline (HUD principle #6, chess-style eval graph).
+     Renders the bridge's per-roll evaluate_state series as a tiny
+     line chart so the player can see momentum across the game in
+     one glance. Lives outside #content (DOM persists across innerHTML
+     rewrites) so the line doesn't flash on every poll tick.
+     -------------------------------------------------------------- */
+  .eval-host {
+    margin: var(--s-3) 0 var(--s-2);
+  }
+  .eval-host.hidden { display: none; }
+  .eval-host .eval-h {
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+    margin: 0 0 var(--s-2);
+    display: flex; align-items: center;
+    gap: var(--s-3);
+  }
+  .eval-host .eval-h .eval-cur {
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    font-size: calc(13px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+  }
+  .eval-host .eval-h .eval-cur.pos { color: var(--pos); }
+  .eval-host .eval-h .eval-cur.neg { color: var(--alert); }
+  .eval-host .eval-h .eval-cur.neutral { color: var(--fg-dim); }
+  .eval-graph {
+    width: 100%;
+    height: 56px;
+    background: var(--bg-3);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    display: block;
+  }
+  .eval-graph .eval-zero {
+    stroke: var(--fg-dim);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    opacity: 0.45;
+  }
+  .eval-graph .eval-fill-pos { fill: rgba(74, 222, 128, 0.18); }
+  .eval-graph .eval-fill-neg { fill: rgba(248, 113, 113, 0.18); }
+  .eval-graph .eval-line {
+    fill: none;
+    stroke: var(--fg);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .eval-graph .eval-dot {
+    fill: var(--fg);
+    stroke: var(--bg-3);
+    stroke-width: 2;
+  }
+  .eval-graph .eval-dot.pos { fill: var(--pos); }
+  .eval-graph .eval-dot.neg { fill: var(--alert); }
+
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(13px * var(--font-scale));
@@ -1820,6 +1883,7 @@
     opacity: 0.62;
   }
   .panel[data-phase="setup"] #hist-host { display: none; }
+  .panel[data-phase="setup"] #eval-host { display: none; }
 </style>
 <div class="panel" id="panel">
   <div class="header" id="header">
@@ -1868,6 +1932,21 @@
     <div id="hist-host" class="hist-host hidden">
       <div class="hist-h">rolls <span class="hist-total" id="hist-total">0</span></div>
       <div class="hist" id="hist"></div>
+    </div>
+    <!-- Eval sparkline (HUD principle #6). Shows the bridge's per-roll
+         eval-state series; the line goes green when ahead, red when
+         behind. Persistent SVG so the path animates only on real
+         changes. Hidden until the bridge's eval_history has 2+ samples
+         (one point isn't a line). -->
+    <div id="eval-host" class="eval-host hidden">
+      <div class="eval-h">eval <span class="eval-cur" id="eval-cur">0</span></div>
+      <svg id="eval-graph" class="eval-graph" viewBox="0 0 200 56"
+           preserveAspectRatio="none">
+        <path id="eval-fill" class="eval-fill-pos" d=""></path>
+        <line id="eval-zero" class="eval-zero" x1="0" y1="28" x2="200" y2="28"></line>
+        <path id="eval-line" class="eval-line" d=""></path>
+        <circle id="eval-dot" class="eval-dot" cx="0" cy="28" r="2.5"></circle>
+      </svg>
     </div>
   </div>
   <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
@@ -2228,6 +2307,12 @@
         const histHost = root.getElementById('hist-host');
         const hist = root.getElementById('hist');
         const histTotal = root.getElementById('hist-total');
+        const evalHost = root.getElementById('eval-host');
+        const evalGraph = root.getElementById('eval-graph');
+        const evalLine = root.getElementById('eval-line');
+        const evalFill = root.getElementById('eval-fill');
+        const evalDot = root.getElementById('eval-dot');
+        const evalCur = root.getElementById('eval-cur');
         // Pre-populate the 11 columns once. renderOverlay only mutates
         // bar heights + class flags from here on — the column DOM never
         // gets rebuilt, which is what lets CSS height transitions fire
@@ -2250,6 +2335,7 @@
         return {
             host, panel, body, content, dot,
             histHost, hist, histTotal,
+            evalHost, evalGraph, evalLine, evalFill, evalDot, evalCur,
         };
     }
 
@@ -2259,12 +2345,14 @@
             ui.content.innerHTML =
                 '<span class="err">bridge unreachable</span>';
             if (ui.histHost) ui.histHost.classList.add('hidden');
+            if (ui.evalHost) ui.evalHost.classList.add('hidden');
             return;
         }
         if (!snap.game_started) {
             ui.content.innerHTML =
                 '<span class="muted">waiting for game start…</span>';
             if (ui.histHost) ui.histHost.classList.add('hidden');
+            if (ui.evalHost) ui.evalHost.classList.add('hidden');
             ui.panel.dataset.phase = 'pre';
             return;
         }
@@ -3294,6 +3382,7 @@
         }
         ui.content.innerHTML = parts.join('');
         renderHistogram(ui, snap);
+        renderEvalGraph(ui, snap);
     }
 
     // Live roll histogram. Mutates bar heights + class flags on the
@@ -3351,6 +3440,80 @@
                 }
             }
             col.classList.toggle('last', n === lastTotal);
+        }
+    }
+
+    // Eval-graph rendering (HUD principle #6). Walks `eval_history`
+    // (per-roll {roll, eval} samples) and updates the persistent SVG
+    // path. Y-axis is signed: positive eval (above zero line) = self
+    // ahead, negative = behind. Domain auto-fits [min, max] with a
+    // ±10 floor so a flat opening doesn't squish into a single line.
+    // Hidden until 2+ samples land — one point isn't a sparkline.
+    function renderEvalGraph(ui, snap) {
+        if (!ui || !ui.evalHost || !ui.evalLine) return;
+        const eh = (snap && snap.eval_history) || [];
+        if (!Array.isArray(eh) || eh.length < 2) {
+            ui.evalHost.classList.add('hidden');
+            return;
+        }
+        ui.evalHost.classList.remove('hidden');
+        const W = 200, H = 56, MID = H / 2;
+        // Symmetric domain so the zero line stays at MID. Floor at ±10
+        // so a near-flat opening still draws something visible.
+        let absMax = 10;
+        for (const e of eh) {
+            const v = Number(e.eval);
+            if (Number.isFinite(v) && Math.abs(v) > absMax) {
+                absMax = Math.abs(v);
+            }
+        }
+        // Expand a tiny margin so the line doesn't kiss the top/bottom.
+        const dom = absMax * 1.08;
+        const n = eh.length;
+        const xStep = n > 1 ? W / (n - 1) : 0;
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            const v = Number(eh[i].eval) || 0;
+            const x = i * xStep;
+            const y = MID - (v / dom) * MID;
+            pts.push([x, Math.max(0, Math.min(H, y))]);
+        }
+        // Line path.
+        const linePath = pts.map(
+            (p, i) => (i === 0 ? `M${p[0].toFixed(1)},${p[1].toFixed(1)}`
+                                : `L${p[0].toFixed(1)},${p[1].toFixed(1)}`)
+        ).join(' ');
+        ui.evalLine.setAttribute('d', linePath);
+        // Fill region between line and the zero baseline. Drawn in
+        // a single path that closes back to MID — coloured by the
+        // sign of the most-recent sample so the strongest visual
+        // cue (current state) drives the fill colour.
+        const last = pts[pts.length - 1];
+        const fillPath = linePath
+            + ` L${last[0].toFixed(1)},${MID.toFixed(1)}`
+            + ` L${pts[0][0].toFixed(1)},${MID.toFixed(1)} Z`;
+        if (ui.evalFill) {
+            ui.evalFill.setAttribute('d', fillPath);
+            const lastV = Number(eh[eh.length - 1].eval) || 0;
+            ui.evalFill.classList.toggle('eval-fill-pos', lastV >= 0);
+            ui.evalFill.classList.toggle('eval-fill-neg', lastV < 0);
+        }
+        // Last-sample dot — the chess "current eval" anchor.
+        if (ui.evalDot) {
+            ui.evalDot.setAttribute('cx', last[0].toFixed(1));
+            ui.evalDot.setAttribute('cy', last[1].toFixed(1));
+            const lastV = Number(eh[eh.length - 1].eval) || 0;
+            ui.evalDot.classList.toggle('pos', lastV >= 5);
+            ui.evalDot.classList.toggle('neg', lastV <= -5);
+        }
+        if (ui.evalCur) {
+            const v = Number(eh[eh.length - 1].eval) || 0;
+            const sign = v > 0 ? '+' : '';
+            ui.evalCur.textContent = `${sign}${v.toFixed(0)}`;
+            ui.evalCur.classList.toggle('pos', v >= 5);
+            ui.evalCur.classList.toggle('neg', v <= -5);
+            ui.evalCur.classList.toggle(
+                'neutral', v > -5 && v < 5);
         }
     }
 
