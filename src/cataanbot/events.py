@@ -120,6 +120,20 @@ class DevCardBuyEvent:
 
 
 @dataclass
+class DevCardSelfBuyTypedEvent:
+    """Self-only typed dev-card buy, emitted from the WS diff parser
+    when colonist's authoritative ``developmentCards.cards`` list grows
+    with a real card type int (opponents see only a placeholder).
+    Pairs with the untyped ``DevCardBuyEvent`` from the DOM log: the
+    DOM event handles the resource debit + overlay-count tracking,
+    this typed event tells catanatron's tracker which specific
+    ``{type}_IN_HAND`` counter to increment so the play-timing hints
+    fire on the matching card type instead of all four at once."""
+    player: str
+    card_type: str    # 'KNIGHT' | 'MONOPOLY' | ...
+
+
+@dataclass
 class DevCardPlayEvent:
     player: str
     card: str            # 'knight' | 'road_building' | 'year_of_plenty' | 'monopoly' | 'vp' | 'unknown'

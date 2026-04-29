@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.49
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.49 separates VP dev cards from playable dev cards in the HUD — colonist reports self's VP-dev-card count separately (it counts toward your displayed VP), so the play hints only fire when you hold at least one non-VP card (knight / monopoly / YoP / RB). The summary pill shows the breakdown ("3 dev cards (2 VP, 1 playable)"). v0.23.48 made the four dev-card play hints actually fire for the local player. v0.23.47 dropped the compass road-direction arrow.
+// @version      0.23.50
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.50 decodes self's dev-card type from colonist's WS frames (knight=11, VP=12, road-building=14 confirmed from a real capture; monopoly=13 and YoP=15 are alphabetical guesses pending the first time those land). When the type is known the matching hint block is the only one that renders — no more picking from four. Also push-refreshes the HUD within ~30ms of any WS frame instead of waiting up to 500ms for the next poll, so the brick/wood/etc count tracks live during builds and trades. v0.23.49 separated VP dev cards from playable.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -28,16 +28,29 @@
     const ADVISOR_POLL_MS = 500;
     const LOG_PREFIX = '[cataanbot]';
 
+    // Push-style refresh hook. Set by ``startAdvisorPoll`` to a function
+    // that schedules a near-immediate /advisor poll. The /ws forwarder
+    // calls this after each POST so the HUD updates within ~30ms of a
+    // state change (roll, build, trade) instead of waiting up to
+    // ADVISOR_POLL_MS for the next periodic tick. Without this, Noah
+    // sees the colonist UI react before the HUD does — feels laggy
+    // mid-turn ("HUD says I have 1 brick but I just got another").
+    let triggerAdvisorRefresh = () => {};
+
     // Fire-and-forget POST. Used by both the DOM log forwarder (/log)
     // and the WS frame forwarder (/ws). Keeps the userscript quiet even
-    // if the bridge is down so a game session isn't noisy.
-    function postTo(url, payload, { quiet } = {}) {
+    // if the bridge is down so a game session isn't noisy. Optionally
+    // chains a callback after the POST completes — used by the /ws
+    // pipe to trigger an /advisor refresh once the bridge has actually
+    // ingested the frame.
+    function postTo(url, payload, { quiet, after } = {}) {
         if (typeof GM_xmlhttpRequest === 'function') {
             GM_xmlhttpRequest({
                 method: 'POST',
                 url,
                 headers: { 'Content-Type': 'application/json' },
                 data: JSON.stringify(payload),
+                onload: () => { if (after) try { after(); } catch (e) {} },
                 onerror: (e) => { if (!quiet)
                     console.warn(LOG_PREFIX, 'POST failed', e); },
             });
@@ -47,8 +60,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
                 mode: 'cors',
-            }).catch(e => { if (!quiet)
-                console.warn(LOG_PREFIX, 'fetch failed', e); });
+            }).then(() => { if (after) try { after(); } catch (e) {} })
+              .catch(e => { if (!quiet)
+                  console.warn(LOG_PREFIX, 'fetch failed', e); });
         }
     }
 
@@ -3817,6 +3831,19 @@
         };
         tick();
         setInterval(tick, ADVISOR_POLL_MS);
+        // Push-style refresh hook for the /ws forwarder. Debounced
+        // ~30ms so a burst of WS frames (one diff per game-state
+        // delta — colonist clusters them) coalesces into a single
+        // /advisor fetch instead of N back-to-back hits. Periodic
+        // tick stays as a safety net.
+        let _refreshTimer = null;
+        triggerAdvisorRefresh = () => {
+            if (_refreshTimer) return;
+            _refreshTimer = setTimeout(() => {
+                _refreshTimer = null;
+                tick();
+            }, 30);
+        };
     }
 
     // WebSocket frame capture. Colonist renders the board on a single
@@ -3935,7 +3962,15 @@
             // cheap; keep it quiet if the bridge is down so nobody sees
             // failure spam mid-game.
             if (dir === 'in' && (frame.b64 || frame.data)) {
-                postTo(BRIDGE_WS_URL, frame, { quiet: true });
+                postTo(BRIDGE_WS_URL, frame, {
+                    quiet: true,
+                    // Push-refresh: kick the advisor poll once the
+                    // bridge has ingested this frame so the HUD shows
+                    // the new state within ~30ms instead of waiting up
+                    // to ADVISOR_POLL_MS. Debounced inside the trigger
+                    // so a burst of frames doesn't hammer /advisor.
+                    after: () => triggerAdvisorRefresh(),
+                });
             }
         }
 

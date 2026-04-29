@@ -3333,11 +3333,35 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                        .get(2, 0)) or 0)
     non_vp_held = max(0, dev_held - vp_held)
     dev_playable = max(0, non_vp_held - dev_just)
+    # Type-known check: when the WS diff parser successfully decoded
+    # the card int(s) self bought, catanatron's per-type IN_HAND
+    # counters are non-zero. The hints then gate strictly on their
+    # own type counter (only matching hint fires); when type isn't
+    # known, the hints fall back to playable_count (all four fire,
+    # user picks the matching one). Sum across the four playable
+    # types so a single decoded buy switches the mode.
+    typed_held = 0
+    try:
+        from catanatron import Color as _Color
+        _state = game.tracker.game.state
+        _idx = _state.color_to_index.get(_Color[self_color.upper()])
+        if _idx is not None:
+            for _t in ("KNIGHT", "MONOPOLY",
+                       "YEAR_OF_PLENTY", "ROAD_BUILDING"):
+                typed_held += int(_state.player_state.get(
+                    f"P{_idx}_{_t}_IN_HAND", 0))
+    except Exception:  # noqa: BLE001
+        typed_held = 0
     snap["dev_cards_held"] = dev_held
     snap["dev_cards_vp_held"] = vp_held
     snap["dev_cards_non_vp_held"] = non_vp_held
     snap["dev_cards_just_bought"] = dev_just
     snap["dev_cards_playable"] = dev_playable
+    snap["dev_cards_type_known"] = typed_held > 0
+    # When type is known, the playable_count fallback in each hint
+    # would falsely fire for the non-matching types — pass 0 so the
+    # hint must rely on its own IN_HAND counter.
+    hint_fallback = 0 if typed_held > 0 else dev_playable
     # Knight / monopoly / YoP / RB hints: surface play-timing advice
     # for each card type whenever self has at least one playable dev
     # card, since we can't tell which type self holds from the log.
@@ -3352,7 +3376,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     try:
         snap["knight_hint"] = _compute_knight_hint(
             game, display_colors=st.get("display_colors") or {},
-            playable_count=dev_playable)
+            playable_count=hint_fallback)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
     # When self holds a KNIGHT and isn't already facing a forced robber
@@ -3374,19 +3398,19 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["monopoly_hint"] = _compute_monopoly_hint(
             game, self_color, hand,
             display_colors=st.get("display_colors") or {},
-            playable_count=dev_playable)
+            playable_count=hint_fallback)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] monopoly_hint failed: {e!r}", flush=True)
     try:
         snap["yop_hint"] = _compute_yop_hint(
             game, self_color, hand,
             bank_supply=snap.get("bank_supply"),
-            playable_count=dev_playable)
+            playable_count=hint_fallback)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] yop_hint failed: {e!r}", flush=True)
     try:
         snap["rb_hint"] = _compute_rb_hint(
-            game, self_color, playable_count=dev_playable)
+            game, self_color, playable_count=hint_fallback)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] rb_hint failed: {e!r}", flush=True)
     # Multi-step plan banner — "2 roads → settle at whe6+ore11 · need

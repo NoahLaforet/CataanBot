@@ -36,7 +36,8 @@ from cataanbot.colonist_map import (
     MapMapping, build_mapping, corner_tile_signature, tile_resource,
 )
 from cataanbot.events import (
-    BuildEvent, DevCardBuyEvent, Event, HandSyncEvent, ProduceEvent,
+    BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
+    Event, HandSyncEvent, ProduceEvent,
     RobberMoveEvent, RollEvent, VPEvent,
 )
 
@@ -46,6 +47,26 @@ from cataanbot.events import (
 # owns the WS session. Same mapping as the tile-type ints.
 _CARD_RESOURCE = {
     1: "WOOD", 2: "BRICK", 3: "SHEEP", 4: "WHEAT", 5: "ORE",
+}
+
+# Dev-card type ints used inside
+# ``mechanicDevelopmentCardsState.players.{cid}.developmentCards.cards``.
+# 10 is the opponent placeholder (the type is hidden until played); for
+# the self player, real ints land. Decoded from a 5-buy capture
+# (2026-04-29):
+#   * type 11 → KNIGHT (3 buys, all played; matched user's reported plays)
+#   * type 12 → VICTORY_POINT (held to game end, never played)
+#   * type 14 → ROAD_BUILDING (matched user's reported buy)
+# 13 and 15 weren't observed in that capture; alphabetical-by-name
+# guess for the gap is MONOPOLY then YEAR_OF_PLENTY. Will be confirmed
+# (and corrected if wrong) the first time those land in a real game.
+_DEV_CARD_TYPE = {
+    10: None,                # opp placeholder — type hidden
+    11: "KNIGHT",
+    12: "VICTORY_POINT",
+    13: "MONOPOLY",          # GUESS — needs confirmation
+    14: "ROAD_BUILDING",
+    15: "YEAR_OF_PLENTY",    # GUESS — needs confirmation
 }
 
 
@@ -452,7 +473,7 @@ def _merge_vp_state(
 
 def _dev_card_buy_events(
     sess: LiveSession, dev_state: dict[str, Any],
-) -> list[DevCardBuyEvent]:
+) -> list[Event]:
     """Detect dev-card purchases by watching each player's card-list length.
 
     Colonist ships every player's full `developmentCards.cards` list
@@ -462,15 +483,34 @@ def _dev_card_buy_events(
     plays come through `gameLogState` with a known type, which the DOM
     parser already classifies.
 
-    Emits one DevCardBuyEvent per player whose card count increased
-    compared to our tracked state. Self-player buys are suppressed: the
-    resource debit is already covered by the HandSyncEvent that follows
-    in the same diff.
+    Emits one DevCardBuyEvent per opponent whose card count increased
+    (the resource debit is what catanatron's tracker needs). For the
+    self-player, emits a typed ``DevCardSelfBuyTypedEvent`` per new
+    card so catanatron's ``{TYPE}_IN_HAND`` counter for self stays in
+    sync with what colonist actually dealt out — without this, every
+    play-timing hint has to fall back to an aggregate "playable"
+    count and can't tell knight from monopoly. Untyped DOM-log
+    DevCardBuyEvent for self still handles the resource debit; the
+    typed event is purely for catanatron-state.
+
+    Type mapping comes from ``_DEV_CARD_TYPE`` (decoded from a real
+    capture). Card type ints colonist sent that we don't have a name
+    for produce no event — better silent than wrong.
     """
-    out: list[DevCardBuyEvent] = []
+    out: list[Event] = []
     players = dev_state.get("players")
     if not isinstance(players, dict):
         return out
+    # Keep a per-cid running snapshot of the prior cards list so we
+    # can identify NEW entries when count grows. dev_card_counts
+    # tracks the size; this tracks the multiset so we can diff types.
+    prior_lists = getattr(sess, "_dev_card_lists", None)
+    if prior_lists is None:
+        prior_lists = {}
+        try:
+            sess._dev_card_lists = prior_lists  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
     for cid_str, pstate in players.items():
         if not isinstance(pstate, dict):
             continue
@@ -484,12 +524,35 @@ def _dev_card_buy_events(
             cid = int(cid_str)
         except (TypeError, ValueError):
             continue
-        prev = sess.dev_card_counts.get(cid, 0)
+        prev_count = sess.dev_card_counts.get(cid, 0)
         new_count = len(cards)
         sess.dev_card_counts[cid] = new_count
-        if new_count > prev and cid != sess.self_color_id:
-            for _ in range(new_count - prev):
-                out.append(DevCardBuyEvent(player=sess.player_for(cid)))
+        if new_count > prev_count:
+            if cid != sess.self_color_id:
+                # Opp buy: untyped event. The resource debit is
+                # what the tracker needs — we don't know the type
+                # because colonist sends a placeholder.
+                for _ in range(new_count - prev_count):
+                    out.append(DevCardBuyEvent(player=sess.player_for(cid)))
+            else:
+                # Self buy: typed event(s). Compare prior list to
+                # current to find which int(s) appeared. Note: this
+                # assumes the prior list is a prefix or close to it
+                # (colonist appends new cards) but we use multiset
+                # diff to be robust against any reordering.
+                prev_list = prior_lists.get(cid, [])
+                from collections import Counter
+                added = Counter(cards) - Counter(prev_list)
+                for type_int, n in added.items():
+                    name = _DEV_CARD_TYPE.get(int(type_int))
+                    if not name:
+                        continue
+                    for _ in range(n):
+                        out.append(DevCardSelfBuyTypedEvent(
+                            player=sess.player_for(cid),
+                            card_type=name,
+                        ))
+        prior_lists[cid] = list(cards)
     return out
 
 

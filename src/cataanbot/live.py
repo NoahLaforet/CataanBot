@@ -25,6 +25,7 @@ from cataanbot.events import (
     BuildEvent,
     DevCardBuyEvent,
     DevCardPlayEvent,
+    DevCardSelfBuyTypedEvent,
     DiscardEvent,
     DisconnectEvent,
     Event,
@@ -200,6 +201,26 @@ def _dispatch(
             f"third-party steal; needs hand inference)",
         )
 
+    if isinstance(event, DevCardSelfBuyTypedEvent):
+        # Self typed buy from the WS diff parser: bump catanatron's
+        # ``{type}_IN_HAND`` for self by 1. Resource debit is handled
+        # by the untyped DevCardBuyEvent on the same diff (or by the
+        # HandSyncEvent that follows). Without this increment the
+        # play-timing hints have to fall back to an aggregate
+        # "playable count" and can't tell knight from monopoly.
+        color = color_map.get(event.player)
+        try:
+            tracker.devbuy(color, event.card_type)
+        except TrackerError:
+            return DispatchResult(
+                event, "skipped",
+                f"{color} dev buy {event.card_type} — devbuy rejected",
+            )
+        return DispatchResult(
+            event, "applied",
+            f"{color} typed dev buy: {event.card_type}",
+        )
+
     if isinstance(event, DevCardBuyEvent):
         color = color_map.get(event.player)
         # Debit the cost per-resource. Colonist doesn't reveal the card
@@ -309,12 +330,24 @@ def _apply_devcard_play(
             event, "unhandled",
             f"unknown dev card type {event.card!r}",
         )
-    # Because DevCardBuyEvent doesn't record a specific hand counter
-    # (card type is hidden), we have to seed the hand here before play
-    # so devplay doesn't fail. Net effect: buy and play cancel out on
-    # the IN_HAND column, but PLAYED_{type} increments honestly —
-    # which is what largest-army and advisor heuristics actually read.
-    tracker.devbuy(color, canonical)
+    # If IN_HAND for this type is already > 0, the typed buy event
+    # path (DevCardSelfBuyTypedEvent for self, or an opp's actual buy
+    # for opps) already credited the counter — just play. If 0, we're
+    # in the legacy path where the buy event didn't carry a type
+    # (untyped opp DevCardBuyEvent, or a missed WS frame for self), so
+    # we seed the hand with the canonical type so devplay doesn't fail.
+    # Net effect for the legacy path is buy and play cancel out on
+    # IN_HAND while PLAYED_{type} still increments honestly.
+    state = tracker.game.state
+    try:
+        from catanatron import Color as _Color
+        _idx = state.color_to_index[_Color[color.upper()]]
+        in_hand_key = f"P{_idx}_{canonical}_IN_HAND"
+        in_hand = int(state.player_state.get(in_hand_key, 0))
+    except Exception:  # noqa: BLE001
+        in_hand = 0
+    if in_hand <= 0:
+        tracker.devbuy(color, canonical)
     tracker.devplay(color, canonical)
     if canonical == "YEAR_OF_PLENTY" and event.resources:
         for res, n in event.resources.items():
