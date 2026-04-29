@@ -135,6 +135,13 @@ def _build_app(jsonl_path: Path | None = None,
         # lazily in the snapshot builder so the verdict always reflects
         # the freshest tracker state.
         "pending_trade_offer": None,
+        # Self-relative eval (`evaluate_state(game, self_color)`) sampled
+        # once per roll — gives the userscript a chess-style sparkline of
+        # how the position has swung over time. List of
+        # {"roll": total_rolls_after, "eval": float}; capped at 40 so a
+        # full ~25-round game fits without ballooning the snapshot. Only
+        # populated after self_color_id latches.
+        "eval_history": [],
     }
 
     @app.get("/")
@@ -260,6 +267,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["pm_written"] = False
         st["display_colors"] = {}
         st["pending_trade_offer"] = None
+        st["eval_history"] = []
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -565,6 +573,31 @@ def _track_overlay_state(st, results) -> None:
                         del series[0]
             except Exception as e:  # noqa: BLE001
                 print(f"[overlay] card hist snapshot failed: {e!r}",
+                      flush=True)
+            # Eval sparkline sample. Once per roll keeps the series tight
+            # to discrete game ticks (one entry per dice roll = one entry
+            # per "turn" in chess-eval-bar terms). evaluate_state is
+            # ``own − 0.8 * max_opp`` so the value is signed: positive
+            # means we're ahead. Skipped silently when self_color_id
+            # hasn't latched yet — pre-resource frames have nothing
+            # meaningful to evaluate against.
+            try:
+                sess2 = game.session
+                if sess2 and sess2.self_color_id is not None:
+                    uname2 = sess2.player_names.get(sess2.self_color_id)
+                    if uname2 and game.color_map.has(uname2):
+                        sc2 = game.color_map.get(uname2)
+                        from cataanbot.eval import evaluate_state
+                        ev_val = float(evaluate_state(
+                            game.tracker.game, sc2))
+                        eh = list(st.get("eval_history") or [])
+                        eh.append({
+                            "roll": int(st.get("total_rolls") or 0),
+                            "eval": round(ev_val, 2),
+                        })
+                        st["eval_history"] = eh[-40:]
+            except Exception as e:  # noqa: BLE001
+                print(f"[overlay] eval sample failed: {e!r}",
                       flush=True)
             if r.event.total == 7 and is_you:
                 st["robber_pending"] = True
@@ -2565,6 +2598,9 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "total_rolls": int(st.get("total_rolls") or 0),
         "roll_histogram": dict(st.get("roll_histogram")
                                or {i: 0 for i in range(2, 13)}),
+        # Per-roll eval samples. Userscript renders as a sparkline; last
+        # entry is "current eval." Empty list before self latches.
+        "eval_history": list(st.get("eval_history") or []),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
         # "forced" = self rolled a 7 and must place the robber now;

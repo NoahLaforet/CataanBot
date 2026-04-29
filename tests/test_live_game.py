@@ -2897,6 +2897,106 @@ def test_roll_histogram_tallies_every_roll_full_game():
     assert int(st["total_rolls"]) == len(totals)
 
 
+def test_eval_history_no_op_without_self_color():
+    """Without a latched self_color_id, the eval sample silently
+    skips — `eval_history` stays empty, no exception. This is the
+    pre-resource frame case the bridge enters between GameStart and
+    the first resourceCards latch."""
+    from cataanbot.live_game import LiveGame
+    st: dict = {
+        "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
+        "last_roll": None, "roll_history": [],
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {}, "eval_history": [],
+    }
+    _feed_roll(st, 8)
+    assert st["eval_history"] == [], (
+        "eval sample should be skipped without a latched self_color")
+
+
+def test_eval_history_populates_per_roll_after_self_latches():
+    """After a capture replays far enough to latch self_color_id, every
+    RollEvent should append one eval sample. Verifies the
+    `_track_overlay_state` wiring: per-roll cadence (one entry per
+    feed), monotonic `roll` indexes, finite eval values."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _track_overlay_state
+    from cataanbot.live import DispatchResult
+    from cataanbot.live_game import LiveGame
+    from cataanbot.events import RollEvent
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    sess = game.session
+    assert sess is not None and sess.self_color_id is not None
+    # Pick any non-self player as the roller. Self could roll too;
+    # eval still updates either way since the sample is self-relative.
+    roller = None
+    for cid, user in sess.player_names.items():
+        if user and cid != sess.self_color_id:
+            roller = user
+            break
+    assert roller is not None
+    st: dict = {
+        "roll_history": [], "total_rolls": 0, "opp_card_hist": {},
+        "robber_pending": False, "robber_snapshot": None,
+        "robber_moved_at_rolls": None, "display_colors": {},
+        "game": game, "eval_history": [],
+    }
+    for _ in range(3):
+        _track_overlay_state(st, [DispatchResult(
+            event=RollEvent(player=roller, d1=3, d2=5),
+            status="applied", message="")])
+    eh = st["eval_history"]
+    assert len(eh) == 3, f"expected one sample per roll, got {len(eh)}"
+    # Roll indexes should be 1, 2, 3 (monotonic from total_rolls).
+    assert [e["roll"] for e in eh] == [1, 2, 3]
+    for entry in eh:
+        assert isinstance(entry["eval"], (int, float))
+        # Eval is bounded — ±1000 are terminal sentinels; mid-game lands
+        # well inside that. Sanity-check we're not getting a NaN/inf.
+        import math
+        assert math.isfinite(entry["eval"])
+
+
+def test_eval_history_caps_at_forty_entries():
+    """eval_history must not grow unbounded — capped at the most-recent
+    40 samples so a long game doesn't balloon the snapshot payload.
+    Mirrors the same ring-buffer policy as roll_history's cap of 10."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("live capture not present")
+    from cataanbot.bridge import _track_overlay_state
+    from cataanbot.live import DispatchResult
+    from cataanbot.live_game import LiveGame
+    from cataanbot.events import RollEvent
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+    sess = game.session
+    assert sess is not None and sess.self_color_id is not None
+    roller = next(
+        (u for cid, u in sess.player_names.items()
+         if u and cid != sess.self_color_id),
+        None)
+    assert roller is not None
+    st: dict = {
+        "roll_history": [], "total_rolls": 0, "opp_card_hist": {},
+        "robber_pending": False, "robber_snapshot": None,
+        "robber_moved_at_rolls": None, "display_colors": {},
+        "game": game, "eval_history": [],
+    }
+    for _ in range(45):
+        _track_overlay_state(st, [DispatchResult(
+            event=RollEvent(player=roller, d1=3, d2=5),
+            status="applied", message="")])
+    assert len(st["eval_history"]) == 40
+    # Most recent should be roll 45 (total_rolls counter is monotonic).
+    assert st["eval_history"][-1]["roll"] == 45
+    # Oldest in the buffer should be roll 6 (45-40+1 = 6).
+    assert st["eval_history"][0]["roll"] == 6
+
+
 def test_roll_history_marks_self_hits_against_own_buildings():
     """After replaying a capture so a self color is latched and self
     owns buildings on at least one numbered tile, a roll on that tile's
