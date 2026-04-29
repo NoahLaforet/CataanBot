@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.47
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.47 drops the compass road-direction arrow (catanatron→colonist orientation has been a repeated source of inverted-arrow regressions; tile-pair labels alone disambiguate the edge) and fixes a "contested" false positive that fired on the player's own first-settlement distance-2 buffer. v0.23.46 added chess-style move-quality annotation (HUD principle #7).
+// @version      0.23.48
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.48 makes the four dev-card play hints (knight / monopoly / year-of-plenty / road-building) actually fire for the local player. The bridge now tracks self's dev-card holdings as an aggregate count (colonist hides the type from the DOM log) and gates the hints on this count, so the PLAY/HOLD verdicts surface every time you hold any dev card. Also enforces Catan's no-play-on-buy-turn delay — a card bought this turn is shown with a "play next turn" pill instead of a misleading PLAY verdict. v0.23.47 dropped the compass road-direction arrow.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1324,6 +1324,32 @@
      the text is what communicates urgency. Headers inside banners
      are uppercase tracked labels.
      -------------------------------------------------------------- */
+  .dev-summary {
+    margin: var(--s-3) 0 var(--s-2);
+    padding: 4px var(--s-3);
+    background: var(--bg-3);
+    border-radius: var(--radius-sm);
+    font-size: calc(12px * var(--font-scale));
+    color: var(--fg-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .dev-summary-h {
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+    font-size: calc(11px * var(--font-scale));
+    margin-right: 2px;
+  }
+  .dev-summary-j {
+    color: var(--watch);
+    font-style: italic;
+  }
+  .dev-summary-pl {
+    color: var(--fg-dim);
+    font-style: italic;
+  }
+
   .threat, .win-prox, .robber-on-me, .winning-move,
   .lr-race, .la-race,
   .trade-offer, .knight-hint, .dev-hint, .discard-hint {
@@ -2907,7 +2933,30 @@
         // cluster right under the rec list so the PLAY/HOLD verdict sits
         // in Noah's first scan, not buried below opponents + trade +
         // roll history. Section header only when at least one fires.
+        // Header pill: total dev cards self holds + how many are
+        // "just bought this turn" (Catan's no-play-on-buy delay). Since
+        // colonist hides the card type from the DOM log, we show all
+        // four hint blocks side-by-side and let the user pick the one
+        // that matches what's actually in their dev card panel.
         const devBlocks = [];
+        const devHeld = Number(snap.dev_cards_held || 0);
+        const devJust = Number(snap.dev_cards_just_bought || 0);
+        const devPlayable = Number(snap.dev_cards_playable || 0);
+        if (devHeld > 0) {
+            let pill = `<div class="dev-summary">`
+                + `<span class="dev-summary-h">dev cards</span> `
+                + `<b>${devHeld}</b>`;
+            if (devJust > 0) {
+                pill += ` <span class="dev-summary-j">`
+                    + `(${devJust} just bought, play next turn)</span>`;
+            }
+            if (devPlayable > 0 && devJust === 0) {
+                pill += ` <span class="dev-summary-pl">`
+                    + `pick the matching block below</span>`;
+            }
+            pill += '</div>';
+            devBlocks.push(pill);
+        }
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             const kh = snap.knight_hint;
             const verdictCls = kh.should_play ? 'play' : 'hold';
