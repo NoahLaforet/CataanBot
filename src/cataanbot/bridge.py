@@ -153,6 +153,19 @@ def _build_app(jsonl_path: Path | None = None,
         # top_kind, top_loc, search_delta_gap}. Capped at 30 so a full
         # game fits without unbounded growth.
         "move_history": [],
+        # Self's dev-card holdings tracked by COUNT (colonist hides the
+        # type from logs and we don't decode the WS dev_card type ints).
+        # ``dev_cards_held`` is total bought minus total played; the
+        # ``_bought_this_turn`` carve-out enforces Catan's just-bought
+        # delay (a card bought this turn can't be played until next).
+        # Both reset on game-reset; per-turn count clears on turn-flip
+        # away from self.
+        "dev_cards_held": 0,
+        "dev_cards_bought_this_turn": 0,
+        # Last seen current_turn_color_id — used to detect self→opp
+        # transitions so we can clear ``dev_cards_bought_this_turn``
+        # exactly once per turn flip rather than every poll.
+        "_last_turn_cid": None,
     }
 
     @app.get("/")
@@ -281,6 +294,9 @@ def _build_app(jsonl_path: Path | None = None,
         st["eval_history"] = []
         st["last_recs_for_self"] = []
         st["move_history"] = []
+        st["dev_cards_held"] = 0
+        st["dev_cards_bought_this_turn"] = 0
+        st["_last_turn_cid"] = None
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -505,7 +521,10 @@ def _track_overlay_state(st, results) -> None:
       moment a RobberMoveEvent lands. While pending, /advisor ships the
       top-N robber target ranking so the overlay can surface it inline.
     """
-    from cataanbot.events import BuildEvent, RobberMoveEvent, RollEvent
+    from cataanbot.events import (
+        BuildEvent, DevCardBuyEvent, DevCardPlayEvent,
+        RobberMoveEvent, RollEvent,
+    )
 
     game = st["game"]
     for r in results:
@@ -654,6 +673,52 @@ def _track_overlay_state(st, results) -> None:
             except Exception as e:  # noqa: BLE001
                 print(f"[overlay] move-quality classify failed: {e!r}",
                       flush=True)
+        elif isinstance(r.event, DevCardBuyEvent):
+            # Self-only dev-card holdings tracking. Catanatron's
+            # *_IN_HAND counters stay at 0 for self because the buy
+            # handler (live.py) doesn't know the type — colonist hides
+            # it from the DOM log. We track count separately so the
+            # play-timing hints can fire.
+            #
+            # bought_this_turn enforces Catan's no-play-on-buy-turn
+            # rule: a card bought this turn won't be playable until
+            # the next turn flip. dev_cards_held grows immediately so
+            # the HUD reflects the new card.
+            if _is_self_player(game, r.event.player):
+                st["dev_cards_held"] = (
+                    int(st.get("dev_cards_held") or 0) + 1)
+                st["dev_cards_bought_this_turn"] = (
+                    int(st.get("dev_cards_bought_this_turn") or 0) + 1)
+        elif isinstance(r.event, DevCardPlayEvent):
+            # Symmetric: when self plays a dev card, decrement the
+            # held count. We don't decrement bought_this_turn — that
+            # only resets on turn flip.
+            if _is_self_player(game, r.event.player):
+                st["dev_cards_held"] = max(
+                    0, int(st.get("dev_cards_held") or 0) - 1)
+
+
+def _maybe_clear_dev_just_bought(st) -> None:
+    """Clear ``dev_cards_bought_this_turn`` when self's turn ends.
+
+    Called on every advisor-snap rebuild — cheap (one int compare) and
+    runs in the snapshot hot path so the bought_this_turn carve-out
+    naturally clears the moment colonist's diff says it's no longer
+    self's turn. Tracking the cid this way avoids needing a synthetic
+    EndTurnEvent that the parser would have to fabricate.
+    """
+    game = st.get("game")
+    if not (game and getattr(game, "session", None)):
+        return
+    sess = game.session
+    cur_cid = sess.current_turn_color_id
+    last_cid = st.get("_last_turn_cid")
+    self_cid = sess.self_color_id
+    # Self's turn → next-player's turn: the just-bought delay is over.
+    if (last_cid is not None and last_cid == self_cid
+            and cur_cid is not None and cur_cid != self_cid):
+        st["dev_cards_bought_this_turn"] = 0
+    st["_last_turn_cid"] = cur_cid
 
 
 def _record_self_build_quality(st, ev) -> None:
@@ -965,15 +1030,18 @@ _BUILD_COSTS_MONOPOLY = {
 def _compute_monopoly_hint(
     game, self_color: str, self_hand: dict[str, int],
     display_colors: dict[str, str] | None = None,
+    playable_count: int = 0,
 ) -> dict[str, Any] | None:
     """Pick the best resource to steal when self plays Monopoly.
 
-    Fires only when self holds at least one MONOPOLY card. Ranks each
-    resource by the inferred total held across opps; ties break toward
-    resources that would unlock an immediate build for self. Carries a
-    PLAY/HOLD verdict (unlock or big-pot → PLAY; small pot w/ no unlock
-    → HOLD) and the top opp holder so Noah can see where the cards are
-    coming from.
+    Fires when self has at least one playable dev card in hand. Since
+    colonist hides the card type from the DOM log, we don't know if
+    it's actually a Monopoly — the user reads our four hint blocks
+    side-by-side and picks the one that matches what's in their
+    actual dev card panel. Ranks each resource by the inferred total
+    held across opps; ties break toward resources that would unlock
+    an immediate build for self. Carries a PLAY/HOLD verdict (unlock
+    or big-pot → PLAY; small pot w/ no unlock → HOLD).
     """
     from catanatron import Color
     try:
@@ -984,7 +1052,13 @@ def _compute_monopoly_hint(
     idx = state.color_to_index.get(my_enum)
     if idx is None:
         return None
+    # Prefer the type-specific catanatron counter when it's been
+    # populated (real-game flow keeps it at 0 for self, but tests
+    # poke values directly so this respects either signal). Fall
+    # back to the aggregate playable_count tracked in overlay state.
     held = int(state.player_state.get(f"P{idx}_MONOPOLY_IN_HAND", 0))
+    if held <= 0:
+        held = int(playable_count or 0)
     if held <= 0:
         return None
     # Aggregate inferred counts across opps via the tracker. We also
@@ -1089,6 +1163,7 @@ def _compute_monopoly_hint(
 def _compute_yop_hint(
     game, self_color: str, self_hand: dict[str, int],
     bank_supply: dict[str, Any] | None = None,
+    playable_count: int = 0,
 ) -> dict[str, Any] | None:
     """Suggest which pair to pick with Year-of-Plenty.
 
@@ -1113,6 +1188,8 @@ def _compute_yop_hint(
     if idx is None:
         return None
     held = int(state.player_state.get(f"P{idx}_YEAR_OF_PLENTY_IN_HAND", 0))
+    if held <= 0:
+        held = int(playable_count or 0)
     if held <= 0:
         return None
     # For each target build, compute deficit in self_hand. A pick is
@@ -1386,7 +1463,9 @@ def _suggest_rb_placement(
     return out
 
 
-def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
+def _compute_rb_hint(game, self_color: str,
+                     playable_count: int = 0,
+                     ) -> dict[str, Any] | None:
     """Recommend whether to play Road Building this turn.
 
     Fires only when self holds a ROAD_BUILDING card AND has at least
@@ -1413,6 +1492,8 @@ def _compute_rb_hint(game, self_color: str) -> dict[str, Any] | None:
         return None
     held = int(state.player_state.get(
         f"P{idx}_ROAD_BUILDING_IN_HAND", 0))
+    if held <= 0:
+        held = int(playable_count or 0)
     if held <= 0:
         return None
     # Need at least 1 road piece left to get any value. (The card
@@ -1897,6 +1978,7 @@ def _compute_strategic_options(
 
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
+    playable_count: int = 0,
 ) -> dict[str, Any] | None:
     """Recommend whether to play a Knight dev card this turn.
 
@@ -1932,6 +2014,8 @@ def _compute_knight_hint(
         return None
     knight_in_hand = int(
         state.player_state.get(f"P{idx}_KNIGHT_IN_HAND", 0))
+    if knight_in_hand <= 0:
+        knight_in_hand = int(playable_count or 0)
     if knight_in_hand <= 0:
         return None
 
@@ -3229,18 +3313,37 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     if pending:
         snap["incoming_trade"] = _evaluate_pending_trade(
             st, game, self_color, hand, pending)
-    # Knight-card play-timing advice: only fires when self has >=1 KNIGHT
-    # in hand. Harmless to compute every snapshot; _compute_knight_hint
-    # bails out cheaply when nothing to say.
-    # Compute bank_supply early so the YoP hint can check it — YoP can't
-    # grant a resource the bank doesn't have.
+    # Clear the just-bought-this-turn carve-out when self's turn
+    # ends — _maybe_clear_dev_just_bought is a one-int-compare guard
+    # that runs every snap so we don't need a separate EndTurnEvent.
+    _maybe_clear_dev_just_bought(st)
+    # Self's playable dev-card count. Catanatron's *_IN_HAND counters
+    # stay at 0 for self because the buy handler can't see the card
+    # type from colonist's DOM log; we track holdings as an aggregate
+    # count instead and gate the dev-play hints on this. Equals total
+    # held minus the cards bought this turn (Catan's no-play-on-buy
+    # rule).
+    dev_held = int(st.get("dev_cards_held") or 0)
+    dev_just = int(st.get("dev_cards_bought_this_turn") or 0)
+    dev_playable = max(0, dev_held - dev_just)
+    snap["dev_cards_held"] = dev_held
+    snap["dev_cards_just_bought"] = dev_just
+    snap["dev_cards_playable"] = dev_playable
+    # Knight / monopoly / YoP / RB hints: surface play-timing advice
+    # for each card type whenever self has at least one playable dev
+    # card, since we can't tell which type self holds from the log.
+    # The hints carry their own context (robber rank, opp resource
+    # tally, road-supply check) and the user picks whichever matches
+    # what's actually in their dev card panel.
+    # bank_supply has to be computed first — YoP gates on bank stock.
     try:
         snap["bank_supply"] = _compute_bank_supply(game)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] bank_supply failed: {e!r}", flush=True)
     try:
         snap["knight_hint"] = _compute_knight_hint(
-            game, display_colors=st.get("display_colors") or {})
+            game, display_colors=st.get("display_colors") or {},
+            playable_count=dev_playable)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
     # When self holds a KNIGHT and isn't already facing a forced robber
@@ -3261,17 +3364,20 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     try:
         snap["monopoly_hint"] = _compute_monopoly_hint(
             game, self_color, hand,
-            display_colors=st.get("display_colors") or {})
+            display_colors=st.get("display_colors") or {},
+            playable_count=dev_playable)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] monopoly_hint failed: {e!r}", flush=True)
     try:
         snap["yop_hint"] = _compute_yop_hint(
             game, self_color, hand,
-            bank_supply=snap.get("bank_supply"))
+            bank_supply=snap.get("bank_supply"),
+            playable_count=dev_playable)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] yop_hint failed: {e!r}", flush=True)
     try:
-        snap["rb_hint"] = _compute_rb_hint(game, self_color)
+        snap["rb_hint"] = _compute_rb_hint(
+            game, self_color, playable_count=dev_playable)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] rb_hint failed: {e!r}", flush=True)
     # Multi-step plan banner — "2 roads → settle at whe6+ore11 · need
