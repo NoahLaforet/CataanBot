@@ -53,6 +53,34 @@ def test_from_game_start_requires_map_state():
         LiveSession.from_game_start({"playerUserStates": []})
 
 
+def test_variant_label_classic_when_all_settings_zero():
+    """All four variant flags == 0 in gameSettings → 'classic' board.
+    First step toward variant-aware strategy: detect non-classic so
+    we can warn the user our heuristics aren't tuned for it yet."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    assert sess.variant_label() == "classic"
+    assert isinstance(sess.game_settings, dict)
+    # The classic-board flags should all be 0 in this capture.
+    for k in ("modeSetting", "extensionSetting",
+              "scenarioSetting", "mapSetting"):
+        assert sess.game_settings.get(k, 0) == 0, (
+            f"capture wasn't classic — {k}={sess.game_settings.get(k)}")
+
+
+def test_variant_label_flags_non_classic():
+    """Synthetic non-zero flags should produce a 'variant: ...' label
+    listing the non-zero settings — the HUD's warning hook."""
+    body = _game_start_body(CAPTURE_EARLY)
+    body = {**body, "gameSettings": {**body.get("gameSettings", {}),
+                                      "extensionSetting": 2,
+                                      "mapSetting": 1}}
+    sess = LiveSession.from_game_start(body)
+    label = sess.variant_label()
+    assert label.startswith("variant:")
+    assert "extension=2" in label
+    assert "map=1" in label
+
+
 def test_from_game_start_seeds_existing_placements():
     body = _game_start_body(CAPTURE_EARLY)
     # Mutate a corner as if a settlement already sits there.

@@ -147,6 +147,15 @@ class LiveSession:
     # drift across reconnects or dropped diffs.
     victory_points_state: dict[int, dict[int, int]] = field(
         default_factory=dict)
+    # Colonist's gameSettings dict from GameStart — captures the
+    # variant-board flags (gameType, modeSetting, extensionSetting,
+    # scenarioSetting, mapSetting) plus VP target / discard limit.
+    # All-zeros = base classic Catan. Non-zero values flag a variant
+    # (Seafarers, Cities & Knights, custom map, etc.). Stored here so
+    # the advisor snapshot can surface "playing on: classic" or warn
+    # "this looks like a variant — recs may not be tuned for it" until
+    # variant-specific strategy lands.
+    game_settings: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -196,6 +205,21 @@ class LiveSession:
         sess = cls(mapping=mapping, player_names=names)
         if self_cid is not None:
             sess.self_color_id = self_cid
+
+        # Capture the variant-board flags so downstream callers can
+        # detect non-classic boards. The "all flags == 0" pattern is
+        # plain classic Catan; non-zero values flag Seafarers, Cities
+        # & Knights, custom maps, etc. Until variant-specific strategy
+        # lands, this is purely informational.
+        gs = body.get("gameSettings")
+        if isinstance(gs, dict):
+            sess.game_settings = {
+                k: gs.get(k) for k in (
+                    "gameType", "modeSetting", "extensionSetting",
+                    "scenarioSetting", "mapSetting", "diceSetting",
+                    "victoryPointsToWin", "cardDiscardLimit",
+                ) if k in gs
+            }
 
         # Seed known_corners / known_edges from the starting map state so
         # our first diff after GameStart doesn't replay every existing
@@ -253,6 +277,31 @@ class LiveSession:
                     break
 
         return sess
+
+    def variant_label(self) -> str:
+        """Short human-readable variant name from game_settings.
+
+        Returns ``"classic"`` when all four variant flags
+        (modeSetting / extensionSetting / scenarioSetting / mapSetting)
+        are 0 — the base Catan board. Otherwise returns ``"variant"``
+        with the non-zero flags appended ("variant: ext=2, map=1") so
+        the HUD can warn the user that strategy may not be tuned for
+        this map. Once we capture and decode the specific variant
+        flag values, this can be promoted to real names ("seafarers",
+        "cities-and-knights", "black-forest", etc.).
+        """
+        gs = self.game_settings or {}
+        flag_keys = (
+            "modeSetting", "extensionSetting",
+            "scenarioSetting", "mapSetting",
+        )
+        nonzero = {k: gs[k] for k in flag_keys
+                   if isinstance(gs.get(k), int) and gs[k] != 0}
+        if not nonzero:
+            return "classic"
+        parts = ", ".join(f"{k.replace('Setting','')}={v}"
+                          for k, v in nonzero.items())
+        return f"variant: {parts}"
 
     def player_for(self, color_id: int | None) -> str:
         if color_id is None:

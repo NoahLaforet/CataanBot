@@ -3141,6 +3141,16 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     my_cid = sess.self_color_id
     snap["my_turn"] = (sess.current_turn_color_id is not None
                        and sess.current_turn_color_id == my_cid)
+    # Variant-board flag from colonist's gameSettings. "classic" for
+    # base Catan, "variant: ..." with the non-zero flags otherwise.
+    # Surfaced so the HUD can warn that strategy isn't yet tuned for
+    # non-classic boards (Seafarers, Cities & Knights, custom maps).
+    try:
+        snap["variant"] = sess.variant_label()
+        snap["game_settings"] = dict(sess.game_settings or {})
+    except Exception:  # noqa: BLE001
+        snap["variant"] = "classic"
+        snap["game_settings"] = {}
     # Mid-game recs: only when it's actually my turn. During setup the
     # opening picks were already populated above, so skip here.
     if not is_setup and snap["my_turn"]:

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.50
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.50 decodes self's dev-card type from colonist's WS frames (knight=11, VP=12, road-building=14 confirmed from a real capture; monopoly=13 and YoP=15 are alphabetical guesses pending the first time those land). When the type is known the matching hint block is the only one that renders — no more picking from four. Also push-refreshes the HUD within ~30ms of any WS frame instead of waiting up to 500ms for the next poll, so the brick/wood/etc count tracks live during builds and trades. v0.23.49 separated VP dev cards from playable.
+// @version      0.23.51
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.51 starts variant-board scaffolding — captures colonist's gameSettings on GameStart and surfaces a "variant" badge in the header when any of mode/extension/scenario/map setting is non-zero, with a tooltip naming which setting flagged. Strategy isn't yet tuned for non-classic boards (Seafarers, Cities & Knights, Black Forest, etc.); the badge is the warning hook until per-variant logic lands. v0.23.50 decoded self's dev-card type from colonist's WS frames.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -1798,6 +1798,23 @@
   }
   .panel[data-paused="1"] .paused-badge { display: inline-block; }
 
+  /* Variant-board badge in the header. Hidden on classic boards
+     (most games); visible with a subtle warn color when colonist's
+     gameSettings reports any non-zero variant flag, so the user
+     knows the bot's strategy isn't tuned for this map yet. */
+  .variant-badge {
+    display: none;
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    background: rgba(251, 191, 36, 0.14);
+    color: var(--watch);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .panel[data-variant="non-classic"] .variant-badge { display: inline-block; }
+
   .drawer {
     display: none;
     flex-direction: column;
@@ -2007,6 +2024,7 @@
   <div class="header" id="header">
     <span class="dot" id="dot"></span>
     <span class="title">CataanBot</span>
+    <span class="variant-badge" id="variant-badge"></span>
     <span class="paused-badge" id="paused-badge">paused</span>
     <button class="btn settings-btn" id="settings" title="settings (alt+s)">⚙</button>
     <button class="btn" id="toggle" title="collapse/expand (alt+c)">_</button>
@@ -2462,11 +2480,13 @@
                 + `<div class="hist-num">${n}</div>`
                 + `</div>`;
         }).join('');
+        const variantBadge = root.getElementById('variant-badge');
         return {
             host, panel, body, content, dot,
             histHost, hist, histTotal,
             evalHost, evalGraph, evalLine, evalFill, evalDot, evalCur,
             mqHost, mqTally, mqLast,
+            variantBadge,
         };
     }
 
@@ -2500,6 +2520,22 @@
         ui.panel.dataset.phase = snap.setup_phase
             ? 'setup'
             : (snap.game_progress && snap.game_progress.phase) || 'early';
+        // Variant-board badge in the header. CSS shows it only when
+        // data-variant="non-classic". Tooltip carries the raw label
+        // (e.g. "variant: extension=2, map=1") so the user can see
+        // which colonist setting flagged.
+        if (ui.variantBadge) {
+            const variant = snap.variant || 'classic';
+            if (variant === 'classic') {
+                ui.panel.dataset.variant = 'classic';
+                ui.variantBadge.textContent = '';
+                ui.variantBadge.title = '';
+            } else {
+                ui.panel.dataset.variant = 'non-classic';
+                ui.variantBadge.textContent = 'variant';
+                ui.variantBadge.title = `${variant} — bot strategy not yet tuned for this map`;
+            }
+        }
         const parts = [];
         // WIN THIS TURN banner — highest-priority signal. Renders above
         // every other HUD element so Noah never misses a single-move
