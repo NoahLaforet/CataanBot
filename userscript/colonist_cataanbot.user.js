@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.46
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.46 adds chess-style move-quality annotation (HUD principle #7): each post-setup self build is graded against the bot's top-10 recs at decision time and a !! / ! / ?! / ? / ?? badge appears under the eval graph, with running tally + "you played X, top was Y" diff and an EV-gap pill when sim eval is available. v0.23.45 added a chess-style eval sparkline (HUD principle #6) under the roll histogram — one line chart of the bridge's per-roll evaluate_state samples so you can see momentum across the game at a glance.
+// @version      0.23.47
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.47 drops the compass road-direction arrow (catanatron→colonist orientation has been a repeated source of inverted-arrow regressions; tile-pair labels alone disambiguate the edge) and fixes a "contested" false positive that fired on the player's own first-settlement distance-2 buffer. v0.23.46 added chess-style move-quality annotation (HUD principle #7).
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2701,32 +2701,22 @@
                     opening_settlement: 'settle',
                 }[effectiveKind] || effectiveKind.replace(/_/g, ' ');
                 const tilesHtml = tilesToHtml(r.tiles);
-                // Roads lead to a landing spot — arrow makes it read as
-                // "this road → these tiles" rather than "on these tiles".
-                // When the recommender attaches a cardinal direction
-                // (up / down / left / right), lead with that instead
-                // of the bare right-arrow so Noah can read placement
-                // at a glance just like opening-road recs.
+                // Roads lead to a landing spot — render as
+                // "→ between [tile a] [tile b]" so the player reads
+                // the road as connecting two tiles. The compass arrow
+                // (N/NE/etc) was dropped after repeated catanatron→
+                // colonist orientation regressions; the tile labels
+                // alone disambiguate which edge unambiguously.
                 let arrowHtml = '';
                 if (r.kind === 'road') {
-                    if (r.direction) {
-                        // Arrow alone — the glyph is the direction.
-                        // The compass word (NE/SW/etc) is on the
-                        // direction object but doesn't render here;
-                        // the arrow already encodes it.
-                        arrowHtml = `<span class="arrow">${escapeHtml(
-                                r.direction.arrow)}</span>`;
-                        if (tilesHtml) {
-                            arrowHtml += ' <span class="muted">between</span> ';
-                        }
-                    } else {
-                        arrowHtml = '<span class="arrow">→</span> ';
+                    arrowHtml = '<span class="arrow">→</span>';
+                    if (tilesHtml) {
+                        arrowHtml += ' <span class="muted">between</span> ';
                     }
                 }
-                // Direction arrow ALWAYS renders for roads, even when
-                // tiles are missing — that was the bug Noah kept flagging
-                // (in-game road recs with no direction shown). For non-
-                // road recs, fall back to tiles-only (settlement/city etc).
+                // Plain right-arrow for roads even when tiles are missing —
+                // signals "this is a placement rec" without committing to
+                // a compass direction we can't reliably render.
                 const loc = (r.kind === 'road' && arrowHtml)
                     ? ` ${arrowHtml}${tilesHtml}`
                     : (tilesHtml ? ` ${arrowHtml}${tilesHtml}` : '');
@@ -2786,23 +2776,14 @@
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
                     + `</span></div>`);
                 // Opening-settlement picks include a nested road hint:
-                // "which direction to lay your road so it extends toward
-                // the best 2-hop expansion spot." Render as a sub-line.
-                // Leads with a cardinal arrow + direction word
-                // ("↑ up" / "→ right" / etc) so Noah can read
-                // placement at a glance instead of parsing tile chips.
+                // "your follow-up road sits between these tiles." The
+                // tile chips are the disambiguator — compass direction
+                // was dropped after repeated orientation regressions.
                 if (r.kind === 'opening_settlement' && r.road
-                        && (r.road.direction || r.road.edge_tiles)) {
+                        && r.road.edge_tiles) {
                     const towardHtml = tilesToHtml(
                         r.road.edge_tiles || []);
-                    const dir = r.road.direction;
-                    // Always lead with the compass arrow when we have one —
-                    // even a "sealed" fallback rec (no legal 2-hop) still
-                    // wants to show WHICH direction to lay the road.
-                    const dirHtml = dir
-                        ? `<span class="arrow">↳ ${escapeHtml(
-                            dir.arrow)}</span> `
-                        : '<span class="arrow">↳ road →</span> ';
+                    const dirHtml = '<span class="arrow">↳ road</span> ';
                     let warn = r.road.contested
                         ? ' <span class="warn">⚠ contested</span>'
                         : '';
@@ -3008,16 +2989,13 @@
                 + escapeHtml(rh.reason || '');
             if (rh.placement) {
                 const pl = rh.placement;
-                const arrow = pl.direction ? pl.direction.arrow : '→';
-                const word = pl.direction ? pl.direction.word : '';
-                const dirTxt = word ? `lay ${word}` : 'lay road';
                 const towardHtml = (pl.toward_tiles
                         && pl.toward_tiles.length)
                     ? ` toward ${tilesToHtml(pl.toward_tiles)}`
                     : '';
                 let sub = `<div class="dv-sub">`
-                    + `<span class="dv-arrow">${escapeHtml(arrow)}</span>`
-                    + escapeHtml(dirTxt) + towardHtml;
+                    + `<span class="dv-arrow">→</span>`
+                    + 'lay road' + towardHtml;
                 if (pl.placement_reason) {
                     sub += `<span class="dv-unlock">`
                         + escapeHtml(pl.placement_reason) + '</span>';

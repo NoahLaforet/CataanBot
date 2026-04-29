@@ -1233,9 +1233,7 @@ def _suggest_rb_placement(
     from cataanbot.advisor import (
         _build_node_neighbors, score_opening_nodes,
     )
-    from cataanbot.recommender import (
-        _direction_label, _node_positions, _tile_label,
-    )
+    from cataanbot.recommender import _tile_label
 
     board = game.state.board
     m = board.map
@@ -1331,8 +1329,6 @@ def _suggest_rb_placement(
                     stack.append((nb, used | {edge}, length + 1))
         return best_len
 
-    positions = _node_positions(m)
-
     # (score, tag, edges, toward_node). Higher score wins.
     candidates: list[tuple[float, str, list[tuple[int, int]], int]] = []
     for (a1, b1) in first_edges:
@@ -1387,12 +1383,6 @@ def _suggest_rb_placement(
         "toward_tiles": _tile_label(m, int(toward)),
         "placement_reason": tag,
     }
-    # Direction of the FIRST edge — read "lay a road right toward
-    # [wheat 6]" as the primary action. Second edge direction is implied
-    # by the chain and would be noise in the overlay.
-    dir_lbl = _direction_label(positions, edges[0][0], edges[0][1])
-    if dir_lbl is not None:
-        out["direction"] = {"word": dir_lbl[0], "arrow": dir_lbl[1]}
     return out
 
 

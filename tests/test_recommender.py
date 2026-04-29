@@ -57,21 +57,17 @@ def test_road_affordable_surfaces_edge_suggestion():
     road = next(r for r in out if r["kind"] == "road")
     assert "edge" in road
     assert len(road["edge"]) == 2
-    # Direction must always render so the HUD can say "→ right toward
-    # [tiles]" instead of just an arrow. Noah has flagged this multiple
-    # times — pin a positive assertion on the normal (non-sealed) path.
-    assert road.get("direction"), (
-        f"direction must be present on every road rec: {road}")
-    assert road["direction"]["word"] in {"N", "S", "NE", "NW", "SE", "SW"}
-    assert road["direction"]["arrow"] in {"↑", "↓", "↗", "↖", "↘", "↙"}
+    # Edge endpoints must be ordered from-self → toward-far so the HUD
+    # can render a stable "from→to" pair across alternates.
+    assert "edge_from" in road and "edge_to" in road
 
 
-def test_in_game_road_sealed_fallback_still_emits_direction():
+def test_in_game_road_sealed_fallback_still_emits_rec():
     """When every buildable edge has its 2-hop settle target distance-2
     blocked, the in-game road rec used to silently disappear. Now it
     should fall back to the best-prod adjacent far-end with
-    ``sealed=True`` + a direction arrow so the HUD still says *something*.
-    Mirror of the opening-road sealed fallback."""
+    ``sealed=True`` so the HUD still says *something*. Mirror of the
+    opening-road sealed fallback."""
     from catanatron import Color
     from cataanbot.recommender import recommend_actions
 
@@ -95,8 +91,6 @@ def test_in_game_road_sealed_fallback_still_emits_direction():
     assert roads, f"road rec must survive full-seal: got {[r['kind'] for r in out]}"
     road = roads[0]
     assert road.get("sealed") is True, f"sealed fallback flag missing: {road}"
-    assert road.get("direction"), f"direction must be present on sealed rec: {road}"
-    assert road["direction"]["word"] in {"N", "S", "NE", "NW", "SE", "SW"}
     assert "edge_from" in road and "edge_to" in road
 
 
@@ -428,6 +422,41 @@ def test_recommend_opening_attaches_road_direction():
         assert isinstance(road["edge_tiles"], list)
 
 
+def test_opening_road_not_contested_by_self_buffer():
+    """The 'contested' flag must only fire when an opponent has a
+    nearby piece. Before the fix, blocked_nodes lumped my own
+    settlement's distance-2 buffer with opps' — so any expansion
+    target adjacent to my own buffer got flagged contested even
+    when no opponent was anywhere near it. Regression for Noah's
+    "says contested but isn't" report."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=7,
+    )
+    # Place ONLY RED's first settlement. No opp settlements anywhere.
+    # Any "contested" flag in this scenario is a false positive from
+    # treating my own buffer as a contested-source.
+    picks = recommend_opening(g, "RED", top=1)
+    assert picks, "no opening pick returned for RED"
+    g.state.board.build_settlement(
+        Color.RED, picks[0]["node_id"], initial_build_phase=True)
+
+    # Re-rank for the second pick — same code path that emits the
+    # opening road rec with the contested flag.
+    second = recommend_opening(g, "RED", top=5)
+    assert second
+    for r in second:
+        road = r.get("road")
+        if not road:
+            continue
+        assert not road.get("contested"), (
+            f"road flagged contested with no opponents on board: {r}")
+
+
 def test_recommend_opening_road_skips_distance_blocked_expansions():
     """The road hint's ``toward_node`` must never be a corner that's
     already distance-2 blocked by an existing settlement — that spot
@@ -675,8 +704,9 @@ def test_recommend_opening_holds_on_settle_before_road():
     assert out[0]["node_id"] == first
     assert "road" in out[0]["detail"].lower()
     assert out[0]["road"] is not None
-    # Direction hint lets Noah pick the corner without parsing tile chips.
-    assert out[0]["road"].get("direction") is not None
+    assert out[0]["road"].get("edge_tiles"), (
+        "edge_tiles disambiguate which side of the board the road sits "
+        "on — required after compass direction was dropped.")
     # Primary action is "road" so the overlay labels the hero rec as
     # ROAD (not SETTLE) — matches what Noah's about to do next.
     assert out[0].get("action") == "road"
@@ -691,7 +721,7 @@ def test_recommend_opening_infers_self_color_when_unlatched():
 
     Regression: without this fallback, the opening pick would clear to
     generic round-1 settle picks the moment the user dropped their 1st
-    settlement, leaving them no direction arrow for the 1st road."""
+    settlement, leaving them no road hint for the 1st road."""
     from catanatron import Color, Game, RandomPlayer
     from cataanbot.recommender import recommend_opening
 
@@ -709,7 +739,9 @@ def test_recommend_opening_infers_self_color_when_unlatched():
     assert len(out) == 1
     assert out[0]["node_id"] == first
     assert out[0]["road"] is not None
-    assert out[0]["road"].get("direction") is not None
+    assert out[0]["road"].get("edge_tiles"), (
+        "edge_tiles must always render so the HUD can show "
+        "which side of the board the road sits on")
     assert out[0].get("action") == "road"
 
 
@@ -746,7 +778,8 @@ def test_recommend_opening_round2_holds_on_2nd_settle_before_2nd_road():
     assert out[0]["node_id"] == second
     assert out[0].get("action") == "road"
     assert out[0]["road"] is not None
-    assert out[0]["road"].get("direction") is not None
+    assert out[0]["road"].get("edge_tiles"), (
+        "edge_tiles must always render on the round-2 followup")
 
 
 def test_recommend_opening_round_one_attaches_plan_second():
@@ -1242,33 +1275,3 @@ def test_trade_no_counter_when_trimmed_still_bad():
     assert verdict["counter"] is None, verdict
 
 
-def test_direction_label_matches_screen_orientation():
-    """A road's compass label must match what Noah sees on colonist's
-    screen — NORTH at top, SOUTH at bottom. This test pins the geometry
-    after a history of off-by-flip regressions (#111, #118, #123, #126,
-    #130, #140, #150). If anyone "fixes" _direction_label by inverting
-    the dy sign, every case below flips and the test catches it."""
-    from cataanbot.recommender import _node_positions, _direction_label
-    from cataanbot.tracker import Tracker
-
-    m = Tracker().game.state.board.map
-    positions = _node_positions(m)
-    center = m.tiles[(0, 0, 0)]
-
-    def node(name: str) -> int:
-        for nref, nid in center.nodes.items():
-            if nref.name == name:
-                return nid
-        raise AssertionError(name)
-
-    cases = [
-        ("SOUTH",     "NORTH",     ("N",  "↑")),
-        ("NORTH",     "SOUTH",     ("S",  "↓")),
-        ("SOUTHWEST", "NORTHEAST", ("NE", "↗")),
-        ("NORTHEAST", "SOUTHWEST", ("SW", "↙")),
-        ("SOUTHEAST", "NORTHWEST", ("NW", "↖")),
-        ("NORTHWEST", "SOUTHEAST", ("SE", "↘")),
-    ]
-    for fr, to, want in cases:
-        got = _direction_label(positions, node(fr), node(to))
-        assert got == want, f"{fr}→{to}: want {want}, got {got}"
