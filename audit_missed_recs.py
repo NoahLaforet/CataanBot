@@ -32,33 +32,10 @@ from cataanbot.colonist_proto import load_capture
 from cataanbot.events import BuildEvent
 from cataanbot.live import apply_event
 from cataanbot.live_game import LiveGame
-
-
-def _classify(rank: int | None) -> str:
-    if rank is None:
-        return "??"
-    if rank == 1:
-        return "!!"
-    if rank <= 3:
-        return "!"
-    if rank <= 6:
-        return "?!"
-    return "?"
-
-
-def _rec_match(rec: dict[str, Any], ev: BuildEvent) -> bool:
-    if rec.get("kind") != ev.piece:
-        return False
-    if ev.piece in ("settlement", "city"):
-        return int(rec.get("node_id") or -1) == int(ev.node_id or -2)
-    if ev.piece == "road":
-        edge = rec.get("edge")
-        if not edge or len(edge) != 2:
-            return False
-        a, b = sorted(int(x) for x in edge)
-        ea, eb = sorted(ev.edge_nodes or (-1, -1))
-        return (a, b) == (ea, eb)
-    return False
+from cataanbot.move_quality import (
+    classify_rank as _classify,
+    rec_matches_build as _rec_match,
+)
 
 
 def _hand_from_game(game, color) -> dict[str, int]:
