@@ -401,7 +401,8 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     stomp the file.
     """
     from cataanbot.events import (
-        DevCardPlayEvent, GameOverEvent, RobberMoveEvent, RollEvent,
+        DevCardBuyEvent, DevCardPlayEvent, GameOverEvent,
+        RobberMoveEvent, RollEvent,
         TradeCommitEvent, TradeOfferEvent,
     )
     from cataanbot.live import apply_event
@@ -445,6 +446,24 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     # is redundant with the WS path but costs nothing and keeps us safe
     # if colonist stops shipping the robber-move diff.
     game = st.get("game")
+    # Self dev-card holdings tracking. DevCardBuyEvent for self comes
+    # ONLY through the DOM log (the WS diff parser suppresses self's
+    # buys because they don't reveal the card type). DevCardPlayEvent
+    # for self also rides the DOM log. Hook here so the held count
+    # stays in sync regardless of which pipeline fires the event.
+    if (isinstance(event, DevCardBuyEvent)
+            and game is not None
+            and _is_self_player(game, event.player)):
+        st["dev_cards_held"] = (
+            int(st.get("dev_cards_held") or 0) + 1)
+        st["dev_cards_bought_this_turn"] = (
+            int(st.get("dev_cards_bought_this_turn") or 0) + 1)
+    elif (isinstance(event, DevCardPlayEvent)
+          and game is not None
+          and _is_self_player(game, event.player)):
+        st["dev_cards_held"] = max(
+            0, int(st.get("dev_cards_held") or 0) - 1)
+
     if (isinstance(event, DevCardPlayEvent) and event.card == "knight"
             and game is not None
             and _is_self_player(game, event.player)):
@@ -521,10 +540,7 @@ def _track_overlay_state(st, results) -> None:
       moment a RobberMoveEvent lands. While pending, /advisor ships the
       top-N robber target ranking so the overlay can surface it inline.
     """
-    from cataanbot.events import (
-        BuildEvent, DevCardBuyEvent, DevCardPlayEvent,
-        RobberMoveEvent, RollEvent,
-    )
+    from cataanbot.events import BuildEvent, RobberMoveEvent, RollEvent
 
     game = st["game"]
     for r in results:
@@ -673,29 +689,7 @@ def _track_overlay_state(st, results) -> None:
             except Exception as e:  # noqa: BLE001
                 print(f"[overlay] move-quality classify failed: {e!r}",
                       flush=True)
-        elif isinstance(r.event, DevCardBuyEvent):
-            # Self-only dev-card holdings tracking. Catanatron's
-            # *_IN_HAND counters stay at 0 for self because the buy
-            # handler (live.py) doesn't know the type — colonist hides
-            # it from the DOM log. We track count separately so the
-            # play-timing hints can fire.
-            #
-            # bought_this_turn enforces Catan's no-play-on-buy-turn
-            # rule: a card bought this turn won't be playable until
-            # the next turn flip. dev_cards_held grows immediately so
-            # the HUD reflects the new card.
-            if _is_self_player(game, r.event.player):
-                st["dev_cards_held"] = (
-                    int(st.get("dev_cards_held") or 0) + 1)
-                st["dev_cards_bought_this_turn"] = (
-                    int(st.get("dev_cards_bought_this_turn") or 0) + 1)
-        elif isinstance(r.event, DevCardPlayEvent):
-            # Symmetric: when self plays a dev card, decrement the
-            # held count. We don't decrement bought_this_turn — that
-            # only resets on turn flip.
-            if _is_self_player(game, r.event.player):
-                st["dev_cards_held"] = max(
-                    0, int(st.get("dev_cards_held") or 0) - 1)
+
 
 
 def _maybe_clear_dev_just_bought(st) -> None:

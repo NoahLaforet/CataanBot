@@ -7,26 +7,74 @@ holdings as an aggregate count so the play-timing hints can fire even
 when the type-specific counter is zero. Plus the "just bought this
 turn can't play" rule that catanatron doesn't model — Catan's actual
 no-play-on-buy-turn restriction.
+
+Self's DevCardBuyEvent + DevCardPlayEvent come ONLY through the DOM
+log (the WS diff parser suppresses self's buys), so the tracking
+hooks live in ``_feed_postmortem``. Tests drive the buy/play through
+synthetic DOM-log payloads.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from cataanbot.bridge import (
+    _feed_postmortem,
     _maybe_clear_dev_just_bought,
-    _track_overlay_state,
 )
-from cataanbot.events import DevCardBuyEvent, DevCardPlayEvent
-from cataanbot.live import DispatchResult
+from cataanbot.live import ColorMap
+from cataanbot.tracker import Tracker
+
+
+def _payload(parts, ts=0.0):
+    return {"ts": ts, "text": "", "parts": parts, "names": [], "icons": [],
+            "self": None}
+
+
+def _name(n):
+    return {"kind": "name", "name": n, "color": ""}
+
+
+def _text(t):
+    return {"kind": "text", "text": t}
+
+
+def _icon(alt):
+    return {"kind": "icon", "alt": alt, "src_tail": ""}
+
+
+def _buy_payload(player_name):
+    """DOM-log line that the parser turns into DevCardBuyEvent.
+
+    Real colonist log: 'Noah bought [Development Card]' with the
+    development-card icon. Parser keys on ``"bought"`` in the joined
+    text and an icon whose alt is exactly ``"development card"``.
+    """
+    return _payload([
+        _name(player_name),
+        _text("bought"),
+        _icon("development card"),
+    ])
+
+
+def _play_knight_payload(player_name):
+    """DOM-log line for a knight play. ``X used [Knight]``."""
+    return _payload([
+        _name(player_name),
+        _text("used"),
+        _icon("knight"),
+    ])
 
 
 def _make_state(*, self_name="Noah", opp_name="Bob",
-                cur_cid=1, last_cid=None):
-    """Smallest st dict the dev-card overlay hooks read.
+                cur_cid=1, last_cid=None,
+                tmp_path: Path | None = None):
+    """Smallest st dict that ``_feed_postmortem`` reads.
 
-    session.self_color_id + .player_names is what _is_self_player checks;
-    current_turn_color_id drives the just-bought-this-turn carve-out
-    via _maybe_clear_dev_just_bought.
+    Includes both the postmortem-collector fields and the dev-card
+    overlay state. session.self_color_id + .player_names is what
+    _is_self_player checks; current_turn_color_id drives the
+    just-bought-this-turn carve-out via _maybe_clear_dev_just_bought.
     """
     sess = SimpleNamespace(
         self_color_id=1,
@@ -39,59 +87,61 @@ def _make_state(*, self_name="Noah", opp_name="Bob",
         "dev_cards_held": 0,
         "dev_cards_bought_this_turn": 0,
         "_last_turn_cid": last_cid,
+        "pm_tracker": Tracker(),
+        "pm_color_map": ColorMap(),
+        "pm_events": [],
+        "pm_results": [],
+        "pm_timestamps": [],
+        "pm_written": False,
+        "pm_dir": tmp_path,
+        "pending_trade_offer": None,
+        "robber_pending": False,
+        "robber_snapshot": None,
+        "display_colors": {},
     }
 
 
-def _dispatch(ev, status="applied"):
-    return DispatchResult(event=ev, status=status, message="test")
-
-
-def test_self_buy_increments_held_and_bought_this_turn():
-    st = _make_state()
-    ev = DevCardBuyEvent(player="Noah")
-    _track_overlay_state(st, [_dispatch(ev)])
+def test_self_buy_increments_held_and_bought_this_turn(tmp_path: Path):
+    st = _make_state(tmp_path=tmp_path)
+    _feed_postmortem(st, _buy_payload("Noah"))
     assert st["dev_cards_held"] == 1
     assert st["dev_cards_bought_this_turn"] == 1
 
 
-def test_opponent_buy_does_not_count():
+def test_opponent_buy_does_not_count(tmp_path: Path):
     # Self-only tracking — opp buys must not pollute self's count.
-    st = _make_state()
-    ev = DevCardBuyEvent(player="Bob")
-    _track_overlay_state(st, [_dispatch(ev)])
+    st = _make_state(tmp_path=tmp_path)
+    _feed_postmortem(st, _buy_payload("Bob"))
     assert st["dev_cards_held"] == 0
     assert st["dev_cards_bought_this_turn"] == 0
 
 
-def test_self_play_decrements_held_only():
+def test_self_play_decrements_held_only(tmp_path: Path):
     # bought_this_turn doesn't decrement on play — it only resets on
-    # turn flip. Otherwise a buy + play in the same turn would zero the
-    # carve-out and re-enable the next play (which Catan forbids).
-    st = _make_state()
+    # turn flip. Otherwise a buy + play in the same turn would zero
+    # the carve-out and re-enable the next play (which Catan forbids).
+    st = _make_state(tmp_path=tmp_path)
     st["dev_cards_held"] = 2
     st["dev_cards_bought_this_turn"] = 1
-    ev = DevCardPlayEvent(player="Noah", card="knight")
-    _track_overlay_state(st, [_dispatch(ev)])
+    _feed_postmortem(st, _play_knight_payload("Noah"))
     assert st["dev_cards_held"] == 1
     assert st["dev_cards_bought_this_turn"] == 1
 
 
-def test_opponent_play_does_not_decrement_self():
-    st = _make_state()
+def test_opponent_play_does_not_decrement_self(tmp_path: Path):
+    st = _make_state(tmp_path=tmp_path)
     st["dev_cards_held"] = 2
-    ev = DevCardPlayEvent(player="Bob", card="knight")
-    _track_overlay_state(st, [_dispatch(ev)])
+    _feed_postmortem(st, _play_knight_payload("Bob"))
     assert st["dev_cards_held"] == 2
 
 
-def test_play_floors_held_at_zero():
+def test_play_floors_held_at_zero(tmp_path: Path):
     # Defensive: if the bridge missed a buy event but saw a play
     # (rare, but DOM-log virtualization can drop lines), we must not
     # let held go negative.
-    st = _make_state()
+    st = _make_state(tmp_path=tmp_path)
     st["dev_cards_held"] = 0
-    ev = DevCardPlayEvent(player="Noah", card="knight")
-    _track_overlay_state(st, [_dispatch(ev)])
+    _feed_postmortem(st, _play_knight_payload("Noah"))
     assert st["dev_cards_held"] == 0
 
 
@@ -181,12 +231,12 @@ def test_rb_hint_returns_none_when_neither_signal_says_held():
     assert out is None
 
 
-def test_full_buy_play_cycle_across_turns():
+def test_full_buy_play_cycle_across_turns(tmp_path: Path):
     # End-to-end: buy on self's turn → can't play yet → turn flips →
     # carve-out clears → card becomes playable.
-    st = _make_state(cur_cid=1, last_cid=1)
-    # Buy on self's turn
-    _track_overlay_state(st, [_dispatch(DevCardBuyEvent(player="Noah"))])
+    st = _make_state(cur_cid=1, last_cid=1, tmp_path=tmp_path)
+    # Buy on self's turn (DOM-log)
+    _feed_postmortem(st, _buy_payload("Noah"))
     assert st["dev_cards_held"] == 1
     assert st["dev_cards_bought_this_turn"] == 1
     playable = st["dev_cards_held"] - st["dev_cards_bought_this_turn"]
@@ -202,6 +252,5 @@ def test_full_buy_play_cycle_across_turns():
     # Self's turn comes back around — still playable, plays it
     sess.current_turn_color_id = 1
     _maybe_clear_dev_just_bought(st)
-    _track_overlay_state(st, [_dispatch(
-        DevCardPlayEvent(player="Noah", card="knight"))])
+    _feed_postmortem(st, _play_knight_payload("Noah"))
     assert st["dev_cards_held"] == 0
