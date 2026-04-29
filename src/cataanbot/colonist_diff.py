@@ -164,6 +164,12 @@ class LiveSession:
     # ints; empty when nothing was bought this turn or we haven't
     # latched yet.
     self_dev_bought_this_turn: list[int] = field(default_factory=list)
+    # Per-cid snapshot of the most-recent ``developmentCards.cards``
+    # list (typed for self, placeholder ints for opps). Used to
+    # multiset-diff against the new list when self's count grows so
+    # we can identify which type int was added and emit a typed
+    # DevCardSelfBuyTypedEvent for catanatron's tracker.
+    dev_card_lists: dict[int, list[int]] = field(default_factory=dict)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -558,16 +564,11 @@ def _dev_card_buy_events(
     players = dev_state.get("players")
     if not isinstance(players, dict):
         return out
-    # Keep a per-cid running snapshot of the prior cards list so we
-    # can identify NEW entries when count grows. dev_card_counts
-    # tracks the size; this tracks the multiset so we can diff types.
-    prior_lists = getattr(sess, "_dev_card_lists", None)
-    if prior_lists is None:
-        prior_lists = {}
-        try:
-            sess._dev_card_lists = prior_lists  # type: ignore[attr-defined]
-        except Exception:  # noqa: BLE001
-            pass
+    # Per-cid snapshot of the prior cards list — used to multiset-diff
+    # against the new list when count grows so we can name the new
+    # type int(s). dev_card_counts tracks size; dev_card_lists tracks
+    # the multiset.
+    prior_lists = sess.dev_card_lists
     for cid_str, pstate in players.items():
         if not isinstance(pstate, dict):
             continue

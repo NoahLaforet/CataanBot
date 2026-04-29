@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 
 from cataanbot.events import (
-    BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
+    BuildEvent, DevCardBuyEvent, DevCardPlayEvent,
+    DevCardSelfBuyTypedEvent, DiscardEvent,
     DisconnectEvent, GameOverEvent, InfoEvent, MonopolyStealEvent,
     NoStealEvent, ProduceEvent, RobberMoveEvent, RollBlockedEvent,
     RollEvent, StealEvent, TradeCommitEvent, TradeOfferEvent,
@@ -262,6 +263,67 @@ def test_steal_without_resource_is_unhandled():
 # ---------------------------------------------------------------------------
 # Dev cards
 # ---------------------------------------------------------------------------
+
+def test_self_typed_devbuy_increments_in_hand():
+    """DevCardSelfBuyTypedEvent bumps the matching {type}_IN_HAND
+    counter for self by 1. This is what feeds the bridge's "type
+    known" gate so only the matching dev hint block fires.
+    Doesn't debit resources — that's the untyped DevCardBuyEvent's
+    job (or the HandSyncEvent that follows in the same diff)."""
+    t = Tracker()
+    cm = ColorMap({"Alice": "RED"})
+    result = apply_event(
+        t, cm,
+        DevCardSelfBuyTypedEvent(player="Alice", card_type="KNIGHT"),
+    )
+    assert result.status == "applied"
+    state = t.game.state
+    idx = state.color_to_index[t._color("RED")]
+    assert state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 1
+    # No resource debit — hand should be untouched.
+    hand = t.hand("RED")
+    for r in ("WHEAT", "SHEEP", "ORE", "WOOD", "BRICK"):
+        assert hand[r] == 0, f"unexpected {r} debit: {hand[r]}"
+
+
+def test_self_typed_devbuy_then_play_decrements_normally():
+    """When the typed buy populates KNIGHT_IN_HAND first, the
+    subsequent DevCardPlayEvent decrements it normally — no need
+    for the legacy buy+play seed hack. Validates the IN_HAND check
+    in _apply_devcard_play."""
+    t = Tracker()
+    cm = ColorMap({"Alice": "RED"})
+    apply_event(
+        t, cm,
+        DevCardSelfBuyTypedEvent(player="Alice", card_type="KNIGHT"),
+    )
+    state = t.game.state
+    idx = state.color_to_index[t._color("RED")]
+    assert state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 1
+
+    apply_event(t, cm, DevCardPlayEvent(player="Alice", card="knight"))
+    # After play: IN_HAND back to 0, PLAYED_KNIGHT bumped to 1.
+    assert state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 0
+    assert state.player_state[f"P{idx}_PLAYED_KNIGHT"] == 1
+
+
+def test_legacy_devplay_seeds_when_in_hand_zero():
+    """Opp plays still reach _apply_devcard_play with IN_HAND=0
+    (we don't know their card type at buy time). The legacy
+    buy+play seed must still kick in so devplay doesn't fail."""
+    t = Tracker()
+    cm = ColorMap({"Alice": "RED"})
+    state = t.game.state
+    idx = state.color_to_index[t._color("RED")]
+    assert state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 0
+    # Play without prior typed buy — the seed path inside
+    # _apply_devcard_play handles it.
+    result = apply_event(
+        t, cm, DevCardPlayEvent(player="Alice", card="knight"))
+    assert result.status == "applied"
+    assert state.player_state[f"P{idx}_PLAYED_KNIGHT"] == 1
+    assert state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 0
+
 
 def test_devcard_buy_debits_cost():
     t = Tracker()
