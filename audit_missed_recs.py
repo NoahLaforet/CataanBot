@@ -82,6 +82,7 @@ def _rec_summary(rec: dict[str, Any] | None) -> dict[str, Any] | None:
         "edge": list(rec["edge"]) if rec.get("edge") else None,
         "score": rec.get("score"),
         "detail": rec.get("detail"),
+        "search_delta": rec.get("search_delta"),
     }
 
 
@@ -236,12 +237,24 @@ def summarize(audit_result: dict[str, Any]) -> str:
         lines.append(f"flagged moves ({len(blunders)} total — first 10):")
         for d in blunders[:10]:
             top = d.get("top_rec")
+            actual = d.get("actual_rec")
             if top:
                 top_loc = (top["node_id"] if top.get("node_id") is not None
                            else top.get("edge"))
                 top_str = f"{top['kind']} @ {top_loc}"
                 if top.get("score") is not None:
-                    top_str += f" (score {top['score']:.1f})"
+                    top_str += f" (score {top['score']:.1f}"
+                    # EV gap: how much eval-bar Noah left on the table by
+                    # picking his move over the bot's top. Only present
+                    # when both recs are simulatable; trades and
+                    # discards keep search_delta=None.
+                    top_sd = top.get("search_delta")
+                    actual_sd = actual.get("search_delta") if actual else None
+                    if (isinstance(top_sd, (int, float))
+                            and isinstance(actual_sd, (int, float))):
+                        gap = top_sd - actual_sd
+                        top_str += f", EV gap {gap:+.0f}"
+                    top_str += ")"
             else:
                 top_str = "(no recs)"
             actual_loc = (d["actual_node"] if d["actual_node"] is not None
