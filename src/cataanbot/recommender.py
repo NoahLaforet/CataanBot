@@ -25,70 +25,11 @@ trade into), but the initial cut only fires when it's actually your turn.
 """
 from __future__ import annotations
 
-import math
 from typing import Any
-
-
-# Pointy-top hex geometry. NodeRef offsets from tile center in "unit hex"
-# coordinates (radius=1). Cube coord (x,y,z) with x+y+z=0 maps to pixels via
-# px = √3·x + √3/2·z, py = 1.5·z. Used to compute a human-readable cardinal
-# direction (up / down / left / right) for opening-road hints so the overlay
-# can show "↑ up" instead of making Noah parse tile chips.
-_SQRT3 = math.sqrt(3.0)
-_NODEREF_OFFSETS = {
-    "NORTH":     (0.0, -1.0),
-    "NORTHEAST": (_SQRT3 / 2.0, -0.5),
-    "SOUTHEAST": (_SQRT3 / 2.0,  0.5),
-    "SOUTH":     (0.0,  1.0),
-    "SOUTHWEST": (-_SQRT3 / 2.0, 0.5),
-    "NORTHWEST": (-_SQRT3 / 2.0, -0.5),
-}
 
 
 def _clip(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
-
-
-def _node_positions(m) -> dict[int, tuple[float, float]]:
-    """Build node_id → (px, py) for the whole map.
-
-    Cheap — six lookups per tile, ~114 tiles total. Recomputed per call
-    since the map never changes mid-game we could cache, but the savings
-    aren't worth the global state."""
-    positions: dict[int, tuple[float, float]] = {}
-    for coord, tile in m.tiles.items():
-        x, _y, z = coord
-        cx = _SQRT3 * x + (_SQRT3 / 2.0) * z
-        cy = 1.5 * z
-        for nref, nid in tile.nodes.items():
-            if nid in positions:
-                continue
-            ox, oy = _NODEREF_OFFSETS[nref.name]
-            positions[int(nid)] = (cx + ox, cy + oy)
-    return positions
-
-
-def _direction_label(positions: dict[int, tuple[float, float]],
-                     from_node: int, to_node: int
-                     ) -> tuple[str, str] | None:
-    """Compass label (N/NE/SE/S/SW/NW) for a road edge from_node→to_node
-    on a pointy-top hex grid. Six edges meet at every vertex but only
-    three leave any given corner — so the six compass directions
-    uniquely identify the edge without "up vs up-right" ambiguity."""
-    p1 = positions.get(int(from_node))
-    p2 = positions.get(int(to_node))
-    if p1 is None or p2 is None:
-        return None
-    dx = p2[0] - p1[0]
-    # _node_positions puts NORTH offset at py=-1, SOUTH at py=+1 — same
-    # as colonist's screen (smaller py = visually up). Going SOUTH→NORTH
-    # gives raw dy = -2; we want that labeled "↑/N", so negate.
-    dy = -(p2[1] - p1[1])
-    if abs(dy) > abs(dx):
-        return ("N", "↑") if dy > 0 else ("S", "↓")
-    if dy > 0:
-        return ("NE", "↗") if dx > 0 else ("NW", "↖")
-    return ("SE", "↘") if dx > 0 else ("SW", "↙")
 
 
 def _edge_tiles(m, a: int, b: int) -> list[tuple[str, int | None]]:
@@ -358,11 +299,12 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
                     "edge_tiles": _edge_tiles(
                         m, int(s.node_id), int(s.best_road.far_node)),
                 }
-                positions = _node_positions(m)
-                lbl = _direction_label(
-                    positions, int(s.node_id), int(s.best_road.far_node))
-                if lbl is not None:
-                    road["direction"] = {"word": lbl[0], "arrow": lbl[1]}
+                # Direction arrow intentionally dropped — the edge_tiles
+                # already tell Noah which side of the board the road sits
+                # on, and the catanatron→colonist orientation has been a
+                # repeated source of inverted-arrow regressions (see git
+                # log around _direction_label). Better to not show a
+                # compass than show a wrong one.
             recs.append({
                 "kind": "opening_settlement",
                 "when": "now",
@@ -538,7 +480,11 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     """
     # Precompute the danger set from the live game: distance-2 blocks
     # from any settlement/city, and opponent-owned edges we can't cross.
+    # ``opp_blocked`` is the OPPONENT-only subset — feeds the contested
+    # signal so it doesn't fire on my own first settlement's distance-2
+    # buffer (the whole point of "contested" is opp pressure, not self).
     blocked_nodes: set[int] = set()
+    opp_blocked: set[int] = set()
     opp_edges: set[frozenset[int]] = set()
     if game is not None:
         for nid, (col, btype) in game.state.board.buildings.items():
@@ -546,6 +492,10 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
                 continue
             blocked_nodes.add(int(nid))
             blocked_nodes |= {int(n) for n in neighbors.get(int(nid), set())}
+            if col != my_color:
+                opp_blocked.add(int(nid))
+                opp_blocked |= {
+                    int(n) for n in neighbors.get(int(nid), set())}
         for edge, col in game.state.board.roads.items():
             if col == my_color:
                 continue
@@ -588,11 +538,13 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
                 continue
             # Soft contested signal: opp pieces already close to the
             # expansion target. Doesn't filter the edge, just flags it
-            # so the overlay can warn.
+            # so the overlay can warn. Uses ``opp_blocked`` (opp-only)
+            # so the player's own first settlement and its distance-2
+            # buffer don't trip a false-positive "contested" warning.
             contested = False
             if game is not None:
                 for nb in neighbors.get(x, set()):
-                    if nb in blocked_nodes and nb != settlement:
+                    if nb in opp_blocked:
                         contested = True
                         break
             if ns.score > exp_score:
@@ -619,10 +571,6 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
             "toward_node": int(expansion),
             "edge_tiles": _edge_tiles(m, int(settlement), int(far)),
         }
-        positions = _node_positions(m)
-        lbl = _direction_label(positions, int(settlement), int(far))
-        if lbl is not None:
-            out["direction"] = {"word": lbl[0], "arrow": lbl[1]}
         if contested:
             out["contested"] = True
         return out
@@ -638,10 +586,6 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
         "edge_tiles": _edge_tiles(m, int(settlement), int(far)),
         "sealed": True,
     }
-    positions = _node_positions(m)
-    lbl = _direction_label(positions, int(settlement), int(far))
-    if lbl is not None:
-        out["direction"] = {"word": lbl[0], "arrow": lbl[1]}
     return out
 
 def _sell_rate(resource: str, owned_nodes: set[int], port_nodes) -> int:
@@ -1211,12 +1155,11 @@ def recommend_actions(
                     "sealed": True,
                 })
         if road_rec is not None:
-            # Direction label — same pattern as opening roads so the HUD
-            # can say "lay → right toward [wheat 6]" instead of raw node
-            # ids. Anchor direction from the endpoint that's attached
-            # to self's network (the existing one), toward the new far
-            # end. Apply uniformly across primary + alternates.
-            positions = _node_positions(m)
+            # Anchor each road's edge endpoints from self's existing
+            # network outward (edge_from is the node attached to my
+            # graph, edge_to is the new node). Lets the HUD show the
+            # endpoints in a stable "from→to" order across primary +
+            # alternates.
 
             def _label_road(rec: dict[str, Any]) -> None:
                 edge = tuple(rec["edge"])
@@ -1227,9 +1170,6 @@ def recommend_actions(
                     from_n, to_n = b, a
                 else:
                     from_n, to_n = a, b
-                lbl = _direction_label(positions, from_n, to_n)
-                if lbl is not None:
-                    rec["direction"] = {"word": lbl[0], "arrow": lbl[1]}
                 rec["edge_from"] = from_n
                 rec["edge_to"] = to_n
 

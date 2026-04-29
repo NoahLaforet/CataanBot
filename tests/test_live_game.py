@@ -1701,11 +1701,11 @@ def test_compute_rb_hint_fires_when_longest_road_in_reach():
         bridge._pieces_for_color = original
 
 
-def test_suggest_rb_placement_returns_edges_and_direction():
+def test_suggest_rb_placement_returns_edges():
     """Real catanatron game with RED sitting on one settlement + one road.
     ``_suggest_rb_placement`` should return a 1- or 2-edge plan with a
-    toward_node inside the buildable frontier, a non-empty toward_tiles
-    label, and a direction word/arrow pair.
+    toward_node inside the buildable frontier and a non-empty toward_tiles
+    label.
 
     This is a smoke test — we don't assert on the exact edges since the
     buildable frontier depends on map seed, but we do assert the shape
@@ -1735,11 +1735,6 @@ def test_suggest_rb_placement_returns_edges_and_direction():
     # adjacent tile on the target node (or [] if coastal).
     assert isinstance(out["toward_tiles"], list)
     assert isinstance(out["placement_reason"], str) and out["placement_reason"]
-    # direction is optional (a degenerate 0-length edge could drop it),
-    # but real boards always yield one.
-    assert "direction" in out
-    assert out["direction"]["word"] in {"N", "S", "NE", "NW", "SE", "SW"}
-    assert out["direction"]["arrow"] in {"↑", "↓", "↗", "↖", "↘", "↙"}
 
 
 def test_suggest_rb_placement_prefers_single_edge_unlock():
