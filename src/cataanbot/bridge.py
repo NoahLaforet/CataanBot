@@ -3339,14 +3339,18 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # holdings, and falls back to the DOM-log-driven counter when
     # we haven't seen a WS frame yet. Same pattern for the
     # just-bought-this-turn carve-out.
-    if (sess is not None and sess.self_color_id is not None
-            and sess.dev_card_counts.get(sess.self_color_id) is not None):
+    have_ws_state = (
+        sess is not None and sess.self_color_id is not None
+        and sess.dev_card_counts.get(sess.self_color_id) is not None)
+    if have_ws_state:
         dev_held = int(sess.dev_card_counts.get(sess.self_color_id) or 0)
-    else:
-        dev_held = int(st.get("dev_cards_held") or 0)
-    if sess is not None and sess.self_dev_bought_this_turn:
+        # Use colonist's bought-this-turn list directly — empty-list
+        # is a real value (no buy this turn), not "fall back to
+        # homemade." Only fall back when we don't have any WS state
+        # for self yet.
         dev_just = len(sess.self_dev_bought_this_turn)
     else:
+        dev_held = int(st.get("dev_cards_held") or 0)
         dev_just = int(st.get("dev_cards_bought_this_turn") or 0)
     vp_held = 0
     if sess is not None and sess.self_color_id is not None:
@@ -3356,8 +3360,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # Whether we trusted colonist's authoritative carve-out vs the
     # homemade fallback. Userscript can show "(authoritative)" when
     # sess-driven so the user knows the just-bought signal is solid.
-    snap["dev_cards_just_bought_authoritative"] = (
-        sess is not None and sess.self_dev_bought_this_turn != [])
+    snap["dev_cards_just_bought_authoritative"] = have_ws_state
     non_vp_held = max(0, dev_held - vp_held)
     dev_playable = max(0, non_vp_held - dev_just)
     # Type-known check: when the WS diff parser successfully decoded
