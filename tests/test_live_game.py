@@ -278,6 +278,70 @@ def test_advisor_snapshot_surfaces_opp_hand_breakdown():
         assert opp["hand_tracked"] == (unknown == 0 and cards > 0), opp
 
 
+def test_advisor_snapshot_dev_cards_e2e_from_colonist_diffs():
+    """End-to-end: a sequence of synthetic colonist diffs feeding self
+    a knight, then a turn flip, then a play — the final advisor
+    snapshot must reflect colonist's authoritative state for held /
+    just-bought / playable / type-known. Pins every dev-card field
+    we surface to the userscript so a refactor can't silently
+    regress any one of them.
+    """
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    from cataanbot.bridge import _build_advisor_snapshot
+    from cataanbot.colonist_diff import events_from_diff
+    from cataanbot.live import ColorMap, apply_event
+    from cataanbot.live_game import LiveGame
+    from cataanbot.tracker import Tracker
+
+    # Boot a live game from the early capture so session + map are real.
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    assert game.started
+    sess = game.session
+    self_cid = sess.self_color_id
+    assert self_cid is not None
+
+    # Diff #1: self buys a knight (int 11 = KNIGHT). Colonist sets
+    # both developmentCards.cards and developmentCardsBoughtThisTurn.
+    diff_buy = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {
+            "developmentCards": {"cards": [11]},
+            "developmentCardsBoughtThisTurn": [11],
+        }}}}
+    events = events_from_diff(sess, diff_buy)
+    for ev in events:
+        apply_event(game.tracker, game.color_map, ev)
+
+    st = {"seq": 0, "game": game, "ws_count": 0, "log_count": 0,
+          "last_roll": None, "robber_pending": False,
+          "robber_snapshot": None, "display_colors": {},
+          "pm_tracker": Tracker(), "pm_color_map": ColorMap()}
+    snap = _build_advisor_snapshot(st)
+    # Just bought → not yet playable. Type IS known (KNIGHT_IN_HAND
+    # = 1 from the typed-buy event), so type_known flips True.
+    assert snap["dev_cards_held"] == 1
+    assert snap["dev_cards_just_bought"] == 1
+    assert snap["dev_cards_playable"] == 0
+    assert snap["dev_cards_type_known"] is True
+
+    # Diff #2: turn flip — colonist clears bought-this-turn to null.
+    diff_flip = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {
+            "developmentCardsBoughtThisTurn": None,
+        }}}}
+    events_from_diff(sess, diff_flip)
+    snap = _build_advisor_snapshot(st)
+    # Now playable. Held still 1, just-bought 0.
+    assert snap["dev_cards_held"] == 1
+    assert snap["dev_cards_just_bought"] == 0
+    assert snap["dev_cards_playable"] == 1
+    assert snap["dev_cards_type_known"] is True
+
+
 def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
     """When the tracker over-attributes (inferred > real), the snapshot
     must trim the excess off the largest bucket(s) instead of zeroing
