@@ -2957,6 +2957,14 @@
             pill += '</div>';
             devBlocks.push(pill);
         }
+        // Per-hint headers drop the "×N" count when we're inferring
+        // from playable_count (the dev_cards_held aggregate). Showing
+        // "knight ×1, monopoly ×1, yop ×1, rb ×1" for a single card
+        // of unknown type would be more confusing than helpful — the
+        // count is on the dev-summary pill above. Type-specific
+        // counters (catanatron's *_IN_HAND) only land in tests that
+        // poke them directly, so the multiplier is mostly cosmetic.
+        const showCount = devHeld === 0;
         if (snap.knight_hint && snap.knight_hint.have > 0) {
             const kh = snap.knight_hint;
             const verdictCls = kh.should_play ? 'play' : 'hold';
@@ -2972,8 +2980,10 @@
             }
             const hintCls = kh.should_play
                 ? 'knight-hint should-play' : 'knight-hint';
+            const hdr = showCount
+                ? `knight ×${kh.have}` : 'knight';
             devBlocks.push('<div class="' + hintCls + '">'
-                + `<div class="kh-h">knight ×${kh.have}</div>`
+                + `<div class="kh-h">${hdr}</div>`
                 + '<div class="kh-reason">'
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
                 + escapeHtml(kh.reason || '')
@@ -3003,8 +3013,10 @@
             }
             const hintCls = mh.should_play
                 ? 'dev-hint should-play' : 'dev-hint';
+            const hdr = showCount
+                ? `monopoly ×${mh.have}` : 'monopoly';
             devBlocks.push('<div class="' + hintCls + '">'
-                + `<div class="dv-h">monopoly ×${mh.have}</div>`
+                + `<div class="dv-h">${hdr}</div>`
                 + `<div class="dv-body">${body}${sub}</div>`
                 + '</div>');
         }
@@ -3024,8 +3036,10 @@
             }
             const hintCls = yh.should_play
                 ? 'dev-hint should-play' : 'dev-hint';
+            const hdr = showCount
+                ? `year of plenty ×${yh.have}` : 'year of plenty';
             devBlocks.push('<div class="' + hintCls + '">'
-                + `<div class="dv-h">year of plenty ×${yh.have}</div>`
+                + `<div class="dv-h">${hdr}</div>`
                 + `<div class="dv-body">${body}</div>`
                 + '</div>');
         }
@@ -3055,8 +3069,10 @@
             body += '</div>';
             const hintCls = rh.should_play
                 ? 'dev-hint should-play' : 'dev-hint';
+            const hdr = showCount
+                ? `road building ×${rh.have}` : 'road building';
             devBlocks.push('<div class="' + hintCls + '">'
-                + `<div class="dv-h">road building ×${rh.have}</div>`
+                + `<div class="dv-h">${hdr}</div>`
                 + body
                 + '</div>');
         }
