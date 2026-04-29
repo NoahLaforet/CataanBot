@@ -12,7 +12,8 @@ from cataanbot.colonist_diff import (
 )
 from cataanbot.colonist_proto import load_capture
 from cataanbot.events import (
-    BuildEvent, ProduceEvent, RobberMoveEvent, RollEvent, VPEvent,
+    BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
+    ProduceEvent, RobberMoveEvent, RollEvent, VPEvent,
 )
 from cataanbot.live import ColorMap, apply_event
 from cataanbot.tracker import Tracker
@@ -125,6 +126,67 @@ def test_from_game_start_fallback_to_userId_when_playerColor_missing():
 # ---------------------------------------------------------------------------
 # Diff → Event translation
 # ---------------------------------------------------------------------------
+
+def test_self_dev_card_buy_emits_typed_event():
+    """When self's developmentCards.cards list grows, the diff parser
+    decodes the new int(s) via _DEV_CARD_TYPE and emits a
+    DevCardSelfBuyTypedEvent. This is what populates catanatron's
+    {type}_IN_HAND for self so the play-timing hints fire on the
+    matching type instead of all four. Pinning the contract here
+    so a refactor of the cards-list comparison can't silently
+    revert to all-four-fire mode.
+    """
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    self_cid = sess.self_color_id  # 5 in this capture
+    # int 11 = KNIGHT per the decoded mapping
+    diff = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {"developmentCards": {"cards": [11]}}}}}
+    events = events_from_diff(sess, diff)
+    typed = [e for e in events if isinstance(
+        e, DevCardSelfBuyTypedEvent)]
+    assert len(typed) == 1
+    assert typed[0].card_type == "KNIGHT"
+    # Untyped DevCardBuyEvent should NOT fire for self — that
+    # untyped event handles opp resource debits, which don't apply
+    # to self (HandSyncEvent does it).
+    untyped = [e for e in events if isinstance(e, DevCardBuyEvent)]
+    assert untyped == []
+
+
+def test_opp_dev_card_buy_emits_untyped_event():
+    """Opps' card type is hidden (placeholder int 10), so the diff
+    parser keeps emitting untyped DevCardBuyEvent for them — the
+    handler in live.py debits the WHEAT/SHEEP/ORE cost without
+    knowing which type was bought. Test pins this for an opp cid."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    self_cid = sess.self_color_id
+    opp_cid = next(c for c in sess.player_names if c != self_cid)
+    # Opps see a placeholder (typically int 10)
+    diff = {"mechanicDevelopmentCardsState": {"players": {
+        str(opp_cid): {"developmentCards": {"cards": [10]}}}}}
+    events = events_from_diff(sess, diff)
+    untyped = [e for e in events if isinstance(e, DevCardBuyEvent)
+               and not isinstance(e, DevCardSelfBuyTypedEvent)]
+    assert len(untyped) == 1
+    typed = [e for e in events if isinstance(
+        e, DevCardSelfBuyTypedEvent)]
+    assert typed == []
+
+
+def test_self_unknown_dev_card_int_emits_no_event():
+    """If colonist sends an int we haven't decoded (e.g. a future
+    expansion adds a new type), the parser silently skips it
+    rather than guessing. Better to miss a hint than tell the user
+    they hold the wrong card."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    self_cid = sess.self_color_id
+    diff = {"mechanicDevelopmentCardsState": {"players": {
+        str(self_cid): {"developmentCards": {"cards": [99]}}}}}
+    events = events_from_diff(sess, diff)
+    typed = [e for e in events if isinstance(
+        e, DevCardSelfBuyTypedEvent)]
+    assert typed == []
+
 
 def test_diff_settlement_becomes_build_event_with_node_id():
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
