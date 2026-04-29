@@ -142,6 +142,17 @@ def _build_app(jsonl_path: Path | None = None,
         # full ~25-round game fits without ballooning the snapshot. Only
         # populated after self_color_id latches.
         "eval_history": [],
+        # Most-recent recommendations served to the userscript when
+        # ``my_turn`` was True. Used to classify self-builds chess-style
+        # (!! / ! / ?! / ? / ??) at the moment the build event lands —
+        # the recs reflect what the bot was suggesting AT THE TIME OF
+        # THE DECISION, even if the per-snapshot recs change after.
+        "last_recs_for_self": [],
+        # Running history of self-build classifications (post-setup
+        # only). Each entry: {ts, piece, node/edge, rank, classification,
+        # top_kind, top_loc, search_delta_gap}. Capped at 30 so a full
+        # game fits without unbounded growth.
+        "move_history": [],
     }
 
     @app.get("/")
@@ -268,6 +279,8 @@ def _build_app(jsonl_path: Path | None = None,
         st["display_colors"] = {}
         st["pending_trade_offer"] = None
         st["eval_history"] = []
+        st["last_recs_for_self"] = []
+        st["move_history"] = []
         st.pop("_booted", None)
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
@@ -492,7 +505,7 @@ def _track_overlay_state(st, results) -> None:
       moment a RobberMoveEvent lands. While pending, /advisor ships the
       top-N robber target ranking so the overlay can surface it inline.
     """
-    from cataanbot.events import RobberMoveEvent, RollEvent
+    from cataanbot.events import BuildEvent, RobberMoveEvent, RollEvent
 
     game = st["game"]
     for r in results:
@@ -629,6 +642,113 @@ def _track_overlay_state(st, results) -> None:
             # counter as "when did this sit-on-me start" without having
             # to check here whether the destination is a self tile.
             st["robber_moved_at_rolls"] = int(st.get("total_rolls") or 0)
+        elif isinstance(r.event, BuildEvent):
+            # Move-quality classification (HUD principle #7). Only
+            # self-builds; only post-setup; only when we have a cached
+            # rec list to grade against. Setup detection: catanatron's
+            # ``build_counts`` is incremented BEFORE this hook runs (in
+            # game.feed → _debit_build), so post-state count<=2 means
+            # the build that just happened was a setup placement.
+            try:
+                _record_self_build_quality(st, r.event)
+            except Exception as e:  # noqa: BLE001
+                print(f"[overlay] move-quality classify failed: {e!r}",
+                      flush=True)
+
+
+def _record_self_build_quality(st, ev) -> None:
+    """Classify a self BuildEvent against the cached recommendations
+    and append a chess-style entry to ``st["move_history"]``.
+
+    Skipped silently when the build is part of the opening (settle 1-2
+    or road 1-2), when the build isn't self's, or when no recs were
+    cached yet. The cached recs come from the last ``my_turn`` snapshot
+    served to the userscript; they reflect what the bot was suggesting
+    at decision time even if the per-snap recs change after the build.
+    """
+    from cataanbot.move_quality import (
+        classify_build_against_recs, find_rank,
+    )
+
+    game = st["game"]
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return
+    self_name = sess.player_names.get(sess.self_color_id)
+    if not self_name or ev.player != self_name:
+        return
+    try:
+        color = game.color_map.get(ev.player)
+    except Exception:  # noqa: BLE001
+        return
+
+    # Setup-build detection. ``_debit_build`` already incremented
+    # build_counts for this event in game.feed, so the count we see is
+    # the POST-state. Settlement count == 1 or 2 → was opening; road
+    # count == 1 or 2 → was opening road. Skip those.
+    tally = game.build_counts.get(
+        color, {"settlement": 0, "city": 0, "road": 0})
+    if ev.piece == "settlement" and tally.get("settlement", 0) <= 2:
+        return
+    if ev.piece == "road" and tally.get("road", 0) <= 2:
+        return
+    if ev.piece not in ("settlement", "city", "road"):
+        return
+
+    recs = list(st.get("last_recs_for_self") or [])
+    if not recs:
+        # No cached recs → can't classify. Surface as a "no_recs"
+        # entry so the HUD can show the build happened but flag the
+        # missing comparison rather than silently dropping it.
+        rank = None
+        classification = None
+    else:
+        classification, rank = classify_build_against_recs(ev, recs)
+
+    # Search-delta gap: how much eval Noah left on the table by picking
+    # his move over the bot's top. Only meaningful when both recs are
+    # simulatable (search_delta is a float, not None).
+    sd_gap = None
+    top_rec = recs[0] if recs else None
+    actual_rec = recs[rank - 1] if (rank and rank <= len(recs)) else None
+    if (top_rec and actual_rec
+            and isinstance(top_rec.get("search_delta"), (int, float))
+            and isinstance(actual_rec.get("search_delta"), (int, float))):
+        sd_gap = round(
+            float(top_rec["search_delta"])
+            - float(actual_rec["search_delta"]), 1)
+
+    # Build a compact location string for the badge.
+    if ev.piece == "road":
+        loc = list(ev.edge_nodes) if ev.edge_nodes else None
+    else:
+        loc = ev.node_id
+
+    # Top rec's location for "you played X, top was Y" diff display.
+    top_loc = None
+    top_kind = None
+    if top_rec:
+        top_kind = top_rec.get("kind")
+        if top_kind == "road":
+            top_loc = (list(top_rec["edge"])
+                       if top_rec.get("edge") else None)
+        else:
+            top_loc = top_rec.get("node_id")
+
+    entry = {
+        "ts": int(st.get("total_rolls") or 0),
+        "piece": ev.piece,
+        "loc": loc,
+        "rank": rank,
+        "rec_count": len(recs),
+        "classification": classification,
+        "top_kind": top_kind,
+        "top_loc": top_loc,
+        "search_delta_gap": sd_gap,
+    }
+    mh = list(st.get("move_history") or [])
+    mh.append(entry)
+    st["move_history"] = mh[-30:]
 
 
 def _compute_robber_snapshot(
@@ -2601,6 +2721,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         # Per-roll eval samples. Userscript renders as a sparkline; last
         # entry is "current eval." Empty list before self latches.
         "eval_history": list(st.get("eval_history") or []),
+        # Per-self-build chess-style classifications. Userscript renders
+        # as a running tally + last-move badge. Empty until first
+        # post-setup self build lands; capped at 30 in `_track_overlay_state`.
+        "move_history": list(st.get("move_history") or []),
         "robber_pending": bool(st.get("robber_pending")),
         "robber_targets": st.get("robber_snapshot") or [],
         # "forced" = self rolled a 7 and must place the robber now;
@@ -2959,9 +3083,18 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # dry on the needed resource.
             bank_for_recs = (
                 snap.get("bank_supply") or {}).get("remaining")
-            snap["recommendations"] = recommend_actions(
-                cat_game, self_color, hand, top=4,
+            # Pull top-10 once; the visible HUD list is the first 4 of
+            # that, and the move-quality classifier (HUD principle #7)
+            # uses the whole list so a !/!?/?/?? rank can land outside
+            # the visible top-4. Doing this in two recommend_actions
+            # calls would double the search-rerank cost on every poll,
+            # which is hot path.
+            full_recs = recommend_actions(
+                cat_game, self_color, hand, top=10,
                 bank_supply=bank_for_recs)
+            snap["recommendations"] = full_recs[:4]
+            if full_recs:
+                st["last_recs_for_self"] = full_recs
         except Exception as e:  # noqa: BLE001
             print(f"[advisor] recommend_actions failed: {e!r}",
                   flush=True)

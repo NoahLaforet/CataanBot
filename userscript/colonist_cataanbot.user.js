@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.45
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.45 adds a chess-style eval sparkline (HUD principle #6) under the roll histogram — one line chart of the bridge's per-roll evaluate_state samples so you can see momentum across the game at a glance. Line goes green when ahead, red when behind, with a current-eval pill in the header. v0.23.44 added an EV pill next to each rec's heuristic score, showing the 1-ply state-eval delta from search_rerank. Pairs with the eval.py fix that made search_rerank actually work in replay/live games (it was silently no-op'ing before).
+// @version      0.23.46
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.46 adds chess-style move-quality annotation (HUD principle #7): each post-setup self build is graded against the bot's top-10 recs at decision time and a !! / ! / ?! / ? / ?? badge appears under the eval graph, with running tally + "you played X, top was Y" diff and an EV-gap pill when sim eval is available. v0.23.45 added a chess-style eval sparkline (HUD principle #6) under the roll histogram — one line chart of the bridge's per-roll evaluate_state samples so you can see momentum across the game at a glance.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -978,6 +978,83 @@
   .eval-graph .eval-dot.pos { fill: var(--pos); }
   .eval-graph .eval-dot.neg { fill: var(--alert); }
 
+  /* --------------------------------------------------------------
+     Move-quality strip (HUD principle #7, chess-style annotation).
+     Each post-setup self build gets graded against the bot's top-10
+     recs at decision time: !! = top pick, ! = top 3, ?! = top 6,
+     ? = top 10, ?? = off the list. Strip shows running tally + the
+     last build's badge with optional "you played X, top was Y" diff
+     and a search_delta_gap pill when sim eval is available.
+     -------------------------------------------------------------- */
+  .mq-host { margin: var(--s-3) 0 var(--s-2); }
+  .mq-host.hidden { display: none; }
+  .mq-host .mq-h {
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+    margin: 0 0 var(--s-2);
+  }
+  .mq-tally {
+    display: flex; gap: var(--s-2); flex-wrap: wrap;
+    margin: 0 0 var(--s-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .mq-tally .mq-t {
+    display: inline-flex; align-items: baseline; gap: 4px;
+    padding: 2px 6px;
+    background: var(--bg-3);
+    border-radius: var(--radius-sm);
+    font-size: calc(12px * var(--font-scale));
+    color: var(--fg-mute);
+  }
+  .mq-tally .mq-t .mq-tag {
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+  .mq-tally .mq-t .mq-tag.top  { color: var(--pos); }
+  .mq-tally .mq-t .mq-tag.good { color: var(--pos); }
+  .mq-tally .mq-t .mq-tag.ok   { color: var(--watch); }
+  .mq-tally .mq-t .mq-tag.weak { color: var(--watch); }
+  .mq-tally .mq-t .mq-tag.bad  { color: var(--alert); }
+  .mq-tally .mq-t .mq-tag.none { color: var(--fg-dim); }
+  .mq-last {
+    display: flex; align-items: baseline; flex-wrap: wrap;
+    gap: var(--s-2);
+    font-size: calc(13px * var(--font-scale));
+    color: var(--fg-mute);
+    line-height: 1.4;
+  }
+  .mq-last .mq-badge {
+    display: inline-block;
+    min-width: 28px;
+    text-align: center;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-weight: 800;
+    background: var(--bg-3);
+  }
+  .mq-last .mq-badge.top  { color: var(--pos); }
+  .mq-last .mq-badge.good { color: var(--pos); }
+  .mq-last .mq-badge.ok   { color: var(--watch); }
+  .mq-last .mq-badge.weak { color: var(--watch); }
+  .mq-last .mq-badge.bad  { color: var(--alert); }
+  .mq-last .mq-badge.none { color: var(--fg-dim); }
+  .mq-last .mq-piece { color: var(--fg); }
+  .mq-last .mq-vs    { color: var(--fg-dim); }
+  .mq-last .mq-top   { color: var(--fg); }
+  .mq-last .mq-gap {
+    margin-left: auto;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-3);
+    color: var(--alert);
+    font-size: calc(11px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(13px * var(--font-scale));
@@ -1884,6 +1961,7 @@
   }
   .panel[data-phase="setup"] #hist-host { display: none; }
   .panel[data-phase="setup"] #eval-host { display: none; }
+  .panel[data-phase="setup"] #mq-host   { display: none; }
 </style>
 <div class="panel" id="panel">
   <div class="header" id="header">
@@ -1947,6 +2025,15 @@
         <path id="eval-line" class="eval-line" d=""></path>
         <circle id="eval-dot" class="eval-dot" cx="0" cy="28" r="2.5"></circle>
       </svg>
+    </div>
+    <!-- Move-quality strip (HUD principle #7). Per-build chess-style
+         classification of self plays vs. the bot's top-10 recs at
+         decision time. Hidden until at least one post-setup self build
+         has been graded — empty bridge state otherwise. -->
+    <div id="mq-host" class="mq-host hidden">
+      <div class="mq-h">moves</div>
+      <div class="mq-tally" id="mq-tally"></div>
+      <div class="mq-last" id="mq-last"></div>
     </div>
   </div>
   <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
@@ -2313,6 +2400,9 @@
         const evalFill = root.getElementById('eval-fill');
         const evalDot = root.getElementById('eval-dot');
         const evalCur = root.getElementById('eval-cur');
+        const mqHost = root.getElementById('mq-host');
+        const mqTally = root.getElementById('mq-tally');
+        const mqLast = root.getElementById('mq-last');
         // Pre-populate the 11 columns once. renderOverlay only mutates
         // bar heights + class flags from here on — the column DOM never
         // gets rebuilt, which is what lets CSS height transitions fire
@@ -2336,6 +2426,7 @@
             host, panel, body, content, dot,
             histHost, hist, histTotal,
             evalHost, evalGraph, evalLine, evalFill, evalDot, evalCur,
+            mqHost, mqTally, mqLast,
         };
     }
 
@@ -2346,6 +2437,7 @@
                 '<span class="err">bridge unreachable</span>';
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
+            if (ui.mqHost) ui.mqHost.classList.add('hidden');
             return;
         }
         if (!snap.game_started) {
@@ -2353,6 +2445,7 @@
                 '<span class="muted">waiting for game start…</span>';
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
+            if (ui.mqHost) ui.mqHost.classList.add('hidden');
             ui.panel.dataset.phase = 'pre';
             return;
         }
@@ -3383,6 +3476,7 @@
         ui.content.innerHTML = parts.join('');
         renderHistogram(ui, snap);
         renderEvalGraph(ui, snap);
+        renderMoveQuality(ui, snap);
     }
 
     // Live roll histogram. Mutates bar heights + class flags on the
@@ -3515,6 +3609,117 @@
             ui.evalCur.classList.toggle(
                 'neutral', v > -5 && v < 5);
         }
+    }
+
+    // Move-quality strip (HUD principle #7). Reads `move_history`
+    // from the snapshot — one entry per post-setup self build. Each
+    // entry carries a chess-style classification (!!, !, ?!, ?, ??)
+    // computed by the bridge against its top-10 recs at decision
+    // time, plus the bot's top rec for an optional "you played X,
+    // top was Y" diff and a search_delta_gap pill (EV left on the
+    // table when sim eval is available). Hidden until at least one
+    // graded build lands.
+    const MQ_BAND = {
+        '!!': { cls: 'top',  label: '!!' },
+        '!':  { cls: 'good', label: '!'  },
+        '?!': { cls: 'ok',   label: '?!' },
+        '?':  { cls: 'weak', label: '?'  },
+        '??': { cls: 'bad',  label: '??' },
+    };
+
+    function _mqLocLabel(piece, loc) {
+        // Settlements/cities use the node id; roads use the unordered
+        // edge endpoints. Match how the rec list reads tiles so the
+        // diff line looks consistent with what the player just saw.
+        if (piece === 'road') {
+            if (Array.isArray(loc) && loc.length >= 2) {
+                const a = Math.min(loc[0], loc[1]);
+                const b = Math.max(loc[0], loc[1]);
+                return `${a}-${b}`;
+            }
+            return '?';
+        }
+        return loc == null ? '?' : String(loc);
+    }
+
+    function renderMoveQuality(ui, snap) {
+        if (!ui || !ui.mqHost || !ui.mqTally || !ui.mqLast) return;
+        const mh = (snap && snap.move_history) || [];
+        if (!Array.isArray(mh) || mh.length === 0) {
+            ui.mqHost.classList.add('hidden');
+            return;
+        }
+        ui.mqHost.classList.remove('hidden');
+
+        // Tally: count by classification across the (up to last 30)
+        // graded builds. Show every band that's >0 so a 0-blunder
+        // game doesn't carry a misleading "??: 0" pill.
+        const counts = { '!!': 0, '!': 0, '?!': 0, '?': 0, '??': 0 };
+        let nograde = 0;
+        for (const e of mh) {
+            const c = e && e.classification;
+            if (c && counts.hasOwnProperty(c)) counts[c] += 1;
+            else nograde += 1;
+        }
+        const tallyParts = [];
+        for (const k of ['!!', '!', '?!', '?', '??']) {
+            if (counts[k] === 0) continue;
+            const band = MQ_BAND[k];
+            tallyParts.push(
+                `<span class="mq-t">`
+                + `<span class="mq-tag ${band.cls}">${band.label}</span>`
+                + `<span class="mq-c">${counts[k]}</span>`
+                + `</span>`);
+        }
+        if (nograde > 0) {
+            tallyParts.push(
+                `<span class="mq-t">`
+                + `<span class="mq-tag none">·</span>`
+                + `<span class="mq-c">${nograde}</span>`
+                + `</span>`);
+        }
+        ui.mqTally.innerHTML = tallyParts.join('');
+
+        // Last-build line: badge + "settle 9" + optional "vs top
+        // road 1-2" diff when the bot's top pick was something
+        // different + optional EV gap pill.
+        const last = mh[mh.length - 1];
+        const piece = escapeHtml(last.piece || '?');
+        const loc = _mqLocLabel(last.piece, last.loc);
+        const lastBits = [];
+        const cls = last.classification;
+        if (cls && MQ_BAND[cls]) {
+            const band = MQ_BAND[cls];
+            lastBits.push(
+                `<span class="mq-badge ${band.cls}">${band.label}</span>`);
+        } else {
+            lastBits.push(
+                `<span class="mq-badge none" title="no recs cached at`
+                + ` decision time">·</span>`);
+        }
+        lastBits.push(
+            `<span class="mq-piece">${piece} ${escapeHtml(loc)}</span>`);
+
+        // "you played X, top was Y" diff. Only show when the actual
+        // wasn't the top pick — same-rec-top is the "!!" case and
+        // doesn't need a diff.
+        if (last.rank !== 1 && last.top_kind) {
+            const topLoc = _mqLocLabel(last.top_kind, last.top_loc);
+            lastBits.push(`<span class="mq-vs">vs</span>`);
+            lastBits.push(
+                `<span class="mq-top">${escapeHtml(last.top_kind)}`
+                + ` ${escapeHtml(topLoc)}</span>`);
+        }
+
+        // EV gap pill: how much eval the player left on the table by
+        // skipping the top rec. Only meaningful when the bridge had
+        // search_delta on both recs; bridge sets sd_gap=null otherwise.
+        const gap = last.search_delta_gap;
+        if (typeof gap === 'number' && gap > 0.05) {
+            lastBits.push(
+                `<span class="mq-gap">−${gap.toFixed(1)} EV</span>`);
+        }
+        ui.mqLast.innerHTML = lastBits.join(' ');
     }
 
     function escapeHtml(s) {
