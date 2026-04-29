@@ -3333,13 +3333,17 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # (Catan's no-play-on-buy rule). When the just-bought was actually
     # a VP card, this under-counts non-VP playable for one turn —
     # acceptable false-negative since hints reappear on the next flip.
-    dev_held = int(st.get("dev_cards_held") or 0)
-    # Prefer colonist's authoritative just-bought-this-turn list
-    # (sess.self_dev_bought_this_turn) when present — clears
-    # cleanly on turn flip without our homemade EndTurn detection.
-    # Falls back to the DOM-log-driven counter when the WS frame
-    # hasn't surfaced the field yet (very early game).
     sess = game.session
+    # Prefer colonist's authoritative count of self's
+    # developmentCards.cards — it's the source-of-truth for
+    # holdings, and falls back to the DOM-log-driven counter when
+    # we haven't seen a WS frame yet. Same pattern for the
+    # just-bought-this-turn carve-out.
+    if (sess is not None and sess.self_color_id is not None
+            and sess.dev_card_counts.get(sess.self_color_id) is not None):
+        dev_held = int(sess.dev_card_counts.get(sess.self_color_id) or 0)
+    else:
+        dev_held = int(st.get("dev_cards_held") or 0)
     if sess is not None and sess.self_dev_bought_this_turn:
         dev_just = len(sess.self_dev_bought_this_turn)
     else:
