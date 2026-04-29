@@ -33,7 +33,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from cataanbot.colonist_map import (
-    MapMapping, build_mapping, corner_tile_signature, tile_resource,
+    KNOWN_CLASSIC_TILE_TYPES, MapMapping, build_mapping,
+    corner_tile_signature, tile_resource,
 )
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
@@ -170,6 +171,12 @@ class LiveSession:
     # we can identify which type int was added and emit a typed
     # DevCardSelfBuyTypedEvent for catanatron's tracker.
     dev_card_lists: dict[int, list[int]] = field(default_factory=dict)
+    # Tile type ints colonist sent that we don't have a name for —
+    # variant-board indicator. Populated from mapState.tileHexStates
+    # at GameStart. Empty on classic; non-empty signals Seafarers /
+    # gold-tile / Black Forest / etc. Surfaced in /advisor as a
+    # warning to the user that strategy isn't tuned for this map.
+    non_classic_tiles: set[int] = field(default_factory=set)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -235,6 +242,16 @@ class LiveSession:
                 ) if k in gs
             }
 
+        # Tile-type sweep: any int outside KNOWN_CLASSIC_TILE_TYPES
+        # is a variant tile (gold hex, ocean for seafarers, fog for
+        # cities & knights, etc.). Record the unknown ints so the
+        # advisor can warn the user even when gameSettings flags don't
+        # fire (e.g. a custom map distributed via gameType but no
+        # explicit extension flag).
+        for type_int in mapping.tile_types.values():
+            if int(type_int) not in KNOWN_CLASSIC_TILE_TYPES:
+                sess.non_classic_tiles.add(int(type_int))
+
         # Seed known_corners / known_edges from the starting map state so
         # our first diff after GameStart doesn't replay every existing
         # placement (the setup-phase corners and roads).
@@ -293,16 +310,16 @@ class LiveSession:
         return sess
 
     def variant_label(self) -> str:
-        """Short human-readable variant name from game_settings.
+        """Short human-readable variant name from game_settings + map.
 
         Returns ``"classic"`` when all four variant flags
         (modeSetting / extensionSetting / scenarioSetting / mapSetting)
-        are 0 — the base Catan board. Otherwise returns ``"variant"``
-        with the non-zero flags appended ("variant: ext=2, map=1") so
-        the HUD can warn the user that strategy may not be tuned for
-        this map. Once we capture and decode the specific variant
-        flag values, this can be promoted to real names ("seafarers",
-        "cities-and-knights", "black-forest", etc.).
+        are 0 AND no unknown tile types are on the board. Otherwise
+        returns ``"variant"`` with whatever signal fired ("variant:
+        ext=2, tiles={6,7}") so the HUD can warn the user that
+        strategy may not be tuned for this map. Once we capture and
+        decode the specific flag/tile values, this promotes to real
+        names ("seafarers", "cities-and-knights", "black-forest").
         """
         gs = self.game_settings or {}
         flag_keys = (
@@ -311,11 +328,15 @@ class LiveSession:
         )
         nonzero = {k: gs[k] for k in flag_keys
                    if isinstance(gs.get(k), int) and gs[k] != 0}
-        if not nonzero:
+        if not nonzero and not self.non_classic_tiles:
             return "classic"
-        parts = ", ".join(f"{k.replace('Setting','')}={v}"
-                          for k, v in nonzero.items())
-        return f"variant: {parts}"
+        parts = []
+        for k, v in nonzero.items():
+            parts.append(f"{k.replace('Setting','')}={v}")
+        if self.non_classic_tiles:
+            tiles = ",".join(str(t) for t in sorted(self.non_classic_tiles))
+            parts.append(f"tiles={{{tiles}}}")
+        return "variant: " + ", ".join(parts)
 
     def player_for(self, color_id: int | None) -> str:
         if color_id is None:

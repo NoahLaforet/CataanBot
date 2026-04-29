@@ -68,6 +68,31 @@ def test_variant_label_classic_when_all_settings_zero():
             f"capture wasn't classic — {k}={sess.game_settings.get(k)}")
 
 
+def test_non_classic_tiles_detected_from_map():
+    """Variant tile-type ints (anything outside 0-5) trigger
+    non_classic_tiles and flip the variant_label even when the
+    gameSettings flags are all 0 — catches custom maps that don't
+    set an explicit extension flag but ship gold/ocean hexes."""
+    body = _game_start_body(CAPTURE_EARLY)
+    # Mutate one tile to type 6 (synthetic gold) so the sweep has
+    # something to find. Fresh game_state copy so we don't pollute
+    # the cached body for other tests.
+    game_state = {**body["gameState"]}
+    map_state = {**game_state["mapState"]}
+    hex_states = dict(map_state["tileHexStates"])
+    a_tid = next(iter(hex_states))
+    hex_states[a_tid] = {**hex_states[a_tid], "type": 6}
+    map_state["tileHexStates"] = hex_states
+    game_state["mapState"] = map_state
+    body = {**body, "gameState": game_state}
+
+    sess = LiveSession.from_game_start(body)
+    assert 6 in sess.non_classic_tiles
+    label = sess.variant_label()
+    assert label.startswith("variant:")
+    assert "tiles={6}" in label
+
+
 def test_variant_label_flags_non_classic():
     """Synthetic non-zero flags should produce a 'variant: ...' label
     listing the non-zero settings — the HUD's warning hook."""

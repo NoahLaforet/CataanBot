@@ -147,9 +147,14 @@ def test_port_resource_covers_generic_and_five_resources():
         "WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"}
 
 
-def test_tile_resource_rejects_unknown():
-    with pytest.raises(ValueError):
-        tile_resource(9)
+def test_tile_resource_returns_none_for_unknown():
+    """Unknown tile types (variant tiles — gold, ocean, fog) must not
+    crash the parser. Returning None treats them as non-producing
+    (same as desert) so a Seafarers / gold-tile game still loads;
+    detection of variant tiles lives separately on LiveSession so
+    the HUD can warn the user."""
+    assert tile_resource(9) is None
+    assert tile_resource(99) is None
 
 
 def test_tile_resource_distribution_matches_base_catan():

@@ -52,6 +52,12 @@ from typing import Any
 # order (WOOD, BRICK, SHEEP, WHEAT, ORE) — verified empirically: the
 # fort4092 tile-count histogram is {1: 4, 2: 3, 3: 4, 4: 4, 5: 3}, which
 # matches base Catan's resource distribution under this ordering.
+# Variant tiles (gold, ocean/water, fog, etc.) live at type ints we
+# haven't decoded yet. They're detected and flagged via
+# ``LiveSession.non_classic_tiles`` so the HUD can warn the user that
+# strategy isn't tuned for this map; tile_resource() returns None for
+# them (treats as a non-producing tile, same as desert) so a variant
+# game still parses without crashing.
 COLONIST_TILE_RESOURCE = {
     0: None,        # desert
     1: "WOOD",
@@ -60,6 +66,12 @@ COLONIST_TILE_RESOURCE = {
     4: "WHEAT",
     5: "ORE",
 }
+
+# Tile type ints we recognize. Anything outside this set is a variant
+# tile (gold-hex, ocean/water on Seafarers maps, fog/cloud on Cities &
+# Knights, etc.) — kept in a set so the diff parser can detect a
+# variant board even when the gameSettings flags don't fire.
+KNOWN_CLASSIC_TILE_TYPES = frozenset(COLONIST_TILE_RESOURCE)
 
 # Port type int → resource name. Type 1 is the generic 3:1 port (no
 # resource lock); types 2..6 are the resource-specific 2:1 ports,
@@ -75,10 +87,16 @@ COLONIST_PORT_RESOURCE = {
 
 
 def tile_resource(type_int: int) -> str | None:
-    """Catanatron resource name for a colonist tile type int (None = desert)."""
-    if type_int not in COLONIST_TILE_RESOURCE:
-        raise ValueError(f"unknown colonist tile type {type_int!r}")
-    return COLONIST_TILE_RESOURCE[type_int]
+    """Catanatron resource name for a colonist tile type int.
+
+    Returns None for desert (type 0) AND for any unrecognized type
+    (variant tiles we haven't decoded yet — gold, ocean, fog, etc.).
+    The unknown-type case is intentionally soft: we'd rather under-
+    score a variant tile than crash the whole game-state parser when
+    Noah opens a Seafarers/Black Forest map. Detection of those
+    types lives in the diff parser so the HUD can warn separately.
+    """
+    return COLONIST_TILE_RESOURCE.get(type_int)
 
 
 def port_resource(type_int: int) -> str | None:
