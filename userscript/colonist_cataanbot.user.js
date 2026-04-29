@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.23.51
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.23.51 starts variant-board scaffolding — captures colonist's gameSettings on GameStart and surfaces a "variant" badge in the header when any of mode/extension/scenario/map setting is non-zero, with a tooltip naming which setting flagged. Strategy isn't yet tuned for non-classic boards (Seafarers, Cities & Knights, Black Forest, etc.); the badge is the warning hook until per-variant logic lands. v0.23.50 decoded self's dev-card type from colonist's WS frames.
+// @version      0.24.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.24.0 makes the bridge boot on non-classic map layouts (Pond and other weekly-rotation maps). Same Catan rules in all cases — colonist only changes the board shape — so opening picks, build placement, and the recommender all work on the actual geometry instead of crashing at GameStart. Port 2:1 trade suggestions are quiet on variant maps for now (port reconstruction is a follow-up). v0.23.51 added the "VARIANT" header badge.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start

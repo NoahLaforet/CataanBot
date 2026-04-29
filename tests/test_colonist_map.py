@@ -350,7 +350,88 @@ def test_port_ratio_changes_match_port_resource_offset():
 
 # ---- Error paths -----------------------------------------------------------
 
-def test_build_mapping_rejects_wrong_shape():
+def test_build_mapping_handles_variant_shape():
+    """Variant maps (Pond, weekly rotation, etc.) come with
+    non-classic mapState shapes — different tile/corner/edge counts.
+    Same Catan rules though, so build_mapping must succeed: produce
+    a valid land-only catanatron CatanMap with colonist's exact
+    tile resources + dice numbers, and a corner/edge mapping that
+    matches the colonist shape (not catanatron's classic 19/54/72/9).
+    Ports are skipped for variants in this first pass.
+    """
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    # 7-tile flower: 1 center + 6 neighbours.
+    positions = [
+        (0, 0), (1, -1), (-1, 1),
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+    ]
+    pos_set = set(positions)
+    hex_states: dict[str, dict] = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y,
+            "type": (tid % 5) + 1,
+            "diceNumber": [3, 4, 5, 6, 8, 9, 10][tid - 1],
+        }
+    # Generate every corner whose signature touches our flower.
+    corner_states: dict[str, dict] = {}
+    seen_corner_sigs: set = set()
+    cid = 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_corner_sigs:
+                        continue
+                    if not any(t in pos_set for t in sig):
+                        continue
+                    seen_corner_sigs.add(sig)
+                    cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    # Same for edges.
+    edge_states: dict[str, dict] = {}
+    seen_edge_sigs: set = set()
+    eid = 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception:
+                        continue
+                    key = frozenset((a, b))
+                    if key in seen_edge_sigs:
+                        continue
+                    if (not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)):
+                        continue
+                    seen_edge_sigs.add(key)
+                    eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    mapping = build_mapping({
+        "tileHexStates": hex_states,
+        "tileCornerStates": corner_states,
+        "tileEdgeStates": edge_states,
+        "portEdgeStates": {},
+    })
+    # 7 tiles, 24 corners (= shape-determined for a flower), all
+    # mapped bijectively.
+    assert len(mapping.tile_types) == 7
+    assert len(set(mapping.node_id.values())) == len(corner_states)
+    assert len(set(mapping.edge_nodes.values())) == len(edge_states)
+    # Resources / dice match colonist's authoritative values.
+    assert mapping.tile_dice[1] == 3
+    assert mapping.tile_types[1] == 2  # tid=1 → BRICK
+
+
+def test_build_mapping_rejects_empty_mapstate():
+    """Even variant maps need *some* hex states. An empty mapState
+    is a bridge-pipeline error, not a variant — must surface."""
     with pytest.raises(MapMappingError):
         build_mapping({
             "tileHexStates": {},

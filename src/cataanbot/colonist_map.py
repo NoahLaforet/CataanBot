@@ -142,6 +142,100 @@ def axial_to_cube(ax: int, ay: int) -> tuple[int, int, int]:
     return (ax, ay, -ax - ay)
 
 
+# Cube-coord neighbour offsets — same six directions catanatron uses.
+# Used to walk outward from each land tile when inferring water-ring
+# positions for variant maps where colonist doesn't ship water tiles.
+_HEX_NEIGHBOURS = (
+    (1, -1, 0), (-1, 1, 0),       # EAST, WEST
+    (1, 0, -1), (-1, 0, 1),       # NORTHEAST, SOUTHWEST
+    (0, 1, -1), (0, -1, 1),       # NORTHWEST, SOUTHEAST
+)
+
+
+def _is_classic_shape(hex_states: dict, corner_states: dict,
+                      edge_states: dict, port_states: dict) -> bool:
+    """The 19/54/72/9 shape that BASE_MAP_TEMPLATE was designed for.
+    Anything else is a variant map (Pond, weekly rotation, etc.) and
+    needs a custom catanatron CatanMap built from colonist's data."""
+    return (len(hex_states) == 19 and len(corner_states) == 54
+            and len(edge_states) == 72 and len(port_states) == 9)
+
+
+def _build_variant_catanatron_map(map_state: dict[str, Any]):
+    """Build a catanatron CatanMap that matches colonist's actual map
+    layout — for any shape. Colonist plays normal Catan rules but the
+    weekly rotation cycles through different board layouts (Pond, etc.);
+    BASE_MAP_TEMPLATE only fits the classic 19-tile board, so we
+    construct a fresh tiles dict from colonist's authoritative data.
+
+    First pass: LandTiles at exact colonist cube coords plus a Water
+    ring of synthesized tiles around the land perimeter (so corners on
+    the land boundary are 3-way and the signature-based corner matcher
+    in build_mapping still works). No Port tiles in this pass — that
+    means port trade-rate suggestions are quiet on variant boards, but
+    opening-pick scoring and build/placement logic work on the right
+    geometry. Port reconstruction is a follow-up.
+    """
+    from catanatron.models.map import (
+        CatanMap, LandTile, Water, get_nodes_and_edges,
+    )
+
+    hex_states = map_state.get("tileHexStates", {})
+    if not hex_states:
+        raise MapMappingError("variant map: tileHexStates is empty")
+
+    # Cube-coord ordering: tile id ascending. Determinism matters for
+    # node id assignment (catanatron walks the dict and stitches as it
+    # goes); a stable order means the same map gives the same node ids
+    # across runs, which our corner/edge signature matching relies on.
+    sorted_tiles = sorted(
+        ((int(tid), t) for tid, t in hex_states.items()),
+        key=lambda kv: kv[0],
+    )
+
+    tiles: dict[tuple[int, int, int], Any] = {}
+    node_autoinc = 0
+    tile_autoinc = 0
+
+    # Pass 1: LandTiles at colonist's exact positions.
+    land_coords: set[tuple[int, int, int]] = set()
+    for col_tid, t in sorted_tiles:
+        coord = axial_to_cube(t["x"], t["y"])
+        land_coords.add(coord)
+
+    for col_tid, t in sorted_tiles:
+        coord = axial_to_cube(t["x"], t["y"])
+        nodes, edges, node_autoinc = get_nodes_and_edges(
+            tiles, coord, node_autoinc)
+        type_int = int(t.get("type", 0))
+        resource = tile_resource(type_int)  # None for desert/variant
+        dice = int(t.get("diceNumber", 0)) or None
+        tiles[coord] = LandTile(
+            tile_autoinc, resource, dice if resource is not None else None,
+            nodes, edges)
+        tile_autoinc += 1
+
+    # Pass 2: Water tiles around the perimeter. Without these, land
+    # corners on the outer edge of the map would have only 2 adjacent
+    # tiles, but build_mapping's corner-signature matcher expects 3
+    # (the catanatron convention treats land-water junctions as 3-way
+    # nodes). We synthesize a Water ring 1 cell out from every land
+    # tile; doesn't affect gameplay since Water tiles produce nothing.
+    water_coords: set[tuple[int, int, int]] = set()
+    for coord in land_coords:
+        for dx, dy, dz in _HEX_NEIGHBOURS:
+            nbr = (coord[0] + dx, coord[1] + dy, coord[2] + dz)
+            if nbr not in land_coords:
+                water_coords.add(nbr)
+    # Sort for determinism
+    for coord in sorted(water_coords):
+        nodes, edges, node_autoinc = get_nodes_and_edges(
+            tiles, coord, node_autoinc)
+        tiles[coord] = Water(nodes, edges)
+
+    return CatanMap.from_tiles(tiles)
+
+
 # ---- Mapping build ---------------------------------------------------------
 
 @dataclass
@@ -176,8 +270,18 @@ class MapMappingError(RuntimeError):
 def build_mapping(map_state: dict[str, Any]) -> MapMapping:
     """Build a ``MapMapping`` from a colonist ``mapState`` dict.
 
-    Raises ``MapMappingError`` if the map shape doesn't match base Catan
-    (19 hex tiles, 54 corners, 72 edges, 9 ports).
+    Handles classic (19/54/72/9) AND variant maps (Pond, Random,
+    weekly rotation). Same Catan rules in both cases — colonist
+    only changes the BOARD SHAPE, not the gameplay. For classic
+    we use catanatron's BASE_MAP_TEMPLATE so port positions land
+    on the canonical water-ring slots; for variants we build a
+    custom CatanMap from colonist's tileHexStates directly.
+
+    Variant ports / water tiles aren't supported in this first
+    pass: the custom CatanMap is land-only, so port-2:1 trade
+    suggestions stay quiet on variant boards. Bot still plays the
+    real geometry (opening picks, build placement, recommender)
+    so most of the value is intact.
     """
     from catanatron.models.map import BASE_MAP_TEMPLATE, CatanMap
 
@@ -186,17 +290,20 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
     edge_states = map_state.get("tileEdgeStates", {})
     port_states = map_state.get("portEdgeStates", {})
 
-    if len(hex_states) != 19 or len(corner_states) != 54 \
-       or len(edge_states) != 72 or len(port_states) != 9:
-        raise MapMappingError(
-            f"unexpected mapState shape: "
-            f"tiles={len(hex_states)} corners={len(corner_states)} "
-            f"edges={len(edge_states)} ports={len(port_states)}")
+    is_classic = _is_classic_shape(
+        hex_states, corner_states, edge_states, port_states)
 
     colonist_tiles = {(t["x"], t["y"]): int(tid)
                       for tid, t in hex_states.items()}
 
-    cat_map = CatanMap.from_template(BASE_MAP_TEMPLATE)
+    if is_classic:
+        cat_map = CatanMap.from_template(BASE_MAP_TEMPLATE)
+    else:
+        # Variant board — build a CatanMap matching colonist's
+        # actual tile layout. May fail if the cube coords have
+        # disconnected components (extreme variants); let that
+        # surface so the bridge can degrade rather than crash.
+        cat_map = _build_variant_catanatron_map(map_state)
     cat_tiles_by_axial = {(c[0], c[1]): tile
                           for c, tile in cat_map.tiles.items()
                           if hasattr(tile, "nodes")}
@@ -242,8 +349,11 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
             if tid is not None:
                 m.tile_corners.setdefault(tid, set()).add(cid_i)
 
-    if len(set(m.node_id.values())) != 54:
-        raise MapMappingError("corner mapping is not bijective")
+    expected_nodes = 54 if is_classic else len(corner_states)
+    if len(set(m.node_id.values())) != expected_nodes:
+        raise MapMappingError(
+            f"corner mapping is not bijective "
+            f"(want {expected_nodes}, got {len(set(m.node_id.values()))})")
 
     # --- Edges -------------------------------------------------------------
     for eid, e in edge_states.items():
@@ -260,21 +370,36 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
                 f"not a catanatron edge")
         m.edge_nodes[int(eid)] = pair
 
-    if len(set(m.edge_nodes.values())) != 72:
-        raise MapMappingError("edge mapping is not bijective")
+    expected_edges = 72 if is_classic else len(edge_states)
+    if len(set(m.edge_nodes.values())) != expected_edges:
+        raise MapMappingError(
+            f"edge mapping is not bijective "
+            f"(want {expected_edges}, got {len(set(m.edge_nodes.values()))})")
 
     # --- Ports -------------------------------------------------------------
+    # Classic maps: ports map cleanly to catanatron's water-ring
+    # template positions. Variant maps have ports too but the
+    # land-only CatanMap we built doesn't have water/port tiles to
+    # attach them to; collect the port edge-corner pairs anyway so
+    # downstream code can still see *which* edges have ports (useful
+    # for "don't waste a settle there" logic), even if the trade
+    # rates aren't wired through catanatron's port_nodes.
     for pid, p in port_states.items():
         a_sig, b_sig = edge_endpoint_signatures(p["x"], p["y"], p["z"])
         a = node_by_signature.get(a_sig)
         b = node_by_signature.get(b_sig)
         if a is None or b is None:
-            raise MapMappingError(
-                f"port {pid} at {p} has endpoints outside catanatron's graph")
+            if is_classic:
+                raise MapMappingError(
+                    f"port {pid} at {p} has endpoints outside catanatron's graph")
+            # Variant: silently skip ports we can't anchor.
+            continue
         pair = frozenset({a, b})
         if pair not in cat_edges:
-            raise MapMappingError(
-                f"port {pid} at {p} maps to non-catanatron edge")
+            if is_classic:
+                raise MapMappingError(
+                    f"port {pid} at {p} maps to non-catanatron edge")
+            continue
         m.port_edges[int(pid)] = pair
         m.port_types[int(pid)] = int(p["type"])
 
@@ -316,6 +441,18 @@ def build_catanatron_map_from_colonist(
         mapping = build_mapping(map_state)
 
     hex_states = map_state.get("tileHexStates", {})
+    corner_states = map_state.get("tileCornerStates", {})
+    edge_states = map_state.get("tileEdgeStates", {})
+    port_states = map_state.get("portEdgeStates", {})
+    is_classic = _is_classic_shape(
+        hex_states, corner_states, edge_states, port_states)
+    if not is_classic:
+        # Variant board — delegate to the land-only builder. Ports +
+        # water tiles aren't reconstructed for variants in this pass,
+        # but the resource/dice/adjacency layout matches colonist
+        # exactly so opening picks and produce events work.
+        return _build_variant_catanatron_map(map_state)
+
     cube_to_colonist_tid = {
         axial_to_cube(t["x"], t["y"]): int(tid)
         for tid, t in hex_states.items()

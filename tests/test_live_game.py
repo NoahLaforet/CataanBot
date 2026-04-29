@@ -28,6 +28,104 @@ def _iter_payloads(path: Path):
             yield p
 
 
+def test_live_game_boots_on_variant_shape():
+    """Pond / weekly-rotation maps ship a non-classic mapState shape
+    (Pond has 24 tiles instead of 19). LiveGame.start_from_game_state
+    must boot end-to-end on those: build the variant CatanMap, seed
+    the tracker, leave .session/.color_map populated. Without this
+    fix the bridge crashed on GameStart for any non-19-tile board.
+
+    Synthetic 7-tile flower is the smallest non-classic shape we can
+    test against. Real game shapes (Pond, etc.) will be added as
+    captures land — but if the flower works, the parser is generic
+    over shape and the recommender's geometry math has the right
+    inputs."""
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    from cataanbot.live_game import LiveGame
+
+    positions = [
+        (0, 0), (1, -1), (-1, 1),
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+    ]
+    pos_set = set(positions)
+    types = [0, 1, 2, 3, 4, 5, 1]
+    dice = [0, 4, 5, 6, 8, 9, 10]
+    hex_states = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y,
+            "type": types[tid - 1],
+            "diceNumber": dice[tid - 1],
+        }
+    corner_states = {}
+    seen_c = set()
+    cid = 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_c or not any(t in pos_set for t in sig):
+                        continue
+                    seen_c.add(sig)
+                    cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    edge_states = {}
+    seen_e = set()
+    eid = 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception:
+                        continue
+                    key = frozenset((a, b))
+                    if (key in seen_e
+                            or not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)):
+                        continue
+                    seen_e.add(key)
+                    eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    body = {
+        "playerColor": 1,
+        "playerUserStates": [
+            {"selectedColor": 1, "username": "Noah", "userId": 999},
+            {"selectedColor": 2, "username": "Bot",
+             "userId": None, "isBot": True},
+        ],
+        "gameState": {
+            "mapState": {
+                "tileHexStates": hex_states,
+                "tileCornerStates": corner_states,
+                "tileEdgeStates": edge_states,
+                "portEdgeStates": {},
+            },
+        },
+        "gameSettings": {
+            "gameType": 1, "modeSetting": 0, "extensionSetting": 0,
+            "scenarioSetting": 0, "mapSetting": 5,
+            "victoryPointsToWin": 10, "cardDiscardLimit": 7,
+        },
+    }
+
+    game = LiveGame()
+    game.start_from_game_state(body)
+
+    assert game.session.self_color_id == 1
+    assert game.tracker is not None
+    cat_map = game.tracker.game.state.board.map
+    assert len(cat_map.land_tiles) == 7
+    assert len(cat_map.land_nodes) == len(corner_states)
+    # Variant flag fires off the synthetic map_setting=5
+    assert game.session.variant_label().startswith("variant:")
+
+
 def test_feed_game_start_boots_everything():
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
