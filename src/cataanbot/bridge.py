@@ -401,7 +401,7 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     stomp the file.
     """
     from cataanbot.events import (
-        DevCardBuyEvent, DevCardPlayEvent, GameOverEvent,
+        DevCardBuyEvent, DevCardPlayEvent, GameOverEvent, InfoEvent,
         RobberMoveEvent, RollEvent,
         TradeCommitEvent, TradeOfferEvent,
     )
@@ -476,6 +476,15 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         except Exception as e:  # noqa: BLE001
             print(f"[overlay] live devplay apply failed: {e!r}",
                   flush=True)
+
+    # Friendly-robber detection: colonist announces the rule via an
+    # InfoEvent at game start ("Friendly Robber is active, ..."). One-
+    # shot toggle on the session — once seen, the robber-target ranker
+    # filters protected victims out for the rest of the game.
+    if (isinstance(event, InfoEvent)
+            and game is not None and game.session is not None
+            and event.text.lower().startswith("friendly robber")):
+        game.session.friendly_robber_active = True
 
     if (isinstance(event, DevCardPlayEvent) and event.card == "knight"
             and game is not None
@@ -865,10 +874,17 @@ def _compute_robber_snapshot(
         except Exception:  # noqa: BLE001
             continue
         hand_size_override[c] = int(count)
+    # Friendly Robber threshold: when colonist announced the rule,
+    # filter victims with VP ≤ 2. Default 2 matches colonist's
+    # behaviour (newly-placed players have 2 VP from their two
+    # opening settlements; the rule protects them so opps can't
+    # gang-robber a leader's first build attempt).
+    fr_min = 2 if sess.friendly_robber_active else None
     try:
         scores = score_robber_targets(
             game.tracker.game, color,
             hand_size_override=hand_size_override or None,
+            friendly_robber_min_vp=fr_min,
         )
     except Exception:  # noqa: BLE001
         return None
@@ -3187,6 +3203,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         snap["variant"] = "classic"
         snap["game_settings"] = {}
+    # Friendly Robber rule (colonist optional). When active, the
+    # robber-target ranker has already filtered protected victims.
+    # HUD shows a small pill so the user knows the rule is on AND
+    # which suggestions reflect it.
+    snap["friendly_robber_active"] = bool(
+        sess.friendly_robber_active)
     # Mid-game recs: only when it's actually my turn. During setup the
     # opening picks were already populated above, so skip here.
     if not is_setup and snap["my_turn"]:

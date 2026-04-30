@@ -183,6 +183,13 @@ class LiveSession:
     # gold-tile / Black Forest / etc. Surfaced in /advisor as a
     # warning to the user that strategy isn't tuned for this map.
     non_classic_tiles: set[int] = field(default_factory=set)
+    # Colonist's optional "Friendly Robber" rule — protects players
+    # at or below a VP threshold (typically 2) from being robbed.
+    # Detected by an InfoEvent text starting with "friendly robber"
+    # (colonist announces it once at game start). The bot's robber-
+    # target ranking filters protected victims out so the suggestions
+    # match what colonist's UI will actually allow.
+    friendly_robber_active: bool = False
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":

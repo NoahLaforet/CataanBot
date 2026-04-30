@@ -258,6 +258,7 @@ def _vp_weight(vp: int, vp_target: int | None = None) -> float:
 def score_robber_targets(
     game: "Game", my_color: str,
     hand_size_override: dict[str, int] | None = None,
+    friendly_robber_min_vp: int | None = None,
 ) -> list[RobberScore]:
     """Rank every land tile (except where the robber is now) for blocking value.
 
@@ -270,6 +271,13 @@ def score_robber_targets(
     sizes on a per-color basis. The live bridge passes in the WS-derived
     card counts, which are ground truth even when per-resource tracking
     has drifted (trades, steals, discards we didn't fully see).
+
+    ``friendly_robber_min_vp`` (when given) filters victims to only those
+    with VP > the threshold. Colonist's "Friendly Robber" optional rule
+    protects players at or below the threshold (typically 2 — newly
+    placed players have exactly 2 from setup). Tiles whose only victims
+    are protected are dropped from the ranking entirely; tiles with a
+    mix score only the un-protected victims' pips.
     """
     from catanatron import Color
     from catanatron.state import RESOURCES
@@ -312,7 +320,18 @@ def score_robber_targets(
             if color == my_color_enum:
                 own_blocked += contribution
             else:
+                # Friendly Robber: skip victims whose VP is at or below
+                # the protection threshold. Colonist's optional rule
+                # makes those tiles unblockable, so a tile whose only
+                # adjacent opps are protected scores 0 — same effect as
+                # an unbuilt tile, just by drop-out.
+                if (friendly_robber_min_vp is not None
+                        and vp_by_color.get(color.name, 0)
+                        <= friendly_robber_min_vp):
+                    continue
                 victims[color.name] = victims.get(color.name, 0) + contribution
+        # Tiles where every adjacent opp is protected drop out
+        # entirely (no victims → score 0 → filtered below).
         opponent_blocked = sum(victims.values())
         weighted = sum(
             pips * _vp_weight(vp_by_color.get(c, 0))

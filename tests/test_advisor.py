@@ -135,6 +135,27 @@ def test_robber_targets_favor_opponent_builds(tracker):
     assert scores[0].opponent_blocked > 0
 
 
+def test_friendly_robber_filters_low_vp_victims(tracker):
+    """Colonist's optional Friendly Robber rule protects players at or
+    below a VP threshold. score_robber_targets should drop those
+    victims from each tile's victim list when the threshold is set, so
+    the ranking matches what colonist's UI will actually allow Noah to
+    pick."""
+    # Place BLUE on a high-pip spot (BLUE's VP = 1 from one settlement).
+    top = score_opening_nodes(tracker.game)[0]
+    tracker.settle("BLUE", top.node_id)
+    # Without the rule: BLUE shows up as a victim.
+    free_play = score_robber_targets(tracker.game, "RED")
+    has_blue_free = any("BLUE" in s.victims for s in free_play)
+    assert has_blue_free, "BLUE should be a victim when rule is off"
+    # With friendly_robber_min_vp=2, BLUE (1 VP) is protected.
+    rule_on = score_robber_targets(
+        tracker.game, "RED", friendly_robber_min_vp=2)
+    has_blue_rule = any("BLUE" in s.victims for s in rule_on)
+    assert not has_blue_rule, (
+        "BLUE shouldn't appear as a victim with friendly robber on")
+
+
 def test_evaluate_trade_delta_sign(tracker):
     # With no buildings, every resource has equal marginal value, so
     # giving N for N of a different resource is a wash.

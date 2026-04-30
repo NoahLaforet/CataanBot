@@ -1802,7 +1802,7 @@
      (most games); visible with a subtle warn color when colonist's
      gameSettings reports any non-zero variant flag, so the user
      knows the bot's strategy isn't tuned for this map yet. */
-  .variant-badge {
+  .variant-badge, .friendly-robber-badge {
     display: none;
     padding: 1px var(--s-2);
     border-radius: var(--radius-sm);
@@ -1814,6 +1814,7 @@
     text-transform: uppercase;
   }
   .panel[data-variant="non-classic"] .variant-badge { display: inline-block; }
+  .panel[data-friendly-robber="1"] .friendly-robber-badge { display: inline-block; }
 
   .drawer {
     display: none;
@@ -2025,6 +2026,7 @@
     <span class="dot" id="dot"></span>
     <span class="title">CataanBot</span>
     <span class="variant-badge" id="variant-badge"></span>
+    <span class="friendly-robber-badge" id="friendly-robber-badge" title="Friendly Robber rule is on — players at or below 2 VP are protected; targets ranking has filtered them out.">friendly robber</span>
     <span class="paused-badge" id="paused-badge">paused</span>
     <button class="btn settings-btn" id="settings" title="settings (alt+s)">⚙</button>
     <button class="btn" id="toggle" title="collapse/expand (alt+c)">_</button>
@@ -2536,6 +2538,13 @@
                 ui.variantBadge.title = `${variant} — same Catan rules, different board shape. Opening picks, recommender, and port 2:1 trade rates all work on the actual geometry.`;
             }
         }
+        // Friendly Robber pill — colonist's optional rule that
+        // protects players at or below 2 VP from being robbed. When
+        // active, the bot's robber-target ranking has already
+        // filtered protected victims so suggestions match what
+        // colonist will actually let you pick.
+        ui.panel.dataset.friendlyRobber = snap.friendly_robber_active
+            ? '1' : '0';
         const parts = [];
         // WIN THIS TURN banner — highest-priority signal. Renders above
         // every other HUD element so Noah never misses a single-move
