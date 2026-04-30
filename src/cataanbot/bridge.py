@@ -4430,7 +4430,12 @@ def serve(host: str = "127.0.0.1", port: int = 8765,
 
     pm_dir: Path | None
     if postmortem_dir is None:
-        pm_dir = Path.home() / "Desktop" / "CataanBot" / "postmortems"
+        # Default to ./postmortems relative to wherever the bridge is
+        # launched from. Most users run from the repo root, so this
+        # lands the postmortem HTMLs in the gitignored ./postmortems/
+        # directory next to ws_captures/. Override with --postmortem-dir
+        # for a different location, or empty string to disable.
+        pm_dir = Path.cwd() / "postmortems"
     elif postmortem_dir == "":
         pm_dir = None  # explicit opt-out
     else:

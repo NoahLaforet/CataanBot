@@ -701,8 +701,9 @@ def main(argv: list[str] | None = None) -> int:
     p_bridge.add_argument(
         "--postmortem-dir", dest="postmortem_dir", default=None,
         help="Directory to write auto-postmortem HTML files to when a "
-             "GameOverEvent lands (default: ~/Desktop/CataanBot/"
-             "postmortems/). Pass an empty string to disable.")
+             "GameOverEvent lands (default: ./postmortems/ relative to "
+             "the bridge's working directory). Pass an empty string to "
+             "disable.")
 
     p_live = sub.add_parser(
         "live",
@@ -720,8 +721,9 @@ def main(argv: list[str] | None = None) -> int:
     p_live.add_argument(
         "--postmortem-dir", dest="postmortem_dir", default=None,
         help="Directory to write auto-postmortem HTML files to when a "
-             "GameOverEvent lands (default: ~/Desktop/CataanBot/"
-             "postmortems/). Pass an empty string to disable.")
+             "GameOverEvent lands (default: ./postmortems/ relative to "
+             "the bridge's working directory). Pass an empty string to "
+             "disable.")
 
     p_ws_replay = sub.add_parser(
         "ws-replay",
