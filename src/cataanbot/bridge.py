@@ -463,6 +463,19 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
           and _is_self_player(game, event.player)):
         st["dev_cards_held"] = max(
             0, int(st.get("dev_cards_held") or 0) - 1)
+        # ALSO apply to the LIVE tracker. DOM-log DevCardPlayEvents
+        # are normally only routed to the postmortem tracker, but the
+        # live tracker's catanatron state needs to decrement
+        # {type}_IN_HAND so the play-timing hints (knight_hint,
+        # monopoly_hint, etc.) stop firing once the card is played.
+        # Without this, the hint sticks in the HUD after play because
+        # MONOPOLY_IN_HAND stays at 1 forever.
+        try:
+            from cataanbot.live import apply_event as _apply
+            _apply(game.tracker, game.color_map, event)
+        except Exception as e:  # noqa: BLE001
+            print(f"[overlay] live devplay apply failed: {e!r}",
+                  flush=True)
 
     if (isinstance(event, DevCardPlayEvent) and event.card == "knight"
             and game is not None
@@ -3426,21 +3439,16 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             playable_count=hint_fallback)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
-    # When self holds a KNIGHT and isn't already facing a forced robber
-    # placement, surface the full target ranking so Noah can eyeball the
-    # block before committing. Don't clobber "forced" state — the 7-roll
-    # path owns robber_targets in that case.
-    kh = snap.get("knight_hint") or {}
-    if kh.get("have", 0) > 0 and not snap["robber_pending"]:
-        try:
-            full = _compute_robber_snapshot(
-                game, display_colors=st.get("display_colors") or {})
-            if full:
-                snap["robber_targets"] = full
-                snap["robber_reason"] = "knight"
-        except Exception as e:  # noqa: BLE001
-            print(f"[advisor] knight robber targets failed: {e!r}",
-                  flush=True)
+    # Robber-targets ranking is only surfaced when the player ACTUALLY
+    # owes a placement (forced 7-roll, or just played a knight) — not
+    # while merely holding the knight. Showing the ranking pre-play
+    # was confusing UX (Noah saw "robber targets · top brick 6" when
+    # he hadn't yet decided to play the knight) and gave away which
+    # tile he'd target if he did play. The knight_hint verdict
+    # ("PLAY/HOLD") and reason are enough for the hold-decision; the
+    # tile ranking comes after he commits to play. Forced 7-roll path
+    # populates robber_snapshot via _track_overlay_state, and the
+    # knight-play path does it via _feed_postmortem.
     try:
         snap["monopoly_hint"] = _compute_monopoly_hint(
             game, self_color, hand,

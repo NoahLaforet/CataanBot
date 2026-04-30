@@ -2916,13 +2916,17 @@ def test_snapshot_populates_robber_targets_when_self_holds_knight():
     assert snap["robber_reason"] is None
     assert snap["robber_targets"] == []
 
-    # Give self a KNIGHT — full ranking must populate with the 'knight'
-    # discriminator so the overlay labels it differently from a 7-roll.
+    # Give self a KNIGHT — knight_hint fires (PLAY/HOLD verdict) but
+    # the robber-targets ranking does NOT pre-populate. The targets
+    # only show after self actually plays the knight (or rolls a 7),
+    # so opponents can't see which tile we'd target while we're still
+    # deciding whether to play.
     cat.state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 1
     snap = _build_advisor_snapshot(dict(base_st))
     assert snap["knight_hint"]["have"] == 1
-    assert snap["robber_reason"] == "knight"
-    assert len(snap["robber_targets"]) > 0
+    # robber_reason stays None, targets stay empty until play
+    assert snap["robber_reason"] is None
+    assert snap["robber_targets"] == []
     assert snap["robber_pending"] is False
 
     # A self-7-roll (robber_pending=True) must retain "forced" labeling
