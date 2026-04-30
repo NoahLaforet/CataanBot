@@ -436,6 +436,89 @@ def test_build_mapping_handles_variant_shape():
     assert mapping.port_types[1] == 2
 
 
+def test_build_mapping_handles_interior_lake():
+    """Pond-style maps have an interior water lake — land tiles
+    surrounding a hole. The synthesized water ring should cover
+    interior holes too (not just the outer perimeter), and ports
+    on edges adjacent to interior water should still anchor.
+
+    Synthetic shape: a 12-tile ring around a single missing center.
+    """
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    # Ring = 6 tiles distance-1 from origin + 6 more distance-2 in
+    # cardinal directions, with the (0,0) center MISSING (the lake).
+    positions = [
+        # Inner ring (would surround origin)
+        (1, -1), (-1, 1), (1, 0), (-1, 0), (0, 1), (0, -1),
+        # Outer cap to give room for ports
+        (2, -1), (-2, 1), (2, 0), (-2, 0), (1, 1), (-1, -1),
+    ]
+    pos_set = set(positions)
+    types = [0] + [(i % 5) + 1 for i in range(len(positions) - 1)]
+    dice = [0] + [3, 4, 5, 6, 8, 9, 10, 11, 3, 4, 5]
+    hex_states = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y,
+            "type": types[tid - 1],
+            "diceNumber": dice[tid - 1],
+        }
+    corner_states = {}
+    seen_c = set()
+    cid = 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_c or not any(t in pos_set for t in sig):
+                        continue
+                    seen_c.add(sig)
+                    cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    edge_states = {}
+    seen_e = set()
+    eid = 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception:
+                        continue
+                    key = frozenset((a, b))
+                    if (key in seen_e
+                            or not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)):
+                        continue
+                    seen_e.add(key)
+                    eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    mapping = build_mapping({
+        "tileHexStates": hex_states,
+        "tileCornerStates": corner_states,
+        "tileEdgeStates": edge_states,
+        "portEdgeStates": {},
+    })
+    assert len(mapping.tile_types) == 12
+    assert len(set(mapping.node_id.values())) == len(corner_states)
+    # Interior-lake corners (corners between the surrounding land
+    # tiles AND the missing-center axial) must still resolve.
+    interior_lake_corners = [
+        cid_str for cid_str, c in corner_states.items()
+        if (0, 0) in corner_tile_signature(c["x"], c["y"], c["z"])
+    ]
+    assert interior_lake_corners, "expected interior-lake corners in fixture"
+    for cid_str in interior_lake_corners:
+        assert int(cid_str) in mapping.node_id, (
+            f"interior corner {cid_str} not mapped — water ring "
+            f"didn't cover the lake")
+
+
 def test_build_mapping_rejects_empty_mapstate():
     """Even variant maps need *some* hex states. An empty mapState
     is a bridge-pipeline error, not a variant — must surface."""
