@@ -28,6 +28,92 @@ def _iter_payloads(path: Path):
             yield p
 
 
+def test_recommender_works_on_variant_shape():
+    """Beyond just booting, the opening-pick recommender must
+    actually rank settlements correctly on a variant board. The
+    7-tile flower has well-defined production: each non-desert
+    tile produces on its dice number; the corners with the most
+    high-pip tiles should rank top.
+
+    Without working geometry this would crash or return empty.
+    """
+    from cataanbot.advisor import score_opening_nodes
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    from cataanbot.live_game import LiveGame
+
+    positions = [
+        (0, 0), (1, -1), (-1, 1),
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+    ]
+    pos_set = set(positions)
+    # All tiles produce except the center (desert). Mix of pip values
+    # so corners adjacent to multiple high-pip tiles should rank top.
+    types = [0, 4, 4, 5, 5, 1, 1]  # desert + wheat/wheat/ore/ore/wood/wood
+    dice = [0, 6, 8, 6, 8, 5, 9]
+    hex_states = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y,
+            "type": types[tid - 1],
+            "diceNumber": dice[tid - 1],
+        }
+    corner_states, seen_c, cid = {}, set(), 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_c or not any(t in pos_set for t in sig):
+                        continue
+                    seen_c.add(sig); cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    edge_states, seen_e, eid = {}, set(), 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception: continue
+                    key = frozenset((a, b))
+                    if (key in seen_e
+                            or not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)):
+                        continue
+                    seen_e.add(key); eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    body = {
+        "playerColor": 1,
+        "playerUserStates": [
+            {"selectedColor": 1, "username": "Noah", "userId": 999},
+        ],
+        "gameState": {"mapState": {
+            "tileHexStates": hex_states,
+            "tileCornerStates": corner_states,
+            "tileEdgeStates": edge_states,
+            "portEdgeStates": {},
+        }},
+        "gameSettings": {
+            "gameType": 1, "modeSetting": 0, "extensionSetting": 0,
+            "scenarioSetting": 0, "mapSetting": 5,
+            "victoryPointsToWin": 10, "cardDiscardLimit": 7,
+        },
+    }
+    game = LiveGame()
+    game.start_from_game_state(body)
+
+    # Score opening nodes — should return ranked list, top corner
+    # should have positive production.
+    scored = score_opening_nodes(game.tracker.game)
+    assert scored, "recommender returned empty list on variant map"
+    top = scored[0]
+    assert top.raw_production > 0, (
+        f"top opening pick has no production: {top}")
+
+
 def test_live_game_boots_on_variant_shape():
     """Pond / weekly-rotation maps ship a non-classic mapState shape
     (Pond has 24 tiles instead of 19). LiveGame.start_from_game_state
