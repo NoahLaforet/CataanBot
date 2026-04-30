@@ -235,7 +235,13 @@
     /* layout */
     --panel-w: 620px;
     --panel-h: auto;
-    --font-scale: 1;
+    /* Bumped from 1 to 1.1 — Noah's HUD principle: bigger text, fewer
+       words, more obvious reading. 10% size bump applies uniformly to
+       every font-size: calc(...px * var(--font-scale)) declaration so
+       the type hierarchy stays consistent. Wider columns are explicitly
+       OK per the same memory; if 620px starts cramping recs after the
+       bump, widen the panel. */
+    --font-scale: 1.1;
 
     /* spacing — 4px rhythm */
     --s-1: 2px;
