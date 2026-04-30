@@ -317,6 +317,99 @@ def test_snap_just_bought_non_vp_still_delayed(tmp_path: Path):
     assert playable == 0
 
 
+def test_self_play_decrements_live_tracker_in_hand(tmp_path: Path):
+    """Critical regression: when self plays a dev card via the
+    DOM log, the LIVE tracker's catanatron state must decrement
+    {type}_IN_HAND. Without this, _compute_*_hint reads the stale
+    counter and the hint sticks in the HUD even after play.
+
+    Uses a real LiveGame so game.tracker is a real catanatron Game
+    instance — the SimpleNamespace stub in earlier tests doesn't
+    exercise the live-apply path.
+    """
+    from cataanbot.bridge import _feed_postmortem
+    from cataanbot.live_game import LiveGame
+    from cataanbot.events import DevCardSelfBuyTypedEvent
+    from cataanbot.live import apply_event
+    from catanatron import Color
+
+    # Boot a real LiveGame from a synthetic 7-tile flower so we have
+    # a working catanatron tracker.
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    positions = [(0, 0), (1, -1), (-1, 1),
+                 (1, 0), (-1, 0), (0, 1), (0, -1)]
+    pos_set = set(positions)
+    types = [0, 1, 2, 3, 4, 5, 1]
+    dice = [0, 4, 5, 6, 8, 9, 10]
+    hex_states = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y,
+            "type": types[tid - 1],
+            "diceNumber": dice[tid - 1]}
+    corner_states, seen_c, cid = {}, set(), 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_c or not any(t in pos_set for t in sig):
+                        continue
+                    seen_c.add(sig); cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    edge_states, seen_e, eid = {}, set(), 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception: continue
+                    key = frozenset((a, b))
+                    if (key in seen_e
+                            or not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)): continue
+                    seen_e.add(key); eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    body = {
+        "playerColor": 1,
+        "playerUserStates": [
+            {"selectedColor": 1, "username": "Noah", "userId": 999},
+        ],
+        "gameState": {"mapState": {
+            "tileHexStates": hex_states,
+            "tileCornerStates": corner_states,
+            "tileEdgeStates": edge_states,
+            "portEdgeStates": {},
+        }},
+        "gameSettings": {"gameType": 1},
+    }
+    game = LiveGame()
+    game.start_from_game_state(body)
+    cat_state = game.tracker.game.state
+    self_color = game.color_map.get("Noah")
+    idx = cat_state.color_to_index[Color[self_color.upper()]]
+
+    # Seed self with a knight via the typed-buy event.
+    apply_event(game.tracker, game.color_map,
+                DevCardSelfBuyTypedEvent(
+                    player="Noah", card_type="KNIGHT"))
+    assert cat_state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 1
+
+    st = _make_state(tmp_path=tmp_path)
+    st["game"] = game  # real LiveGame replaces the stub
+    st["dev_cards_held"] = 1
+
+    # DOM-log knight play → bridge hooks → live tracker decrement
+    _feed_postmortem(st, _play_knight_payload("Noah"))
+    assert cat_state.player_state[f"P{idx}_KNIGHT_IN_HAND"] == 0, (
+        "live tracker KNIGHT_IN_HAND should be 0 after play")
+    assert cat_state.player_state[f"P{idx}_PLAYED_KNIGHT"] == 1
+
+
 def test_full_buy_play_cycle_across_turns(tmp_path: Path):
     # End-to-end: buy on self's turn → can't play yet → turn flips →
     # carve-out clears → card becomes playable.
