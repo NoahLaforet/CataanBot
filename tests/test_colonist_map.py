@@ -413,20 +413,27 @@ def test_build_mapping_handles_variant_shape():
                     eid += 1
                     edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
 
+    # Port on the first edge — pick any edge_state we generated.
+    first_eid = next(iter(edge_states))
+    port_states = {
+        "1": {**edge_states[first_eid], "type": 2},  # 2:1 wood
+    }
     mapping = build_mapping({
         "tileHexStates": hex_states,
         "tileCornerStates": corner_states,
         "tileEdgeStates": edge_states,
-        "portEdgeStates": {},
+        "portEdgeStates": port_states,
     })
-    # 7 tiles, 24 corners (= shape-determined for a flower), all
-    # mapped bijectively.
+    # 7 tiles, all corners + edges mapped bijectively.
     assert len(mapping.tile_types) == 7
     assert len(set(mapping.node_id.values())) == len(corner_states)
     assert len(set(mapping.edge_nodes.values())) == len(edge_states)
     # Resources / dice match colonist's authoritative values.
     assert mapping.tile_dice[1] == 3
     assert mapping.tile_types[1] == 2  # tid=1 → BRICK
+    # Port mapped through to mapping.port_edges.
+    assert 1 in mapping.port_edges
+    assert mapping.port_types[1] == 2
 
 
 def test_build_mapping_rejects_empty_mapstate():

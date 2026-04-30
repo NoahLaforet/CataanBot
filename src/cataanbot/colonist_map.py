@@ -233,7 +233,104 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
             tiles, coord, node_autoinc)
         tiles[coord] = Water(nodes, edges)
 
+    # Pass 3: Replace water positions with Port tiles where colonist
+    # has a port on the adjacent edge. We can't do this earlier because
+    # we need every water tile's stitched nodes to identify which water
+    # position holds each port. Skips ports we can't anchor (port edges
+    # whose endpoints don't resolve to a unique water tile) — better
+    # silent than wrong.
+    port_states = map_state.get("portEdgeStates", {}) or {}
+    if port_states:
+        _attach_variant_ports(tiles, port_states, hex_states)
+
     return CatanMap.from_tiles(tiles)
+
+
+def _attach_variant_ports(
+    tiles: dict, port_states: dict, hex_states: dict,
+) -> None:
+    """Mutate ``tiles`` to replace Water at port positions with Port
+    tiles carrying colonist's resource + the inferred direction.
+
+    Each colonist port edge is between two land corners. The port
+    "lives" on a Water tile that shares both corners — we find that
+    Water tile by signature lookup, then determine which of the six
+    PORT_DIRECTION_TO_NODEREFS pairs matches. Port construction is
+    skipped silently for ports we can't anchor (rare edge cases on
+    odd map shapes).
+    """
+    from catanatron.models.map import (
+        Port, Water, PORT_DIRECTION_TO_NODEREFS, Direction, NodeRef,
+    )
+
+    # Build axial → tile object across BOTH land and water — matters
+    # for boundary corners whose colonist signature includes a water
+    # axial. We need every adjacent tile in the reverse lookup or the
+    # signature won't match.
+    axial_to_tile: dict[tuple[int, int], Any] = {}
+    for coord, tile in tiles.items():
+        axial_to_tile[(coord[0], coord[1])] = tile
+
+    # Reverse map: catanatron node_id → set of all-tile axials
+    # touching that node (3 for a normal corner, 2 for the rare
+    # 2-way nodes that occur on outer-water-ring boundaries).
+    node_to_axials: dict[int, set[tuple[int, int]]] = {}
+    for axial, tile in axial_to_tile.items():
+        for _ref, nid in tile.nodes.items():
+            node_to_axials.setdefault(nid, set()).add(axial)
+    sig_to_node: dict[frozenset, int] = {
+        frozenset(ax_set): nid
+        for nid, ax_set in node_to_axials.items()
+    }
+
+    port_idx = 0
+    for pid, p in port_states.items():
+        try:
+            ex, ey, ez = int(p["x"]), int(p["y"]), int(p["z"])
+            type_int = int(p["type"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        try:
+            a_sig, b_sig = edge_endpoint_signatures(ex, ey, ez)
+        except ValueError:
+            continue
+        # Match against axials we know about (land + synthesized
+        # water). Signatures with a tile we don't track are
+        # silently skipped.
+        a_known_sig = frozenset(t for t in a_sig
+                                if t in axial_to_tile)
+        b_known_sig = frozenset(t for t in b_sig
+                                if t in axial_to_tile)
+        a_nid = sig_to_node.get(a_known_sig)
+        b_nid = sig_to_node.get(b_known_sig)
+        if a_nid is None or b_nid is None:
+            continue
+
+        # Find the water tile that has both a_nid and b_nid on its
+        # boundary, plus determine the direction.
+        port_resource_name = port_resource(type_int)
+        for coord, tile in list(tiles.items()):
+            if not isinstance(tile, Water):
+                continue
+            tile_node_ids = set(tile.nodes.values())
+            if a_nid not in tile_node_ids or b_nid not in tile_node_ids:
+                continue
+            # Direction: which (a_ref, b_ref) pair maps to (a_nid, b_nid)?
+            chosen_dir = None
+            for direction in Direction:
+                a_ref, b_ref = PORT_DIRECTION_TO_NODEREFS[direction]
+                pair_nodes = (tile.nodes[a_ref], tile.nodes[b_ref])
+                if {a_nid, b_nid} == set(pair_nodes):
+                    chosen_dir = direction
+                    break
+            if chosen_dir is None:
+                continue
+            tiles[coord] = Port(
+                port_idx, port_resource_name, chosen_dir,
+                tile.nodes, tile.edges,
+            )
+            port_idx += 1
+            break
 
 
 # ---- Mapping build ---------------------------------------------------------

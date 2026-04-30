@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.24.0
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.24.0 makes the bridge boot on non-classic map layouts (Pond and other weekly-rotation maps). Same Catan rules in all cases — colonist only changes the board shape — so opening picks, build placement, and the recommender all work on the actual geometry instead of crashing at GameStart. Port 2:1 trade suggestions are quiet on variant maps for now (port reconstruction is a follow-up). v0.23.51 added the "VARIANT" header badge.
+// @version      0.24.1
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.24.1 finishes variant-map support — port 2:1 trade rates now wire through on Pond and other weekly-rotation layouts. Bridge constructs a fresh catanatron CatanMap from colonist's tile/corner/edge/port data for any shape, with synthesized water-ring tiles around the perimeter and Port tiles anchored at the right water positions. Opening picks, build placement, the recommender, and port-aware trade suggestions all work on the actual geometry. Same Catan rules in all cases.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2532,8 +2532,8 @@
                 ui.variantBadge.title = '';
             } else {
                 ui.panel.dataset.variant = 'non-classic';
-                ui.variantBadge.textContent = 'variant';
-                ui.variantBadge.title = `${variant} — bot strategy not yet tuned for this map`;
+                ui.variantBadge.textContent = 'variant map';
+                ui.variantBadge.title = `${variant} — same Catan rules, different board shape. Opening picks, recommender, and port 2:1 trade rates all work on the actual geometry.`;
             }
         }
         const parts = [];
