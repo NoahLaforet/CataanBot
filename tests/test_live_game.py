@@ -2045,7 +2045,7 @@ def test_compute_rb_hint_fires_when_longest_road_in_reach():
     should_play=secures; card + opp ahead → should_play=catches; card
     + no swing → should_play=False. Uses a fake game with a monkey-
     patched _pieces_for_color so we don't need a live capture."""
-    import cataanbot.bridge as bridge
+    import cataanbot.bridge_hints as bridge
     from cataanbot.bridge import _compute_rb_hint
     from catanatron import Color
 
@@ -2063,7 +2063,10 @@ def test_compute_rb_hint_fires_when_longest_road_in_reach():
     g.tracker.game.state.color_to_index = {Color.RED: 0, Color.BLUE: 1}
 
     # Monkeypatch piece counts — 10 roads left keeps us out of the
-    # "running low" branch unless we explicitly set it.
+    # "running low" branch unless we explicitly set it. _pieces_for_color
+    # lives in bridge_economy but bridge_hints imports it by name, so we
+    # patch the binding inside bridge_hints (where _compute_rb_hint looks
+    # it up via module globals).
     original = bridge._pieces_for_color
     bridge._pieces_for_color = lambda _g, _c: {
         "settle": 2, "settle_left": 3, "city": 0, "city_left": 4,
