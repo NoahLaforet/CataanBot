@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.24.1
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.24.1 finishes variant-map support — port 2:1 trade rates now wire through on Pond and other weekly-rotation layouts. Bridge constructs a fresh catanatron CatanMap from colonist's tile/corner/edge/port data for any shape, with synthesized water-ring tiles around the perimeter and Port tiles anchored at the right water positions. Opening picks, build placement, the recommender, and port-aware trade suggestions all work on the actual geometry. Same Catan rules in all cases.
+// @version      0.24.2
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.24.2 polish round after Noah's first variant-game test: knight hint copy is conversational (not stat-strings), monopoly hint clears immediately on play (was sticking), robber-targets ranking only shows AFTER the knight is played (no more pre-play tile reveal), and the bridge auto-detects colonist's optional Friendly Robber rule and filters protected ≤2-VP victims out of the suggestions. Render orientation matches colonist's screen.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
