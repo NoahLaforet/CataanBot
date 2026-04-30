@@ -524,7 +524,9 @@ def _write_postmortem(st, game_over) -> None:
 
     out_dir = st.get("pm_dir")
     if out_dir is None:
-        out_dir = _Path.home() / "Desktop" / "CataanBot" / "postmortems"
+        # Same fallback as the bridge launcher — cwd/postmortems is
+        # portable for anyone who clones the repo.
+        out_dir = _Path.cwd() / "postmortems"
     out_dir = _Path(out_dir)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
