@@ -2508,6 +2508,14 @@
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
+            // Clear header pills too — they shouldn't persist across
+            // a reset/new-game while the next game's settings load.
+            ui.panel.dataset.variant = 'classic';
+            ui.panel.dataset.friendlyRobber = '0';
+            if (ui.variantBadge) {
+                ui.variantBadge.textContent = '';
+                ui.variantBadge.title = '';
+            }
             ui.panel.dataset.phase = 'pre';
             return;
         }
