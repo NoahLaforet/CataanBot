@@ -410,6 +410,27 @@ def test_self_play_decrements_live_tracker_in_hand(tmp_path: Path):
     assert cat_state.player_state[f"P{idx}_PLAYED_KNIGHT"] == 1
 
 
+def test_friendly_robber_info_event_sets_session_flag(tmp_path: Path):
+    """Colonist's "Friendly Robber is active" InfoEvent at game
+    start must flip session.friendly_robber_active=True. The bridge's
+    snapshot reads this flag; the robber-target ranker then filters
+    protected ≤2 VP victims."""
+    from cataanbot.bridge import _feed_postmortem
+
+    st = _make_state(tmp_path=tmp_path)
+    sess = st["game"].session
+    sess.friendly_robber_active = False
+    # Synthetic DOM-log payload for the InfoEvent — text starts with
+    # "Friendly Robber" (the parser lowercases it before its
+    # startswith check, but we test exact colonist casing).
+    payload = _payload([
+        _text("Friendly Robber is active, tiles available to "
+              "block are limited"),
+    ])
+    _feed_postmortem(st, payload)
+    assert sess.friendly_robber_active is True
+
+
 def test_full_buy_play_cycle_across_turns(tmp_path: Path):
     # End-to-end: buy on self's turn → can't play yet → turn flips →
     # carve-out clears → card becomes playable.
