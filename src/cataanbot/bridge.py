@@ -2901,9 +2901,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         # "forced" = self rolled a 7 and must place the robber now;
         # "placed" = the robber just got placed (from a 7-roll or a
         #     knight play); snapshot lingers through the turn so Noah
-        #     can reflect;
-        # "knight" = self holds a KNIGHT, targets shown as play-timing
-        #     aid — takes precedence over "placed" in the snap builder.
+        #     can reflect.
+        # The earlier "knight" pre-play preview was dropped — opponents
+        # watching a stream shouldn't see which tile we'd target before
+        # we commit to playing the card. Targets only render after
+        # play (via the DOM-log knight handler in _feed_postmortem).
         # None when targets are empty.
         "robber_reason": (
             "forced" if st.get("robber_pending")
