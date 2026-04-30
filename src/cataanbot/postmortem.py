@@ -28,9 +28,15 @@ def render_postmortem_html(
     final_vp: dict[str, int],
     out_path: str | Path,
     jsonl_path: str | None = None,
+    board_fingerprint: dict[str, object] | None = None,
 ) -> Path:
     """Build a combined text report + three embedded PNG charts and
-    write them to a single self-contained HTML file."""
+    write them to a single self-contained HTML file.
+
+    `board_fingerprint`, when provided, surfaces in the report header
+    so postmortems on variant maps (Pond, Through-the-Desert, etc.) can
+    be told apart at a glance from classic ones.
+    """
     out_path = Path(out_path)
 
     report = build_report(
@@ -40,6 +46,7 @@ def render_postmortem_html(
         final_vp=final_vp,
         timestamps=timestamps,
         jsonl_path=jsonl_path,
+        board_fingerprint=board_fingerprint,
     )
     report_text = format_report(report)
 

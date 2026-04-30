@@ -129,6 +129,48 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         _write_postmortem(st, event)
 
 
+def _compute_board_fingerprint(game) -> dict[str, object] | None:
+    """Snapshot the board's shape so the postmortem can identify a variant.
+
+    Reads tile/corner/edge/port counts off the live CatanMap. Classic
+    Catan is 19/54/72/9; Pond is 24/76/100/8; other Seafarers / Through-
+    the-Desert / Black-Forest variants each have their own shape, so the
+    quad of counts is a reliable fingerprint without us having to enum
+    every variant.
+    """
+    if game is None:
+        return None
+    try:
+        m = game.tracker.game.state.board.map
+    except Exception:  # noqa: BLE001
+        return None
+    fp: dict[str, object] = {}
+    try:
+        fp["tile_count"] = len(getattr(m, "land_tiles", {}) or {})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        fp["corner_count"] = len(getattr(m, "land_nodes", set()) or set())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        fp["edge_count"] = len(getattr(m, "land_edges", set()) or set())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        fp["port_count"] = len(getattr(m, "port_nodes", set()) or set())
+    except Exception:  # noqa: BLE001
+        pass
+    label = (fp.get("tile_count") == 19
+             and fp.get("corner_count") == 54
+             and "classic")
+    if label:
+        fp["label"] = "classic"
+    else:
+        fp["label"] = "variant"
+    return fp or None
+
+
 def _write_postmortem(st, game_over) -> None:
     """Render the HTML postmortem to ``st['pm_dir']`` (or the default)."""
     import time as _time
@@ -168,6 +210,7 @@ def _write_postmortem(st, game_over) -> None:
             final_vp=final_vp,
             out_path=out_path,
             jsonl_path=None,
+            board_fingerprint=_compute_board_fingerprint(st.get("game")),
         )
     except Exception as e:  # noqa: BLE001
         print(f"[pm] render failed: {e}", flush=True)

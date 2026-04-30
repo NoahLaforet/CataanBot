@@ -17,8 +17,9 @@ from dataclasses import dataclass, field
 
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
-    Event, GameOverEvent, MonopolyStealEvent, NoStealEvent, ProduceEvent,
-    RobberMoveEvent, RollEvent, StealEvent, TradeCommitEvent, VPEvent,
+    Event, GameOverEvent, InfoEvent, MonopolyStealEvent, NoStealEvent,
+    ProduceEvent, RobberMoveEvent, RollEvent, StealEvent,
+    TradeCommitEvent, VPEvent,
 )
 from cataanbot.live import ColorMap, DispatchResult
 
@@ -181,6 +182,22 @@ class MoveAnnotation:
 
 
 @dataclass
+class DevCardLogEntry:
+    """One dev-card buy or play, attributed to a round and player.
+
+    Round numbers count from the first RollEvent — setup-phase buys are
+    extremely rare in colonist (the UI only enables the dev-card button
+    after a roll), so round 0 mostly means "before the first roll", not
+    "round one of play".
+    """
+    round: int
+    event_index: int
+    player: str
+    action: str  # "buy" | "play"
+    card: str | None  # None for opaque buys (only self typed-buys reveal it)
+
+
+@dataclass
 class ReplayReport:
     """Everything build_report collected for one game."""
     jsonl_path: str | None
@@ -201,6 +218,12 @@ class ReplayReport:
     sevens: list[SevenImpact] = field(default_factory=list)
     trade_impacts: list[TradeImpact] = field(default_factory=list)
     move_annotations: list[MoveAnnotation] = field(default_factory=list)
+    dev_card_timeline: list[DevCardLogEntry] = field(default_factory=list)
+    friendly_robber_active: bool = False
+    # Optional fingerprint of the board self played on. Bridge populates
+    # this from the GameStart frame; legacy callers that don't pass it
+    # leave the section silent.
+    board_fingerprint: dict[str, object] | None = None
 
 
 def build_report(
@@ -210,17 +233,25 @@ def build_report(
     final_vp: dict[str, int],
     timestamps: list[float] | None = None,
     jsonl_path: str | None = None,
+    board_fingerprint: dict[str, object] | None = None,
 ) -> ReplayReport:
     """Aggregate a replay into a ReplayReport.
 
     `events` and `dispatch_results` are index-aligned — one result per
     parsed event. `timestamps` (optional) lets the header show game
-    duration; if omitted the report just skips it."""
+    duration; if omitted the report just skips it. `board_fingerprint`
+    (optional) is recorded as-is for the postmortem header — board
+    label, tile/corner/edge counts, etc."""
     stats_by_color = _init_stats(color_map)
     histogram: Counter = Counter()
     winner_username: str | None = None
     sevens: list[SevenImpact] = []
     trade_impacts: list[TradeImpact] = []
+    dev_card_timeline: list[DevCardLogEntry] = []
+    friendly_robber_active = False
+    # Round counter increments on each RollEvent (first roll = round 1);
+    # buys/plays before any roll are tagged round 0.
+    current_round = 0
     # Per-username cumulative produce counts — snapshotted at each
     # player-to-player TradeCommitEvent to score trade quality.
     produced_so_far: dict[str, dict[str, int]] = {}
@@ -234,6 +265,7 @@ def build_report(
             histogram[event.total] += 1
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.rolls += 1
+            current_round += 1
             # New roll closes any in-flight 7 window.
             if current_seven is not None:
                 sevens.append(current_seven)
@@ -243,6 +275,12 @@ def build_report(
                 current_seven = SevenImpact(
                     event_index=i, roller=event.player,
                 )
+        elif isinstance(event, InfoEvent):
+            # Friendly Robber is announced once at game start. Other
+            # InfoEvents (rule reminders, bot-thinking notices) are
+            # informational and don't change report state.
+            if event.text.lower().startswith("friendly robber"):
+                friendly_robber_active = True
         elif isinstance(event, ProduceEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             for res, n in event.resources.items():
@@ -270,12 +308,21 @@ def build_report(
         elif isinstance(event, DevCardBuyEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.dev_buys += 1
+            dev_card_timeline.append(DevCardLogEntry(
+                round=current_round, event_index=i,
+                player=event.player, action="buy",
+                card=getattr(event, "card_type", None),
+            ))
         elif isinstance(event, DevCardPlayEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.dev_plays[event.card] += 1
             if event.card == "year_of_plenty":
                 for res, n in event.resources.items():
                     stats.yop_gained[res] = stats.yop_gained.get(res, 0) + n
+            dev_card_timeline.append(DevCardLogEntry(
+                round=current_round, event_index=i,
+                player=event.player, action="play", card=event.card,
+            ))
         elif isinstance(event, MonopolyStealEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.monopolies.append((event.resource, event.count))
@@ -398,6 +445,9 @@ def build_report(
         sevens=sevens,
         trade_impacts=trade_impacts,
         move_annotations=annotations,
+        dev_card_timeline=dev_card_timeline,
+        friendly_robber_active=friendly_robber_active,
+        board_fingerprint=board_fingerprint,
     )
 
 
@@ -676,6 +726,9 @@ def format_report(report: ReplayReport) -> str:
     lines.append(bar)
     lines.append("")
 
+    lines.extend(_format_meta_block(report))
+    if lines[-1] != "":
+        lines.append("")
     lines.extend(_format_players_block(report))
     lines.append("")
     lines.extend(_format_winner_block(report))
@@ -700,8 +753,65 @@ def format_report(report: ReplayReport) -> str:
     lines.append("")
     lines.extend(_format_move_annotations(report))
     lines.append("")
+    lines.extend(_format_dev_card_timeline(report))
+    lines.append("")
     lines.extend(_format_dispatch_quality(report))
     return "\n".join(lines)
+
+
+def _format_meta_block(report: ReplayReport) -> list[str]:
+    """Top-of-report metadata: friendly robber rule + board fingerprint.
+
+    Both lines are silent unless populated, so the legacy "no fingerprint
+    + no friendly robber" path renders identically to the pre-enrichment
+    output.
+    """
+    lines: list[str] = []
+    if report.friendly_robber_active:
+        lines.append("Rules: Friendly Robber active "
+                     "(victims with VP ≤ threshold are protected)")
+    fp = report.board_fingerprint
+    if fp:
+        label = fp.get("label") or fp.get("name") or "unknown variant"
+        tiles = fp.get("tile_count")
+        corners = fp.get("corner_count")
+        edges = fp.get("edge_count")
+        ports = fp.get("port_count")
+        bits: list[str] = [str(label)]
+        if tiles is not None:
+            bits.append(f"{tiles} tiles")
+        if corners is not None:
+            bits.append(f"{corners} corners")
+        if edges is not None:
+            bits.append(f"{edges} edges")
+        if ports is not None:
+            bits.append(f"{ports} ports")
+        lines.append("Board: " + " · ".join(bits))
+    return lines
+
+
+def _format_dev_card_timeline(report: ReplayReport) -> list[str]:
+    """Chronological dev-card buy/play log, grouped by round.
+
+    Buys made by opponents have ``card=None`` (colonist hides the type
+    until played), so the line shows just "buy" without specifying which
+    card. Self buys may surface the card type when the bridge has decoded
+    it from the WS frame.
+    """
+    lines = ["Dev card timeline:"]
+    if not report.dev_card_timeline:
+        lines.append("  (no dev cards bought or played)")
+        return lines
+    by_round: dict[int, list[DevCardLogEntry]] = {}
+    for e in report.dev_card_timeline:
+        by_round.setdefault(e.round, []).append(e)
+    for r in sorted(by_round):
+        round_label = f"R{r:>2}" if r > 0 else "pre"
+        for e in by_round[r]:
+            kind = e.card or "?"
+            verb = "bought" if e.action == "buy" else "played"
+            lines.append(f"  {round_label}  {e.player:<14} {verb} {kind}")
+    return lines
 
 
 def _format_move_annotations(report: ReplayReport) -> list[str]:

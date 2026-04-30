@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
-    GameOverEvent, MonopolyStealEvent, NoStealEvent, ProduceEvent,
-    RobberMoveEvent, RollEvent, StealEvent, TradeCommitEvent, VPEvent,
+    GameOverEvent, InfoEvent, MonopolyStealEvent, NoStealEvent,
+    ProduceEvent, RobberMoveEvent, RollEvent, StealEvent,
+    TradeCommitEvent, VPEvent,
 )
 from cataanbot.live import ColorMap, DispatchResult
 from cataanbot.report import build_report, format_report
@@ -814,3 +815,112 @@ def test_format_report_move_annotations_empty_graceful():
     out = format_report(rep)
     assert "Move annotations" in out
     assert "no flagged moves" in out
+
+
+def test_dev_card_timeline_records_buys_and_plays_with_rounds():
+    """The dev-card timeline tags each buy/play with a round counter.
+
+    Round 0 = before any roll lands; round n = after the nth RollEvent.
+    Card type for opaque opponent buys is None (colonist hides it until
+    play); play events always carry the type."""
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        DevCardBuyEvent(player="Alice"),         # round 0 — pre-roll buy
+        RollEvent(player="Alice", d1=3, d2=2),   # advance to round 1
+        DevCardBuyEvent(player="Bob"),           # round 1
+        DevCardPlayEvent(player="Alice", card="knight"),
+        RollEvent(player="Alice", d1=4, d2=3),   # advance to round 2 (a 7)
+        DevCardPlayEvent(player="Bob", card="monopoly", resource="WOOD"),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 0, "BLUE": 0},
+    )
+    tl = rep.dev_card_timeline
+    assert len(tl) == 4
+    assert tl[0].round == 0 and tl[0].action == "buy" and tl[0].player == "Alice"
+    assert tl[1].round == 1 and tl[1].action == "buy" and tl[1].player == "Bob"
+    assert (tl[2].round == 1 and tl[2].action == "play"
+            and tl[2].card == "knight")
+    assert (tl[3].round == 2 and tl[3].action == "play"
+            and tl[3].card == "monopoly" and tl[3].player == "Bob")
+
+
+def test_friendly_robber_info_event_flips_flag():
+    """The InfoEvent that announces 'Friendly Robber active' flips the
+    report flag, and the format_report meta block surfaces it. Other
+    InfoEvents (rule reminders, bot-thinking notices) leave it off."""
+    cm = ColorMap({"Alice": "RED"})
+    events = [
+        InfoEvent(text="Some bot thinking notice"),
+        RollEvent(player="Alice", d1=3, d2=4),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    assert rep.friendly_robber_active is False
+    assert "Friendly Robber" not in format_report(rep)
+
+    events_fr = [
+        InfoEvent(text="Friendly Robber is active, "
+                       "victims with low VP are protected"),
+        RollEvent(player="Alice", d1=3, d2=4),
+    ]
+    rep_fr = build_report(
+        events_fr, [_result(e) for e in events_fr], cm, final_vp={"RED": 0},
+    )
+    assert rep_fr.friendly_robber_active is True
+    out = format_report(rep_fr)
+    assert "Friendly Robber active" in out
+
+
+def test_board_fingerprint_renders_in_report_header():
+    """When build_report is given a board_fingerprint dict the meta
+    block prints a Board: line with label + counts. Legacy callers that
+    pass nothing get a fully silent meta block."""
+    cm = ColorMap({"Alice": "RED"})
+    events = [RollEvent(player="Alice", d1=3, d2=4)]
+    fp = {
+        "label": "pond",
+        "tile_count": 24, "corner_count": 76,
+        "edge_count": 100, "port_count": 8,
+    }
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+        board_fingerprint=fp,
+    )
+    assert rep.board_fingerprint == fp
+    out = format_report(rep)
+    assert "Board: pond" in out
+    assert "24 tiles" in out
+    assert "8 ports" in out
+
+    # Without a fingerprint, no Board: line at all.
+    rep2 = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    assert rep2.board_fingerprint is None
+    assert "Board:" not in format_report(rep2)
+
+
+def test_dev_card_timeline_format_renders_grouped_rounds():
+    """format_report's dev card timeline section groups by round and
+    shows player + verb + card type. Empty timeline shows the skip line."""
+    cm = ColorMap({"Alice": "RED"})
+    rep = build_report(
+        [], [], cm, final_vp={"RED": 0},
+    )
+    assert "Dev card timeline" in format_report(rep)
+    assert "no dev cards" in format_report(rep)
+
+    events = [
+        RollEvent(player="Alice", d1=3, d2=2),
+        DevCardBuyEvent(player="Alice"),
+        DevCardPlayEvent(player="Alice", card="knight"),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm, final_vp={"RED": 0},
+    )
+    out = format_report(rep)
+    assert "R 1" in out
+    assert "Alice" in out and "knight" in out
