@@ -217,6 +217,17 @@ def _build_app(jsonl_path: Path | None = None,
         if results is None and game.started and st.get("_booted") is None:
             st["_booted"] = True
             _print_game_start(game)
+            # Re-seed pm_tracker with the live game's catanatron map.
+            # By default pm_tracker uses BASE_MAP_TEMPLATE (classic 19
+            # tiles) but variant maps have different node IDs, so the
+            # postmortem path would reject every BuildEvent on Pond/etc.
+            # Sharing the catan_map ensures the postmortem report can
+            # actually apply build events for variant games too.
+            try:
+                st["pm_tracker"] = Tracker(
+                    catan_map=game.tracker.game.state.board.map)
+            except Exception as e:  # noqa: BLE001
+                print(f"[pm] failed to reseed tracker: {e!r}", flush=True)
             return {"ok": True, "booted": True,
                     "players": game.color_map.as_dict()}
 
