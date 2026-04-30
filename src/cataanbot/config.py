@@ -50,6 +50,13 @@ def _env_int(name: str, default: int) -> int:
 _state: dict[str, int] = {
     "VP_TARGET": _env_int("CATAANBOT_VP_TARGET", 10),
     "DISCARD_LIMIT": _env_int("CATAANBOT_DISCARD_LIMIT", 7),
+    # Friendly Robber protection threshold — colonist's optional rule
+    # that prevents robbing players at or below this VP. Default 2
+    # matches colonist's standard implementation (newly-placed
+    # players have 2 VP from setup; rule shields them). Configurable
+    # via env var for house rules that use a different threshold.
+    "FRIENDLY_ROBBER_PROTECTED_VP": _env_int(
+        "CATAANBOT_FRIENDLY_ROBBER_PROTECTED_VP", 2),
 }
 
 
@@ -88,6 +95,22 @@ def set_discard_limit(value: int) -> None:
     if n < 1:
         raise ValueError(f"discard limit must be >= 1, got {n}")
     _state["DISCARD_LIMIT"] = n
+
+
+def get_friendly_robber_protected_vp() -> int:
+    """Friendly Robber's protection threshold — players at or below
+    this VP can't be robbed. Default 2."""
+    return _state["FRIENDLY_ROBBER_PROTECTED_VP"]
+
+
+def set_friendly_robber_protected_vp(value: int) -> None:
+    """Set the protection threshold (≥0). 0 disables the rule even
+    when colonist marks it active; useful for testing."""
+    n = int(value)
+    if n < 0:
+        raise ValueError(
+            f"friendly robber threshold must be >= 0, got {n}")
+    _state["FRIENDLY_ROBBER_PROTECTED_VP"] = n
 
 
 # Ratios used to derive per-game-mode thresholds. Kept near 0.8 / 0.7 /

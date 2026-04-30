@@ -875,11 +875,14 @@ def _compute_robber_snapshot(
             continue
         hand_size_override[c] = int(count)
     # Friendly Robber threshold: when colonist announced the rule,
-    # filter victims with VP ≤ 2. Default 2 matches colonist's
-    # behaviour (newly-placed players have 2 VP from their two
-    # opening settlements; the rule protects them so opps can't
-    # gang-robber a leader's first build attempt).
-    fr_min = 2 if sess.friendly_robber_active else None
+    # filter victims with VP ≤ the configured threshold (default 2,
+    # matches colonist's behaviour — newly-placed players have 2 VP
+    # from their two opening settlements; the rule protects them so
+    # opps can't gang-robber a leader's first build attempt).
+    # House-rules can override via CATAANBOT_FRIENDLY_ROBBER_PROTECTED_VP.
+    from cataanbot.config import get_friendly_robber_protected_vp
+    fr_min = (get_friendly_robber_protected_vp()
+              if sess.friendly_robber_active else None)
     try:
         scores = score_robber_targets(
             game.tracker.game, color,
