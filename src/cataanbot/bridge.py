@@ -2062,17 +2062,40 @@ def _compute_knight_hint(
     top_target = top_targets[0] if top_targets else None
     top_score = float(top_target["score"]) if top_target else 0.0
 
+    # Self's own progress toward Largest Army — needed for the
+    # "you're close to LA" copy variant.
+    self_played_knights = int(state.player_state.get(
+        f"P{idx}_PLAYED_KNIGHT", 0))
+
     should = False
-    reason = "no urgent block"
+    # Reason copy is intentionally conversational — Noah said the old
+    # "strong block · score +10" stat-string didn't tell him *why* to
+    # play. The reasons below name a concrete situation (robber on
+    # you / opp close to LA / you close to LA / a tile worth blocking)
+    # so the verdict reads as advice, not a stat dump.
+    reason = "no urgent reason — hold for now"
     if self_blocked_pips > 0:
         should = True
-        reason = f"robber on you · {self_blocked_pips} pips blocked"
+        reason = (f"robber's on you — play to clear it "
+                  f"({self_blocked_pips} pips blocked)")
     elif largest_army_threat:
         should = True
-        reason = "opp closing on LA"
+        reason = "an opp is close to Largest Army — play to deny"
+    elif self_played_knights >= 2:
+        # 2 played + this play = 3 played → claim Largest Army.
+        # 1 played + this = 2 played, getting closer but not there.
+        should = True
+        reason = ("you're 1 knight from Largest Army — "
+                  "play it to grab the +2 VP")
     elif top_score >= 4.0:
         should = True
-        reason = f"strong block · score {top_score:+.1f}"
+        # Name the tile so it's actionable without the score number.
+        if top_target and top_target.get("resource"):
+            tile_lbl = (f"{top_target['resource'].lower()} "
+                        f"{top_target.get('number') or ''}").strip()
+            reason = f"a strong block on {tile_lbl} is available"
+        else:
+            reason = "a strong block is available"
 
     return {
         "have": knight_in_hand,

@@ -3033,15 +3033,13 @@
             const kh = snap.knight_hint;
             const verdictCls = kh.should_play ? 'play' : 'hold';
             const verdictLbl = kh.should_play ? 'PLAY' : 'HOLD';
-            let tail = '';
-            if (kh.best_target) {
-                const t = kh.best_target;
-                const tile = t.resource
-                    ? `${iconFor(t.resource)}${t.number ?? ''}`
-                    : 'DES';
-                const scoreTxt = (t.score > 0 ? '+' : '') + t.score;
-                tail = ` · top ${tile} (${scoreTxt})`;
-            }
+            // Reason is now self-contained natural-language ("an opp
+            // is close to LA — play to deny", "robber's on you — play
+            // to clear it"), so no need for a stat tail. The bot's
+            // top robber target is still in kh.best_target for the
+            // post-play targets ranking; we don't surface it pre-play
+            // any more (that gives away the plan to opps watching
+            // a stream).
             const hintCls = kh.should_play
                 ? 'knight-hint should-play' : 'knight-hint';
             const hdr = showCount
@@ -3050,8 +3048,7 @@
                 + `<div class="kh-h">${hdr}</div>`
                 + '<div class="kh-reason">'
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
-                + escapeHtml(kh.reason || '')
-                + escapeHtml(tail) + '</div>'
+                + escapeHtml(kh.reason || '') + '</div>'
                 + '</div>');
         }
         if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
@@ -3067,9 +3064,15 @@
             let sub = '';
             if (mh.top_holder && mh.top_holder.count > 0) {
                 const th = mh.top_holder;
-                const swatch = th.display
-                    ? `<span class="mh-swatch" style="background:${escapeHtml(th.display)}"></span>`
-                    : '';
+                // Always render the swatch — fall back to the
+                // catanatron color hex when colonist hasn't surfaced
+                // the seat's CSS color yet (early in the game). Pre-fix
+                // this rendered as empty when display was missing,
+                // making the "drains 4 from white" line read as
+                // disembodied text with no player marker.
+                const bg = th.display || COLOR_HEX[th.color] || '#888';
+                const swatch = `<span class="mh-swatch" `
+                    + `style="background:${escapeHtml(bg)}"></span>`;
                 sub = `<div class="dv-sub">`
                     + swatch
                     + escapeHtml(`drains ${th.count} from ${th.color.toLowerCase()}`)
