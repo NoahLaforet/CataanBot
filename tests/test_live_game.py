@@ -131,6 +131,89 @@ def test_variant_map_road_placement_works():
     cat_game.state.board.build_road(Color.RED, road_edge)
 
 
+def test_robber_move_works_on_variant_shape():
+    """Robber-move events from colonist must resolve to a real tile
+    on the variant CatanMap. Bridge looks up
+    sess.mapping.tile_coord[colonist_tid] then sets
+    state.board.robber_coordinate = that cube — needs to land on a
+    coord that actually exists in the variant CatanMap's tiles dict.
+    """
+    from cataanbot.colonist_diff import events_from_diff
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    from cataanbot.events import RobberMoveEvent
+    from cataanbot.live import apply_event
+    from cataanbot.live_game import LiveGame
+
+    positions = [(0, 0), (1, -1), (-1, 1),
+                 (1, 0), (-1, 0), (0, 1), (0, -1)]
+    pos_set = set(positions)
+    types = [0, 1, 2, 3, 4, 5, 1]
+    dice = [0, 4, 5, 6, 8, 9, 10]
+    hex_states = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y, "type": types[tid - 1],
+            "diceNumber": dice[tid - 1]}
+    corner_states, seen_c, cid = {}, set(), 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_c or not any(t in pos_set for t in sig):
+                        continue
+                    seen_c.add(sig); cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    edge_states, seen_e, eid = {}, set(), 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception: continue
+                    key = frozenset((a, b))
+                    if (key in seen_e
+                            or not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)): continue
+                    seen_e.add(key); eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    body = {
+        "playerColor": 1,
+        "playerUserStates": [
+            {"selectedColor": 1, "username": "Noah", "userId": 999},
+        ],
+        "gameState": {"mapState": {
+            "tileHexStates": hex_states,
+            "tileCornerStates": corner_states,
+            "tileEdgeStates": edge_states,
+            "portEdgeStates": {},
+        }},
+    }
+    game = LiveGame()
+    game.start_from_game_state(body)
+    cat_map = game.tracker.game.state.board.map
+
+    # Move robber to tile #2 (colonist tid=2, cube via the variant
+    # builder's convention).
+    target_tid = 2
+    diff = {"mechanicRobberState": {"locationTileIndex": target_tid}}
+    events = events_from_diff(game.session, diff)
+    robber_evs = [e for e in events if isinstance(e, RobberMoveEvent)]
+    assert len(robber_evs) == 1
+    coord = robber_evs[0].coord
+    # Coord must match a real tile in the variant CatanMap so
+    # state.board.robber_coordinate ends up on a known position.
+    assert coord in cat_map.tiles, (
+        f"robber coord {coord} not in CatanMap tiles "
+        f"(have: {sorted(cat_map.tiles.keys())[:5]}...)")
+    apply_event(game.tracker, game.color_map, robber_evs[0])
+    assert game.tracker.game.state.board.robber_coordinate == coord
+
+
 def test_recommender_works_on_variant_shape():
     """Beyond just booting, the opening-pick recommender must
     actually rank settlements correctly on a variant board. The
