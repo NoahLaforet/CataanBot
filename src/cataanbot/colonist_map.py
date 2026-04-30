@@ -138,8 +138,27 @@ def edge_endpoint_signatures(
 
 
 def axial_to_cube(ax: int, ay: int) -> tuple[int, int, int]:
-    """Colonist axial (x, y) → catanatron cube (x, y, z)."""
-    return (ax, ay, -ax - ay)
+    """Colonist axial (x, y) → catanatron cube (q, s, r).
+
+    Pointy-top hex convention: colonist's x is the east-axis (q,
+    grows right) and colonist's y is the south-axis (r, grows down).
+    Catanatron's cube tuple is (q, s, r) where q+s+r=0 — the third
+    component (cube[2]) is what the renderer reads as "z" for py.
+
+    Putting colonist_y in cube[2] (not cube[1]) means tiles in the
+    same y-row map to the same cube[2], so they render on the same
+    horizontal line. The previous mapping (ax, ay, -ax-ay) put
+    colonist_y in cube[1] which the renderer ignores, scattering
+    same-row tiles across diagonal pixel rows on variant maps.
+
+    Both classic and variant maps benefit: BASE_MAP_TEMPLATE has
+    LandTile entries for every (q, s, r) permutation in the
+    19-tile range, so the lookup ``cube_to_colonist_tid[coord]``
+    still resolves — just to a different tile in BASE than before.
+    Resources/dice get re-assigned from colonist's data anyway, so
+    the visual layout of classic also lines up with colonist's.
+    """
+    return (ax, -ax - ay, ay)
 
 
 # Cube-coord neighbour offsets — same six directions catanatron uses.
@@ -310,7 +329,7 @@ def _attach_variant_ports(
     # signature won't match.
     axial_to_tile: dict[tuple[int, int], Any] = {}
     for coord, tile in tiles.items():
-        axial_to_tile[(coord[0], coord[1])] = tile
+        axial_to_tile[(coord[0], coord[2])] = tile
 
     # Reverse map: catanatron node_id → set of all-tile axials
     # touching that node (3 for a normal corner, 2 for the rare
@@ -442,7 +461,7 @@ def build_mapping(map_state: dict[str, Any]) -> MapMapping:
         # disconnected components (extreme variants); let that
         # surface so the bridge can degrade rather than crash.
         cat_map = _build_variant_catanatron_map(map_state)
-    cat_tiles_by_axial = {(c[0], c[1]): tile
+    cat_tiles_by_axial = {(c[0], c[2]): tile
                           for c, tile in cat_map.tiles.items()
                           if hasattr(tile, "nodes")}
 

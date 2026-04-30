@@ -23,8 +23,12 @@ def test_axial_to_cube_preserves_invariant():
     for ax in range(-2, 3):
         for ay in range(-2, 3):
             x, y, z = axial_to_cube(ax, ay)
+            # Cube invariant: x+y+z=0
             assert x + y + z == 0
-            assert (x, y) == (ax, ay)
+            # Pointy-top hex convention: colonist x → cube[0] (q,
+            # east-axis) and colonist y → cube[2] (r, south-axis).
+            # cube[1] is the derived axis = -ax-ay.
+            assert (x, z) == (ax, ay)
 
 
 def test_corner_signature_z0_and_z1_match_adjacency():
