@@ -2096,19 +2096,30 @@ def _compute_knight_hint(
             la_held_by_someone = True
             la_holder_played = max(la_holder_played, int(
                 state.player_state.get(f"P{c_idx}_PLAYED_KNIGHT", 0)))
-    # Knights needed to grab LA after this play:
-    #   * No holder yet: need (3 - self_played_knights - 1) ≤ 0,
-    #     i.e. self_played_knights >= 2 puts us at 3 with this play.
-    #   * Held by opp: need to exceed la_holder_played, so
-    #     self_played_knights + 1 > la_holder_played → self at
-    #     la_holder_played gets us 1 over with this play.
+    # Find the highest opp played_knight count — needed to know if
+    # this play actually CLAIMS Largest Army or just ties someone.
+    # Catan rule: must STRICTLY EXCEED every other player to hold LA.
+    opp_max_played = 0
+    for c, c_idx in state.color_to_index.items():
+        if c == my_enum:
+            continue
+        opp_max_played = max(opp_max_played, int(
+            state.player_state.get(f"P{c_idx}_PLAYED_KNIGHT", 0)))
+
+    # Knights needed to grab LA after this play (which adds 1 to
+    # self's played count):
     if self_has_la:
-        # Already hold LA — playing knight is for blocking value, not LA.
+        # Already hold LA — playing knight is for blocking value.
         knight_secures_la = False
     elif la_held_by_someone:
+        # Held by opp at la_holder_played. Need self+1 > holder.
         knight_secures_la = self_played_knights >= la_holder_played
     else:
-        knight_secures_la = self_played_knights >= 2
+        # Nobody holds LA. Need self+1 >= 3 (the LA threshold) AND
+        # self+1 > every opp's played count.
+        knight_secures_la = (
+            self_played_knights >= 2
+            and (self_played_knights + 1) > opp_max_played)
 
     should = False
     # Reason copy is intentionally conversational — Noah said the old
