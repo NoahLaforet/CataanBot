@@ -194,7 +194,15 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
     )
 
     tiles: dict[tuple[int, int, int], Any] = {}
-    node_autoinc = 0
+    # Node id offset: catanatron's classic BASE_MAP_TEMPLATE uses
+    # nodes 0..53 and that's baked into module-level STATIC_GRAPH at
+    # import time. To safely augment STATIC_GRAPH with variant edges
+    # without colliding with classic node ids, start variant ids at
+    # a high offset that's far from any classic range. 1000 is plenty.
+    # Without this offset, classic tests run AFTER a variant test see
+    # extra spurious edges in STATIC_GRAPH and Board.buildable_edges
+    # returns wrong results.
+    node_autoinc = 1000
     tile_autoinc = 0
 
     # Pass 1: LandTiles at colonist's exact positions.
@@ -243,7 +251,40 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
     if port_states:
         _attach_variant_ports(tiles, port_states, hex_states)
 
-    return CatanMap.from_tiles(tiles)
+    cat_map = CatanMap.from_tiles(tiles)
+
+    # Augment catanatron's module-level STATIC_GRAPH with this variant
+    # map's edges. The static graph is built ONCE at import time from
+    # BASE_MAP_TEMPLATE; ``Board.buildable_edges`` does
+    # ``STATIC_GRAPH.subgraph(self.map.land_nodes)`` to validate road
+    # placements. Without our augmentation the variant edges aren't in
+    # the static graph, so every road placement fails with "Invalid
+    # Road Placement" — observed live on the first Pond game test.
+    # Adding to the global graph is safe: classic-map edges are still
+    # in there (we only ADD, never remove), and node/edge ids are
+    # unique across our variant maps + the classic.
+    _augment_static_graph_for_map(cat_map)
+
+    return cat_map
+
+
+def _augment_static_graph_for_map(cat_map) -> None:
+    """Add this variant CatanMap's nodes and edges to catanatron's
+    module-level STATIC_GRAPH so road-placement validation works.
+
+    Idempotent (NetworkX add_node/add_edge dedupe). Also clears the
+    cached node-distances since the graph topology changed.
+    """
+    from catanatron.models.board import STATIC_GRAPH, get_node_distances
+
+    for tile in cat_map.tiles.values():
+        STATIC_GRAPH.add_nodes_from(tile.nodes.values())
+        STATIC_GRAPH.add_edges_from(tile.edges.values())
+    # Cached floyd-warshall is now stale.
+    try:
+        get_node_distances.cache_clear()
+    except AttributeError:  # noqa: BLE001
+        pass
 
 
 def _attach_variant_ports(

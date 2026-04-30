@@ -28,6 +28,109 @@ def _iter_payloads(path: Path):
             yield p
 
 
+def test_variant_map_road_placement_works():
+    """Critical regression: catanatron's Board.build_road validates
+    against a module-global ``STATIC_GRAPH`` that's built ONCE at
+    import time from BASE_MAP_TEMPLATE. Variant CatanMaps have edges
+    that aren't in that graph, so road placements fail with
+    'Invalid Road Placement' — observed live on Noah's first
+    successful Pond boot (every road placement event errored).
+
+    Fix is two-part:
+      (1) Offset variant node ids high (1000+) so they don't collide
+          with classic 0..53, and
+      (2) Augment STATIC_GRAPH with the variant map's edges after
+          construction.
+
+    This test pins both: a settlement+road sequence on a variant
+    map must apply without error.
+    """
+    from cataanbot.colonist_map import (
+        corner_tile_signature, edge_endpoint_signatures,
+    )
+    from cataanbot.live_game import LiveGame
+    from catanatron import Color
+
+    positions = [
+        (0, 0), (1, -1), (-1, 1),
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+    ]
+    pos_set = set(positions)
+    types = [0, 1, 2, 3, 4, 5, 1]
+    dice = [0, 4, 5, 6, 8, 9, 10]
+    hex_states = {}
+    for tid, (x, y) in enumerate(positions, start=1):
+        hex_states[str(tid)] = {
+            "x": x, "y": y, "type": types[tid - 1],
+            "diceNumber": dice[tid - 1]}
+    corner_states, seen_c, cid = {}, set(), 0
+    for x, y in positions:
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                for cz in (0, 1):
+                    sig = corner_tile_signature(cx, cy, cz)
+                    if sig in seen_c or not any(t in pos_set for t in sig):
+                        continue
+                    seen_c.add(sig); cid += 1
+                    corner_states[str(cid)] = {"x": cx, "y": cy, "z": cz}
+    edge_states, seen_e, eid = {}, set(), 0
+    for x, y in positions:
+        for ex in range(x - 1, x + 2):
+            for ey in range(y - 1, y + 2):
+                for ez in (0, 1, 2):
+                    try:
+                        a, b = edge_endpoint_signatures(ex, ey, ez)
+                    except Exception: continue
+                    key = frozenset((a, b))
+                    if (key in seen_e
+                            or not any(t in pos_set for t in a)
+                            or not any(t in pos_set for t in b)):
+                        continue
+                    seen_e.add(key); eid += 1
+                    edge_states[str(eid)] = {"x": ex, "y": ey, "z": ez}
+
+    body = {
+        "playerColor": 1,
+        "playerUserStates": [
+            {"selectedColor": 1, "username": "Noah", "userId": 999},
+        ],
+        "gameState": {"mapState": {
+            "tileHexStates": hex_states,
+            "tileCornerStates": corner_states,
+            "tileEdgeStates": edge_states,
+            "portEdgeStates": {},
+        }},
+        "gameSettings": {
+            "gameType": 1, "modeSetting": 0, "extensionSetting": 0,
+            "scenarioSetting": 0, "mapSetting": 5,
+            "victoryPointsToWin": 10, "cardDiscardLimit": 7,
+        },
+    }
+    game = LiveGame()
+    game.start_from_game_state(body)
+    cat_game = game.tracker.game
+    cat_map = cat_game.state.board.map
+    # Find any node that's adjacent to a non-desert tile, place there.
+    settle_node = None
+    for nid in sorted(cat_map.land_nodes):
+        for tile in cat_map.adjacent_tiles.get(nid, []):
+            if tile.resource is not None:
+                settle_node = nid
+                break
+        if settle_node is not None:
+            break
+    assert settle_node is not None
+    cat_game.state.board.build_settlement(
+        Color.RED, settle_node, initial_build_phase=True)
+
+    # Find an edge connecting settle_node to a neighbour and place a road.
+    from catanatron.models.board import STATIC_GRAPH
+    neighbour = next(iter(STATIC_GRAPH.neighbors(settle_node)))
+    road_edge = (settle_node, neighbour)
+    # Must not raise — pre-fix this raised "Invalid Road Placement".
+    cat_game.state.board.build_road(Color.RED, road_edge)
+
+
 def test_recommender_works_on_variant_shape():
     """Beyond just booting, the opening-pick recommender must
     actually rank settlements correctly on a variant board. The
