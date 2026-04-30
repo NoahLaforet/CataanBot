@@ -40,3 +40,9 @@ ws_captures/
 # Useful locally for reviewing a specific game, but not meant to be
 # checked in (each file is tied to one finished session).
 postmortems/
+
+# Personal scratch notes — useful for local development context but
+# not meant for the public repo. Kept locally; ignored from git so
+# they don't clutter the project's docs surface.
+RESUME.md
+TODO_VISUAL.md

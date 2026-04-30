@@ -2,200 +2,142 @@
 
 [![tests](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml/badge.svg)](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml)
 
-A personal Settlers of Catan advisor. Renders a live board, tracks all players
-as the game progresses, and suggests strong moves backed by expected-value
-reasoning over dice probabilities and catanatron's simulation engine.
+A live Settlers of Catan advisor for [colonist.io](https://colonist.io).
+A Tampermonkey userscript streams the in-browser game (DOM log + raw
+WebSocket frames) to a local FastAPI bridge that runs the strategy
+engine; an in-page overlay renders the recommendations next to the
+game in real time.
 
-Built on top of [catanatron](https://github.com/bcollazo/catanatron) (Python
-Catan engine) + [JSettlers](https://github.com/jdmonin/JSettlers2)-inspired
-heuristics. No ML — strong handcrafted evaluation + search.
-
----
-
-## Goals
-
-- **Visual board** — render the full hex grid, robber, ports, roads,
-  settlements, cities.
-- **All-player tracking** — the advisor watches every move and updates the
-  model of the game state, not just yours.
-- **Actionable suggestions** — top-N ranked moves with an EV/score breakdown so
-  you learn *why*, not just *what*.
-- **General-purpose** — works for physical-board games (manual input),
-  online games, and eventually colonist.io (scraped or extension-read).
-
-## Non-goals (for now)
-
-- ML personalization (no training on own games)
-- Full Seafarers / Cities & Knights / custom maps (base-game 3–4 players only)
-- Competing with JSettlers on strength — realistic aim is "removes dumb
-  mistakes, quantifies EV."
+Built on top of [catanatron](https://github.com/bcollazo/catanatron)
+(Python Catan engine) — handcrafted heuristics + 1-ply state-eval
+search, no ML.
 
 ---
 
-## Roadmap
+## What it does, today
 
-1. **Phase 1 — CLI + catanatron integration.** ✅ Load state, generate legal
-   moves, score with EV heuristic.
-2. **Phase 2 — Visual board.** ✅ Pillow renderer with hexes, ports, pieces,
-   robber, number tokens.
-3. **Phase 3 — Manual state input.** ✅ REPL tracker mirrors a live game
-   turn-by-turn.
-4. **Phase 4 — Stronger advisor.** ✅ EV scoring + 1-ply search rerank +
-   opponent-hand inference.
-5. **Phase 5 — Screenshot CV path.** ⏭️ Skipped in favor of direct DOM/WS
-   scraping from colonist (Phase 6 obsoleted the CV path).
-6. **Phase 6 — colonist.io bridge.** ✅ FastAPI + Tampermonkey userscript;
-   streams log events and raw WebSocket frames to a local advisor.
-7. **Phase 7 — Live HUD (current).** Real-time overlay that renders
-   recommendations, banners, and histograms while the game is running.
-   Shipped so far: winning-move detector, LR/LA race banners, robber
-   telemetry, roll histogram (live-animated), road directions on in-game
-   recs, hero-styled top rec. In flight: continued HUD density +
-   typography polish, knight play-timing surface, parallel-road fallback,
-   postmortem move-annotation.
+- **Live opening picks (1st + 2nd settlement).** Ranks every legal
+  corner by complement-aware production, port adjacency, denial value
+  of distance-2 neighbours, and resource diversity. Pairs each pick
+  with a follow-up road suggestion.
+- **In-game build recommender.** Top-N action ranking with score
+  breakdown — settlement / city / road / dev card / propose-trade /
+  port trade. Each rec carries a 1-ply EV delta (state-eval rerank)
+  so you can see *how much better* the bot's pick is than the
+  alternative.
+- **Dev-card play hints.** Knight / Monopoly / Year of Plenty /
+  Road-Building each get a typed PLAY/HOLD verdict with conversational
+  reasoning ("an opp is close to Largest Army — play to deny", "robber's
+  on you — play to clear it"). VP cards are tracked but not surfaced
+  as playable. Catan's no-play-on-buy-turn rule is respected.
+- **Robber & 7-roll telemetry.** Top robber targets ranked by
+  blocking value × victim VP × hand size. Auto-detects colonist's
+  optional **Friendly Robber** rule and filters protected (≤2 VP)
+  victims out of the suggestions. Auto-detects when the robber sits
+  on one of your own tiles.
+- **Live HUD overlay.** Roll histogram with 36-roll baseline, eval
+  sparkline (chess-style position graph), per-build move-quality
+  annotation (`!! / ! / ?! / ? / ??` chess grading vs the bot's top
+  picks at decision time), opponent hand inference + production rate.
+- **Variant board support.** Same Catan rules, different layouts —
+  weekly-rotation maps like Pond (24 tiles, interior lake) build a
+  fresh catanatron CatanMap from colonist's authoritative tile/edge
+  data. Opening picks, recommender, and 2:1 port trade rates all work
+  on the actual geometry.
+- **Auto-postmortem.** When a game ends, a self-contained HTML report
+  is written to `postmortems/` — winner, final VP breakdown, dice
+  fairness, hand-dynamics, trade quality, 7-roll impact, plus the
+  charts (VP timeline, dice distribution, hand size, cumulative
+  production) embedded as base64 PNGs.
 
 ---
 
 ## Install
 
-Requires Python 3.11+ (catanatron constraint). macOS/Linux.
+Requires Python 3.11+ (catanatron constraint). macOS / Linux.
 
 ```bash
 git clone https://github.com/NoahLaforet/CataanBot.git
 cd CataanBot
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e '.[bridge]'
 ./bin/cataanbot --help
 ```
 
-On macOS the packaged `.venv/bin/cataanbot` entry point can flake out when the
-editable-install `.pth` file picks up an `UF_HIDDEN` flag from APFS. The
-repo-local `./bin/cataanbot` launcher sidesteps that by setting
-`PYTHONPATH=src/` explicitly — use it instead of the packaged entry point.
+The `[bridge]` extras pull in FastAPI + uvicorn for the live bridge.
+Skip if you only want the offline replay / advisor CLIs.
 
-## Usage
+> On macOS the packaged `.venv/bin/cataanbot` entry point can flake
+> when the editable-install `.pth` file picks up an `UF_HIDDEN` flag
+> from APFS. The repo-local `./bin/cataanbot` launcher sidesteps
+> that by setting `PYTHONPATH=src/` explicitly — use it instead of
+> the packaged entry point.
+
+## Live play on colonist.io
 
 ```bash
-# Render a fresh random board (with optional --seed N for reproducibility)
+# Start the bridge
+./bin/cataanbot bridge --advisor
+
+# Mirror every WS frame to disk for later replay/audit
+./bin/cataanbot bridge --advisor --ws-jsonl ws_captures/$(date +%Y-%m-%d).jsonl
+```
+
+Install the userscript:
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) (or
+   Violentmonkey) in your browser.
+2. Open `userscript/colonist_cataanbot.user.js` in this repo, copy
+   the contents, paste into a new Tampermonkey script. Save.
+3. Confirm it's enabled on `colonist.io/*`.
+4. Open colonist, start a game. The HUD appears in the top-right;
+   the bridge terminal logs each event.
+
+Tampermonkey will pull updates from this repo's `main` branch
+automatically (the `@updateURL` header points at the raw
+GitHub URL).
+
+## Offline tools
+
+```bash
+# Render a fresh random board
 ./bin/cataanbot render -o board.png
 
-# Rank opening settlement spots on a fresh board
+# Rank opening settlement spots
 ./bin/cataanbot openings --top 10 --render openings.png
 
-# Manual-tracker REPL for mirroring a live game
+# Manual-tracker REPL
 ./bin/cataanbot play
-# inside the REPL: settle / city / road / roll / give / take / trade /
-# mtrade / devbuy / devplay / robber / discard / build / undo / save / load
-# advisors: openings-after, secondadvice, robberadvice, tradeeval, hands, stats
 
-# Advisors over a saved game (produced by `save path.json` in the REPL)
-./bin/cataanbot openings  --save game.json --color WHITE
-./bin/cataanbot secondadvice game.json RED --render second.png
-./bin/cataanbot robberadvice game.json RED
-./bin/cataanbot tradeeval   game.json RED give 2 WOOD get 1 WHEAT
-./bin/cataanbot hands       game.json
-./bin/cataanbot stats       game.json --histogram hist.png
+# Replay a captured WS jsonl
+./bin/cataanbot replay capture.jsonl --report --postmortem game.html
 ```
 
-## colonist.io bridge (Phase 6, Day 1)
+## Repo layout
 
-Stream colonist.io's in-game log to a local FastAPI bridge so the advisor
-can eventually consume live play. Day 1 just proves the pipe — the bridge
-prints each event to stdout.
-
-```bash
-# Install bridge deps (fastapi + uvicorn)
-pip install -e '.[bridge]'
-
-# Start the bridge
-./bin/cataanbot bridge                         # 127.0.0.1:8765
-./bin/cataanbot bridge --jsonl ~/cataan.jsonl  # also mirror to disk
 ```
-
-Install the userscript once in Tampermonkey (or Violentmonkey):
-
-1. Install the Tampermonkey browser extension.
-2. Open `userscript/colonist_cataanbot.user.js` in the repo, copy the
-   contents, and paste into a new Tampermonkey script. Save.
-3. Confirm it's enabled on `colonist.io/*`.
-4. Start a game. The bridge terminal should print events as they happen.
-
-The userscript watches `div.virtualScroller-lSkdkGJi` (the log panel's
-virtualized list) via a MutationObserver and POSTs each new entry to
-`http://127.0.0.1:8765/log` as structured JSON — text, colored name
-pills, and icon `alt` values. See `COLONIST_RECON.md` for the DOM spec.
-
-## Replaying a captured JSONL (offline)
-
-The bridge's `--jsonl` mirror gives you a replayable log of any captured
-game. `cataanbot replay` walks that file through the Event → Tracker
-dispatcher — useful for auditing past games without booting colonist.
-
-```bash
-# Auto-assign colors in first-appearance order
-./bin/cataanbot replay ~/Desktop/cataanbot-game5.jsonl
-
-# Pin colors explicitly, save final state, render the board
-./bin/cataanbot replay game.jsonl \
-  --player BrickdDaddy=BLUE --player Thorin=ORANGE \
-  --save replayed.json --render replayed.png -v
-
-# Postmortem: winner, final VP, per-player aggregates, dice histogram,
-# and parser-quality breakdown — all derived from the event stream.
-./bin/cataanbot replay game.jsonl --report
-
-# Write the same postmortem to a file instead of stdout.
-./bin/cataanbot replay game.jsonl --report-out game5-report.txt
-
-# Render a per-event VP timeline PNG (step chart, one line per seat,
-# dashed 10-VP win line, minute x-axis when the JSONL has timestamps).
-./bin/cataanbot replay game.jsonl --vp-chart vp.png
-
-# Render a cumulative-production PNG — total cards received from rolls
-# per player, over time. Shows who had the economic lead and when
-# the dice shifted it.
-./bin/cataanbot replay game.jsonl --production-chart prod.png
-
-# Render the dice-fairness bar chart — actual vs. expected roll counts
-# per value 2-12. Ghost outlines show the 2d6 expectation; filled bars
-# are actual; signed delta labels above each bar.
-./bin/cataanbot replay game.jsonl --dice-chart dice.png
-
-# Render the hand-size timeline — reconstructed cards-in-hand per
-# player from the event stream (debits on build/trade/discard, credits
-# on produce/steal). Dashed line marks the 7-card discard threshold.
-./bin/cataanbot replay game.jsonl --hand-chart hand.png
-
-# One-shot postmortem: single self-contained HTML file with the
-# full text report and all four charts embedded as base64 PNGs.
-./bin/cataanbot replay game.jsonl --postmortem game5.html
+src/cataanbot/        bridge, recommender, tracker, render, advisor
+userscript/           Tampermonkey script (colonist DOM + WS pipe)
+tests/                pytest, ~580 tests covering parsing, dispatch,
+                      tracker arithmetic, recommender heuristics,
+                      bridge snapshot shapes
+docs/                 design notes — DOM/WS protocol recon (colonist),
+                      HUD design principles
+ws_captures/          local WS jsonl mirrors (gitignored, big files)
+postmortems/          auto-generated game-end HTML (gitignored)
 ```
-
-Events that need board topology (settlement / city / road placements and
-robber moves) are currently reported as `unhandled` — once the
-DOM-to-catanatron-node mapping lands, they'll flow through too.
-
-### Capturing the board layout (topology prep)
-
-`userscript/board_probe.js` is a one-shot probe you paste into the
-Chrome devtools Console while in an active colonist game. It walks the
-board DOM, serializes every SVG/polygon/circle/image + positioned div,
-and prompts a download of `cataanbot-board-probe.json`. Drop that file
-in the repo root and it'll be used to build the DOM → catanatron node
-mapping (so BuildEvent and RobberMoveEvent can resolve to real board
-positions). The probe is read-only and does not talk to the bridge.
 
 ## Development
 
-Tests are plain pytest; the `tests/conftest.py` shim puts `src/` on the path so
-they run without an editable install.
-
 ```bash
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest        # ~1.5s, ~580 tests
+node --check userscript/colonist_cataanbot.user.js
 ```
+
+CI runs `pytest` on every push (see `.github/workflows/tests.yml`).
 
 ## License
 
-GPL-3.0. catanatron is GPL-3.0; this project depends on it, so the derivative
-license applies. See [LICENSE](LICENSE).
+GPL-3.0. catanatron is GPL-3.0; CataanBot depends on it, so the
+derivative license applies. See [LICENSE](LICENSE).

@@ -12,7 +12,7 @@ For each capture, writes a sibling ``<capture>.audit.jsonl`` with one
 JSON line per qualifying decision and prints a human-readable summary.
 
 Move classification follows the chess-style scheme from
-``HUD_RESEARCH.md`` principle #7:
+``docs/hud_research.md`` principle #7:
     !!  picked the bot's #1 rec
     !   picked one of the top 3
     ?!  picked top 4-6

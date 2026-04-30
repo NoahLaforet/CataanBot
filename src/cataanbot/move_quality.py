@@ -26,7 +26,7 @@ def classify_rank(rank: int | None) -> str:
     """Map a rank-in-recs (1-indexed) to its chess-style label.
 
     ``None`` means the move wasn't in the recs at all (rank > top_n) and
-    grades as a blunder. The thresholds match HUD_RESEARCH.md principle
+    grades as a blunder. The thresholds match docs/hud_research.md principle
     #7 and ``audit_missed_recs._classify`` so the audit JSONLs and the
     live HUD speak the same vocabulary."""
     if rank is None:

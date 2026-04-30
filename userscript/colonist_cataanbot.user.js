@@ -4084,7 +4084,7 @@
             '(forwarding to', BRIDGE_WS_URL + ')');
     })();
 
-    // Selectors captured from DOM recon (COLONIST_RECON.md). Class
+    // Selectors captured from DOM recon (docs/colonist_recon.md). Class
     // hashes are fragile across deploys — fall back defensively.
     const SEL = {
         scroller: 'div.virtualScroller-lSkdkGJi',
