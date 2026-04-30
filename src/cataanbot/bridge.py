@@ -2082,9 +2082,33 @@ def _compute_knight_hint(
     top_score = float(top_target["score"]) if top_target else 0.0
 
     # Self's own progress toward Largest Army — needed for the
-    # "you're close to LA" copy variant.
+    # "you're close to LA" copy variant. Also figure out who currently
+    # holds LA (if anyone) so the suggestion accounts for "stealing"
+    # an already-held LA (which requires EXCEEDING the holder's count,
+    # not just tying or reaching 3).
     self_played_knights = int(state.player_state.get(
         f"P{idx}_PLAYED_KNIGHT", 0))
+    self_has_la = bool(state.player_state.get(f"P{idx}_HAS_ARMY", False))
+    la_holder_played = 0
+    la_held_by_someone = False
+    for c, c_idx in state.color_to_index.items():
+        if state.player_state.get(f"P{c_idx}_HAS_ARMY", False):
+            la_held_by_someone = True
+            la_holder_played = max(la_holder_played, int(
+                state.player_state.get(f"P{c_idx}_PLAYED_KNIGHT", 0)))
+    # Knights needed to grab LA after this play:
+    #   * No holder yet: need (3 - self_played_knights - 1) ≤ 0,
+    #     i.e. self_played_knights >= 2 puts us at 3 with this play.
+    #   * Held by opp: need to exceed la_holder_played, so
+    #     self_played_knights + 1 > la_holder_played → self at
+    #     la_holder_played gets us 1 over with this play.
+    if self_has_la:
+        # Already hold LA — playing knight is for blocking value, not LA.
+        knight_secures_la = False
+    elif la_held_by_someone:
+        knight_secures_la = self_played_knights >= la_holder_played
+    else:
+        knight_secures_la = self_played_knights >= 2
 
     should = False
     # Reason copy is intentionally conversational — Noah said the old
@@ -2100,12 +2124,14 @@ def _compute_knight_hint(
     elif largest_army_threat:
         should = True
         reason = "an opp is close to Largest Army — play to deny"
-    elif self_played_knights >= 2:
-        # 2 played + this play = 3 played → claim Largest Army.
-        # 1 played + this = 2 played, getting closer but not there.
+    elif knight_secures_la:
         should = True
-        reason = ("you're 1 knight from Largest Army — "
-                  "play it to grab the +2 VP")
+        if la_held_by_someone:
+            reason = ("playing this knight steals Largest Army "
+                      "from the current holder (+2 VP)")
+        else:
+            reason = ("you're 1 knight from Largest Army — "
+                      "play it to grab the +2 VP")
     elif top_score >= 4.0:
         should = True
         # Name the tile so it's actionable without the score number.
