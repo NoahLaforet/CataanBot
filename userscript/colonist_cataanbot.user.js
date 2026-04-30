@@ -3017,6 +3017,11 @@
         const devNonVp = Number(snap.dev_cards_non_vp_held || 0);
         const devJust = Number(snap.dev_cards_just_bought || 0);
         const devPlayable = Number(snap.dev_cards_playable || 0);
+        // Type-known: bridge decoded the type from colonist's WS frame
+        // (knight/monopoly/yop/rb), so only the matching hint block
+        // renders. Affects copy in the summary pill — "pick the
+        // matching block below" makes no sense when there's only one.
+        const devTypeKnown = !!snap.dev_cards_type_known;
         if (devHeld > 0) {
             // Header pill: total cards, broken down VP / non-VP when
             // we have any VPs (colonist's victoryPointsState reports
@@ -3037,7 +3042,12 @@
                 pill += ` <span class="dev-summary-j">`
                     + `· ${devJust} just bought, play next turn`
                     + `</span>`;
-            } else if (devPlayable > 0 && devVpHeld === 0) {
+            } else if (devPlayable > 0 && devVpHeld === 0
+                       && !devTypeKnown) {
+                // Only show "pick the matching block" when type
+                // isn't decoded — when we know the type, only the
+                // one matching block renders so there's nothing to
+                // pick between.
                 pill += ` <span class="dev-summary-pl">`
                     + `pick the matching block below</span>`;
             }
