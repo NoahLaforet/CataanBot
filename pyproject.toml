@@ -4,12 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cataanbot"
-version = "0.0.1"
-description = "A personal Settlers of Catan advisor with a visual board and all-player tracking."
+version = "0.24.2"
+description = "Live Settlers of Catan advisor for colonist.io — DOM/WS bridge + Tampermonkey HUD with handcrafted heuristics over catanatron."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Noah Laforet" }]
+keywords = ["catan", "colonist", "advisor", "userscript", "catanatron"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Board Games",
+]
 dependencies = [
     "catanatron>=3.2.0",
     "Pillow>=10.0",
