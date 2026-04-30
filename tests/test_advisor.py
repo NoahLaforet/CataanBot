@@ -135,6 +135,27 @@ def test_robber_targets_favor_opponent_builds(tracker):
     assert scores[0].opponent_blocked > 0
 
 
+def test_friendly_robber_threshold_configurable():
+    """The Friendly Robber threshold is configurable via
+    cataanbot.config — house rules can use values other than 2.
+    Setting it to 0 effectively disables the rule even when the
+    flag is on."""
+    from cataanbot import config
+    # Restore default at end so other tests don't see drift.
+    original = config.get_friendly_robber_protected_vp()
+    try:
+        config.set_friendly_robber_protected_vp(3)
+        assert config.get_friendly_robber_protected_vp() == 3
+        config.set_friendly_robber_protected_vp(0)
+        assert config.get_friendly_robber_protected_vp() == 0
+        # Negative values rejected.
+        import pytest
+        with pytest.raises(ValueError):
+            config.set_friendly_robber_protected_vp(-1)
+    finally:
+        config.set_friendly_robber_protected_vp(original)
+
+
 def test_friendly_robber_filters_low_vp_victims(tracker):
     """Colonist's optional Friendly Robber rule protects players at or
     below a VP threshold. score_robber_targets should drop those
