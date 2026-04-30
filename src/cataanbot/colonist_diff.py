@@ -53,21 +53,20 @@ _CARD_RESOURCE = {
 # Dev-card type ints used inside
 # ``mechanicDevelopmentCardsState.players.{cid}.developmentCards.cards``.
 # 10 is the opponent placeholder (the type is hidden until played); for
-# the self player, real ints land. Decoded from a 5-buy capture
-# (2026-04-29):
-#   * type 11 → KNIGHT (3 buys, all played; matched user's reported plays)
-#   * type 12 → VICTORY_POINT (held to game end, never played)
-#   * type 14 → ROAD_BUILDING (matched user's reported buy)
-# 13 and 15 weren't observed in that capture; alphabetical-by-name
-# guess for the gap is MONOPOLY then YEAR_OF_PLENTY. Will be confirmed
-# (and corrected if wrong) the first time those land in a real game.
+# the self player, real ints land. Confirmed against real games:
+#   * type 11 → KNIGHT (5-buy capture 2026-04-29: 3 buys, 3 plays)
+#   * type 12 → VICTORY_POINT (capture 2026-04-29: bought, held to end)
+#   * type 13 → MONOPOLY (Pond game 2026-04-29: hint matched the buy)
+#   * type 14 → ROAD_BUILDING (capture 2026-04-29: matched user buy)
+#   * type 15 → YEAR_OF_PLENTY (by elimination — only type left, not
+#               yet directly observed but highly likely correct)
 _DEV_CARD_TYPE = {
     10: None,                # opp placeholder — type hidden
     11: "KNIGHT",
     12: "VICTORY_POINT",
-    13: "MONOPOLY",          # GUESS — needs confirmation
+    13: "MONOPOLY",
     14: "ROAD_BUILDING",
-    15: "YEAR_OF_PLENTY",    # GUESS — needs confirmation
+    15: "YEAR_OF_PLENTY",
 }
 
 
