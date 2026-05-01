@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.25.3
+// @version      0.25.4
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1612,6 +1612,22 @@
   }
   .plan .plan-progress .pos { color: var(--pos); }
   .plan .plan-progress .fg-mute { color: var(--fg-mute); }
+
+  /* Hand-uncertain chip on opp rows. Small amber tag indicating the
+     inferred resource breakdown is significantly wrong because of 2+
+     unattributed steals. Helps Noah mentally discount any rec that
+     gates on this opp's known hand. */
+  .hand-uncertain {
+    display: inline-block;
+    padding: 0px 5px;
+    border-radius: 3px;
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--watch);
+    margin-left: var(--s-1);
+    cursor: help;
+  }
 
   .trade-offer { border-left-color: var(--warn); }
   /* Verdict-driven left-border color so the banner's accent matches
@@ -3480,6 +3496,18 @@
                     ? `<span class="opp-hand">${handParts.join('  ')}</span>`
                     : '';
                 const trackCls = o.hand_tracked ? ' tracked' : '';
+                // Hand-drift indicator. When an opp has 2+ unknown
+                // cards (hidden steals we couldn't attribute) the
+                // inferred breakdown is significantly wrong — every
+                // 'they hold X' rec gating on it is shakier. Add a
+                // small chip so Noah can mentally discount the read.
+                // 1 unknown is normal noise; 2+ is the threshold where
+                // the postmortem reconstruction also flags drift.
+                const uncertainTag = (o.unknown || 0) >= 2
+                    ? ` <span class="hand-uncertain" `
+                    + `title="${o.unknown} unknown cards — `
+                    + `inferred hand may be wrong">~${o.unknown}?</span>`
+                    : '';
                 // Dev-card tag: uniform grey at low VP, amber/bold
                 // when the dev-stash could plausibly be hiding VPs
                 // that push them to the win threshold.
@@ -3591,6 +3619,7 @@
                     ? ` <span class="muted">· ${mutedTags}</span>` : '';
                 parts.push(`<div class="opp${trackCls}${rowCls}">${pill}`
                     + ` ${vpHtml} <span class="opp-cards">${cardsSpan}</span>`
+                    + uncertainTag
                     + mutedHtml
                     + `${affordTag}${oneShortTag}`
                     + (breakdown ? ` ${breakdown}` : '')
