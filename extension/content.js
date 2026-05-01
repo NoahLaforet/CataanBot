@@ -111,4 +111,54 @@
         console.log('[cataanbot] log observer attached');
     }
     attachObserver();
+
+    // ---- Step 4: nuke "Remove Ads" buttons ----
+    // Colonist sprinkles "Remove Ads" CTAs in the lobby and in-game
+    // panels. Class hashes rotate between deploys, so the only stable
+    // identifier is the visible text. Walk any clickable-looking
+    // element whose direct text reads exactly "Remove Ads" and yank
+    // it out of the DOM. A MutationObserver re-runs the sweep when
+    // colonist re-renders the affected panel (turn-end, lobby joins,
+    // route changes), so the user never sees one come back.
+    //
+    // We only consider tight scopes (button / a / role=button / a
+    // small whitelist of likely classes) to avoid removing a parent
+    // container that incidentally has "Remove Ads" in deep child text.
+    function nukeRemoveAdsButtons() {
+        const candidates = document.querySelectorAll(
+            'button, a, [role="button"]');
+        for (const el of candidates) {
+            const text = (el.textContent || '').trim().toLowerCase();
+            if (text === 'remove ads' || text === 'remove ad'
+                || text === 'remove ads now' || text === 'remove all ads') {
+                // Pull the button itself rather than a parent — leaves
+                // any sibling content intact. If colonist's layout
+                // collapses oddly without the button, we can switch to
+                // visibility:hidden later, but in practice the host
+                // element's flex layout reflows fine.
+                try { el.remove(); } catch (e) {}
+            }
+        }
+    }
+    nukeRemoveAdsButtons();
+    // Re-sweep on every body mutation. Debounced so a flurry of
+    // mutations during a route change doesn't run the QSA dozens of
+    // times per frame; one trailing call per ~150ms window is enough.
+    let _adSweepTimer = null;
+    const adObserver = new MutationObserver(() => {
+        if (_adSweepTimer) return;
+        _adSweepTimer = setTimeout(() => {
+            _adSweepTimer = null;
+            nukeRemoveAdsButtons();
+        }, 150);
+    });
+    function attachAdObserver() {
+        if (!document.body) {
+            setTimeout(attachAdObserver, 100);
+            return;
+        }
+        adObserver.observe(document.body,
+            { childList: true, subtree: true });
+    }
+    attachAdObserver();
 })();
