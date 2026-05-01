@@ -149,7 +149,12 @@ class LiveGame:
                 piece=piece,
                 node_id=node_id,
             )
-            result = apply_event(self.tracker, self.color_map, ev)
+            try:
+                result = apply_event(self.tracker, self.color_map, ev)
+            except Exception:  # noqa: BLE001
+                # Bad seed (corner already taken, off-board, etc.) —
+                # skip rather than crash the entire boot.
+                continue
             if result.status == "applied":
                 color = self.color_map.get(ev.player)
                 tally = self.build_counts.setdefault(
@@ -182,7 +187,14 @@ class LiveGame:
             next_pending: list[tuple[int, int, BuildEvent]] = []
             applied_any = False
             for a, b, ev in pending:
-                result = apply_event(self.tracker, self.color_map, ev)
+                try:
+                    result = apply_event(self.tracker, self.color_map, ev)
+                except Exception:  # noqa: BLE001
+                    # Defer same as a non-applied result; if every
+                    # remaining road raises we'll exit via the no-
+                    # progress branch below rather than crashing.
+                    next_pending.append((a, b, ev))
+                    continue
                 if result.status == "applied":
                     applied_any = True
                     color = self.color_map.get(ev.player)
