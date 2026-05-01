@@ -918,6 +918,33 @@ def _record_self_build_quality(st, ev) -> None:
     mh.append(entry)
     st["move_history"] = mh[-30:]
 
+    # Auto-feedback: if self played the top rec (rank 0 → "!!"), log
+    # an auto thumbs-up so Noah doesn't have to click 👍 on every
+    # rec he agrees with. He only needs to manually 👎 the bad ones.
+    # Distinct label "auto_good" so analysis can separate user-
+    # confirmed marks from inferred ones.
+    if rank == 0 and recs:
+        try:
+            import json as _json
+            import time as _time
+            from pathlib import Path as _Path
+            out_dir = st.get("pm_dir") or (_Path.cwd() / "postmortems")
+            out_dir = _Path(out_dir).parent / "feedback"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            line = {
+                "ts": _time.time(),
+                "label": "auto_good",
+                "rec": dict(recs[0]),
+                "snapshot_hint": {
+                    "piece": ev.piece, "loc": loc,
+                    "search_delta_gap": sd_gap,
+                },
+            }
+            with (out_dir / "recs.jsonl").open("a") as f:
+                f.write(_json.dumps(line, default=str) + "\n")
+        except Exception as e:  # noqa: BLE001
+            print(f"[advisor] auto-feedback failed: {e!r}", flush=True)
+
 
 
 

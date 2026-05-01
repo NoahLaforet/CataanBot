@@ -553,9 +553,14 @@
     color: var(--watch);
     font-weight: 700;
   }
+  /* Card-delta indicator. Amber (not red) — "they're accumulating,
+     watch out" is a softer signal than fat-hand red ("they're over
+     the discard cliff"). Using two reds for two semantically
+     different states confuses the eye; keep red for the cliff and
+     amber for the growth trend. */
   .opp .card-up {
-    color: var(--alert);
-    font-weight: 700;
+    color: var(--watch);
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
   .opp .card-dn {

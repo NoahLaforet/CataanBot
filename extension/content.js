@@ -1,6 +1,6 @@
 // Content script — runs in isolated world on colonist.io.
 //
-// Two jobs:
+// Three jobs:
 //  1. Inject inject.js as a real <script> so it lives in the page's
 //     main world and can patch window.WebSocket where colonist
 //     actually uses it. (Content scripts cannot patch page globals
@@ -9,12 +9,18 @@
 //     inject.js) and the extension's service worker (chrome.runtime
 //     .sendMessage), so WS frames + DOM-log payloads land at the
 //     bridge HTTP endpoints.
+//  3. Auto-remove the "Remove Ads" buttons colonist sprinkles
+//     throughout its UI.
 //
-// The DOM-log scraper lives here because the chat panel is in the
-// page DOM, which content scripts can read directly — no need to
-// hop through the page world.
+// The DOM-log scraper here is a faithful port of the userscript's
+// scraper: same class selectors, same structured `parts` payload,
+// same dedup logic. The bridge's parser relies on the `parts` array
+// being present for trade offers + other multi-token events; a
+// flatter payload misses those.
 
 (function bootCataanbotContent() {
+    const LOG_PREFIX = '[cataanbot]';
+
     // ---- Step 1: inject inject.js into the main world ----
     const url = chrome.runtime.getURL('inject.js');
     const s = document.createElement('script');
@@ -35,115 +41,222 @@
         });
     });
 
-    // ---- Step 3: DOM /log scraper ----
-    // Reuses the same selectors and parsing rules the userscript used.
-    // Captures new chat-log entries (rolls, builds, trades, dev-card
-    // plays, robber moves) and forwards each as a /log POST. Same
-    // payload shape: {ts, text, names, icons, raw_html}.
-    const LOG_CONTAINER_SELECTORS = [
-        '#game-log-text',                        // most stable id
-        '[class*="game-log"]',                   // class-hash variants
-        '[class*="chat"][class*="messages"]',    // fallback
-    ];
-    const SEEN_NODES = new WeakSet();
+    // ---- Step 3: DOM /log scraper (full userscript port) ----
+    // Selectors captured from DOM recon (docs/colonist_recon.md).
+    // Class hashes are fragile across deploys — fall back defensively
+    // if the primary selector misses.
+    const SEL = {
+        scroller: 'div.virtualScroller-lSkdkGJi',
+        entry:    'div.scrollItemContainer-WXX2rkzf',
+    };
+    const NODE_KEY_ATTR = 'cataanbotKey';
+    const RECENT_TTL_MS = 60000;
+    const AT_BOTTOM_PX = 50;
+    const recentSeen = new Map();
 
-    function findLogContainer() {
-        for (const sel of LOG_CONTAINER_SELECTORS) {
-            const el = document.querySelector(sel);
-            if (el) return el;
-        }
-        return null;
+    function isAtBottom(scroller) {
+        return (scroller.scrollHeight - scroller.scrollTop
+                - scroller.clientHeight) < AT_BOTTOM_PX;
     }
 
-    function parseEntry(node) {
-        // Walk the entry collecting visible text + per-token names
-        // (with the colonist user color) + icon alts. Same shape the
-        // bridge's parser expects.
-        const text = node.textContent.replace(/\s+/g, ' ').trim();
-        const names = [];
-        const icons = [];
-        node.querySelectorAll('[style*="color:"]').forEach(span => {
-            // Inline color style on a name span — colonist's pattern.
-            const m = span.style && span.style.color;
-            const nameText = span.textContent.trim();
-            if (nameText && m) {
-                names.push({ name: nameText, color: m });
+    // Walk the whole scrollItemContainer in document order, emitting
+    // ordered parts. We can't just walk messagePart because some
+    // events (dev-card play "X used [Knight]") render the card icon
+    // as a sibling of messagePart, not a child. Avatars have alt=""
+    // and are dropped by the icon rule below.
+    function serializeEntry(el) {
+        const root = el;
+        const parts = [];
+
+        const walk = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const t = (node.textContent || '')
+                    .replace(/\s+/g, ' ').trim();
+                if (t) parts.push({ kind: 'text', text: t });
+                return;
             }
-        });
-        node.querySelectorAll('img').forEach(img => {
-            if (img.alt) icons.push({ alt: img.alt });
-        });
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            const elNode = node;
+            if (elNode.tagName === 'IMG') {
+                const alt = elNode.alt || '';
+                if (!alt) return; // drop avatar
+                parts.push({
+                    kind: 'icon',
+                    alt,
+                    src_tail: (elNode.getAttribute('src') || '')
+                        .split('/').pop(),
+                });
+                return;
+            }
+            // Player name pill: colored span. Inline color: is the
+            // happy path, but fall back to computed style if needed.
+            const style = elNode.getAttribute
+                && elNode.getAttribute('style') || '';
+            const hasInlineColor = /(^|[^-])color\s*:/i.test(style);
+            const hasInlineBg = /background(-color)?\s*:/i.test(style);
+            if (elNode.tagName === 'SPAN'
+                    && (hasInlineColor || hasInlineBg)) {
+                const name = (elNode.innerText || '').trim();
+                if (name) {
+                    let color = elNode.style.color || '';
+                    if (!color) {
+                        try {
+                            color = window.getComputedStyle(elNode).color || '';
+                        } catch (_) {}
+                    }
+                    let bg = elNode.style.backgroundColor || '';
+                    if (!bg && hasInlineBg) {
+                        try {
+                            bg = window.getComputedStyle(elNode)
+                                .backgroundColor || '';
+                        } catch (_) {}
+                    }
+                    parts.push({ kind: 'name', name, color, bg });
+                }
+                return;
+            }
+            // VP callout: <span class="vp-text">+1 VP</span>
+            if (elNode.classList
+                    && elNode.classList.contains('vp-text')) {
+                parts.push({ kind: 'vp',
+                    text: (elNode.innerText || '').trim() });
+                return;
+            }
+            // Recurse into generic containers.
+            for (const child of elNode.childNodes) walk(child);
+        };
+
+        for (const child of root.childNodes) walk(child);
+
+        const text = parts
+            .filter(p => p.kind === 'text'
+                || p.kind === 'name' || p.kind === 'vp')
+            .map(p => p.kind === 'name' ? p.name : p.text)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const names = parts.filter(p => p.kind === 'name')
+            .map(p => ({ name: p.name, color: p.color }));
+        const icons = parts.filter(p => p.kind === 'icon')
+            .map(p => ({ alt: p.alt, src_tail: p.src_tail }));
+
         return {
             ts: Date.now() / 1000,
-            text, names, icons,
-            raw_html: node.outerHTML.slice(0, 4096),
+            self: detectSelf(),
+            text,
+            parts,
+            names,
+            icons,
+            key: `${text}|${icons.map(i => i.alt).join(',')}`
+                + `|${names.map(n => n.name).join(',')}`,
         };
     }
 
-    function emitEntry(node) {
-        if (SEEN_NODES.has(node)) return;
-        SEEN_NODES.add(node);
-        if (!node.textContent || !node.textContent.trim()) return;
-        const payload = parseEntry(node);
+    // Active user from localStorage.userState — colonist stores the
+    // logged-in user there. Much more reliable than DOM scraping
+    // (the "(You)" marker only shows in the lobby).
+    let cachedSelf = null;
+    function detectSelf() {
+        if (cachedSelf) return cachedSelf;
+        try {
+            const raw = localStorage.getItem('userState');
+            if (!raw) return null;
+            const us = JSON.parse(raw);
+            if (us && typeof us.username === 'string' && us.username) {
+                cachedSelf = us.username;
+                return cachedSelf;
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function processEntry(el) {
+        if (!el || !(el instanceof Element)) return;
+        if (!el.matches(SEL.entry)) return;
+        const payload = serializeEntry(el);
+        if (!payload.text && payload.icons.length === 0) return;
+        if (el.dataset[NODE_KEY_ATTR] === payload.key) return;
+        el.dataset[NODE_KEY_ATTR] = payload.key;
+
+        const now = Date.now();
+        const expiresAt = recentSeen.get(payload.key);
+        if (expiresAt && expiresAt > now) return;
+        recentSeen.set(payload.key, now + RECENT_TTL_MS);
+        if (recentSeen.size > 400) {
+            for (const [k, t] of recentSeen) {
+                if (t <= now) recentSeen.delete(k);
+            }
+        }
+
         chrome.runtime.sendMessage({
             type: 'log-entry',
             payload,
         }).catch(() => {});
     }
 
-    function attachObserver() {
-        const container = findLogContainer();
-        if (!container) {
-            // Lobby/loading state — try again shortly.
-            setTimeout(attachObserver, 800);
-            return;
-        }
-        // Snapshot existing entries (in case we attached late).
-        Array.from(container.children).forEach(emitEntry);
-        const obs = new MutationObserver(records => {
-            for (const r of records) {
-                r.addedNodes.forEach(n => {
-                    if (n.nodeType === 1) emitEntry(n);
+    function attach(scroller) {
+        console.log(LOG_PREFIX, 'attached to log scroller');
+        scroller.querySelectorAll(SEL.entry).forEach(processEntry);
+
+        const observer = new MutationObserver((mutations) => {
+            if (!isAtBottom(scroller)) return;
+            for (const m of mutations) {
+                m.addedNodes.forEach((n) => {
+                    if (!(n instanceof Element)) return;
+                    if (n.matches(SEL.entry)) {
+                        processEntry(n);
+                    } else if (n.querySelectorAll) {
+                        n.querySelectorAll(SEL.entry).forEach(processEntry);
+                    }
                 });
             }
         });
-        obs.observe(container, { childList: true, subtree: false });
-        console.log('[cataanbot] log observer attached');
+        observer.observe(scroller, { childList: true, subtree: true });
+
+        // Safety net: poll every 500ms for any entries the observer
+        // missed. MutationObservers can batch rapid insertions
+        // (common on colonist's virtualized list) and occasionally
+        // skip nodes; the per-node dedup above means re-scanning is
+        // cheap and idempotent.
+        setInterval(() => {
+            if (!isAtBottom(scroller)) return;
+            scroller.querySelectorAll(SEL.entry).forEach(processEntry);
+        }, 500);
     }
-    attachObserver();
+
+    function waitForScroller() {
+        let tries = 0;
+        const maxTries = 600;
+        const iv = setInterval(() => {
+            tries += 1;
+            const scroller = document.querySelector(SEL.scroller);
+            if (scroller) {
+                clearInterval(iv);
+                attach(scroller);
+                return;
+            }
+            if (tries >= maxTries) {
+                clearInterval(iv);
+                console.warn(LOG_PREFIX, 'gave up waiting for scroller');
+            }
+        }, 500);
+    }
+    waitForScroller();
 
     // ---- Step 4: nuke "Remove Ads" buttons ----
-    // Colonist sprinkles "Remove Ads" CTAs in the lobby and in-game
-    // panels. Class hashes rotate between deploys, so the only stable
-    // identifier is the visible text. Walk any clickable-looking
-    // element whose direct text reads exactly "Remove Ads" and yank
-    // it out of the DOM. A MutationObserver re-runs the sweep when
-    // colonist re-renders the affected panel (turn-end, lobby joins,
-    // route changes), so the user never sees one come back.
-    //
-    // We only consider tight scopes (button / a / role=button / a
-    // small whitelist of likely classes) to avoid removing a parent
-    // container that incidentally has "Remove Ads" in deep child text.
     function nukeRemoveAdsButtons() {
         const candidates = document.querySelectorAll(
             'button, a, [role="button"]');
         for (const el of candidates) {
             const text = (el.textContent || '').trim().toLowerCase();
             if (text === 'remove ads' || text === 'remove ad'
-                || text === 'remove ads now' || text === 'remove all ads') {
-                // Pull the button itself rather than a parent — leaves
-                // any sibling content intact. If colonist's layout
-                // collapses oddly without the button, we can switch to
-                // visibility:hidden later, but in practice the host
-                // element's flex layout reflows fine.
+                || text === 'remove ads now'
+                || text === 'remove all ads') {
                 try { el.remove(); } catch (e) {}
             }
         }
     }
     nukeRemoveAdsButtons();
-    // Re-sweep on every body mutation. Debounced so a flurry of
-    // mutations during a route change doesn't run the QSA dozens of
-    // times per frame; one trailing call per ~150ms window is enough.
     let _adSweepTimer = null;
     const adObserver = new MutationObserver(() => {
         if (_adSweepTimer) return;
@@ -161,4 +274,6 @@
             { childList: true, subtree: true });
     }
     attachAdObserver();
+
+    console.log(LOG_PREFIX, 'content script loaded');
 })();

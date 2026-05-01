@@ -41,6 +41,11 @@ ws_captures/
 # checked in (each file is tied to one finished session).
 postmortems/
 
+# Feedback log written by the bridge when the user clicks 👍/👎 on a
+# rec. Contains rec content + per-game state hints — personal
+# gameplay data that doesn't belong in a public repo.
+feedback/
+
 # Personal scratch notes — useful for local development context but
 # not meant for the public repo. Kept locally; ignored from git so
 # they don't clutter the project's docs surface.

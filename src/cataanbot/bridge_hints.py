@@ -1129,14 +1129,21 @@ def _compute_knight_hint(
 ) -> dict[str, Any] | None:
     """Recommend whether to play a Knight dev card this turn.
 
-    Fires only when self has at least one KNIGHT in hand. The "should
-    play" logic weighs:
+    Fires only when self has at least one **playable** KNIGHT in hand.
+    Catan's just-bought rule: dev cards bought this turn can't be
+    played until next turn — colonist ships
+    ``developmentCardsBoughtThisTurn`` (a list of type ints) so we
+    subtract any KNIGHT (type 11) bought this turn from the hand
+    count. If every knight in hand was just bought, the hint stays
+    silent.
+
+    The "should play" logic weighs:
         * Robber currently on one of self's tiles → urgent remove
         * Top robber target score >= 4 → meaningful block
         * An opp at 7+ VP with 2+ played knights → deny largest-army
 
-    Returns {have, should_play, reason, best_target} or None if self has
-    no Knight or we can't determine self color.
+    Returns {have, should_play, reason, best_target} or None if self
+    has no playable Knight or we can't determine self color.
     """
     from catanatron import Color
 
@@ -1163,8 +1170,22 @@ def _compute_knight_hint(
         state.player_state.get(f"P{idx}_KNIGHT_IN_HAND", 0))
     if knight_in_hand <= 0:
         knight_in_hand = int(playable_count or 0)
-    if knight_in_hand <= 0:
+    # Subtract knights bought this turn — Catan rule: can't play a
+    # dev card the same turn it was bought. Colonist's WS ships the
+    # type list, so we count exact KNIGHT-type buys (type int 11).
+    bought_knights_this_turn = 0
+    try:
+        bought = list(getattr(sess, "self_dev_bought_this_turn", []) or [])
+        # KNIGHT int = 11 (decoded from devcard-decode capture, see
+        # colonist_diff._DEV_CARD_TYPE).
+        bought_knights_this_turn = sum(
+            1 for tid in bought if int(tid) == 11)
+    except Exception:  # noqa: BLE001
+        pass
+    playable_knights = knight_in_hand - bought_knights_this_turn
+    if playable_knights <= 0:
         return None
+    knight_in_hand = playable_knights
 
     board = game.tracker.game.state.board
     robber = board.robber_coordinate
