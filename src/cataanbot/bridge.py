@@ -1057,16 +1057,29 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # Late-retry the robber snapshot when an earlier knight-play
     # compute returned empty (usually because session state wasn't
     # ready when the DOM log fired). Each snap poll gets another
-    # chance — once the rec lands, the retry flag clears.
+    # chance — once the rec lands, the retry flag clears. Bounded at
+    # ~30 attempts (≈4s at the default 150ms poll cadence) so a stuck
+    # retry doesn't burn CPU forever if the RobberMoveEvent that
+    # would normally clear the flag never arrives.
     if st.get("robber_snapshot_retry") and game is not None:
-        try:
-            new_snap = _compute_robber_snapshot(
-                game, display_colors=st.get("display_colors") or {})
-        except Exception:  # noqa: BLE001
-            new_snap = None
-        if new_snap:
-            st["robber_snapshot"] = new_snap
+        attempts = int(st.get("robber_snapshot_retry_n") or 0)
+        if attempts < 30:
+            try:
+                new_snap = _compute_robber_snapshot(
+                    game, display_colors=st.get("display_colors") or {})
+            except Exception:  # noqa: BLE001
+                new_snap = None
+            if new_snap:
+                st["robber_snapshot"] = new_snap
+                st["robber_snapshot_retry"] = False
+                st["robber_snapshot_retry_n"] = 0
+            else:
+                st["robber_snapshot_retry_n"] = attempts + 1
+        else:
+            # Give up; clear the retry flag so we don't keep paying
+            # the per-poll _compute_robber_snapshot cost.
             st["robber_snapshot_retry"] = False
+            st["robber_snapshot_retry_n"] = 0
     snap: dict[str, Any] = {
         "seq": st["seq"],
         "game_started": game.started,
