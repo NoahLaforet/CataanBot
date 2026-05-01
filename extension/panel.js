@@ -1739,9 +1739,9 @@
                 + `<span class="muted">${t.offerer_vp ?? 0} VP</span></span>`
                 + '</div>');
             parts.push('<div class="trade-body">'
-                + '<span class="swap-side">gives ' + escapeHtml(fmtSide(t.give))
+                + '<span class="swap-side">gives ' + fmtSide(t.give)
                 + '</span><span class="swap-arrow">↔</span>'
-                + '<span class="swap-side">wants ' + escapeHtml(fmtSide(t.want))
+                + '<span class="swap-side">wants ' + fmtSide(t.want)
                 + '</span></div>');
             if (t.reason) {
                 parts.push('<div class="trade-reason">'
@@ -1753,10 +1753,10 @@
                 parts.push('<div class="counter">'
                     + '<span class="counter-h">counter:</span>'
                     + '<span class="swap-side">ask '
-                    + escapeHtml(fmtSide(t.counter.give))
+                    + fmtSide(t.counter.give)
                     + '</span><span class="swap-arrow">↔</span>'
                     + '<span class="swap-side">for '
-                    + escapeHtml(fmtSide(t.counter.want))
+                    + fmtSide(t.counter.want)
                     + '</span>'
                     + (t.counter.reason
                         ? `<span class="counter-reason">`
@@ -1918,7 +1918,7 @@
                 headExtra = ` · blocking ~${cpr.toFixed(2)} cards/roll`;
             }
             parts.push(`<span class="b-ico">🚫</span> `
-                + `robber on your ${escapeHtml(tileLbl)}${headExtra}`);
+                + `robber on your ${tileLbl}${headExtra}`);
             parts.push(`<span class="rom-sub">${escapeHtml(subParts.join(' · '))}</span>`);
             parts.push('</div>');
         }
@@ -1950,7 +1950,7 @@
             parts.push('<div class="discard-hint">');
             parts.push(`<div class="dh-h">`
                 + `<span class="b-ico">🎲</span> discard ${dh.need}</div>`);
-            parts.push(`<div class="dh-drops">${escapeHtml(dropText)}</div>`);
+            parts.push(`<div class="dh-drops">${dropText}</div>`);
             if (dh.rationale) {
                 parts.push(`<div class="dh-reason">${escapeHtml(dh.rationale)}</div>`);
             }
@@ -1974,7 +1974,7 @@
             parts.push(`<div class="sp-h">`
                 + `<span class="b-ico">⚠</span> ${escapeHtml(sp.message)}`
                 + `</div>`);
-            parts.push(`<div class="sp-drops">would lose: ${escapeHtml(dropText)}</div>`);
+            parts.push(`<div class="sp-drops">would lose: ${dropText}</div>`);
             parts.push('</div>');
         }
         // Persistent multi-turn plan banner. Sticks across polls so
