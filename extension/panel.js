@@ -1181,7 +1181,7 @@
                             : (ev > -5 ? 'neutral'
                                 : (ev > -20 ? 'neg' : 'neg-strong')));
                     const sign = ev > 0 ? '+' : '';
-                    evHtml = `<span class="ev ${evCls}" title="1-ply EV">`
+                    evHtml = `<span class="ev ${evCls}" title="how much better this move scores than doing nothing">`
                         + `${sign}${ev.toFixed(0)}</span>`;
                 }
                 const planCls = r.when === 'soon' ? ' plan' : '';
@@ -1607,11 +1607,13 @@
                 // Per-opp expected cards per roll. Drives robber and
                 // trade-block priority — compare across rows to pick
                 // the strongest engine. Silent at 0 (setup / robbed
-                // out). 'p' is short for per-roll production.
+                // 'p' was short for per-roll production but read as
+                // jargon. Inline as "0.42/roll" so it reads as plain
+                // English without needing a glossary lookup.
                 let prodTag = '';
                 if (o.production && o.production.per_roll > 0) {
-                    prodTag = ` · <span class="opp-prod">`
-                        + `${o.production.per_roll.toFixed(2)}p</span>`;
+                    prodTag = ` · <span class="opp-prod" title="expected resources gained per dice roll">`
+                        + `${o.production.per_roll.toFixed(2)}/roll</span>`;
                 }
                 // Opp ports — trade-partner signal. Drop the inline
                 // "port:" prefix and the comma joins; that format read
@@ -2300,7 +2302,8 @@
         const gap = last.search_delta_gap;
         if (typeof gap === 'number' && gap > 0.05) {
             lastBits.push(
-                `<span class="mq-gap">−${gap.toFixed(1)} EV</span>`);
+                `<span class="mq-gap" title="how much better the top-ranked move would have scored vs. what you played">`
+                + `−${gap.toFixed(1)} pts</span>`);
         }
         ui.mqLast.innerHTML = lastBits.join(' ');
     }
