@@ -2496,3 +2496,52 @@ html[data-style="5"] .panel .title {
   font-weight: 600;
   letter-spacing: 0.06em;
 }
+
+/* Per-style density + layout tweaks (still pure cosmetic). These
+   touch padding, gaps, border radii, and minor decorative details
+   to make each style feel distinct beyond just a color swap. */
+
+/* Style 2 — denser, terminal-tight. */
+html[data-style="2"] .panel .header { padding: 6px 10px; }
+html[data-style="2"] .panel .body { padding: 8px 10px 14px; }
+html[data-style="2"] .panel .rec, html[data-style="2"] .panel .banner {
+  border-radius: 0 !important;
+}
+html[data-style="2"] .panel .title::before {
+  content: "> ";
+  opacity: 0.7;
+}
+html[data-style="2"] .panel .dot { border-radius: 0; }
+
+/* Style 3 — generous, broadsheet. */
+html[data-style="3"] .panel { box-shadow: 0 1px 0 var(--line-strong) !important; }
+html[data-style="3"] .panel .header {
+  padding: 12px 16px;
+  border-bottom-width: 3px;
+  border-bottom-style: double;
+}
+html[data-style="3"] .panel .body { padding: 14px 18px 22px; }
+html[data-style="3"] .panel .title::before {
+  content: "❦ ";
+  font-weight: normal;
+}
+html[data-style="3"] .panel .dot { border-radius: 50%; }
+
+/* Style 4 — neon corners and slight glow on banners. */
+html[data-style="4"] .panel .header {
+  border-bottom: 1px solid rgba(0, 240, 255, 0.20);
+}
+html[data-style="4"] .panel .rec.hero {
+  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.30) inset,
+              0 0 18px rgba(0, 245, 212, 0.15) !important;
+}
+html[data-style="4"] .panel .banner.alert,
+html[data-style="4"] .panel .winning-move {
+  box-shadow: 0 0 14px rgba(255, 62, 136, 0.25) !important;
+}
+
+/* Style 5 — airy, swiss-design margins. */
+html[data-style="5"] .panel .header { padding: 14px 16px; }
+html[data-style="5"] .panel .body { padding: 16px 18px 22px; }
+html[data-style="5"] .panel .rec { box-shadow: none !important; }
+html[data-style="5"] .panel .title { letter-spacing: 0.10em; }
