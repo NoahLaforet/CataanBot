@@ -405,23 +405,23 @@ def build_report(
         elif isinstance(event, VPEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.vp_awards.append(event.reason)
-            # LR/LA can pass between players. The parser sets
-            # previous_holder when colonist's announcement was a
-            # transfer ("X took Longest Road from Y" / "passed from
-            # X to Y"). Strip the award from the previous holder so
-            # the final report only credits the current holder —
-            # without this, both players show longest_road if the
-            # title flipped during the game (Noah's BrickdDaddy game
-            # rendered "longest_road" on both RED and BLUE for this
-            # exact reason).
-            if event.previous_holder:
-                try:
-                    prev_stats = _stats_for(
-                        stats_by_color, color_map, event.previous_holder)
-                    if event.reason in prev_stats.vp_awards:
-                        prev_stats.vp_awards.remove(event.reason)
-                except Exception:  # noqa: BLE001
-                    pass
+            # LR/LA can pass between players and only one player can
+            # hold each award at a time. Strip the reason from every
+            # other player's vp_awards on each new VPEvent — the
+            # parser doesn't reliably populate previous_holder
+            # (colonist's announcement may not name the prior holder
+            # on every transfer), so previous_holder alone left both
+            # players holding longest_road in the 2026-04-30
+            # ToucherOfKid postmortem.
+            try:
+                cur_color = color_map.get(event.player)
+            except Exception:  # noqa: BLE001
+                cur_color = None
+            for other_color, other_stats in stats_by_color.items():
+                if other_color == cur_color:
+                    continue
+                while event.reason in other_stats.vp_awards:
+                    other_stats.vp_awards.remove(event.reason)
         elif isinstance(event, GameOverEvent):
             winner_username = event.winner
             _stats_for(stats_by_color, color_map, event.winner)

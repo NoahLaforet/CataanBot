@@ -143,11 +143,15 @@ def _resolve_final_vp(st) -> dict[str, int]:
        flags. This is what colonist's UI shows. We only see opp VP
        *cards* as zero (colonist hides those), so opp totals understate
        by their hidden VPs, but settle/city/LR/LA are full-fidelity.
-    2. **Live tracker fallback.** ``game.tracker.vp_status()`` reads
-       the WS-driven live tracker, which gets real BuildEvent coords.
-       Slightly less authoritative than colonist (no VP cards at all)
-       but reliable.
-    3. **Empty dict last resort.** If both sources are unavailable
+    2. **Build-derived fallback.** Walk pm_events for BuildEvent +
+       VPEvent and tally settles + 2*cities + LR/LA flags directly.
+       This catches games where colonist's session got cleared at
+       game-end (the source of Noah's 2026-04-30 ToucherOfKid bug
+       where the postmortem rendered both players at 2 VP).
+    3. **Live tracker fallback.** ``game.tracker.vp_status()`` reads
+       the WS-driven live tracker. Less reliable than build counts
+       because it depends on coordinate-bearing BuildEvents.
+    4. **Empty dict last resort.** If every source is unavailable
        (e.g. the bridge crashed mid-game) we hand back ``{}`` so the
        postmortem still renders, just without final scores.
 
@@ -172,8 +176,14 @@ def _resolve_final_vp(st) -> dict[str, int]:
                     vps[color] = sess.vp_total(cid)
                 if vps:
                     return vps
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            print(f"[pm] colonist vp path failed: {e!r}", flush=True)
+
+    derived = _vp_from_pm_events(st)
+    if derived:
+        return derived
+
+    if game is not None:
         try:
             return dict(game.tracker.vp_status()["per_color"])
         except Exception:  # noqa: BLE001
@@ -182,6 +192,64 @@ def _resolve_final_vp(st) -> dict[str, int]:
         return dict(st["pm_tracker"].vp_status()["per_color"])
     except Exception:  # noqa: BLE001
         return {}
+
+
+def _vp_from_pm_events(st) -> dict[str, int]:
+    """Tally per-color VP from the pm_events stream.
+
+    Counts BuildEvents (settlement = +1, city = +1 net since cities
+    replace a settlement: settle*1 + city*2 - cities_built*1 = settles +
+    cities). Adds 2 for whichever player currently holds longest_road or
+    largest_army (single-holder; later VPEvents overwrite earlier ones).
+
+    Misses hidden VP cards (no event for them in the colonist log when
+    bought) but is far better than the catanatron tracker's frozen 2/2.
+    Returns ``{}`` when pm_events is missing or empty so callers know
+    to fall through to the next source.
+    """
+    try:
+        from cataanbot.events import BuildEvent, VPEvent
+    except Exception:  # noqa: BLE001
+        return {}
+    pm_events = st.get("pm_events") or []
+    pm_color_map = st.get("pm_color_map")
+    if not pm_events or pm_color_map is None:
+        return {}
+
+    settles: dict[str, int] = {}
+    cities: dict[str, int] = {}
+    award_holder: dict[str, str] = {}
+    for ev in pm_events:
+        if isinstance(ev, BuildEvent):
+            try:
+                color = pm_color_map.get(ev.player)
+            except Exception:  # noqa: BLE001
+                continue
+            if ev.piece == "settlement":
+                settles[color] = settles.get(color, 0) + 1
+            elif ev.piece == "city":
+                cities[color] = cities.get(color, 0) + 1
+        elif isinstance(ev, VPEvent):
+            if ev.reason in ("longest_road", "largest_army"):
+                try:
+                    color = pm_color_map.get(ev.player)
+                except Exception:  # noqa: BLE001
+                    continue
+                award_holder[ev.reason] = color
+
+    out: dict[str, int] = {}
+    all_colors = set(settles) | set(cities) | set(award_holder.values())
+    for color in all_colors:
+        s = settles.get(color, 0)
+        c = cities.get(color, 0)
+        # Cities replace a settlement, so net VP = settles_built +
+        # cities_built (each city = +1 over its underlying settle).
+        vp = s + c
+        for award, holder in award_holder.items():
+            if holder == color:
+                vp += 2
+        out[color] = vp
+    return out
 
 
 def _compute_board_fingerprint(game) -> dict[str, object] | None:

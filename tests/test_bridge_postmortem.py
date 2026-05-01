@@ -88,6 +88,41 @@ def test_feed_postmortem_without_game_over_writes_nothing(tmp_path: Path):
     assert st["pm_written"] is False
 
 
+def test_resolve_final_vp_falls_back_to_build_events():
+    """Regression for the 2026-04-30 ToucherOfKid postmortem where the
+    colonist + tracker paths both returned 2/2 (impossible — winner had
+    to have 10+ VP). Build-derived fallback uses pm_events to compute
+    settles + 2*cities + LR/LA flags, which works whenever the DOM log
+    captured the BuildEvents (always true for a completed game)."""
+    from cataanbot.bridge_postmortem import _resolve_final_vp
+    from cataanbot.events import BuildEvent, VPEvent
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    pm_events = [
+        BuildEvent(player="Alice", piece="settlement"),
+        BuildEvent(player="Alice", piece="settlement"),
+        BuildEvent(player="Alice", piece="settlement"),
+        BuildEvent(player="Alice", piece="city"),
+        BuildEvent(player="Bob", piece="settlement"),
+        BuildEvent(player="Bob", piece="settlement"),
+        BuildEvent(player="Bob", piece="city"),
+        BuildEvent(player="Bob", piece="city"),
+        VPEvent(player="Alice", reason="longest_road", vp_delta=2),
+        VPEvent(player="Bob", reason="longest_road", vp_delta=2),
+        VPEvent(player="Alice", reason="largest_army", vp_delta=2),
+    ]
+    st = {
+        "game": None,  # forces colonist + live-tracker paths to skip
+        "pm_events": pm_events,
+        "pm_color_map": cm,
+        "pm_tracker": Tracker(),
+    }
+    vps = _resolve_final_vp(st)
+    # Alice: 3 settles + 1 city = +1 (city overwrites a settle, net +1)
+    # = 3 + 1 = 4 building VP, + 2 (LA, since Bob took LR) = 6 VP total.
+    # Bob: 2 settles + 2 cities = +2 = 2 + 2 = 4 building VP, + 2 (LR) = 6 VP.
+    assert vps == {"RED": 6, "BLUE": 6}
+
+
 def test_harvest_display_colors_latches_first_css_color():
     from cataanbot.bridge import _harvest_display_colors
 

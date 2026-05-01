@@ -967,3 +967,29 @@ def test_first_time_award_does_not_strip():
     )
     assert "largest_army" in rep.players["RED"].vp_awards
     assert "largest_army" not in rep.players["BLUE"].vp_awards
+
+
+def test_longest_road_transfer_strips_without_previous_holder():
+    """Colonist's parser doesn't always populate previous_holder on a
+    transfer — the announcement may just say "X has Longest Road"
+    without naming who lost it. The report must still strip the prior
+    holder by virtue of LR being a single-holder award.
+
+    Regression for the 2026-04-30 ToucherOfKid postmortem where the
+    parser missed previous_holder on the LR transfer and both players
+    rendered with longest_road in the final scoreboard."""
+    from cataanbot.events import VPEvent
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        VPEvent(player="Alice", reason="longest_road", vp_delta=2),
+        # Bob takes LR — but parser missed previous_holder.
+        VPEvent(player="Bob", reason="longest_road", vp_delta=2,
+                previous_holder=None),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 2, "BLUE": 4},
+    )
+    assert "longest_road" not in rep.players["RED"].vp_awards, (
+        "Alice (RED) must lose LR even when previous_holder is None")
+    assert "longest_road" in rep.players["BLUE"].vp_awards
