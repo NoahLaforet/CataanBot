@@ -572,7 +572,10 @@ def _track_overlay_state(st, results) -> None:
       moment a RobberMoveEvent lands. While pending, /advisor ships the
       top-N robber target ranking so the overlay can surface it inline.
     """
-    from cataanbot.events import BuildEvent, RobberMoveEvent, RollEvent
+    from cataanbot.events import (
+        BuildEvent, RobberMoveEvent, RollEvent,
+        TradeCommitEvent, TradeOfferEvent,
+    )
 
     game = st["game"]
     for r in results:
@@ -721,6 +724,26 @@ def _track_overlay_state(st, results) -> None:
             except Exception as e:  # noqa: BLE001
                 print(f"[overlay] move-quality classify failed: {e!r}",
                       flush=True)
+        elif isinstance(r.event, TradeOfferEvent):
+            # Mirror of the DOM-log handler in _feed_postmortem. WS-side
+            # trade offers (tradeState.activeOffers) come through here
+            # since colonist's UI button doesn't always emit a chat-log
+            # line. Without this hook the new WS parser would emit the
+            # event but the HUD's incoming-trade banner would never
+            # populate. Same payload shape as the DOM-log path so the
+            # snap builder + frontend renderer don't need to know which
+            # pipeline fired the offer.
+            st["pending_trade_offer"] = {
+                "player": r.event.player,
+                "give": dict(r.event.give),
+                "want": dict(r.event.want),
+                "ts": None,
+            }
+        elif isinstance(r.event, TradeCommitEvent):
+            # Same clear-on-commit rule the DOM-log handler uses: the
+            # offer's decision window closes the moment a trade is
+            # actually executed (or rolled past).
+            st["pending_trade_offer"] = None
 
 
 
