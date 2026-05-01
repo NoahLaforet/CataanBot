@@ -2109,6 +2109,16 @@ def _print_dispatch_results(game, results, seq: int,
             print(f"[ws #{seq:05d}] {cls}: {r.message}", flush=True)
         elif r.status == "error":
             print(f"[ws #{seq:05d}] ERROR {cls}: {r.message}", flush=True)
+        elif r.status == "unhandled" and isinstance(r.event, BuildEvent):
+            # BuildEvents without coords (DOM-log "X built a road"
+            # without WS-side edge data) silently fall through. The
+            # build doesn't apply to catanatron's tracker, which means
+            # the recommender keeps suggesting the same road forever.
+            # Log so Noah can see when a build was missed instead of
+            # being puzzled by stale recs. Other unhandled events
+            # (informational text, etc.) stay quiet.
+            print(f"[ws #{seq:05d}] UNHANDLED {cls}: {r.message}",
+                  flush=True)
 
     if not advisor:
         return
