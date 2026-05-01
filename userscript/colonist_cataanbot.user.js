@@ -1135,9 +1135,6 @@
     line-height: 1;
   }
   .fb:hover { background: var(--bg-3); }
-  .fb-up.fb-marked   { background: rgba(74, 222, 128, 0.18);
-                       border-color: var(--pos);
-                       color: var(--pos); }
   .fb-down.fb-marked { background: rgba(239, 68, 68, 0.18);
                        border-color: var(--alert);
                        color: var(--alert); }
@@ -2354,9 +2351,8 @@
                 console.warn('[cataanbot] bad fb data:', err);
                 return;
             }
-            const label = target.classList.contains('fb-up') ? 'good' : 'bad';
-            // Hint payload: tiny sliver of game state so the labeled
-            // rec is interpretable later without rebuilding the snap.
+            // Only thumbs-down exists — playing the rec is the implicit
+            // good signal (auto-logged by the bridge); silence is neutral.
             const snap = latestAdvisorSnap;
             const hint = (snap && {
                 seq: snap.seq,
@@ -2366,15 +2362,9 @@
                 phase: snap.phase,
             }) || {};
             postTo(BRIDGE_FEEDBACK_URL, {
-                label, rec: recDict, snapshot_hint: hint,
+                label: 'bad', rec: recDict, snapshot_hint: hint,
             }, { quiet: false });
-            // Mark the chosen button; clear the partner so a flip
-            // (good→bad or vice versa) reads cleanly.
             target.classList.add('fb-marked');
-            const sibling = target.classList.contains('fb-up')
-                ? target.parentNode.querySelector('.fb-down')
-                : target.parentNode.querySelector('.fb-up');
-            if (sibling) sibling.classList.remove('fb-marked');
         });
 
         // --------------------------------------------------------------
@@ -3148,12 +3138,9 @@
                     edge: r.edge, alt: r.alt,
                 });
                 const fbHtml = `<span class="fb-row">`
-                    + `<button class="fb fb-up" `
-                    + `data-rec='${escapeHtml(fbPayload)}' `
-                    + `title="rec was helpful">👍</button>`
                     + `<button class="fb fb-down" `
                     + `data-rec='${escapeHtml(fbPayload)}' `
-                    + `title="rec was bad">👎</button>`
+                    + `title="this rec was bad — log it">👎</button>`
                     + `</span>`;
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}${altCls}">`
                     + optHtml

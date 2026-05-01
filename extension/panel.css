@@ -945,9 +945,6 @@
     line-height: 1;
   }
   .fb:hover { background: var(--bg-3); }
-  .fb-up.fb-marked   { background: rgba(74, 222, 128, 0.18);
-                       border-color: var(--pos);
-                       color: var(--pos); }
   .fb-down.fb-marked { background: rgba(239, 68, 68, 0.18);
                        border-color: var(--alert);
                        color: var(--alert); }

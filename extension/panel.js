@@ -398,9 +398,10 @@
                 console.warn('[cataanbot] bad fb data:', err);
                 return;
             }
-            const label = target.classList.contains('fb-up') ? 'good' : 'bad';
-            // Hint payload: tiny sliver of game state so the labeled
-            // rec is interpretable later without rebuilding the snap.
+            // Only thumbs-down exists — playing the rec is the implicit
+            // good signal (auto-logged by the bridge); silence is neutral.
+            // Tiny sliver of game state so the labeled rec is interpretable
+            // later without rebuilding the snap.
             const snap = latestAdvisorSnap;
             const hint = (snap && {
                 seq: snap.seq,
@@ -410,15 +411,9 @@
                 phase: snap.phase,
             }) || {};
             postTo(BRIDGE_FEEDBACK_URL, {
-                label, rec: recDict, snapshot_hint: hint,
+                label: 'bad', rec: recDict, snapshot_hint: hint,
             }, { quiet: false });
-            // Mark the chosen button; clear the partner so a flip
-            // (good→bad or vice versa) reads cleanly.
             target.classList.add('fb-marked');
-            const sibling = target.classList.contains('fb-up')
-                ? target.parentNode.querySelector('.fb-down')
-                : target.parentNode.querySelector('.fb-up');
-            if (sibling) sibling.classList.remove('fb-marked');
         });
 
         // --------------------------------------------------------------
@@ -1196,12 +1191,14 @@
                 const optHtml = optLetter
                     ? `<span class="opt">${optLetter}</span>`
                     : '';
-                // Feedback chips. Click 👍 / 👎 to log an opinion on
-                // this rec — POSTs to /feedback so the bridge can
-                // append it to feedback/recs.jsonl. The data-rec
-                // attribute carries a JSON-serialized snapshot of the
-                // rec dict so the click handler doesn't have to
-                // re-resolve the rec from the rendered DOM.
+                // Thumbs-down only. Per Noah's feedback model:
+                // playing the rec is the implicit "good" signal
+                // (auto-logged as label="auto_good" by the bridge
+                // when self builds match the top rec); ignoring is
+                // implicit "neutral"; the explicit chip is reserved
+                // for "this rec was genuinely bad — don't suggest
+                // again". One button = no flip-flop, no accidental
+                // up-clicks.
                 const fbPayload = JSON.stringify({
                     kind: r.kind, when: r.when, score: r.score,
                     detail: r.detail, give: r.give, get: r.get,
@@ -1209,12 +1206,9 @@
                     edge: r.edge, alt: r.alt,
                 });
                 const fbHtml = `<span class="fb-row">`
-                    + `<button class="fb fb-up" `
-                    + `data-rec='${escapeHtml(fbPayload)}' `
-                    + `title="rec was helpful">👍</button>`
                     + `<button class="fb fb-down" `
                     + `data-rec='${escapeHtml(fbPayload)}' `
-                    + `title="rec was bad">👎</button>`
+                    + `title="this rec was bad — log it">👎</button>`
                     + `</span>`;
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}${altCls}">`
                     + optHtml
