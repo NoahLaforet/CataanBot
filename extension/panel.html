@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CataanBot</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<div class="panel" id="panel" data-phase="connecting">
+  <div class="header" id="header">
+    <span class="dot" id="dot"></span>
+    <span class="title">CataanBot</span>
+    <span class="variant-badge" id="variant-badge"></span>
+    <span class="friendly-robber-badge" id="friendly-robber-badge"
+          title="Friendly Robber rule on — ≤2-VP victims protected">friendly robber</span>
+    <button class="hbtn" id="reset" title="Reset bridge state (new game)">↺</button>
+  </div>
+  <div class="body" id="body">
+    <div id="status">connecting to bridge at 127.0.0.1:8765&hellip;</div>
+    <div id="content"></div>
+  </div>
+</div>
+<script src="panel.js"></script>
+</body>
+</html>
