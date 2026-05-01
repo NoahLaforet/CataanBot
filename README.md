@@ -6,8 +6,7 @@ A live Settlers of Catan advisor for [colonist.io](https://colonist.io).
 A Chrome extension streams the in-browser game (DOM log + raw
 WebSocket frames) to a local FastAPI bridge that runs the strategy
 engine; the HUD renders in Chrome's right-side panel — no overlap
-with the game board. (A Tampermonkey userscript fallback is also
-available for non-Chrome browsers.)
+with the game board.
 
 Built on top of [catanatron](https://github.com/bcollazo/catanatron)
 (Python Catan engine) — handcrafted heuristics + 1-ply state-eval
@@ -112,20 +111,9 @@ When the extension is ready for the Chrome Web Store, listing it
 there ($5 one-time developer fee) gives users automatic updates
 within ~24h of each push, no manual reload needed.
 
-### Install the userscript (fallback for non-Chrome browsers)
-
-If you're on Firefox / Safari / older Chrome, the userscript provides
-the same HUD as a draggable overlay on top of the page:
-
-1. Install [Tampermonkey](https://www.tampermonkey.net/) (or
-   Violentmonkey) in your browser.
-2. Open `userscript/colonist_cataanbot.user.js` in this repo, copy
-   the contents, paste into a new Tampermonkey script. Save.
-3. Confirm it's enabled on `colonist.io/*`.
-4. Open colonist, start a game.
-
-Tampermonkey will pull updates from this repo's `main` branch
-automatically (the `@updateURL` header points at the raw GitHub URL).
+> The Tampermonkey userscript that used to ship alongside the
+> extension is archived under `legacy/userscript/`. It's no longer
+> maintained — the Chrome extension is the only supported HUD path.
 
 ## Offline tools
 
@@ -148,12 +136,13 @@ automatically (the `@updateURL` header points at the raw GitHub URL).
 ```
 src/cataanbot/        bridge, recommender, tracker, render, advisor
 extension/            Chrome side-panel extension (Manifest V3)
-userscript/           Tampermonkey fallback (colonist DOM + WS pipe)
-tests/                pytest, ~580 tests covering parsing, dispatch,
+tests/                pytest, ~620 tests covering parsing, dispatch,
                       tracker arithmetic, recommender heuristics,
                       bridge snapshot shapes
 docs/                 design notes — DOM/WS protocol recon (colonist),
                       HUD design principles
+legacy/userscript/    archived Tampermonkey HUD — frozen snapshot,
+                      no longer maintained; use the extension
 ws_captures/          local WS jsonl mirrors (gitignored, big files)
 postmortems/          auto-generated game-end HTML (gitignored)
 ```
@@ -161,8 +150,8 @@ postmortems/          auto-generated game-end HTML (gitignored)
 ## Development
 
 ```bash
-.venv/bin/python -m pytest        # ~1.5s, ~580 tests
-node --check userscript/colonist_cataanbot.user.js
+.venv/bin/python -m pytest        # ~1.5s, ~620 tests
+node --check extension/panel.js
 ```
 
 CI runs `pytest` on every push (see `.github/workflows/tests.yml`).
