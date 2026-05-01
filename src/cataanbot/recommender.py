@@ -486,6 +486,13 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     blocked_nodes: set[int] = set()
     opp_blocked: set[int] = set()
     opp_edges: set[frozenset[int]] = set()
+    # Edges WE already own a road on. Without tracking these, the
+    # round-3/4 opening-road follow-up will happily recommend the
+    # same edge our round-1 road sits on — Noah saw this on
+    # 2026-05-01 ("told me to build a road where I already had
+    # one"). Catan rejects double-roads, so colonist's UI shows the
+    # placement as failed.
+    my_edges: set[frozenset[int]] = set()
     if game is not None:
         for nid, (col, btype) in game.state.board.buildings.items():
             if btype not in ("SETTLEMENT", "CITY"):
@@ -497,10 +504,11 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
                 opp_blocked |= {
                     int(n) for n in neighbors.get(int(nid), set())}
         for edge, col in game.state.board.roads.items():
-            if col == my_color:
-                continue
             a, b = edge
-            opp_edges.add(frozenset((int(a), int(b))))
+            if col == my_color:
+                my_edges.add(frozenset((int(a), int(b))))
+            else:
+                opp_edges.add(frozenset((int(a), int(b))))
     if planned_blocked:
         blocked_nodes |= {int(n) for n in planned_blocked}
     adj = neighbors.get(settlement, set())
@@ -517,6 +525,12 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
         # Opp road on (settlement, far) — can't lay our opening road
         # through an opp piece that's already there.
         if frozenset((int(settlement), far_int)) in opp_edges:
+            continue
+        # Skip edges we ALREADY OWN a road on — the round-3/4 follow-
+        # up should recommend the *next* road, not the round-1 one
+        # again. Catan rejects double-roads so suggesting one is a
+        # broken click for Noah.
+        if frozenset((int(settlement), far_int)) in my_edges:
             continue
         # Best reachable 2-hop settlement spot via (settlement -> far -> x).
         exp_score = 0.0

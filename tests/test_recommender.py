@@ -1598,3 +1598,46 @@ def test_dev_card_dropped_at_one_vp_from_win():
     assert dev_recs == [], (
         f"'draw a card' rec surfaced at gap=1 to win — should have been "
         f"dropped in favor of city/settle. Got: {dev_recs}")
+
+
+def test_opening_road_followup_skips_self_owned_edge():
+    """Regression for Noah's 2026-05-01 game where the round-3 opening-
+    road follow-up recommended an edge that already had Noah's own
+    round-1 road on it — Catan rejects double-roads, so the click
+    failed in colonist. The opening-road logic skipped opp-owned edges
+    but not self-owned ones."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.advisor import _build_node_neighbors
+    from cataanbot.recommender import _best_opening_road
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=11,
+    )
+    m = g.state.board.map
+    neighbors = _build_node_neighbors(m)
+    # Place a settle and one road from it. The follow-up should pick
+    # a DIFFERENT adjacent edge, not the one we already own.
+    settle = next(iter(m.land_nodes))
+    adj = list(neighbors.get(settle, set()))
+    if len(adj) < 2:
+        return  # synthetic safety; not all node setups have >=2 adj
+    occupied_far = adj[0]
+    g.state.board.build_settlement(Color.RED, settle,
+                                   initial_build_phase=True)
+    g.state.board.build_road(Color.RED, (settle, occupied_far))
+    # Synthetic "scored_by_node" — assigns the highest score to the
+    # already-occupied corridor's far end, so without the fix the
+    # recommender would happily re-suggest that edge.
+    scored_by_node = {n: {"score": 1.0} for n in adj}
+    scored_by_node[occupied_far]["score"] = 99.0
+    rec = _best_opening_road(
+        settlement=settle, neighbors=neighbors,
+        scored_by_node=scored_by_node, m=m,
+        game=g, my_color=Color.RED)
+    if rec is None:
+        return  # no legal follow-up; that's its own behavior
+    rec_edge = set(int(x) for x in rec["edge"])
+    assert rec_edge != {int(settle), int(occupied_far)}, (
+        f"opening-road follow-up recommended the already-owned edge "
+        f"{rec_edge}; should have picked a different adjacent edge")
