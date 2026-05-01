@@ -1569,6 +1569,46 @@ def recommend_actions(
     # state is malformed. See eval.py for the state evaluator.
     from cataanbot.eval import search_rerank
     search_rerank(game, c, recs)
+
+    # Endgame urgency bias. Once self crosses close_to_win_vp() (10 VP
+    # target → ≥ 8 VP, 12 VP target → ≥ 10 VP, etc — automatically
+    # scales, never hardcoded to 8), every rec is reweighted through
+    # the lens of "does this directly close out the game?" City and
+    # settlement get a flat +1.5 score bump (real same-turn VP), and
+    # the bump scales further as self approaches the win — once 1 VP
+    # away, those go to +2.5. Bank/propose trades that unlock those
+    # builds inherit the same bump (their `unlocks` field tells us).
+    # Roads, dev cards, soon-plans don't get the bump unless they're
+    # directly part of a same-turn LR/LA flip — those flips are
+    # already handled by the dedicated winning_move banner.
+    try:
+        from cataanbot.config import VP_TARGET, close_to_win_vp
+        idx = game.state.color_to_index.get(c)
+        if idx is not None:
+            self_vp = int(game.state.player_state.get(
+                f"P{idx}_VICTORY_POINTS", 0))
+            close_vp = close_to_win_vp()
+            if self_vp >= close_vp:
+                gap = max(1, VP_TARGET - self_vp)
+                # Bigger bump as the gap shrinks — at 1 VP from win, a
+                # city/settle is worth dramatically more than at the
+                # close_vp threshold.
+                bump = 2.5 if gap == 1 else 1.5
+                for rec in recs:
+                    if rec.get("when") != "now":
+                        continue
+                    kind = rec.get("kind")
+                    unlocks = rec.get("unlocks")
+                    advances_vp = (kind in ("settlement", "city")
+                                   or unlocks in ("settlement", "city"))
+                    if advances_vp:
+                        rec["score"] = round(min(
+                            float(rec.get("score", 0.0)) + bump, 10.0), 1)
+                # Re-sort because scores changed.
+                recs.sort(key=lambda r: -float(r.get("score", 0.0)))
+    except Exception:  # noqa: BLE001
+        pass
+
     return recs[:top]
 
 

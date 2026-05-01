@@ -1493,3 +1493,65 @@ def test_dev_card_recs_suppressed_when_deck_empty():
         g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 1}, top=8,
         dev_deck_remaining=12)
     assert any(r["kind"] == "dev_card" for r in out)
+
+
+def test_endgame_urgency_bumps_vp_advancing_recs():
+    """Once self crosses close_to_win_vp(), city / settlement / and
+    bank-trades-that-unlock-them should get a score bump. Roads + dev
+    cards stay flat. The bump scales — at 1 VP from win, the bump is
+    larger than at exactly close_vp.
+
+    Threshold is close_to_win_vp() (= 0.8 * VP_TARGET, rounded), so
+    this test verifies the math holds for both 10 VP and 12 VP games
+    — Noah specifically called out that endgame logic must scale to
+    longer games and not hardcode the threshold to 8.
+    """
+    from catanatron import Color
+    from cataanbot.config import VP_TARGET, set_vp_target
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+
+    # Inject self_vp directly via player_state so we don't have to
+    # play out a real game.
+    idx = g.state.color_to_index[Color.RED]
+
+    def _city_score_at_vp(vp):
+        g.state.player_state[f"P{idx}_VICTORY_POINTS"] = vp
+        # Hand exactly affords a city.
+        out = recommend_actions(
+            g, "RED", {"WHEAT": 2, "ORE": 3}, top=4)
+        city_recs = [r for r in out
+                     if r["kind"] == "city" and r["when"] == "now"]
+        assert city_recs, f"no city rec at vp={vp}: {out}"
+        return city_recs[0]["score"]
+
+    # Baseline: well below close_vp — no bump.
+    base = _city_score_at_vp(2)
+    # At close_vp threshold (10 VP target → 8): bump starts.
+    at_close = _city_score_at_vp(8)
+    assert at_close > base, (
+        f"city score should bump at close_vp; base={base} at_close={at_close}")
+    # 1 VP from win (10 VP target → 9): bigger bump.
+    one_away = _city_score_at_vp(9)
+    assert one_away > at_close, (
+        f"city score should bump higher when 1-away; "
+        f"at_close={at_close} one_away={one_away}")
+
+    # Now verify it scales with VP_TARGET. Switch to a 12-VP game.
+    original = VP_TARGET
+    try:
+        set_vp_target(12)
+        # At vp=8 in a 12-VP game we are NOT at close_vp yet
+        # (close_vp = round(0.8 * 12) = 10). City should NOT get the
+        # bump.
+        eight_in_12 = _city_score_at_vp(8)
+        # vs at vp=8 in 10-VP game, which we already measured as bumped.
+        assert eight_in_12 < at_close, (
+            f"endgame bump leaked into vp=8 in a 12-VP game; "
+            f"got {eight_in_12} (should be < {at_close} from 10-VP test)")
+    finally:
+        set_vp_target(original)
