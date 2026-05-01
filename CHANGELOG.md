@@ -4,6 +4,49 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.30.0 — 2026-05-01
+
+Soft revert of the style switcher. The 5/6-style cycler shipped
+in v0.28.0–v0.29.1 caused more problems than it solved (style
+numbering shifted between releases, alt renderers introduced
+runtime errors like the tilesToHtml ReferenceError, monopoly
+hint over-counted in untested paths). Removed entirely:
+
+- `<select id="style">` from panel.html
+- `bindStyleSelector()` + the renderOverlay dispatcher + the
+  four alternate renderers (terminal, newspaper, tactical HUD,
+  minimal) in panel.js
+- All `html[data-style="N"] .panel { ... }` blocks in panel.css
+- The Google Fonts `@import` for the redesigned aesthetics
+- `.drawer-select` CSS class
+
+`iconFor()` simplified to always prefer emoji for the resource
+glyphs (Noah's pref) with the SVG line-art retained as fallback
+when an emoji isn't mapped.
+
+What's KEPT from this session — the actual game-logic wins:
+
+- Postmortem 2/2 final scores fix (build-derived VP fallback)
+- Postmortem double longest_road fix (always strip prior holder)
+- Knight robber-rec retry on empty snapshot (+ 30-attempt cap)
+- WS-side trade-offer parser (tradeState.activeOffers)
+- Bridge wiring of TradeOfferEvent → pending_trade_offer
+- Recommender: 1:2 longshot trade variant dropped
+- Recommender: dev_card suppressed at win-this-turn, halved at
+  endgame
+- Opp inferred breakdown italic when not fully tracked
+- Jargon strings replaced with plain English
+- Bridge: silent no-op on malformed type=4 frames
+- tilesToHtml hoisted to module scope
+- Several escapeHtml-of-svg bugs fixed in trade banner / robber-
+  on-me / discard hint / seven-prep / near-miss
+- Opening road follow-up: skip edges I already own
+- Bridge: auto-detect VP target + discard limit from colonist
+  gameSettings
+- Monopoly hint: clamp inferred opp counts against authoritative
+  totals + physical deck supply
+- Discard banner gated on robber_pending (no false-alarm pre-roll)
+
 ## v0.29.1 — 2026-05-01
 
 - **Restored the original slate dashboard as Style 1.** The v0.29.0
