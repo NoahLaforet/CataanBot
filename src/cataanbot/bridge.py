@@ -1834,10 +1834,30 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # populates robber_snapshot via _track_overlay_state, and the
     # knight-play path does it via _feed_postmortem.
     try:
+        # Pass the authoritative opp card totals + bank supply so the
+        # monopoly hint can clamp inferred per-resource counts against
+        # physical reality. Without this, drift in tracker.hand() (which
+        # accumulates phantom cards from missed steals) would inflate
+        # the hint to "drains 19 from blue" even when blue holds 0
+        # cards — Noah saw this on 2026-05-01.
+        opp_cards = {}
+        if game.session is not None:
+            for cid, count in game.session.hand_card_counts.items():
+                if cid == game.session.self_color_id:
+                    continue
+                user = game.session.player_names.get(cid)
+                if user:
+                    try:
+                        c = game.color_map.get(user)
+                        opp_cards[c] = int(count)
+                    except Exception:  # noqa: BLE001
+                        pass
         snap["monopoly_hint"] = _compute_monopoly_hint(
             game, self_color, hand,
             display_colors=st.get("display_colors") or {},
-            playable_count=hint_fallback)
+            playable_count=hint_fallback,
+            opp_card_totals=opp_cards,
+            bank_supply=snap.get("bank_supply"))
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] monopoly_hint failed: {e!r}", flush=True)
     try:

@@ -178,6 +178,8 @@ def _compute_monopoly_hint(
     game, self_color: str, self_hand: dict[str, int],
     display_colors: dict[str, str] | None = None,
     playable_count: int = 0,
+    opp_card_totals: dict[str, int] | None = None,
+    bank_supply: dict[str, int] | None = None,
 ) -> dict[str, Any] | None:
     """Pick the best resource to steal when self plays Monopoly.
 
@@ -223,12 +225,51 @@ def _compute_monopoly_hint(
             opp_hand = game.tracker.hand(opp_color.value)
         except Exception:  # noqa: BLE001
             continue
+        # Authoritative cap: opp's total card count from the WS
+        # (not the inferred per-resource sum). When tracker.hand()
+        # disagrees with the authoritative total — which it will
+        # whenever a hidden steal moved cards we couldn't attribute
+        # — the per-resource breakdown gets scaled down so it sums
+        # to no more than the real total. Catches the "drains 19
+        # from blue" bug on opps with 0 actual cards.
+        cap = None
+        if opp_card_totals is not None:
+            cap = opp_card_totals.get(opp_color.value)
         counts: dict[str, int] = {}
+        raw_sum = sum(int(n) for n in opp_hand.values())
+        scale = 1.0
+        if cap is not None and raw_sum > cap and raw_sum > 0:
+            # Inferred breakdown overstates this opp's hand. Scale
+            # all per-resource counts down proportionally so they
+            # sum to cap. Cap=0 (opp has no cards) drops to all-zero.
+            scale = cap / raw_sum
         for r, n in opp_hand.items():
             if r in totals:
-                totals[r] += int(n)
-                counts[r] = int(n)
+                clamped = int(round(int(n) * scale)) if scale < 1.0 else int(n)
+                if cap == 0:
+                    clamped = 0
+                totals[r] += clamped
+                counts[r] = clamped
         per_opp[opp_color.value] = counts
+    # Final physical cap: total of any resource across all opps can
+    # never exceed (deck_max - bank_remaining - self_held). 19 max
+    # per resource in classic Catan.
+    if bank_supply:
+        for r in list(totals.keys()):
+            phys_max = max(
+                0,
+                19
+                - int(bank_supply.get(r, 0))
+                - int(self_hand.get(r, 0)),
+            )
+            if totals[r] > phys_max:
+                # Distribute the cap proportionally across opps so
+                # the per-opp split stays meaningful.
+                if totals[r] > 0:
+                    factor = phys_max / totals[r]
+                    for opp_val, counts in per_opp.items():
+                        counts[r] = int(round(counts.get(r, 0) * factor))
+                totals[r] = phys_max
     if not any(totals.values()):
         return None
     # Rank: (count, unlock-bonus, resource-weight).
