@@ -148,16 +148,60 @@
     const RES_ABBREV = {
         WOOD: 'Wd', BRICK: 'Br', SHEEP: 'Sh', WHEAT: 'Wh', ORE: 'Or',
     };
-    // Emoji icons render at a glance vs. letter abbrevs — on a dense
-    // HUD, 🌲 is faster to parse than "Wd". Kept the abbrev map as a
-    // fallback for callers that want text, but the main renderers use
-    // icons.
-    const RES_ICON = {
-        WOOD: '🌲', BRICK: '🧱', SHEEP: '🐑',
-        WHEAT: '🌾', ORE: '⛰️',
+    // Inline SVG resource icons — single-stroke line art so they
+    // inherit currentColor + sit cleanly inline with text. Authored
+    // by hand at 14×14 viewBox so each glyph reads at HUD body size
+    // without rendering noise. Replaces the 🌲🧱🐑🌾⛰️ emoji set
+    // (which clashed with the cleaner panel aesthetic and rendered
+    // inconsistently across OS font stacks).
+    //
+    // The matching CSS in panel.css gives each .res-glyph a 1em
+    // inline size + colors per resource (wood=brown, brick=red,
+    // sheep=light, wheat=amber, ore=slate).
+    const RES_SVG = {
+        WOOD: '<svg class="res-glyph res-wood" viewBox="0 0 24 24" '
+            + 'fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linejoin="round" aria-hidden="true">'
+            + '<path d="M12 3 L7 11 L9.5 11 L5 18 L9 18 L11 22 '
+            + 'L13 22 L15 18 L19 18 L14.5 11 L17 11 Z"/></svg>',
+        BRICK: '<svg class="res-glyph res-brick" viewBox="0 0 24 24" '
+            + 'fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linejoin="round" aria-hidden="true">'
+            + '<rect x="3" y="6" width="8" height="5"/>'
+            + '<rect x="13" y="6" width="8" height="5"/>'
+            + '<rect x="3" y="12" width="18" height="5"/>'
+            + '</svg>',
+        SHEEP: '<svg class="res-glyph res-sheep" viewBox="0 0 24 24" '
+            + 'fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linejoin="round" aria-hidden="true">'
+            + '<circle cx="6" cy="13" r="3"/>'
+            + '<circle cx="11" cy="11" r="3.5"/>'
+            + '<circle cx="15" cy="11" r="3.5"/>'
+            + '<circle cx="19" cy="13" r="3"/>'
+            + '<line x1="9" y1="18" x2="9" y2="20"/>'
+            + '<line x1="14" y1="18" x2="14" y2="20"/>'
+            + '</svg>',
+        WHEAT: '<svg class="res-glyph res-wheat" viewBox="0 0 24 24" '
+            + 'fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linecap="round" aria-hidden="true">'
+            + '<line x1="12" y1="4" x2="12" y2="22"/>'
+            + '<path d="M12 8 L8 10 L12 12"/>'
+            + '<path d="M12 8 L16 10 L12 12"/>'
+            + '<path d="M12 13 L8 15 L12 17"/>'
+            + '<path d="M12 13 L16 15 L12 17"/>'
+            + '</svg>',
+        ORE: '<svg class="res-glyph res-ore" viewBox="0 0 24 24" '
+            + 'fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linejoin="round" aria-hidden="true">'
+            + '<path d="M6 9 L12 3 L18 9 L15 21 L9 21 Z"/>'
+            + '<line x1="6" y1="9" x2="18" y2="9"/>'
+            + '<line x1="12" y1="3" x2="9" y2="21"/>'
+            + '<line x1="12" y1="3" x2="15" y2="21"/>'
+            + '</svg>',
     };
-    const iconFor = (res) => RES_ICON[res]
-        || RES_ABBREV[res] || (res || '?').slice(0, 2);
+    const iconFor = (res) => RES_SVG[res]
+        || `<span class="res-glyph res-fallback">`
+            + (RES_ABBREV[res] || (res || '?').slice(0, 2)) + '</span>';
 
     // Pick the best available pill color. Prefer the CSS color the
     // chat-pill shipped (true colonist UI color, including premium

@@ -2003,3 +2003,319 @@ body { display: flex; flex-direction: column; }
   font-weight: 600;
   letter-spacing: 0.04em;
 }
+
+/* === Clean redesign overrides (v0.27 — minimal aesthetic) ============
+   Drops the heavy slate-blue dashboard chrome (gradients, deep
+   shadows, blocky banners, big section labels) for a flatter, more
+   typographic look closer to Claude's panel. Everything below wins
+   over the older v0.17 styles upstream because it's later in the
+   cascade. Authored to survive the userscript port — the existing
+   render JS still emits the same class names, only their visuals
+   change. */
+
+:root {
+  /* Tighter, less-saturated palette. The signal colors (pos/alert/
+     watch) keep their meaning but render lighter and only on
+     accents — never as full block backgrounds. */
+  --bg-0: #0f1115;
+  --bg-1: #131620;
+  --bg-2: #181c28;
+  --bg-3: #1d2230;
+  --line:        rgba(255, 255, 255, 0.06);
+  --line-strong: rgba(255, 255, 255, 0.10);
+  --fg:       #e8ebf1;
+  --fg-mute:  #9aa1b3;
+  --fg-dim:   #5b6273;
+  --fg-label: #6f7689;
+  --pos:    #5cdb95;
+  --alert:  #ff7676;
+  --watch:  #ffc15c;
+  --info:   #7c91b3;
+  --accent: #8a93a6;
+}
+
+html, body, .panel {
+  font-size: 14px !important;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+}
+
+/* Header — thin strip, no decoration. */
+.header {
+  background: var(--bg-0) !important;
+  border-bottom: 1px solid var(--line) !important;
+  padding: 10px 14px !important;
+  border-radius: 0 !important;
+}
+.title {
+  font-size: 12px !important;
+  letter-spacing: 0.10em !important;
+  font-weight: 600 !important;
+  color: var(--fg-mute) !important;
+}
+.dot {
+  width: 6px !important; height: 6px !important;
+}
+.btn {
+  border: 1px solid var(--line) !important;
+  background: transparent !important;
+  color: var(--fg-dim) !important;
+  font-size: 11px !important;
+  padding: 2px 7px !important;
+  border-radius: 3px !important;
+}
+.btn:hover {
+  color: var(--fg) !important;
+  background: var(--bg-2) !important;
+}
+
+/* Body — softer scrollbar, more breathing room at edges, but
+   tighter vertical padding inside cards. */
+.body {
+  padding: 12px !important;
+  background: var(--bg-0) !important;
+}
+
+/* Section headings — drop the uppercase tracking; lighter label,
+   no horizontal hairline dragging across.  Just a small label that
+   reads as a header without competing with the content. */
+.sec-h, .recs-h, .robber-h {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.14em !important;
+  color: var(--fg-dim) !important;
+  margin: 16px 0 6px !important;
+  text-transform: uppercase !important;
+  border: 0 !important;
+}
+.sec-h::after, .recs-h::after, .robber-h::after {
+  display: none !important;
+}
+.recs-h { color: var(--pos) !important; }
+
+/* Self card — lighter container, no left bar, just a subtle bg and
+   thinner padding. */
+.card.self {
+  background: var(--bg-1) !important;
+  border: 1px solid var(--line) !important;
+  border-left: 0 !important;
+  border-radius: 6px !important;
+  padding: 10px 12px !important;
+}
+.you .vp-big {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: var(--fg) !important;
+}
+.you .vp-big .lbl {
+  font-size: 9px !important;
+  font-weight: 600 !important;
+}
+.color-pill {
+  font-size: 11px !important;
+  padding: 2px 8px !important;
+  font-weight: 600 !important;
+  border-radius: 3px !important;
+}
+.you .color-pill {
+  font-size: 12px !important;
+}
+.hand {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  gap: 4px 12px !important;
+}
+.afford {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  margin: 6px 0 2px !important;
+}
+
+/* Recommendations — flat rows, no bg, just text and a left accent
+   on the hero. */
+.rec {
+  padding: 4px 0 !important;
+  font-size: 13px !important;
+  gap: 6px !important;
+}
+.rec.top {
+  background: transparent !important;
+  border: 0 !important;
+  border-left: 2px solid var(--pos) !important;
+  border-radius: 0 !important;
+  padding: 8px 10px !important;
+  margin: 4px 0 8px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+.rec.top .kind {
+  color: var(--pos) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+}
+.rec .score {
+  color: var(--fg-dim) !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+}
+.rec .score.strong { color: var(--pos) !important; }
+.rec .score.decent { color: var(--watch) !important; }
+.rec.top .score { color: var(--pos) !important; font-size: 13px !important; }
+.rec .kind {
+  color: var(--fg-mute) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.12em !important;
+}
+.rec .detail {
+  color: var(--fg-mute) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+}
+.rec.top .detail { color: var(--fg) !important; font-size: 13px !important; }
+.rec .ev {
+  font-size: 10px !important;
+  padding: 1px 4px !important;
+  border-radius: 2px !important;
+}
+
+/* Tile chips on opening picks + landing rec — small, square, no
+   gradient. Numbers stay legible; resource glyph sits next to it. */
+.tile-chip {
+  background: var(--bg-2) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 3px !important;
+  padding: 1px 5px !important;
+  font-size: 11px !important;
+  gap: 2px !important;
+}
+.tile-num.hot {
+  color: var(--alert) !important;
+  font-weight: 700 !important;
+}
+.tile-num {
+  color: var(--fg) !important;
+  font-weight: 600 !important;
+}
+.tile-res {
+  /* Inline SVG icons render at line-height naturally. */
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Banners — kill the boxed look; thin left accent + subtle bg only.
+   Inline-friendly so multiple stacks don't dominate the panel. */
+.threat, .win-prox, .robber-on-me, .lr-race, .la-race,
+.discard-hint, .seven-prep, .plan, .gprog,
+.trade-offer, .knight-hint, .dev-hint,
+.banner, .winning-move, .opps-h, .progression,
+.off-turn-ribbon {
+  background: transparent !important;
+  border: 0 !important;
+  border-left: 2px solid var(--line-strong) !important;
+  border-radius: 0 !important;
+  padding: 6px 0 6px 10px !important;
+  margin: 4px 0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+.threat { border-left-color: var(--alert) !important; color: var(--fg) !important; }
+.win-prox { border-left-color: var(--pos) !important; color: var(--fg) !important; }
+.discard-hint { border-left-color: var(--alert) !important; }
+.seven-prep { border-left-color: var(--watch) !important; }
+.seven-prep.danger {
+  border-left-color: var(--alert) !important;
+  animation: none !important;
+}
+.plan { border-left-color: var(--info) !important; }
+.plan.ready { border-left-color: var(--pos) !important; }
+.off-turn-ribbon {
+  background: var(--bg-1) !important;
+  border-radius: 4px !important;
+  padding: 8px 12px !important;
+  border-left: 2px solid var(--info) !important;
+  color: var(--fg-mute) !important;
+}
+.b-ico {
+  font-style: normal !important;
+  margin-right: 4px !important;
+}
+
+/* Opp rows — single-line, lighter weight, no background. */
+.opp {
+  padding: 5px 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+  font-size: 12px !important;
+  gap: 6px !important;
+}
+.opp:last-child { border-bottom: 0 !important; }
+.opp .opp-cards {
+  margin-left: auto !important;
+  font-weight: 600 !important;
+  color: var(--fg) !important;
+}
+.opp .opp-hand {
+  display: block !important;
+  width: 100% !important;
+  margin-top: 2px !important;
+  color: var(--fg-dim) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+}
+.opp .fat-hand { color: var(--alert) !important; }
+.opp .watch-hand { color: var(--watch) !important; }
+.opp .card-up {
+  font-size: 10px !important;
+  color: var(--watch) !important;
+  font-weight: 500 !important;
+}
+
+/* Resource glyph — inline SVG sized to text, color via CSS so each
+   resource keeps a hint of its real-world tone without being loud. */
+.res-glyph {
+  display: inline-block;
+  width: 1.05em; height: 1.05em;
+  vertical-align: -0.18em;
+  margin: 0 1px;
+}
+.res-wood  { color: #c08a4f; }
+.res-brick { color: #d96a5a; }
+.res-sheep { color: #d8d8d8; }
+.res-wheat { color: #e8ba4a; }
+.res-ore   { color: #8b97aa; }
+.res-fallback {
+  width: auto !important; height: auto !important;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  font-weight: 600;
+}
+
+/* Drawer — stays functional but flatter. */
+.drawer {
+  background: var(--bg-1) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+/* Histogram + eval graph — thinner, less prominent. */
+.hist-host, .eval-host, .mq-host {
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid var(--line) !important;
+  padding: 8px 0 !important;
+  margin: 8px 0 !important;
+}
+
+/* Robber target table — thinner rows, no zebra. */
+.robber {
+  border: 0 !important;
+}
+.robber td {
+  padding: 3px 6px !important;
+  border-bottom: 1px solid var(--line) !important;
+  font-size: 12px !important;
+}
