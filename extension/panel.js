@@ -882,11 +882,15 @@
     // each renderer decides whether to surface them.
     function renderOverlay(ui, snap, live) {
         const style = document.documentElement.getAttribute('data-style');
-        if (style === '2') return renderTerminal(ui, snap, live);
-        if (style === '3') return renderNewspaper(ui, snap, live);
-        if (style === '4') return renderTacticalHUD(ui, snap, live);
-        if (style === '5') return renderMinimal(ui, snap, live);
-        return renderDefault(ui, snap, live);
+        // Each style picks the renderer that best matches its
+        // aesthetic. Concierge + Casino reuse the dashboard
+        // (cards work for both), the others get specialized
+        // renderers.
+        if (style === '2') return renderNewspaper(ui, snap, live);   // Brutalist Editorial
+        if (style === '3') return renderDefault(ui, snap, live);     // Casino Felt
+        if (style === '4') return renderTerminal(ui, snap, live);    // Pixel Game Boy
+        if (style === '5') return renderMinimal(ui, snap, live);     // Botanical Manuscript
+        return renderDefault(ui, snap, live);                        // Concierge (default)
     }
 
     function renderDefault(ui, snap, live) {

@@ -4,6 +4,43 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.29.0 — 2026-05-01
+
+Each of the 5 styles redesigned from scratch with a unique
+aesthetic direction — typography, color, ornamental treatment,
+spatial composition. Not just "different DOM trees with the
+same look" — five fundamentally different design languages:
+
+- **Style 1 — Concierge.** Refined hospitality aesthetic. Warm
+  cream paper, deep ink, a single brass rule (#a37b32) anchors
+  the eye. Cormorant Garamond italic display, oldstyle figures.
+  Single column, generous margins, no decorative chrome. Reads
+  like an Aman or Aesop guest card.
+- **Style 2 — Brutalist Editorial.** Pure black on bone-white,
+  Helvetica Neue Black at 64px display. Hard 4px black borders
+  with a 12px solid drop shadow. Uppercase headlines that span
+  the panel. Two-column body with thick rules. Numbers ARE the
+  ornament.
+- **Style 3 — Casino Felt.** Deep felt green (#0d3a26) with
+  gold (#d4af37) and crimson accents. Italianno script display
+  for the title, Cormorant for body. Score numbers wrapped in
+  round chip badges with white border. Radial-gradient baize
+  texture, double-bordered frame.
+- **Style 4 — Pixel Game Boy.** Authentic DMG 4-color sage
+  palette (#9bbc0f → #0f380f). VT323 monospace at 22px.
+  Pixel-art borders with hard 3px drop shadows. Solid
+  blocky chrome, image-rendering:pixelated. Reads like a
+  1989 handheld screen.
+- **Style 5 — Botanical Manuscript.** Sepia parchment with
+  subtle aging gradients. Spectral italic serif throughout,
+  oldstyle figures, decorative `· · · ❦ · · ·` divider in the
+  header. Each tile has a nested hairline border for the
+  manuscript-margin feel. Audubon-plate caption typography.
+
+Each style picks the renderer (default/newspaper/terminal/minimal)
+that best matches its design language. Settings dropdown labels
+updated to the new aesthetic names.
+
 ## v0.28.2 — 2026-05-01
 
 Major HUD overhaul + critical bridge fixes after Noah's session

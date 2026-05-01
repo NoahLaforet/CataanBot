@@ -2341,247 +2341,415 @@ html, body, .panel {
 }
 
 /* ============================================================
-   STYLE VARIANTS — five entirely different layouts/UI types.
-   Style 1 = default (no override). Styles 2-5 reach into
-   layout, typography, spacing, decorative chrome — not just
-   colors. Each is meant to feel like a different app type:
+   STYLE VARIANTS — each fully designed from scratch with its
+   own aesthetic direction, typography hierarchy, color
+   palette, ornamental treatment, and spatial composition.
+   Not just "different colors" — different design languages.
 
-     1. operations console (default — current dashboard)
-     2. ascii terminal      (CLI transcript, mono, lines)
-     3. broadsheet          (newspaper, serif, masthead)
-     4. tactical HUD        (sci-fi, brackets, scan-lines)
-     5. field notes         (Apple Notes minimal, big type)
+     Style 1 — Concierge          (cream + brass, refined)
+     Style 2 — Brutalist Editorial (massive type, hard grid)
+     Style 3 — Casino Felt         (green felt + gold script)
+     Style 4 — Pixel Game Boy      (sage 4-color CRT)
+     Style 5 — Botanical Manuscript (sepia + italic serif)
 
-   Pure cosmetic. Game logic, recs, banners, data unchanged.
-
-   Removal: drop this block from panel.css, the
-   <select id="style"> from panel.html, and the
-   bindStyleSelector() function from panel.js.
+   Removable as a single block; the renderer dispatchers in
+   panel.js still work without these styles (fall back to
+   browser defaults).
    ============================================================ */
+
+/* Pull in distinctive type for the styles that need it. Each
+   import is gated by the style usage to minimize extra weight. */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Cormorant+Unicase:wght@500;700&family=Italianno&family=Press+Start+2P&family=Spectral:ital,wght@0,400;0,600;0,800;1,400&family=VT323&display=swap');
 
 
 /* ============================================================
-   STYLE 2 — ASCII TERMINAL
-   80-column CLI transcript. Black bg, electric green text,
-   monospace everywhere, no rounded chrome. Header replaced
-   with a shell prompt. Section breaks rendered as ASCII
-   rules ── ── ──. Density is high; line-height tight.
+   STYLE 1 — CONCIERGE
+   Aesthetic: refined hospitality. Think Aman or Aesop guest
+   card. Warm cream paper, deep ink, a single brass rule that
+   anchors the eye. Generous margins, typography-led, no
+   decorative chrome. Numbers small caps; headlines italic
+   serif. Restrained.
    ============================================================ */
 
-html[data-style="2"] .panel {
-  --bg-0: #050a05;
-  --bg-1: #0a1408;
-  --bg-2: #0d1c0a;
-  --bg-3: #122a0d;
-  --line:        rgba(74, 222, 128, 0.10);
-  --line-strong: rgba(74, 222, 128, 0.28);
-  --fg:       #c8f5ba;
-  --fg-mute:  #6cc762;
-  --fg-dim:   #3a8033;
-  --fg-label: #4a9a3f;
-  --pos:    #5dff8a;
-  --alert:  #ff6b6b;
-  --watch:  #ffe566;
-  --warn:   #6cc762;
-  --info:   #6cc762;
-  --accent: #6cc762;
+html[data-style="1"] .panel {
+  --bg-0: #f3ede0;
+  --bg-1: #ece4d3;
+  --bg-2: #e0d5be;
+  --bg-3: #d2c5a4;
+  --line:        rgba(40, 30, 18, 0.10);
+  --line-strong: rgba(40, 30, 18, 0.22);
+  --fg:       #1a140c;
+  --fg-mute:  #5c4f3a;
+  --fg-dim:   #8a7a5e;
+  --fg-label: #6e5f48;
+  --pos:    #2d5237;
+  --alert:  #8a2a25;
+  --watch:  #a76a16;
+  --warn:   #5c4f3a;
+  --info:   #2c4866;
+  --accent: #a37b32;       /* brass */
   --radius-sm: 0;
   --radius:    0;
   --radius-lg: 0;
-  --font: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
-  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font: 'Cormorant Garamond', Garamond, 'Adobe Garamond Pro', 'Times New Roman', serif;
+  --font-mono: 'Cormorant Garamond', Garamond, serif;
   background: var(--bg-0) !important;
   border: 1px solid var(--line-strong) !important;
-  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.05) inset !important;
-  line-height: 1.3 !important;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 12px 30px rgba(60, 40, 0, 0.06) !important;
+  line-height: 1.55 !important;
+  font-feature-settings: "liga" 1, "dlig" 1, "onum" 1, "smcp" 0;
 }
-html[data-style="2"] .panel .header {
-  background: var(--bg-0) !important;
-  border-bottom: 1px solid var(--line-strong);
-  padding: 4px 10px !important;
-  font-family: var(--font-mono);
-}
-html[data-style="2"] .panel .title {
-  color: var(--pos) !important;
-  letter-spacing: 0 !important;
-  text-transform: lowercase !important;
-  font-weight: 400 !important;
-  font-size: calc(13px * var(--font-scale)) !important;
-}
-html[data-style="2"] .panel .title::before {
-  content: "$ ";
-  opacity: 0.5;
-}
-html[data-style="2"] .panel .body {
-  padding: 8px 10px 12px !important;
-  font-family: var(--font-mono);
-  font-size: calc(13px * var(--font-scale));
-}
-html[data-style="2"] .panel .dot { border-radius: 0 !important; width: 8px !important; height: 8px !important; }
-html[data-style="2"] .panel .opp,
-html[data-style="2"] .panel .rec {
-  border-left: 1px dashed var(--line-strong) !important;
-  border-top: 0 !important;
-  border-right: 0 !important;
-  border-bottom: 1px dashed var(--line) !important;
-  border-radius: 0 !important;
+html[data-style="1"] .panel .header {
   background: transparent !important;
-  padding: 4px 8px 4px 12px !important;
-  position: relative;
-}
-html[data-style="2"] .panel .rec::before {
-  content: "> ";
-  color: var(--pos);
-  position: absolute;
-  left: 0;
-  top: 4px;
-}
-html[data-style="2"] .panel .opp::before {
-  content: "[#] ";
-  color: var(--fg-dim);
-  position: absolute;
-  left: 0;
-  top: 4px;
-  font-size: 11px;
-}
-html[data-style="2"] .panel .color-pill {
-  border-radius: 0 !important;
-  font-family: var(--font-mono) !important;
-  padding: 0 4px !important;
-}
-html[data-style="2"] .panel .rec .score,
-html[data-style="2"] .panel .rec .ev {
-  border-radius: 0 !important;
-  font-family: var(--font-mono) !important;
-  background: transparent !important;
-  border: 1px solid var(--line) !important;
-  padding: 0 3px !important;
-}
-html[data-style="2"] .panel .opp .opp-vp,
-html[data-style="2"] .panel .opp .opp-cards,
-html[data-style="2"] .panel .opp .opp-hand,
-html[data-style="2"] .panel .you .opp-vp,
-html[data-style="2"] .panel .you .you-vp {
-  font-family: var(--font-mono) !important;
-}
-html[data-style="2"] .panel .winning-move,
-html[data-style="2"] .panel .gprog,
-html[data-style="2"] .panel .robber-on-me,
-html[data-style="2"] .panel .discard-hint,
-html[data-style="2"] .panel .seven-prep,
-html[data-style="2"] .panel .trade-offer,
-html[data-style="2"] .panel .knight-hint,
-html[data-style="2"] .panel .monopoly-hint {
-  border-radius: 0 !important;
-  border-left: 2px solid var(--watch) !important;
-  background: var(--bg-1) !important;
-  font-family: var(--font-mono) !important;
-}
-
-
-/* ============================================================
-   STYLE 3 — BROADSHEET
-   Editorial newspaper column. Cream parchment, serif headlines
-   in Charter/Georgia, oldstyle figures for stats. Header is a
-   tall masthead with a centered all-caps title and a thin
-   double rule. Cards become text columns with hairline
-   horizontal rules instead of borders.
-   ============================================================ */
-
-html[data-style="3"] .panel {
-  --bg-0: #f4ecd8;
-  --bg-1: #ede4c8;
-  --bg-2: #e2d6b0;
-  --bg-3: #d4c697;
-  --line:        rgba(40, 30, 18, 0.18);
-  --line-strong: rgba(40, 30, 18, 0.45);
-  --fg:       #1a1610;
-  --fg-mute:  #4a4030;
-  --fg-dim:   #6e624a;
-  --fg-label: #5a4f3d;
-  --pos:    #2d6a3f;
-  --alert:  #a5302d;
-  --watch:  #b87918;
-  --warn:   #6e624a;
-  --info:   #4a5b8a;
-  --accent: #5a3a72;
-  --radius-sm: 0;
-  --radius:    0;
-  --radius-lg: 0;
-  --font: 'Charter', 'Georgia', 'Times New Roman', serif;
-  --font-mono: 'Courier New', ui-monospace, monospace;
-  background: var(--bg-0) !important;
-  border: 1px solid var(--line-strong) !important;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.08), 0 8px 30px rgba(60, 40, 0, 0.10) !important;
-  line-height: 1.5 !important;
-}
-html[data-style="3"] .panel .header {
-  background: var(--bg-0) !important;
-  border-bottom: 3px double var(--line-strong) !important;
-  padding: 16px 20px 10px !important;
-  text-align: center;
-  flex-wrap: wrap !important;
-  justify-content: center !important;
+  border-bottom: 1px solid var(--accent) !important;
+  padding: 14px 22px 10px !important;
   font-family: var(--font);
 }
-html[data-style="3"] .panel .title {
+html[data-style="1"] .panel .title {
   color: var(--fg) !important;
-  font-family: 'Charter', 'Georgia', serif !important;
-  font-weight: 900 !important;
-  letter-spacing: 0.02em !important;
-  text-transform: uppercase !important;
-  font-size: calc(20px * var(--font-scale)) !important;
-  flex: 1 0 100% !important;
-  text-align: center;
+  font-family: 'Cormorant Garamond', Garamond, serif !important;
+  font-style: italic !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: none !important;
+  font-size: 18px !important;
+}
+html[data-style="1"] .panel .title::before {
+  content: "the ";
   font-style: italic;
+  color: var(--fg-dim);
+  font-weight: 400;
 }
-html[data-style="3"] .panel .title::before {
-  content: "❦ ";
-  font-style: normal;
-  color: var(--accent);
-}
-html[data-style="3"] .panel .title::after {
-  content: " ❦";
-  font-style: normal;
-  color: var(--accent);
-}
-html[data-style="3"] .panel .body {
-  padding: 14px 22px 22px !important;
+html[data-style="1"] .panel .body {
+  padding: 18px 24px 22px !important;
   font-family: var(--font);
-  font-size: calc(14px * var(--font-scale));
-  font-variant-numeric: oldstyle-nums tabular-nums;
+  font-size: 15px;
+  font-feature-settings: "onum" 1, "tnum" 1;
 }
-html[data-style="3"] .panel .opp {
-  border: 0 !important;
-  border-bottom: 1px solid var(--line-strong) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  padding: 8px 0 !important;
-}
-html[data-style="3"] .panel .opp:last-child { border-bottom: 0 !important; }
-html[data-style="3"] .panel .rec {
-  border-radius: 0 !important;
+html[data-style="1"] .panel .opp,
+html[data-style="1"] .panel .rec {
   border: 0 !important;
   border-bottom: 1px solid var(--line) !important;
   background: transparent !important;
-  padding: 8px 0 !important;
+  border-radius: 0 !important;
+  padding: 10px 0 !important;
 }
-html[data-style="3"] .panel .rec.top {
-  border-bottom: 3px double var(--line-strong) !important;
-  padding-bottom: 12px !important;
+html[data-style="1"] .panel .opp:last-child,
+html[data-style="1"] .panel .rec:last-child { border-bottom: 0 !important; }
+html[data-style="1"] .panel .rec.top {
+  border-bottom: 1px solid var(--accent) !important;
+  padding-bottom: 14px !important;
+}
+html[data-style="1"] .panel .rec .kind {
+  font-family: var(--font) !important;
+  font-style: italic !important;
+  font-weight: 500 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.16em !important;
+  font-size: 11px !important;
+  color: var(--accent) !important;
+}
+html[data-style="1"] .panel .rec .score,
+html[data-style="1"] .panel .rec .ev {
+  background: transparent !important;
+  border: 1px solid var(--accent) !important;
+  border-radius: 0 !important;
+  padding: 1px 6px !important;
+  font-family: var(--font) !important;
+  font-feature-settings: "onum" 1, "tnum" 1;
+  color: var(--accent) !important;
+  font-weight: 700 !important;
+}
+html[data-style="1"] .panel .opp .opp-vp,
+html[data-style="1"] .panel .opp .opp-cards {
+  font-family: var(--font) !important;
+  font-feature-settings: "onum" 1, "tnum" 1 !important;
+  font-weight: 700 !important;
+}
+html[data-style="1"] .panel .color-pill {
+  border-radius: 0 !important;
+  font-family: var(--font) !important;
+  font-style: italic !important;
+  font-weight: 500 !important;
+}
+html[data-style="1"] .panel .winning-move,
+html[data-style="1"] .panel .gprog,
+html[data-style="1"] .panel .robber-on-me,
+html[data-style="1"] .panel .discard-hint,
+html[data-style="1"] .panel .seven-prep,
+html[data-style="1"] .panel .trade-offer,
+html[data-style="1"] .panel .knight-hint,
+html[data-style="1"] .panel .monopoly-hint {
+  border-radius: 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--accent) !important;
+  border-bottom: 1px solid var(--accent) !important;
+  background: transparent !important;
+  padding: 12px 0 !important;
+  font-family: var(--font) !important;
+  font-style: italic;
+}
+
+
+/* ============================================================
+   STYLE 2 — BRUTALIST EDITORIAL
+   Aesthetic: brutalist art magazine. Pure black on bone-white,
+   massive Helvetica Bold display, thick rules, hard grid.
+   Numbers ARE the design. No decoration; the type is the
+   ornament.
+   ============================================================ */
+
+html[data-style="2"] .panel {
+  --bg-0: #f5f4f0;
+  --bg-1: #ecebe6;
+  --bg-2: #d8d6cc;
+  --bg-3: #b8b5a8;
+  --line:        rgba(0, 0, 0, 0.18);
+  --line-strong: #000000;
+  --fg:       #000000;
+  --fg-mute:  #2a2a2a;
+  --fg-dim:   #6a6a6a;
+  --fg-label: #2a2a2a;
+  --pos:    #16a34a;
+  --alert:  #cc0000;
+  --watch:  #d97706;
+  --warn:   #2a2a2a;
+  --info:   #0033ff;
+  --accent: #ff3300;
+  --radius-sm: 0;
+  --radius:    0;
+  --radius-lg: 0;
+  --font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'Helvetica Neue', monospace;
+  background: var(--bg-0) !important;
+  border: 4px solid #000 !important;
+  box-shadow: 12px 12px 0 #000 !important;
+  line-height: 1.05 !important;
+}
+html[data-style="2"] .panel .header {
+  background: #000 !important;
+  border-bottom: 4px solid #000 !important;
+  padding: 8px 16px !important;
+  color: #fff !important;
+}
+html[data-style="2"] .panel .title {
+  color: #fff !important;
+  font-family: 'Helvetica Neue', Helvetica, sans-serif !important;
+  font-weight: 900 !important;
+  font-stretch: 75% !important;
+  letter-spacing: -0.01em !important;
+  text-transform: uppercase !important;
+  font-size: 24px !important;
+}
+html[data-style="2"] .panel .body {
+  padding: 0 !important;
+  font-family: var(--font);
+}
+html[data-style="2"] .panel .np-headline {
+  font-size: 64px !important;
+  font-weight: 900 !important;
+  line-height: 0.92 !important;
+  letter-spacing: -0.04em !important;
+  text-transform: uppercase !important;
+  font-style: normal !important;
+  text-align: left !important;
+  padding: 16px 16px 0 !important;
+  color: #000 !important;
+}
+html[data-style="2"] .panel .np-kicker {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  font-style: normal !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 6px 16px 16px !important;
+  color: #000 !important;
+  text-align: left !important;
+  border-bottom: 4px solid #000 !important;
+}
+html[data-style="2"] .panel .np-rule { display: none !important; }
+html[data-style="2"] .panel .np-dateline {
+  font-family: 'Helvetica Neue', sans-serif !important;
+  font-style: normal !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.20em !important;
+  font-size: 9px !important;
+  text-align: left !important;
+  padding: 16px 16px 4px !important;
+  color: #000 !important;
+  background: var(--bg-2);
+  border-bottom: 2px solid #000;
+}
+html[data-style="2"] .panel .np-cols {
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0 !important;
+  border-top: 2px solid #000;
+}
+html[data-style="2"] .panel .np-col {
+  padding: 16px;
+  border-right: 2px solid #000;
+}
+html[data-style="2"] .panel .np-col:last-child { border-right: 0; }
+html[data-style="2"] .panel .np-coltitle {
+  font-family: 'Helvetica Neue', sans-serif !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.10em !important;
+  font-size: 10px !important;
+  color: #000 !important;
+  border-bottom: 2px solid #000 !important;
+  text-align: left !important;
+  padding-bottom: 6px !important;
+}
+html[data-style="2"] .panel .np-table td {
+  font-family: 'Helvetica Neue', sans-serif !important;
+  font-variant-numeric: tabular-nums !important;
+  font-feature-settings: "tnum" 1 !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+html[data-style="2"] .panel .np-place {
+  font-style: normal !important;
+  font-weight: 900 !important;
+}
+html[data-style="2"] .panel .np-vp,
+html[data-style="2"] .panel .np-roll-n {
+  font-weight: 900 !important;
+}
+
+
+/* ============================================================
+   STYLE 3 — CASINO FELT
+   Aesthetic: vintage Vegas card table. Deep felt-green bg,
+   gold + crimson chips, ornate italic display script for the
+   heading, condensed serif for stats. Round chip-shaped score
+   badges. Faint baize texture. Reads like a high-roller pit.
+   ============================================================ */
+
+html[data-style="3"] .panel {
+  --bg-0: #0d3a26;        /* deep felt */
+  --bg-1: #134a32;
+  --bg-2: #1a5d3f;
+  --bg-3: #246e4a;
+  --line:        rgba(212, 175, 55, 0.15);
+  --line-strong: rgba(212, 175, 55, 0.45);
+  --fg:       #f4ecd0;
+  --fg-mute:  #c9b97a;
+  --fg-dim:   #8a7944;
+  --fg-label: #d4af37;
+  --pos:    #d4af37;       /* gold */
+  --alert:  #c8202e;       /* crimson */
+  --watch:  #e8a022;
+  --warn:   #c9b97a;
+  --info:   #d4af37;
+  --accent: #c8202e;
+  --radius-sm: 0;
+  --radius:    0;
+  --radius-lg: 6px;
+  --font: 'Cormorant Garamond', Garamond, serif;
+  --font-mono: 'Cormorant Garamond', Garamond, serif;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(212, 175, 55, 0.05) 0%, transparent 60%),
+    radial-gradient(circle at 70% 80%, rgba(212, 175, 55, 0.04) 0%, transparent 50%),
+    var(--bg-0) !important;
+  border: 2px solid var(--pos) !important;
+  box-shadow:
+    0 0 0 4px var(--bg-0) inset,
+    0 0 0 5px rgba(212, 175, 55, 0.30) inset,
+    0 12px 40px rgba(0, 0, 0, 0.6) !important;
+}
+html[data-style="3"] .panel .header {
+  background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 100%) !important;
+  border-bottom: 1px solid var(--pos) !important;
+  padding: 12px 18px 8px !important;
+  text-align: center;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+}
+html[data-style="3"] .panel .title {
+  font-family: 'Italianno', 'Snell Roundhand', cursive !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  font-size: 38px !important;
+  color: var(--pos) !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  flex: 1 0 100% !important;
+}
+html[data-style="3"] .panel .title::before {
+  content: "♠ ";
+  font-family: serif;
+  color: var(--pos);
+  font-size: 0.55em;
+  vertical-align: 0.35em;
+}
+html[data-style="3"] .panel .title::after {
+  content: " ♦";
+  font-family: serif;
+  color: var(--alert);
+  font-size: 0.55em;
+  vertical-align: 0.35em;
+}
+html[data-style="3"] .panel .body {
+  padding: 14px 18px 20px !important;
+  font-family: var(--font);
+  font-size: 15px;
+}
+html[data-style="3"] .panel .opp,
+html[data-style="3"] .panel .rec {
+  border: 0 !important;
+  border-bottom: 1px dashed var(--line-strong) !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 10px 0 !important;
+}
+html[data-style="3"] .panel .opp:last-child,
+html[data-style="3"] .panel .rec:last-child { border-bottom: 0 !important; }
+html[data-style="3"] .panel .opp .opp-vp {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  background: var(--pos) !important;
+  color: var(--bg-0) !important;
+  font-family: 'Cormorant Garamond', Garamond, serif !important;
+  font-weight: 700 !important;
+  font-feature-settings: "onum" 0, "lnum" 1, "tnum" 1 !important;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 18px !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  border: 2px solid #fff;
+}
+html[data-style="3"] .panel .opp .opp-vp .lbl {
+  display: none !important;
+}
+html[data-style="3"] .panel .rec .kind {
+  font-family: 'Cormorant Unicase', 'Cormorant Garamond', serif !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.10em !important;
+  color: var(--pos) !important;
+  font-size: 13px !important;
+}
+html[data-style="3"] .panel .rec .score,
+html[data-style="3"] .panel .rec .ev {
+  background: var(--pos) !important;
+  color: var(--bg-0) !important;
+  border: 1px solid var(--pos) !important;
+  border-radius: 999px !important;
+  padding: 1px 9px !important;
+  font-weight: 700 !important;
+  font-family: var(--font) !important;
 }
 html[data-style="3"] .panel .color-pill {
-  border-radius: 0 !important;
+  border-radius: 50% !important;
   font-weight: 700 !important;
-  font-family: var(--font) !important;
-}
-html[data-style="3"] .panel .opp .opp-vp,
-html[data-style="3"] .panel .opp .opp-cards,
-html[data-style="3"] .panel .opp .opp-hand,
-html[data-style="3"] .panel .you-vp {
-  font-family: var(--font) !important;
-  font-variant-numeric: oldstyle-nums tabular-nums !important;
-  font-weight: 700 !important;
+  width: 24px; height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--pos);
 }
 html[data-style="3"] .panel .winning-move,
 html[data-style="3"] .panel .gprog,
@@ -2593,127 +2761,129 @@ html[data-style="3"] .panel .knight-hint,
 html[data-style="3"] .panel .monopoly-hint {
   border-radius: 0 !important;
   border: 0 !important;
-  border-top: 2px solid var(--line-strong) !important;
-  border-bottom: 1px solid var(--line) !important;
-  background: transparent !important;
+  border-top: 1px solid var(--pos) !important;
+  border-bottom: 1px solid var(--pos) !important;
+  background: rgba(0, 0, 0, 0.30) !important;
+  padding: 12px 14px !important;
   font-family: var(--font) !important;
-  padding: 8px 0 !important;
+  color: var(--fg) !important;
 }
 
 
 /* ============================================================
-   STYLE 4 — TACTICAL HUD
-   Sci-fi mech-warrior overlay. Deep navy bg, neon cyan +
-   magenta accents, scan-line texture, angular clipped
-   corners. Cards become bracketed callouts with corner ticks.
-   Header is a fat status bar with neon underline.
+   STYLE 4 — PIXEL GAME BOY
+   Aesthetic: original Game Boy DMG palette. Sage green 4-color
+   tone (lightest → darkest), VT323 terminal font scaled up,
+   pixel-art borders, dotted/blocky chrome. Reads like a 1989
+   handheld screen.
    ============================================================ */
 
 html[data-style="4"] .panel {
-  --bg-0: #0a0420;
-  --bg-1: #110730;
-  --bg-2: #170a40;
-  --bg-3: #1f0e55;
-  --line:        rgba(0, 240, 255, 0.12);
-  --line-strong: rgba(0, 240, 255, 0.36);
-  --fg:       #e8dfff;
-  --fg-mute:  #a08bcc;
-  --fg-dim:   #6a5398;
-  --fg-label: #8c70bc;
-  --pos:    #00f5d4;
-  --alert:  #ff3a8a;
-  --watch:  #ffe066;
-  --warn:   #a08bcc;
-  --info:   #4ae4ff;
-  --accent: #ff3edc;
+  --bg-0: #9bbc0f;        /* lightest sage */
+  --bg-1: #8bac0f;
+  --bg-2: #306230;        /* dark sage */
+  --bg-3: #0f380f;        /* darkest */
+  --line:        #306230;
+  --line-strong: #0f380f;
+  --fg:       #0f380f;
+  --fg-mute:  #306230;
+  --fg-dim:   #496e1f;
+  --fg-label: #306230;
+  --pos:    #0f380f;
+  --alert:  #0f380f;
+  --watch:  #306230;
+  --warn:   #0f380f;
+  --info:   #0f380f;
+  --accent: #0f380f;
   --radius-sm: 0;
   --radius:    0;
   --radius-lg: 0;
-  --font: 'Orbitron', 'JetBrains Mono', ui-monospace, monospace;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  background:
-    repeating-linear-gradient(
-      180deg,
-      transparent 0px,
-      transparent 3px,
-      rgba(0, 240, 255, 0.025) 3px,
-      rgba(0, 240, 255, 0.025) 4px
-    ),
-    linear-gradient(180deg, var(--bg-0) 0%, #1a0635 100%) !important;
-  border: 1px solid var(--line-strong) !important;
+  --font: 'VT323', 'Courier New', monospace;
+  --font-mono: 'VT323', 'Courier New', monospace;
+  background: var(--bg-0) !important;
+  border: 4px solid var(--bg-3) !important;
   box-shadow:
-    0 0 0 1px rgba(0, 240, 255, 0.08) inset,
-    0 0 28px rgba(255, 0, 200, 0.16),
-    0 12px 32px rgba(0, 0, 0, 0.7) !important;
+    0 0 0 2px var(--bg-0) inset,
+    0 0 0 3px var(--bg-3) inset,
+    8px 8px 0 var(--bg-3) !important;
+  font-family: var(--font);
+  image-rendering: pixelated;
+  line-height: 1.0 !important;
 }
 html[data-style="4"] .panel .header {
-  background: rgba(0, 0, 0, 0.35) !important;
-  border-bottom: 1px solid var(--pos) !important;
-  padding: 8px 14px !important;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  background: var(--bg-3) !important;
+  border-bottom: 2px solid var(--bg-3) !important;
+  padding: 4px 10px !important;
+  color: var(--bg-0) !important;
 }
 html[data-style="4"] .panel .title {
-  color: var(--pos) !important;
-  text-shadow: 0 0 6px rgba(0, 245, 212, 0.6);
-  letter-spacing: 0.22em !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-weight: 700 !important;
+  color: var(--bg-0) !important;
+  font-family: 'VT323', monospace !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  font-size: 26px !important;
 }
-html[data-style="4"] .panel .dot.live {
-  background: var(--accent) !important;
-  box-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent) !important;
+html[data-style="4"] .panel .title::before {
+  content: "▶ ";
+  color: var(--bg-0);
 }
 html[data-style="4"] .panel .body {
-  padding: 14px 16px !important;
-  font-family: var(--font-mono);
+  padding: 12px 14px !important;
+  font-family: var(--font);
+  font-size: 22px;
 }
-html[data-style="4"] .panel .opp {
-  border: 1px solid rgba(0, 240, 255, 0.18) !important;
-  border-left: 3px solid var(--accent) !important;
-  background: linear-gradient(90deg,
-    rgba(255, 0, 200, 0.06) 0%,
-    rgba(0, 240, 255, 0.03) 50%,
-    transparent 100%) !important;
-  border-radius: 0 !important;
-  clip-path: polygon(
-    0 0,
-    calc(100% - 10px) 0,
-    100% 10px,
-    100% 100%,
-    10px 100%,
-    0 calc(100% - 10px)
-  );
-  padding: 8px 12px !important;
-}
-html[data-style="4"] .panel .opp.tracked    { border-left-color: var(--pos) !important; }
-html[data-style="4"] .panel .opp.hot-knight { border-left-color: var(--watch) !important; }
+html[data-style="4"] .panel .opp,
 html[data-style="4"] .panel .rec {
-  background: rgba(0, 0, 0, 0.25) !important;
-  border: 1px solid var(--line-strong) !important;
+  border: 2px solid var(--bg-3) !important;
+  background: var(--bg-1) !important;
   border-radius: 0 !important;
-  position: relative;
+  padding: 6px 10px !important;
+  margin-bottom: 6px;
+  color: var(--bg-3) !important;
+  box-shadow: 3px 3px 0 var(--bg-3);
 }
 html[data-style="4"] .panel .rec.top {
-  border-left: 3px solid var(--pos) !important;
-  background: linear-gradient(90deg,
-    rgba(0, 245, 212, 0.10) 0%, transparent 80%) !important;
-  box-shadow: 0 0 14px rgba(0, 245, 212, 0.18) !important;
+  background: var(--bg-3) !important;
+  color: var(--bg-0) !important;
 }
-html[data-style="4"] .panel .rec.top .kind {
-  color: var(--pos) !important;
+html[data-style="4"] .panel .rec.top * { color: var(--bg-0) !important; }
+html[data-style="4"] .panel .rec .kind {
+  font-family: 'VT323', monospace !important;
+  font-weight: 400 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-size: 22px !important;
+  color: var(--bg-3) !important;
+}
+html[data-style="4"] .panel .rec .score,
+html[data-style="4"] .panel .rec .ev {
+  background: var(--bg-3) !important;
+  color: var(--bg-0) !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  padding: 0 6px !important;
+  font-family: 'VT323', monospace !important;
 }
 html[data-style="4"] .panel .color-pill {
   border-radius: 0 !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-weight: 700 !important;
-  text-transform: uppercase;
+  font-family: 'VT323', monospace !important;
+  border: 2px solid var(--bg-3) !important;
 }
 html[data-style="4"] .panel .opp .opp-vp,
 html[data-style="4"] .panel .opp .opp-cards,
-html[data-style="4"] .panel .opp .opp-hand,
-html[data-style="4"] .panel .you .you-vp {
-  font-family: 'JetBrains Mono', monospace !important;
+html[data-style="4"] .panel .opp .opp-hand {
+  font-family: 'VT323', monospace !important;
+  color: var(--bg-3) !important;
+}
+html[data-style="4"] .panel .term {
+  font-family: 'VT323', monospace !important;
+  font-size: 20px !important;
+  color: var(--bg-3) !important;
+  background: var(--bg-1) !important;
+  padding: 12px !important;
+  border: 2px solid var(--bg-3);
+  box-shadow: 3px 3px 0 var(--bg-3);
 }
 html[data-style="4"] .panel .winning-move,
 html[data-style="4"] .panel .gprog,
@@ -2724,411 +2894,152 @@ html[data-style="4"] .panel .trade-offer,
 html[data-style="4"] .panel .knight-hint,
 html[data-style="4"] .panel .monopoly-hint {
   border-radius: 0 !important;
-  border-left: 3px solid var(--accent) !important;
-  background: rgba(255, 62, 220, 0.08) !important;
-  box-shadow: 0 0 14px rgba(255, 62, 220, 0.15) !important;
+  border: 2px solid var(--bg-3) !important;
+  background: var(--bg-3) !important;
+  color: var(--bg-0) !important;
+  padding: 8px 10px !important;
+  box-shadow: 3px 3px 0 var(--bg-3);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-family: 'VT323', monospace !important;
 }
 
 
 /* ============================================================
-   STYLE 5 — FIELD NOTES
-   Apple-Notes / Things-style minimalism. Pure white bg,
-   refined sans-serif, generous whitespace. Numbers are
-   confident (large) but the chrome disappears. Color pills
-   become small filled dots.
+   STYLE 5 — BOTANICAL MANUSCRIPT
+   Aesthetic: 19th-century field guide. Sepia-tinted parchment
+   bg with subtle aging, italic Spectral display, scientific
+   ornaments (··· ❦ ···), small caps for labels, oldstyle
+   figures throughout. Reads like an Audubon plate caption.
    ============================================================ */
 
 html[data-style="5"] .panel {
-  --bg-0: #ffffff;
-  --bg-1: #fafafa;
-  --bg-2: #f4f4f5;
-  --bg-3: #e7e7ea;
-  --line:        rgba(0, 0, 0, 0.06);
-  --line-strong: rgba(0, 0, 0, 0.12);
-  --fg:       #18181b;
-  --fg-mute:  #52525b;
-  --fg-dim:   #9ca3af;
-  --fg-label: #71717a;
-  --pos:    #16a34a;
-  --alert:  #dc2626;
-  --watch:  #d97706;
-  --warn:   #71717a;
-  --info:   #2563eb;
-  --accent: #6d28d9;
-  --radius-sm: 4px;
-  --radius:    8px;
-  --radius-lg: 10px;
-  --font: 'Inter', -apple-system, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  background: var(--bg-0) !important;
+  --bg-0: #f7eed7;
+  --bg-1: #f0e5c8;
+  --bg-2: #e6d8b6;
+  --bg-3: #d6c79f;
+  --line:        rgba(75, 50, 20, 0.15);
+  --line-strong: rgba(75, 50, 20, 0.40);
+  --fg:       #2a1f10;
+  --fg-mute:  #5a4530;
+  --fg-dim:   #806847;
+  --fg-label: #6a5034;
+  --pos:    #3d6b3a;
+  --alert:  #8a3528;
+  --watch:  #a06c1c;
+  --warn:   #5a4530;
+  --info:   #4a5b8a;
+  --accent: #6a3a52;
+  --radius-sm: 0;
+  --radius:    0;
+  --radius-lg: 0;
+  --font: 'Spectral', 'Cormorant Garamond', Garamond, serif;
+  --font-mono: 'Spectral', Garamond, serif;
+  background:
+    radial-gradient(circle at 25% 15%, rgba(120, 80, 30, 0.08) 0%, transparent 30%),
+    radial-gradient(circle at 80% 70%, rgba(120, 80, 30, 0.06) 0%, transparent 25%),
+    radial-gradient(circle at 50% 90%, rgba(120, 80, 30, 0.04) 0%, transparent 20%),
+    var(--bg-0) !important;
   border: 1px solid var(--line-strong) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
-  line-height: 1.55 !important;
+  box-shadow:
+    inset 0 0 60px rgba(120, 80, 30, 0.08),
+    0 8px 24px rgba(60, 40, 0, 0.10) !important;
+  line-height: 1.6 !important;
+  font-feature-settings: "onum" 1, "tnum" 1, "liga" 1, "dlig" 1;
 }
 html[data-style="5"] .panel .header {
-  background: var(--bg-0) !important;
-  border-bottom: 1px solid var(--line) !important;
-  padding: 16px 20px !important;
+  background: transparent !important;
+  border-bottom: 0 !important;
+  padding: 18px 24px 6px !important;
+  text-align: center;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+}
+html[data-style="5"] .panel .header::after {
+  content: "·  ·  ·  ❦  ·  ·  ·";
+  display: block;
+  flex: 1 0 100%;
+  text-align: center;
+  color: var(--accent);
+  font-family: 'Spectral', serif;
+  font-style: normal;
+  font-size: 14px;
+  letter-spacing: 0.20em;
+  margin-top: 8px;
 }
 html[data-style="5"] .panel .title {
   color: var(--fg) !important;
-  font-weight: 600 !important;
+  font-family: 'Spectral', 'Cormorant Garamond', serif !important;
+  font-style: italic !important;
+  font-weight: 400 !important;
   letter-spacing: 0.02em !important;
   text-transform: none !important;
-  font-size: calc(15px * var(--font-scale)) !important;
+  font-size: 22px !important;
+  flex: 1 0 100% !important;
+}
+html[data-style="5"] .panel .title::before {
+  content: "Cataanbot";
+  display: none;
 }
 html[data-style="5"] .panel .body {
-  padding: 18px 20px 24px !important;
-  gap: 12px;
-}
-html[data-style="5"] .panel .opp {
-  border: 0 !important;
-  border-bottom: 1px solid var(--line) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  padding: 12px 0 !important;
-}
-html[data-style="5"] .panel .opp:last-child { border-bottom: 0 !important; }
-html[data-style="5"] .panel .opp .opp-vp {
-  font-size: calc(22px * var(--font-scale)) !important;
-  font-weight: 600 !important;
-  letter-spacing: -0.01em;
-}
-html[data-style="5"] .panel .opp .opp-vp .lbl {
-  font-size: calc(10px * var(--font-scale)) !important;
-  text-transform: uppercase;
-  letter-spacing: 0.10em;
-  font-weight: 500;
-  color: var(--fg-dim) !important;
-}
-html[data-style="5"] .panel .rec {
-  background: transparent !important;
-  border: 0 !important;
-  border-bottom: 1px solid var(--line) !important;
-  border-radius: 0 !important;
-  padding: 12px 0 !important;
-}
-html[data-style="5"] .panel .rec:last-child { border-bottom: 0 !important; }
-html[data-style="5"] .panel .rec.top {
-  border-bottom: 2px solid var(--accent) !important;
-  padding-bottom: 14px !important;
-}
-html[data-style="5"] .panel .rec .score,
-html[data-style="5"] .panel .rec .ev {
-  background: transparent !important;
-  border: 1px solid var(--line-strong) !important;
-  border-radius: 999px !important;
-  padding: 1px 8px !important;
-  font-weight: 500;
-}
-html[data-style="5"] .panel .color-pill {
-  border-radius: 999px !important;
-  font-weight: 500 !important;
-  padding: 2px 8px !important;
-}
-html[data-style="5"] .panel .winning-move,
-html[data-style="5"] .panel .gprog,
-html[data-style="5"] .panel .robber-on-me,
-html[data-style="5"] .panel .discard-hint,
-html[data-style="5"] .panel .seven-prep,
-html[data-style="5"] .panel .trade-offer,
-html[data-style="5"] .panel .knight-hint,
-html[data-style="5"] .panel .monopoly-hint {
-  border-radius: 8px !important;
-  border: 1px solid var(--line-strong) !important;
-  border-left: 3px solid var(--accent) !important;
-  background: var(--bg-1) !important;
-  padding: 12px 14px !important;
-}
-
-/* ============================================================
-   STYLE-VARIANT RENDERER STYLES — these target the alternate
-   DOM trees produced by renderTerminal / renderNewspaper /
-   renderTacticalHUD / renderMinimal in panel.js. The dispatcher
-   swaps the entire #content innerHTML so each style draws its
-   own DOM, not just CSS reskins of the default tree.
-   ============================================================ */
-
-/* Style 2 — Terminal */
-html[data-style="2"] .panel .term {
-  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--pos);
-  background: transparent;
-  margin: 0;
-  padding: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* Style 3 — Newspaper */
-html[data-style="3"] .panel .np {
-  padding: 6px 4px 12px;
-  font-family: 'Charter', 'Georgia', 'Times New Roman', serif;
-  color: var(--fg);
-}
-html[data-style="3"] .panel .np-dateline {
-  font-size: 11px;
-  font-style: italic;
-  text-align: center;
-  color: var(--fg-mute);
-  margin-bottom: 6px;
-  letter-spacing: 0.05em;
-}
-html[data-style="3"] .panel .np-headline {
-  font-size: 28px;
-  font-weight: 900;
-  text-align: center;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-  line-height: 1.1;
-  margin-bottom: 4px;
-  font-style: italic;
-}
-html[data-style="3"] .panel .np-kicker {
+  padding: 14px 26px 22px !important;
+  font-family: var(--font);
   font-size: 14px;
+  font-feature-settings: "onum" 1, "tnum" 1;
+}
+html[data-style="5"] .panel .mn-tile {
+  background: rgba(255, 255, 255, 0.30) !important;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 0 !important;
+  padding: 22px 20px !important;
+  margin: 4px 0 14px !important;
   text-align: center;
-  font-style: italic;
-  color: var(--fg-mute);
-  margin-bottom: 12px;
-}
-html[data-style="3"] .panel .np-rule {
-  border-top: 3px double var(--line-strong);
-  margin: 10px 0;
-}
-html[data-style="3"] .panel .np-cols {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-html[data-style="3"] .panel .np-coltitle {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  border-bottom: 1px solid var(--line-strong);
-  padding-bottom: 4px;
-  margin-bottom: 6px;
-  text-align: center;
-  font-weight: 700;
-}
-html[data-style="3"] .panel .np-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: oldstyle-nums tabular-nums;
-}
-html[data-style="3"] .panel .np-table td {
-  padding: 4px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-}
-html[data-style="3"] .panel .np-place {
-  font-weight: 700;
-  width: 24px;
-  font-style: italic;
-}
-html[data-style="3"] .panel .np-name { width: auto; }
-html[data-style="3"] .panel .np-vp {
-  text-align: right;
-  width: 28px;
-  font-weight: 700;
-}
-html[data-style="3"] .panel .np-cards {
-  text-align: right;
-  width: 36px;
-  color: var(--fg-mute);
-}
-html[data-style="3"] .panel .np-roll-tag {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.10em;
-}
-html[data-style="3"] .panel .np-roll-n {
-  text-align: right;
-  font-weight: 700;
-  font-size: 16px;
-}
-html[data-style="3"] .panel .np-empty {
-  color: var(--fg-mute);
-  font-style: italic;
-  text-align: center;
-  padding: 8px 0;
-}
-
-/* Style 4 — Tactical HUD */
-html[data-style="4"] .panel .hud {
-  padding: 4px 4px 10px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-}
-html[data-style="4"] .panel .hud-status {
-  text-align: center;
-  letter-spacing: 0.5em;
-  color: var(--pos);
-  font-size: 14px;
-  padding: 30px 0;
-}
-html[data-style="4"] .panel .hud-klaxon {
-  background: var(--alert);
-  color: #fff;
-  text-align: center;
-  padding: 8px;
-  margin-bottom: 12px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  animation: hudPulse 1.2s infinite alternate;
-}
-@keyframes hudPulse {
-  from { box-shadow: 0 0 0 rgba(255, 62, 138, 0); }
-  to   { box-shadow: 0 0 18px rgba(255, 62, 138, 0.8); }
-}
-html[data-style="4"] .panel .hud-ammo {
-  border: 1px solid var(--line-strong);
-  padding: 8px 10px;
-  margin-bottom: 12px;
-  background: rgba(0, 0, 0, 0.30);
-}
-html[data-style="4"] .panel .hud-ammo-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  letter-spacing: 0.10em;
-  color: var(--fg-mute);
-}
-html[data-style="4"] .panel .hud-ammo-row .hud-val {
-  color: var(--pos);
-  font-weight: 700;
-}
-html[data-style="4"] .panel .hud-bar {
-  height: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  margin-top: 6px;
-  border: 1px solid var(--line);
-}
-html[data-style="4"] .panel .hud-bar-fill {
-  height: 100%;
-  background: var(--pos);
-  transition: width 0.3s;
-}
-html[data-style="4"] .panel .hud-opps { display: flex; flex-direction: column; gap: 8px; }
-html[data-style="4"] .panel .hud-opp {
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--accent);
-  padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.20);
-}
-html[data-style="4"] .panel .hud-opp.danger {
-  border-left-color: var(--alert);
-  box-shadow: 0 0 10px rgba(255, 62, 138, 0.30);
-}
-html[data-style="4"] .panel .hud-opp-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-}
-html[data-style="4"] .panel .hud-opp-name { flex: 1; font-weight: 700; }
-html[data-style="4"] .panel .hud-opp-vp { color: var(--pos); font-weight: 700; }
-html[data-style="4"] .panel .hud-opp-cards { color: var(--fg-mute); }
-html[data-style="4"] .panel .hud-rec {
-  margin-top: 14px;
-  border: 1px solid var(--pos);
-  padding: 10px 12px;
-  background: rgba(0, 245, 212, 0.05);
   position: relative;
 }
-html[data-style="4"] .panel .hud-rec-bracket {
-  font-size: 10px;
-  color: var(--pos);
-  letter-spacing: 0.30em;
-  margin-bottom: 4px;
+html[data-style="5"] .panel .mn-tile::before {
+  content: "";
+  position: absolute;
+  top: 6px; left: 6px; right: 6px; bottom: 6px;
+  border: 1px solid var(--line);
+  pointer-events: none;
 }
-html[data-style="4"] .panel .hud-rec-kind {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--fg);
-}
-html[data-style="4"] .panel .hud-rec-detail {
-  font-size: 12px;
-  color: var(--fg-mute);
-  margin-top: 4px;
-}
-html[data-style="4"] .panel .hud-rec-score {
-  font-size: 10px;
-  color: var(--pos);
-  margin-top: 6px;
-  letter-spacing: 0.18em;
-}
-
-/* Style 5 — Minimal Tile */
-html[data-style="5"] .panel .mn-tile {
-  padding: 28px 22px;
-  text-align: center;
-  background: var(--bg-1);
-  border-radius: 8px;
-  margin: 8px 8px 12px;
-  min-height: 160px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-html[data-style="5"] .panel .mn-tile.mn-win {
-  background: var(--pos);
-  color: #fff;
-}
+html[data-style="5"] .panel .mn-tile.mn-win,
 html[data-style="5"] .panel .mn-tile.mn-alert {
-  background: var(--alert);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.40) !important;
+  color: var(--fg) !important;
 }
 html[data-style="5"] .panel .mn-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.20em;
-  font-weight: 600;
-  opacity: 0.6;
-  margin-bottom: 12px;
+  font-family: 'Spectral', serif !important;
+  font-style: italic !important;
+  font-weight: 400 !important;
+  text-transform: lowercase !important;
+  letter-spacing: 0.10em !important;
+  font-size: 12px !important;
+  color: var(--fg-dim) !important;
+  margin-bottom: 14px !important;
 }
 html[data-style="5"] .panel .mn-primary {
-  font-size: 56px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
+  font-family: 'Spectral', 'Cormorant Garamond', serif !important;
+  font-style: italic !important;
+  font-weight: 600 !important;
+  font-size: 44px !important;
+  letter-spacing: 0 !important;
+  color: var(--fg) !important;
+  line-height: 1 !important;
 }
 html[data-style="5"] .panel .mn-detail {
-  font-size: 14px;
-  margin-top: 12px;
-  opacity: 0.75;
-  line-height: 1.4;
+  font-family: 'Spectral', serif !important;
+  font-style: italic !important;
+  font-size: 14px !important;
+  margin-top: 14px !important;
+  color: var(--fg-mute) !important;
 }
 html[data-style="5"] .panel .mn-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 14px;
-  font-size: 12px;
-  color: var(--fg-mute);
+  font-family: 'Spectral', serif !important;
+  font-style: italic !important;
+  font-size: 13px !important;
+  color: var(--fg-mute) !important;
+  border-top: 1px solid var(--line) !important;
+  padding-top: 10px !important;
 }
-html[data-style="5"] .panel .mn-self {
-  font-weight: 600;
-}
-html[data-style="5"] .panel .mn-standings {
-  display: flex;
-  gap: 10px;
-}
-html[data-style="5"] .panel .mn-st-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-html[data-style="5"] .panel .mn-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-html[data-style="5"] .panel .mn-st-name { color: var(--fg-mute); }
-html[data-style="5"] .panel .mn-st-vp { font-weight: 600; color: var(--fg); }
+html[data-style="5"] .panel .mn-self { font-weight: 600; color: var(--fg); }
+html[data-style="5"] .panel .mn-st-vp { font-weight: 700 !important; color: var(--fg); }
