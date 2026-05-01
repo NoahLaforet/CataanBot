@@ -151,3 +151,50 @@ def test_harvest_display_colors_latches_first_css_color():
     })
     assert "Cara" not in st["display_colors"]
     assert "Dana" not in st["display_colors"]
+
+
+def test_apply_colonist_game_settings_syncs_vp_target():
+    """Regression for Noah's 2026-04-30 game where colonist's
+    gameSettings shipped victoryPointsToWin=15 but the bot kept
+    VP_TARGET=10 internally — every endgame heuristic fired at the
+    wrong threshold. Auto-detect on game boot now syncs from
+    game.session.game_settings."""
+    from types import SimpleNamespace
+    from cataanbot.bridge import _apply_colonist_game_settings
+    from cataanbot import config
+    original_vp = config.get_vp_target()
+    original_dl = config.get_discard_limit()
+    try:
+        sess = SimpleNamespace(
+            game_settings={
+                "victoryPointsToWin": 15,
+                "cardDiscardLimit": 9,
+            },
+        )
+        game = SimpleNamespace(session=sess)
+        _apply_colonist_game_settings(game)
+        assert config.get_vp_target() == 15
+        assert config.get_discard_limit() == 9
+    finally:
+        config.set_vp_target(original_vp)
+        config.set_discard_limit(original_dl)
+
+
+def test_apply_colonist_game_settings_silent_on_missing_keys():
+    """Older colonist versions (or non-classic gameTypes) may omit
+    victoryPointsToWin / cardDiscardLimit. Don't crash; don't change
+    config; just leave the defaults alone."""
+    from types import SimpleNamespace
+    from cataanbot.bridge import _apply_colonist_game_settings
+    from cataanbot import config
+    original_vp = config.get_vp_target()
+    original_dl = config.get_discard_limit()
+    try:
+        sess = SimpleNamespace(game_settings={})
+        game = SimpleNamespace(session=sess)
+        _apply_colonist_game_settings(game)
+        assert config.get_vp_target() == original_vp
+        assert config.get_discard_limit() == original_dl
+    finally:
+        config.set_vp_target(original_vp)
+        config.set_discard_limit(original_dl)

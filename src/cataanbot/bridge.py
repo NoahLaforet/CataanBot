@@ -264,6 +264,7 @@ def _build_app(jsonl_path: Path | None = None,
         # First frame that boots the game — emit a header.
         if results is None and game.started and st.get("_booted") is None:
             st["_booted"] = True
+            _apply_colonist_game_settings(game)
             _print_game_start(game)
             # Re-seed pm_tracker with the live game's catanatron map.
             # By default pm_tracker uses BASE_MAP_TEMPLATE (classic 19
@@ -510,6 +511,49 @@ def _feed_ws_payload(game, payload: dict[str, Any]):
     if frame.error or not isinstance(frame.payload, dict):
         return None
     return game.feed(frame.payload)
+
+
+def _apply_colonist_game_settings(game) -> None:
+    """Sync VP target + discard limit from colonist's GameStart payload.
+
+    Colonist's gameSettings carries ``victoryPointsToWin`` (10 default,
+    but Noah played a 15 VP game on 2026-04-30 and every endgame
+    heuristic — close_to_win, leader_threat, win_proximity, recommender
+    endgame bias — was tuned for a 10-VP game while colonist enforced
+    15. Same for ``cardDiscardLimit`` (7 default, but Seafarers and some
+    custom games change it). Auto-detect on game boot so the bot's
+    config tracks the actual rules of THIS game without Noah needing
+    to hit /config manually.
+
+    Silent no-op when the payload is missing the keys (older colonist
+    versions) or when our session.game_settings hasn't been populated
+    yet (frame ordering edge case)."""
+    sess = getattr(game, "session", None)
+    if sess is None:
+        return
+    gs = getattr(sess, "game_settings", None) or {}
+    from cataanbot import config
+    vp = gs.get("victoryPointsToWin")
+    if vp is not None:
+        try:
+            new_vp = int(vp)
+            if new_vp != config.get_vp_target():
+                config.set_vp_target(new_vp)
+                print(f"[bridge] auto-detected VP target: {new_vp} "
+                      f"(from colonist gameSettings)", flush=True)
+        except (TypeError, ValueError):
+            pass
+    dl = gs.get("cardDiscardLimit")
+    if dl is not None:
+        try:
+            new_dl = int(dl)
+            if new_dl != config.get_discard_limit():
+                config.set_discard_limit(new_dl)
+                print(f"[bridge] auto-detected discard limit: "
+                      f"{new_dl} (from colonist gameSettings)",
+                      flush=True)
+        except (TypeError, ValueError):
+            pass
 
 
 def _print_game_start(game) -> None:
