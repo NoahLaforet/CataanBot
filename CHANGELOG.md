@@ -4,6 +4,30 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.30.1 — 2026-05-01
+
+Robustness pass — no UI changes, three bridge-side fixes:
+
+- **`UNHANDLED BuildEvent` lines now logged.** DOM-log road events
+  arrive without edge coordinates, fall through `_apply_build` to
+  "unhandled" status, and silently never apply to catanatron's
+  tracker. The recommender then keeps suggesting the same road
+  forever because it doesn't know it was placed. Diagnostic-only
+  change — every unhandled BuildEvent now prints
+  `[ws #N] UNHANDLED BuildEvent: ...` so the gap is visible
+  instead of mystery-stale recs.
+- **Per-event isolation in `LiveGame.feed`.** Pre-fix, a single
+  raising `apply_event` (e.g. `tracker.road` rejecting an invalid
+  placement) short-circuited the whole frame's list comprehension
+  and silently dropped every later event in that diff. Now each
+  event is wrapped in try/except; failures surface as `error`
+  DispatchResult; the rest of the frame still applies.
+- **Same isolation in `_replay_pre_existing_buildings`.** Mid-game
+  reconnect replay used to crash on a single bad seed (corner
+  already taken, off-board node, disconnected road). Now catches
+  per-build for settlements/cities and defers per-build for roads
+  (the retry-until-stable loop still works).
+
 ## v0.30.0 — 2026-05-01
 
 Soft revert of the style switcher. The 5/6-style cycler shipped
