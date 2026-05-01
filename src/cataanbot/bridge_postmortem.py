@@ -129,6 +129,61 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         _write_postmortem(st, event)
 
 
+def _resolve_final_vp(st) -> dict[str, int]:
+    """Pick the most authoritative final VP source available.
+
+    The pm_tracker is only fed through the DOM log, where BuildEvents
+    arrive without node/edge coordinates and dispatch as ``unhandled``.
+    That leaves pm_tracker frozen at the opening (2 VP each) regardless
+    of how the real game played out. So:
+
+    1. **Colonist's authoritative state first.** ``game.session``'s
+       ``victoryPointsState`` carries per-color totals exactly as
+       colonist computes them — settles, cities, held VP cards, LR/LA
+       flags. This is what colonist's UI shows. We only see opp VP
+       *cards* as zero (colonist hides those), so opp totals understate
+       by their hidden VPs, but settle/city/LR/LA are full-fidelity.
+    2. **Live tracker fallback.** ``game.tracker.vp_status()`` reads
+       the WS-driven live tracker, which gets real BuildEvent coords.
+       Slightly less authoritative than colonist (no VP cards at all)
+       but reliable.
+    3. **Empty dict last resort.** If both sources are unavailable
+       (e.g. the bridge crashed mid-game) we hand back ``{}`` so the
+       postmortem still renders, just without final scores.
+
+    The classic pm_tracker.vp_status() path is intentionally NOT used —
+    it was the source of the 2/2 final-score bug Noah saw on his
+    BrickdDaddy game.
+    """
+    game = st.get("game")
+    if game is not None:
+        try:
+            sess = getattr(game, "session", None)
+            color_map = getattr(game, "color_map", None)
+            if sess is not None and color_map is not None:
+                vps: dict[str, int] = {}
+                for cid, username in sess.player_names.items():
+                    if not sess.victory_points_state.get(cid):
+                        continue
+                    try:
+                        color = color_map.get(username)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    vps[color] = sess.vp_total(cid)
+                if vps:
+                    return vps
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            return dict(game.tracker.vp_status()["per_color"])
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        return dict(st["pm_tracker"].vp_status()["per_color"])
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _compute_board_fingerprint(game) -> dict[str, object] | None:
     """Snapshot the board's shape so the postmortem can identify a variant.
 
@@ -196,10 +251,7 @@ def _write_postmortem(st, game_over) -> None:
         c if c.isalnum() or c in ("-", "_") else "_" for c in winner)
     out_path = out_dir / f"{stamp}_{safe_winner}.html"
 
-    try:
-        final_vp = st["pm_tracker"].vp_status()["per_color"]
-    except Exception:  # noqa: BLE001
-        final_vp = {}
+    final_vp = _resolve_final_vp(st)
 
     try:
         path = render_postmortem_html(

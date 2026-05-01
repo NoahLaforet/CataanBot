@@ -924,3 +924,46 @@ def test_dev_card_timeline_format_renders_grouped_rounds():
     out = format_report(rep)
     assert "R 1" in out
     assert "Alice" in out and "knight" in out
+
+
+def test_longest_road_transfer_strips_previous_holder():
+    """When colonist announces a Longest Road transfer (X took LR from
+    Y), the previous holder must lose the award in the report. Without
+    this strip, vp_awards is append-only — both players end up
+    rendered with `longest_road`, which is impossible.
+
+    Regression for the BrickdDaddy game where the postmortem credited
+    both RED and BLUE with longest_road simultaneously."""
+    from cataanbot.events import VPEvent
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        # Alice gets longest road first.
+        VPEvent(player="Alice", reason="longest_road", vp_delta=2),
+        # Then Bob takes it from Alice.
+        VPEvent(player="Bob", reason="longest_road", vp_delta=2,
+                previous_holder="Alice"),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 2, "BLUE": 4},
+    )
+    assert "longest_road" not in rep.players["RED"].vp_awards, (
+        "Alice (RED) should no longer hold longest_road after Bob took it")
+    assert "longest_road" in rep.players["BLUE"].vp_awards
+
+
+def test_first_time_award_does_not_strip():
+    """A first-time LA/LR award has no previous_holder — should not
+    accidentally strip from anyone."""
+    from cataanbot.events import VPEvent
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [
+        VPEvent(player="Alice", reason="largest_army", vp_delta=2,
+                previous_holder=None),
+    ]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 2, "BLUE": 0},
+    )
+    assert "largest_army" in rep.players["RED"].vp_awards
+    assert "largest_army" not in rep.players["BLUE"].vp_awards

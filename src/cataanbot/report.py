@@ -405,6 +405,23 @@ def build_report(
         elif isinstance(event, VPEvent):
             stats = _stats_for(stats_by_color, color_map, event.player)
             stats.vp_awards.append(event.reason)
+            # LR/LA can pass between players. The parser sets
+            # previous_holder when colonist's announcement was a
+            # transfer ("X took Longest Road from Y" / "passed from
+            # X to Y"). Strip the award from the previous holder so
+            # the final report only credits the current holder —
+            # without this, both players show longest_road if the
+            # title flipped during the game (Noah's BrickdDaddy game
+            # rendered "longest_road" on both RED and BLUE for this
+            # exact reason).
+            if event.previous_holder:
+                try:
+                    prev_stats = _stats_for(
+                        stats_by_color, color_map, event.previous_holder)
+                    if event.reason in prev_stats.vp_awards:
+                        prev_stats.vp_awards.remove(event.reason)
+                except Exception:  # noqa: BLE001
+                    pass
         elif isinstance(event, GameOverEvent):
             winner_username = event.winner
             _stats_for(stats_by_color, color_map, event.winner)

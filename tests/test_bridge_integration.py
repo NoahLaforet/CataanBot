@@ -204,3 +204,73 @@ def test_full_capture_advisor_snapshot_idempotent():
     assert snap1.get("self") == snap2.get("self")
     assert snap1.get("opps") == snap2.get("opps")
     assert snap1.get("production") == snap2.get("production")
+
+
+def test_resolve_final_vp_prefers_colonist_session_over_pm_tracker():
+    """The pm_tracker is fed only via DOM-log payloads, where
+    BuildEvents arrive without coords and dispatch as 'unhandled'.
+    That leaves pm_tracker frozen at opening (2 VP each) regardless
+    of how the game played out — exactly what produced the 2/2 final
+    score on Noah's BrickdDaddy game.
+
+    _resolve_final_vp must prefer colonist's authoritative
+    victoryPointsState. We mock a session reporting 12/14 and verify
+    the resolver returns those, not the pm_tracker's stale 2/2.
+    """
+    from cataanbot.bridge_postmortem import _resolve_final_vp
+
+    class _FakeColorMap:
+        def __init__(self, mapping):
+            self._m = mapping
+        def get(self, username):
+            return self._m.get(username)
+
+    class _FakeSession:
+        def __init__(self):
+            self.player_names = {1: "Noah", 2: "Opp"}
+            # Mirrors colonist's per-color state dict — non-empty means
+            # we have a real read, not a placeholder.
+            self.victory_points_state = {1: {0: 5, 1: 3}, 2: {0: 4, 1: 5}}
+        def vp_total(self, cid):
+            return {1: 12, 2: 14}[cid]
+
+    class _FakeTracker:
+        def vp_status(self):
+            # The "stale 2/2" pm_tracker would return — make sure we
+            # don't pick this when colonist's state is available.
+            return {"per_color": {"RED": 2, "BLUE": 2}}
+
+    class _FakeGame:
+        session = _FakeSession()
+        color_map = _FakeColorMap({"Noah": "RED", "Opp": "BLUE"})
+        tracker = _FakeTracker()
+
+    st = {"game": _FakeGame(), "pm_tracker": _FakeTracker()}
+    out = _resolve_final_vp(st)
+    assert out == {"RED": 12, "BLUE": 14}, (
+        f"Expected colonist's authoritative VPs, got {out}")
+
+
+def test_resolve_final_vp_falls_back_to_live_tracker_without_session():
+    """If colonist's session never populated victoryPointsState (rare
+    edge: bridge attached too late), use the live tracker. Better than
+    falling all the way to pm_tracker, which we know is stale."""
+    from cataanbot.bridge_postmortem import _resolve_final_vp
+
+    class _FakeTrackerLive:
+        def vp_status(self):
+            return {"per_color": {"RED": 8, "BLUE": 7}}
+
+    class _FakeTrackerStale:
+        def vp_status(self):
+            return {"per_color": {"RED": 2, "BLUE": 2}}
+
+    class _FakeGame:
+        session = None
+        color_map = None
+        tracker = _FakeTrackerLive()
+
+    st = {"game": _FakeGame(), "pm_tracker": _FakeTrackerStale()}
+    out = _resolve_final_vp(st)
+    assert out == {"RED": 8, "BLUE": 7}, (
+        f"Expected live tracker fallback, got {out}")
