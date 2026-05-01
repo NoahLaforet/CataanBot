@@ -2171,7 +2171,9 @@
             lines.push(`?? KNIGHT ${v}  ${snap.knight_hint.reason || ''}`);
         }
         if (snap.discard_hint && snap.discard_hint.need > 0) {
-            lines.push(`!! DISCARD ${snap.discard_hint.need} cards`);
+            lines.push(`!! DISCARD ${snap.discard_hint.need} cards (post-7)`);
+        } else if (snap.seven_prep && snap.seven_prep.message) {
+            lines.push(`?  spend down: ${snap.seven_prep.message}`);
         }
         if (snap.incoming_trade) {
             const t = snap.incoming_trade;
@@ -2338,10 +2340,19 @@
             detail = snap.winning_move.message;
             cls = 'mn-win';
         } else if (snap.discard_hint && snap.discard_hint.need > 0) {
-            label = 'Discard';
+            label = 'Discard now';
             primary = `${snap.discard_hint.need} cards`;
-            detail = 'pre-roll · pick lowest-utility';
+            detail = (snap.discard_hint.rationale
+                || 'pick lowest-utility cards');
             cls = 'mn-alert';
+        } else if (snap.seven_prep && snap.seven_prep.message) {
+            // Pre-7 warning. Distinct from discard_hint: this fires
+            // when hand size is risky but no 7 has been rolled yet.
+            // Amber-toned, not the full red alert.
+            label = 'Spend down';
+            primary = `${snap.seven_prep.over || ''}`.trim() || 'over limit';
+            detail = snap.seven_prep.message;
+            cls = '';
         } else if (snap.robber_on_me) {
             const rom = snap.robber_on_me;
             label = 'Robber on you';

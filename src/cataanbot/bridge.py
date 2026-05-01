@@ -1867,12 +1867,20 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             game, self_color, hand)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] strategic_options failed: {e!r}", flush=True)
-    # Discard-on-7 advice: fires whenever self's hand exceeds the discard
-    # limit. The overlay should render it prominently on a 7-roll, but
-    # we compute unconditionally — it's cheap and "you're over the limit"
-    # is useful context even before a roll lands.
+    # Discard-on-7 advice. Only fires when self ACTUALLY owes a
+    # discard right now — i.e. self just rolled a 7 (robber_pending
+    # is set and the hand still exceeds the limit). The pre-roll
+    # spend-down warning below (seven_prep) covers the "watch out,
+    # next 7 will hurt" case so the discard banner doesn't pop in
+    # the alarming "DISCARD 4 cards" red-tile state when no 7 has
+    # been rolled. (Noah saw the false positive on 2026-05-01: the
+    # minimal-style HUD lit up DISCARD just because his hand was at
+    # 9, with no 7 rolled.)
     try:
-        snap["discard_hint"] = _compute_discard_hint(hand, cards)
+        if st.get("robber_pending"):
+            snap["discard_hint"] = _compute_discard_hint(hand, cards)
+        else:
+            snap["discard_hint"] = None
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] discard_hint failed: {e!r}", flush=True)
     # Pre-roll spend-down warning. Fires when self is over the safe
