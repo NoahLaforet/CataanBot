@@ -1852,10 +1852,34 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     else:
         snap["dev_cards_played_by_type"] = {}
     snap["dev_cards_type_known"] = typed_held > 0
-    # When type is known, the playable_count fallback in each hint
-    # would falsely fire for the non-matching types — pass 0 so the
-    # hint must rely on its own IN_HAND counter.
-    hint_fallback = 0 if typed_held > 0 else dev_playable
+    # Hint gating model:
+    #   - When ANY per-type counter is non-zero, gate strictly on
+    #     each hint's own counter (fallback = 0).
+    #   - When all per-type counters are 0 AND we have NEVER seen
+    #     a typed buy this game (sess.self_dev_used is empty AND
+    #     session-level "ever_typed" flag is unset), use the
+    #     untyped fallback — only really applies pre-first-buy
+    #     when a colonist diff hasn't typed a buy yet.
+    # The old fallback fired whenever typed_held was 0 even if
+    # we'd previously typed a card, which produced the "phantom
+    # knight" hint after Noah played his only knight (typed_held
+    # legitimately drops to 0 post-play, but dev_playable could
+    # still be > 0 if sess.dev_card_counts hadn't yet caught up
+    # with the WS frame for the play).
+    if not hasattr(st, "_ever_typed_dev"):
+        st["_ever_typed_dev"] = False
+    if typed_held > 0:
+        st["_ever_typed_dev"] = True
+    used_any = bool(getattr(sess, "self_dev_used", None))
+    if typed_held > 0:
+        hint_fallback = 0
+    elif st.get("_ever_typed_dev") or used_any:
+        # We've previously typed dev cards in this game. Trust the
+        # per-type counters at face value (which are 0 right now)
+        # rather than firing every hint via the fallback.
+        hint_fallback = 0
+    else:
+        hint_fallback = dev_playable
     # Knight / monopoly / YoP / RB hints: surface play-timing advice
     # for each card type whenever self has at least one playable dev
     # card, since we can't tell which type self holds from the log.
