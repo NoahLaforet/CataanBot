@@ -4,6 +4,25 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.29.1 — 2026-05-01
+
+- **Restored the original slate dashboard as Style 1.** The v0.29.0
+  redesign replaced it with the new "concierge" aesthetic; Noah
+  wanted the slate kept too. Now there are 6 styles: original
+  slate at position 1, with concierge / brutalist / casino / pixel
+  / botanical at 2-6.
+- **Monopoly hint clamps inferred opp counts.** "Drains 19 from
+  blue" was firing on opps with 0 actual cards because the per-
+  resource breakdown comes from tracker.hand() which drifts
+  upward across hidden steals. Now scales every per-opp count
+  down to the authoritative WS card total, then caps the
+  cross-opp total by physical deck supply (19 - bank - self_held).
+- **Discard banner gated on robber_pending.** The minimal-style HUD
+  was firing the red "DISCARD 4 cards" alert just because the hand
+  crossed the 7-card limit pre-roll. Now only fires when self
+  actually owes a discard (just rolled a 7); the pre-roll spend-
+  down warning still surfaces via the seven_prep amber tile.
+
 ## v0.29.0 — 2026-05-01
 
 Each of the 5 styles redesigned from scratch with a unique

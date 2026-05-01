@@ -212,10 +212,11 @@
         const style = (typeof document !== 'undefined' && document.documentElement)
             ? document.documentElement.getAttribute('data-style')
             : null;
-        // Default + minimal-card style use emojis (Noah's pref).
-        // Terminal / newspaper / HUD use the SVG line-art that
-        // matches their aesthetic.
-        const useEmoji = (!style || style === '1' || style === '5');
+        // Original slate (1) + concierge (2) use emoji — they read
+        // at a glance and match the warmer/dashboard tones. The
+        // other aesthetics (brutalist / casino / pixel / botanical)
+        // use the inline SVG glyphs that fit their type system.
+        const useEmoji = (!style || style === '1' || style === '2');
         if (useEmoji && RES_EMOJI[res]) return RES_EMOJI[res];
         return RES_SVG[res]
             || `<span class="res-glyph res-fallback">`
@@ -564,7 +565,7 @@
             let initial = '1';
             try {
                 const saved = localStorage.getItem('cataanbot.style');
-                if (saved && /^[1-5]$/.test(saved)) initial = saved;
+                if (saved && /^[1-6]$/.test(saved)) initial = saved;
             } catch (_) { /* storage blocked */ }
             sel.value = initial;
             apply(initial);
@@ -882,15 +883,16 @@
     // each renderer decides whether to surface them.
     function renderOverlay(ui, snap, live) {
         const style = document.documentElement.getAttribute('data-style');
-        // Each style picks the renderer that best matches its
-        // aesthetic. Concierge + Casino reuse the dashboard
-        // (cards work for both), the others get specialized
-        // renderers.
-        if (style === '2') return renderNewspaper(ui, snap, live);   // Brutalist Editorial
-        if (style === '3') return renderDefault(ui, snap, live);     // Casino Felt
-        if (style === '4') return renderTerminal(ui, snap, live);    // Pixel Game Boy
-        if (style === '5') return renderMinimal(ui, snap, live);     // Botanical Manuscript
-        return renderDefault(ui, snap, live);                        // Concierge (default)
+        // Style 1 = the original slate dashboard (no CSS override on
+        // top of the base panel.css). Styles 2-6 are the redesigned
+        // aesthetic directions; each picks the renderer that best
+        // matches it.
+        if (style === '2') return renderDefault(ui, snap, live);     // Concierge
+        if (style === '3') return renderNewspaper(ui, snap, live);   // Brutalist Editorial
+        if (style === '4') return renderDefault(ui, snap, live);     // Casino Felt
+        if (style === '5') return renderTerminal(ui, snap, live);    // Pixel Game Boy
+        if (style === '6') return renderMinimal(ui, snap, live);     // Botanical Manuscript
+        return renderDefault(ui, snap, live);                        // Style 1 (original slate)
     }
 
     function renderDefault(ui, snap, live) {

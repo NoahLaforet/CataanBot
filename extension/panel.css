@@ -2371,7 +2371,7 @@ html, body, .panel {
    serif. Restrained.
    ============================================================ */
 
-html[data-style="1"] .panel {
+html[data-style="2"] .panel {
   --bg-0: #f3ede0;
   --bg-1: #ece4d3;
   --bg-2: #e0d5be;
@@ -2399,13 +2399,13 @@ html[data-style="1"] .panel {
   line-height: 1.55 !important;
   font-feature-settings: "liga" 1, "dlig" 1, "onum" 1, "smcp" 0;
 }
-html[data-style="1"] .panel .header {
+html[data-style="2"] .panel .header {
   background: transparent !important;
   border-bottom: 1px solid var(--accent) !important;
   padding: 14px 22px 10px !important;
   font-family: var(--font);
 }
-html[data-style="1"] .panel .title {
+html[data-style="2"] .panel .title {
   color: var(--fg) !important;
   font-family: 'Cormorant Garamond', Garamond, serif !important;
   font-style: italic !important;
@@ -2414,33 +2414,33 @@ html[data-style="1"] .panel .title {
   text-transform: none !important;
   font-size: 18px !important;
 }
-html[data-style="1"] .panel .title::before {
+html[data-style="2"] .panel .title::before {
   content: "the ";
   font-style: italic;
   color: var(--fg-dim);
   font-weight: 400;
 }
-html[data-style="1"] .panel .body {
+html[data-style="2"] .panel .body {
   padding: 18px 24px 22px !important;
   font-family: var(--font);
   font-size: 15px;
   font-feature-settings: "onum" 1, "tnum" 1;
 }
-html[data-style="1"] .panel .opp,
-html[data-style="1"] .panel .rec {
+html[data-style="2"] .panel .opp,
+html[data-style="2"] .panel .rec {
   border: 0 !important;
   border-bottom: 1px solid var(--line) !important;
   background: transparent !important;
   border-radius: 0 !important;
   padding: 10px 0 !important;
 }
-html[data-style="1"] .panel .opp:last-child,
-html[data-style="1"] .panel .rec:last-child { border-bottom: 0 !important; }
-html[data-style="1"] .panel .rec.top {
+html[data-style="2"] .panel .opp:last-child,
+html[data-style="2"] .panel .rec:last-child { border-bottom: 0 !important; }
+html[data-style="2"] .panel .rec.top {
   border-bottom: 1px solid var(--accent) !important;
   padding-bottom: 14px !important;
 }
-html[data-style="1"] .panel .rec .kind {
+html[data-style="2"] .panel .rec .kind {
   font-family: var(--font) !important;
   font-style: italic !important;
   font-weight: 500 !important;
@@ -2449,8 +2449,8 @@ html[data-style="1"] .panel .rec .kind {
   font-size: 11px !important;
   color: var(--accent) !important;
 }
-html[data-style="1"] .panel .rec .score,
-html[data-style="1"] .panel .rec .ev {
+html[data-style="2"] .panel .rec .score,
+html[data-style="2"] .panel .rec .ev {
   background: transparent !important;
   border: 1px solid var(--accent) !important;
   border-radius: 0 !important;
@@ -2460,26 +2460,26 @@ html[data-style="1"] .panel .rec .ev {
   color: var(--accent) !important;
   font-weight: 700 !important;
 }
-html[data-style="1"] .panel .opp .opp-vp,
-html[data-style="1"] .panel .opp .opp-cards {
+html[data-style="2"] .panel .opp .opp-vp,
+html[data-style="2"] .panel .opp .opp-cards {
   font-family: var(--font) !important;
   font-feature-settings: "onum" 1, "tnum" 1 !important;
   font-weight: 700 !important;
 }
-html[data-style="1"] .panel .color-pill {
+html[data-style="2"] .panel .color-pill {
   border-radius: 0 !important;
   font-family: var(--font) !important;
   font-style: italic !important;
   font-weight: 500 !important;
 }
-html[data-style="1"] .panel .winning-move,
-html[data-style="1"] .panel .gprog,
-html[data-style="1"] .panel .robber-on-me,
-html[data-style="1"] .panel .discard-hint,
-html[data-style="1"] .panel .seven-prep,
-html[data-style="1"] .panel .trade-offer,
-html[data-style="1"] .panel .knight-hint,
-html[data-style="1"] .panel .monopoly-hint {
+html[data-style="2"] .panel .winning-move,
+html[data-style="2"] .panel .gprog,
+html[data-style="2"] .panel .robber-on-me,
+html[data-style="2"] .panel .discard-hint,
+html[data-style="2"] .panel .seven-prep,
+html[data-style="2"] .panel .trade-offer,
+html[data-style="2"] .panel .knight-hint,
+html[data-style="2"] .panel .monopoly-hint {
   border-radius: 0 !important;
   border: 0 !important;
   border-top: 1px solid var(--accent) !important;
@@ -2499,7 +2499,7 @@ html[data-style="1"] .panel .monopoly-hint {
    ornament.
    ============================================================ */
 
-html[data-style="2"] .panel {
+html[data-style="3"] .panel {
   --bg-0: #f5f4f0;
   --bg-1: #ecebe6;
   --bg-2: #d8d6cc;
@@ -2526,13 +2526,13 @@ html[data-style="2"] .panel {
   box-shadow: 12px 12px 0 #000 !important;
   line-height: 1.05 !important;
 }
-html[data-style="2"] .panel .header {
+html[data-style="3"] .panel .header {
   background: #000 !important;
   border-bottom: 4px solid #000 !important;
   padding: 8px 16px !important;
   color: #fff !important;
 }
-html[data-style="2"] .panel .title {
+html[data-style="3"] .panel .title {
   color: #fff !important;
   font-family: 'Helvetica Neue', Helvetica, sans-serif !important;
   font-weight: 900 !important;
@@ -2541,11 +2541,11 @@ html[data-style="2"] .panel .title {
   text-transform: uppercase !important;
   font-size: 24px !important;
 }
-html[data-style="2"] .panel .body {
+html[data-style="3"] .panel .body {
   padding: 0 !important;
   font-family: var(--font);
 }
-html[data-style="2"] .panel .np-headline {
+html[data-style="3"] .panel .np-headline {
   font-size: 64px !important;
   font-weight: 900 !important;
   line-height: 0.92 !important;
@@ -2556,7 +2556,7 @@ html[data-style="2"] .panel .np-headline {
   padding: 16px 16px 0 !important;
   color: #000 !important;
 }
-html[data-style="2"] .panel .np-kicker {
+html[data-style="3"] .panel .np-kicker {
   font-size: 14px !important;
   font-weight: 500 !important;
   font-style: normal !important;
@@ -2567,8 +2567,8 @@ html[data-style="2"] .panel .np-kicker {
   text-align: left !important;
   border-bottom: 4px solid #000 !important;
 }
-html[data-style="2"] .panel .np-rule { display: none !important; }
-html[data-style="2"] .panel .np-dateline {
+html[data-style="3"] .panel .np-rule { display: none !important; }
+html[data-style="3"] .panel .np-dateline {
   font-family: 'Helvetica Neue', sans-serif !important;
   font-style: normal !important;
   font-weight: 700 !important;
@@ -2581,17 +2581,17 @@ html[data-style="2"] .panel .np-dateline {
   background: var(--bg-2);
   border-bottom: 2px solid #000;
 }
-html[data-style="2"] .panel .np-cols {
+html[data-style="3"] .panel .np-cols {
   grid-template-columns: 1fr 1fr !important;
   gap: 0 !important;
   border-top: 2px solid #000;
 }
-html[data-style="2"] .panel .np-col {
+html[data-style="3"] .panel .np-col {
   padding: 16px;
   border-right: 2px solid #000;
 }
-html[data-style="2"] .panel .np-col:last-child { border-right: 0; }
-html[data-style="2"] .panel .np-coltitle {
+html[data-style="3"] .panel .np-col:last-child { border-right: 0; }
+html[data-style="3"] .panel .np-coltitle {
   font-family: 'Helvetica Neue', sans-serif !important;
   font-weight: 900 !important;
   text-transform: uppercase !important;
@@ -2602,7 +2602,7 @@ html[data-style="2"] .panel .np-coltitle {
   text-align: left !important;
   padding-bottom: 6px !important;
 }
-html[data-style="2"] .panel .np-table td {
+html[data-style="3"] .panel .np-table td {
   font-family: 'Helvetica Neue', sans-serif !important;
   font-variant-numeric: tabular-nums !important;
   font-feature-settings: "tnum" 1 !important;
@@ -2610,12 +2610,12 @@ html[data-style="2"] .panel .np-table td {
   font-size: 13px !important;
   border-bottom: 1px solid var(--line) !important;
 }
-html[data-style="2"] .panel .np-place {
+html[data-style="3"] .panel .np-place {
   font-style: normal !important;
   font-weight: 900 !important;
 }
-html[data-style="2"] .panel .np-vp,
-html[data-style="2"] .panel .np-roll-n {
+html[data-style="3"] .panel .np-vp,
+html[data-style="3"] .panel .np-roll-n {
   font-weight: 900 !important;
 }
 
@@ -2628,7 +2628,7 @@ html[data-style="2"] .panel .np-roll-n {
    badges. Faint baize texture. Reads like a high-roller pit.
    ============================================================ */
 
-html[data-style="3"] .panel {
+html[data-style="4"] .panel {
   --bg-0: #0d3a26;        /* deep felt */
   --bg-1: #134a32;
   --bg-2: #1a5d3f;
@@ -2660,7 +2660,7 @@ html[data-style="3"] .panel {
     0 0 0 5px rgba(212, 175, 55, 0.30) inset,
     0 12px 40px rgba(0, 0, 0, 0.6) !important;
 }
-html[data-style="3"] .panel .header {
+html[data-style="4"] .panel .header {
   background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 100%) !important;
   border-bottom: 1px solid var(--pos) !important;
   padding: 12px 18px 8px !important;
@@ -2668,7 +2668,7 @@ html[data-style="3"] .panel .header {
   flex-wrap: wrap !important;
   justify-content: center !important;
 }
-html[data-style="3"] .panel .title {
+html[data-style="4"] .panel .title {
   font-family: 'Italianno', 'Snell Roundhand', cursive !important;
   font-weight: 400 !important;
   letter-spacing: 0.02em !important;
@@ -2678,36 +2678,36 @@ html[data-style="3"] .panel .title {
   text-shadow: 0 1px 0 rgba(0,0,0,0.4);
   flex: 1 0 100% !important;
 }
-html[data-style="3"] .panel .title::before {
+html[data-style="4"] .panel .title::before {
   content: "♠ ";
   font-family: serif;
   color: var(--pos);
   font-size: 0.55em;
   vertical-align: 0.35em;
 }
-html[data-style="3"] .panel .title::after {
+html[data-style="4"] .panel .title::after {
   content: " ♦";
   font-family: serif;
   color: var(--alert);
   font-size: 0.55em;
   vertical-align: 0.35em;
 }
-html[data-style="3"] .panel .body {
+html[data-style="4"] .panel .body {
   padding: 14px 18px 20px !important;
   font-family: var(--font);
   font-size: 15px;
 }
-html[data-style="3"] .panel .opp,
-html[data-style="3"] .panel .rec {
+html[data-style="4"] .panel .opp,
+html[data-style="4"] .panel .rec {
   border: 0 !important;
   border-bottom: 1px dashed var(--line-strong) !important;
   background: transparent !important;
   border-radius: 0 !important;
   padding: 10px 0 !important;
 }
-html[data-style="3"] .panel .opp:last-child,
-html[data-style="3"] .panel .rec:last-child { border-bottom: 0 !important; }
-html[data-style="3"] .panel .opp .opp-vp {
+html[data-style="4"] .panel .opp:last-child,
+html[data-style="4"] .panel .rec:last-child { border-bottom: 0 !important; }
+html[data-style="4"] .panel .opp .opp-vp {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -2722,18 +2722,18 @@ html[data-style="3"] .panel .opp .opp-vp {
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   border: 2px solid #fff;
 }
-html[data-style="3"] .panel .opp .opp-vp .lbl {
+html[data-style="4"] .panel .opp .opp-vp .lbl {
   display: none !important;
 }
-html[data-style="3"] .panel .rec .kind {
+html[data-style="4"] .panel .rec .kind {
   font-family: 'Cormorant Unicase', 'Cormorant Garamond', serif !important;
   font-weight: 700 !important;
   letter-spacing: 0.10em !important;
   color: var(--pos) !important;
   font-size: 13px !important;
 }
-html[data-style="3"] .panel .rec .score,
-html[data-style="3"] .panel .rec .ev {
+html[data-style="4"] .panel .rec .score,
+html[data-style="4"] .panel .rec .ev {
   background: var(--pos) !important;
   color: var(--bg-0) !important;
   border: 1px solid var(--pos) !important;
@@ -2742,7 +2742,7 @@ html[data-style="3"] .panel .rec .ev {
   font-weight: 700 !important;
   font-family: var(--font) !important;
 }
-html[data-style="3"] .panel .color-pill {
+html[data-style="4"] .panel .color-pill {
   border-radius: 50% !important;
   font-weight: 700 !important;
   width: 24px; height: 24px;
@@ -2751,14 +2751,14 @@ html[data-style="3"] .panel .color-pill {
   justify-content: center;
   border: 2px solid var(--pos);
 }
-html[data-style="3"] .panel .winning-move,
-html[data-style="3"] .panel .gprog,
-html[data-style="3"] .panel .robber-on-me,
-html[data-style="3"] .panel .discard-hint,
-html[data-style="3"] .panel .seven-prep,
-html[data-style="3"] .panel .trade-offer,
-html[data-style="3"] .panel .knight-hint,
-html[data-style="3"] .panel .monopoly-hint {
+html[data-style="4"] .panel .winning-move,
+html[data-style="4"] .panel .gprog,
+html[data-style="4"] .panel .robber-on-me,
+html[data-style="4"] .panel .discard-hint,
+html[data-style="4"] .panel .seven-prep,
+html[data-style="4"] .panel .trade-offer,
+html[data-style="4"] .panel .knight-hint,
+html[data-style="4"] .panel .monopoly-hint {
   border-radius: 0 !important;
   border: 0 !important;
   border-top: 1px solid var(--pos) !important;
@@ -2778,7 +2778,7 @@ html[data-style="3"] .panel .monopoly-hint {
    handheld screen.
    ============================================================ */
 
-html[data-style="4"] .panel {
+html[data-style="5"] .panel {
   --bg-0: #9bbc0f;        /* lightest sage */
   --bg-1: #8bac0f;
   --bg-2: #306230;        /* dark sage */
@@ -2810,13 +2810,13 @@ html[data-style="4"] .panel {
   image-rendering: pixelated;
   line-height: 1.0 !important;
 }
-html[data-style="4"] .panel .header {
+html[data-style="5"] .panel .header {
   background: var(--bg-3) !important;
   border-bottom: 2px solid var(--bg-3) !important;
   padding: 4px 10px !important;
   color: var(--bg-0) !important;
 }
-html[data-style="4"] .panel .title {
+html[data-style="5"] .panel .title {
   color: var(--bg-0) !important;
   font-family: 'VT323', monospace !important;
   font-weight: 400 !important;
@@ -2824,17 +2824,17 @@ html[data-style="4"] .panel .title {
   text-transform: uppercase !important;
   font-size: 26px !important;
 }
-html[data-style="4"] .panel .title::before {
+html[data-style="5"] .panel .title::before {
   content: "▶ ";
   color: var(--bg-0);
 }
-html[data-style="4"] .panel .body {
+html[data-style="5"] .panel .body {
   padding: 12px 14px !important;
   font-family: var(--font);
   font-size: 22px;
 }
-html[data-style="4"] .panel .opp,
-html[data-style="4"] .panel .rec {
+html[data-style="5"] .panel .opp,
+html[data-style="5"] .panel .rec {
   border: 2px solid var(--bg-3) !important;
   background: var(--bg-1) !important;
   border-radius: 0 !important;
@@ -2843,12 +2843,12 @@ html[data-style="4"] .panel .rec {
   color: var(--bg-3) !important;
   box-shadow: 3px 3px 0 var(--bg-3);
 }
-html[data-style="4"] .panel .rec.top {
+html[data-style="5"] .panel .rec.top {
   background: var(--bg-3) !important;
   color: var(--bg-0) !important;
 }
-html[data-style="4"] .panel .rec.top * { color: var(--bg-0) !important; }
-html[data-style="4"] .panel .rec .kind {
+html[data-style="5"] .panel .rec.top * { color: var(--bg-0) !important; }
+html[data-style="5"] .panel .rec .kind {
   font-family: 'VT323', monospace !important;
   font-weight: 400 !important;
   text-transform: uppercase !important;
@@ -2856,8 +2856,8 @@ html[data-style="4"] .panel .rec .kind {
   font-size: 22px !important;
   color: var(--bg-3) !important;
 }
-html[data-style="4"] .panel .rec .score,
-html[data-style="4"] .panel .rec .ev {
+html[data-style="5"] .panel .rec .score,
+html[data-style="5"] .panel .rec .ev {
   background: var(--bg-3) !important;
   color: var(--bg-0) !important;
   border-radius: 0 !important;
@@ -2865,18 +2865,18 @@ html[data-style="4"] .panel .rec .ev {
   padding: 0 6px !important;
   font-family: 'VT323', monospace !important;
 }
-html[data-style="4"] .panel .color-pill {
+html[data-style="5"] .panel .color-pill {
   border-radius: 0 !important;
   font-family: 'VT323', monospace !important;
   border: 2px solid var(--bg-3) !important;
 }
-html[data-style="4"] .panel .opp .opp-vp,
-html[data-style="4"] .panel .opp .opp-cards,
-html[data-style="4"] .panel .opp .opp-hand {
+html[data-style="5"] .panel .opp .opp-vp,
+html[data-style="5"] .panel .opp .opp-cards,
+html[data-style="5"] .panel .opp .opp-hand {
   font-family: 'VT323', monospace !important;
   color: var(--bg-3) !important;
 }
-html[data-style="4"] .panel .term {
+html[data-style="5"] .panel .term {
   font-family: 'VT323', monospace !important;
   font-size: 20px !important;
   color: var(--bg-3) !important;
@@ -2885,14 +2885,14 @@ html[data-style="4"] .panel .term {
   border: 2px solid var(--bg-3);
   box-shadow: 3px 3px 0 var(--bg-3);
 }
-html[data-style="4"] .panel .winning-move,
-html[data-style="4"] .panel .gprog,
-html[data-style="4"] .panel .robber-on-me,
-html[data-style="4"] .panel .discard-hint,
-html[data-style="4"] .panel .seven-prep,
-html[data-style="4"] .panel .trade-offer,
-html[data-style="4"] .panel .knight-hint,
-html[data-style="4"] .panel .monopoly-hint {
+html[data-style="5"] .panel .winning-move,
+html[data-style="5"] .panel .gprog,
+html[data-style="5"] .panel .robber-on-me,
+html[data-style="5"] .panel .discard-hint,
+html[data-style="5"] .panel .seven-prep,
+html[data-style="5"] .panel .trade-offer,
+html[data-style="5"] .panel .knight-hint,
+html[data-style="5"] .panel .monopoly-hint {
   border-radius: 0 !important;
   border: 2px solid var(--bg-3) !important;
   background: var(--bg-3) !important;
@@ -2912,7 +2912,7 @@ html[data-style="4"] .panel .monopoly-hint {
    figures throughout. Reads like an Audubon plate caption.
    ============================================================ */
 
-html[data-style="5"] .panel {
+html[data-style="6"] .panel {
   --bg-0: #f7eed7;
   --bg-1: #f0e5c8;
   --bg-2: #e6d8b6;
@@ -2946,7 +2946,7 @@ html[data-style="5"] .panel {
   line-height: 1.6 !important;
   font-feature-settings: "onum" 1, "tnum" 1, "liga" 1, "dlig" 1;
 }
-html[data-style="5"] .panel .header {
+html[data-style="6"] .panel .header {
   background: transparent !important;
   border-bottom: 0 !important;
   padding: 18px 24px 6px !important;
@@ -2954,7 +2954,7 @@ html[data-style="5"] .panel .header {
   flex-wrap: wrap !important;
   justify-content: center !important;
 }
-html[data-style="5"] .panel .header::after {
+html[data-style="6"] .panel .header::after {
   content: "·  ·  ·  ❦  ·  ·  ·";
   display: block;
   flex: 1 0 100%;
@@ -2966,7 +2966,7 @@ html[data-style="5"] .panel .header::after {
   letter-spacing: 0.20em;
   margin-top: 8px;
 }
-html[data-style="5"] .panel .title {
+html[data-style="6"] .panel .title {
   color: var(--fg) !important;
   font-family: 'Spectral', 'Cormorant Garamond', serif !important;
   font-style: italic !important;
@@ -2976,17 +2976,17 @@ html[data-style="5"] .panel .title {
   font-size: 22px !important;
   flex: 1 0 100% !important;
 }
-html[data-style="5"] .panel .title::before {
+html[data-style="6"] .panel .title::before {
   content: "Cataanbot";
   display: none;
 }
-html[data-style="5"] .panel .body {
+html[data-style="6"] .panel .body {
   padding: 14px 26px 22px !important;
   font-family: var(--font);
   font-size: 14px;
   font-feature-settings: "onum" 1, "tnum" 1;
 }
-html[data-style="5"] .panel .mn-tile {
+html[data-style="6"] .panel .mn-tile {
   background: rgba(255, 255, 255, 0.30) !important;
   border: 1px solid var(--line-strong) !important;
   border-radius: 0 !important;
@@ -2995,19 +2995,19 @@ html[data-style="5"] .panel .mn-tile {
   text-align: center;
   position: relative;
 }
-html[data-style="5"] .panel .mn-tile::before {
+html[data-style="6"] .panel .mn-tile::before {
   content: "";
   position: absolute;
   top: 6px; left: 6px; right: 6px; bottom: 6px;
   border: 1px solid var(--line);
   pointer-events: none;
 }
-html[data-style="5"] .panel .mn-tile.mn-win,
-html[data-style="5"] .panel .mn-tile.mn-alert {
+html[data-style="6"] .panel .mn-tile.mn-win,
+html[data-style="6"] .panel .mn-tile.mn-alert {
   background: rgba(255, 255, 255, 0.40) !important;
   color: var(--fg) !important;
 }
-html[data-style="5"] .panel .mn-label {
+html[data-style="6"] .panel .mn-label {
   font-family: 'Spectral', serif !important;
   font-style: italic !important;
   font-weight: 400 !important;
@@ -3017,7 +3017,7 @@ html[data-style="5"] .panel .mn-label {
   color: var(--fg-dim) !important;
   margin-bottom: 14px !important;
 }
-html[data-style="5"] .panel .mn-primary {
+html[data-style="6"] .panel .mn-primary {
   font-family: 'Spectral', 'Cormorant Garamond', serif !important;
   font-style: italic !important;
   font-weight: 600 !important;
@@ -3026,14 +3026,14 @@ html[data-style="5"] .panel .mn-primary {
   color: var(--fg) !important;
   line-height: 1 !important;
 }
-html[data-style="5"] .panel .mn-detail {
+html[data-style="6"] .panel .mn-detail {
   font-family: 'Spectral', serif !important;
   font-style: italic !important;
   font-size: 14px !important;
   margin-top: 14px !important;
   color: var(--fg-mute) !important;
 }
-html[data-style="5"] .panel .mn-foot {
+html[data-style="6"] .panel .mn-foot {
   font-family: 'Spectral', serif !important;
   font-style: italic !important;
   font-size: 13px !important;
@@ -3041,5 +3041,5 @@ html[data-style="5"] .panel .mn-foot {
   border-top: 1px solid var(--line) !important;
   padding-top: 10px !important;
 }
-html[data-style="5"] .panel .mn-self { font-weight: 600; color: var(--fg); }
-html[data-style="5"] .panel .mn-st-vp { font-weight: 700 !important; color: var(--fg); }
+html[data-style="6"] .panel .mn-self { font-weight: 600; color: var(--fg); }
+html[data-style="6"] .panel .mn-st-vp { font-weight: 700 !important; color: var(--fg); }
