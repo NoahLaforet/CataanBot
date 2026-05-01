@@ -199,9 +199,28 @@
             + '<line x1="12" y1="3" x2="15" y2="21"/>'
             + '</svg>',
     };
-    const iconFor = (res) => RES_SVG[res]
-        || `<span class="res-glyph res-fallback">`
-            + (RES_ABBREV[res] || (res || '?').slice(0, 2)) + '</span>';
+    // Per-resource emoji map. v0.27.0 swapped these for inline SVG
+    // glyphs but Noah preferred emojis on the default HUD — they
+    // read at a glance and don't have the line-art "diagram" feel.
+    // The non-default styles (terminal/newspaper/HUD/minimal) use
+    // their own renderers and pick the right glyph for their look.
+    const RES_EMOJI = {
+        WOOD: '🌲', BRICK: '🧱', SHEEP: '🐑',
+        WHEAT: '🌾', ORE: '⛰️',
+    };
+    const iconFor = (res) => {
+        const style = (typeof document !== 'undefined' && document.documentElement)
+            ? document.documentElement.getAttribute('data-style')
+            : null;
+        // Default + minimal-card style use emojis (Noah's pref).
+        // Terminal / newspaper / HUD use the SVG line-art that
+        // matches their aesthetic.
+        const useEmoji = (!style || style === '1' || style === '5');
+        if (useEmoji && RES_EMOJI[res]) return RES_EMOJI[res];
+        return RES_SVG[res]
+            || `<span class="res-glyph res-fallback">`
+                + (RES_ABBREV[res] || (res || '?').slice(0, 2)) + '</span>';
+    };
 
     // Pick the best available pill color. Prefer the CSS color the
     // chat-pill shipped (true colonist UI color, including premium
@@ -854,7 +873,23 @@
             .join('');
     }
 
+    // Dispatcher — picks the right renderer for the current style.
+    // The default style (1, or unset) keeps the dashboard layout.
+    // Styles 2-5 swap to entirely different DOM trees, not just CSS
+    // restyles. Each alt renderer takes (ui, snap, live) and writes
+    // into ui.content.innerHTML; the histogram/eval/move-quality
+    // hosts are stashed under ui.histHost / .evalHost / .mqHost and
+    // each renderer decides whether to surface them.
     function renderOverlay(ui, snap, live) {
+        const style = document.documentElement.getAttribute('data-style');
+        if (style === '2') return renderTerminal(ui, snap, live);
+        if (style === '3') return renderNewspaper(ui, snap, live);
+        if (style === '4') return renderTacticalHUD(ui, snap, live);
+        if (style === '5') return renderMinimal(ui, snap, live);
+        return renderDefault(ui, snap, live);
+    }
+
+    function renderDefault(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
         if (!snap) {
             ui.content.innerHTML =
@@ -2076,6 +2111,278 @@
     // Live roll histogram. Mutates bar heights + class flags on the
     // pre-built persistent column DOM so CSS height transitions fire
     // when a roll lands. Hidden until the first roll arrives.
+    // ============================================================
+    // ALTERNATE RENDERERS
+    //
+    // Each takes the same `snap` data and produces an entirely
+    // different DOM presentation. Removable as a unit by deleting
+    // these four functions and reverting renderOverlay to call
+    // renderDefault directly.
+    // ============================================================
+
+    function _hideExtras(ui) {
+        // Helper — alt renderers don't use the persistent histogram /
+        // eval-graph / move-quality hosts. Keep them hidden so the
+        // dashboard chrome doesn't bleed through.
+        if (ui.histHost) ui.histHost.classList.add('hidden');
+        if (ui.evalHost) ui.evalHost.classList.add('hidden');
+        if (ui.mqHost) ui.mqHost.classList.add('hidden');
+    }
+
+    function _liveDot(ui, live) {
+        ui.dot.classList.toggle('live', !!live);
+    }
+
+    function _glyph(res) { return iconFor(res); }
+
+    // ---- STYLE 2: TERMINAL LOG ---------------------------------
+    // Single scrolling text column. Each row is a one-line entry.
+    // No cards, no banners, no structured opp panel — just a CLI
+    // transcript that grows downward. Newest entries at the bottom,
+    // a fixed > prompt at the top showing self status.
+    function renderTerminal(ui, snap, live) {
+        _liveDot(ui, live); _hideExtras(ui);
+        if (!snap || !snap.game_started) {
+            ui.content.innerHTML = '<pre class="term">$ waiting for game…</pre>';
+            return;
+        }
+        const me = snap.self || {};
+        const lines = [];
+        lines.push(`$ cataanbot · vp=${me.vp || 0}/${snap.vp_target || 10} · cards=${me.cards || 0}`);
+        lines.push('─'.repeat(48));
+        // Top rec — the action line.
+        const topRec = (snap.recommendations || []).find(r => r.when === 'now');
+        if (topRec) {
+            const det = topRec.detail || '';
+            const score = (topRec.score != null) ? ` [${topRec.score}]` : '';
+            lines.push(`> ${(topRec.kind || '').toUpperCase()}${score}  ${det}`);
+        }
+        // Active banners — one line each, prefixed by a tag.
+        if (snap.winning_move && snap.winning_move.message) {
+            lines.push(`!! WIN  ${snap.winning_move.message}`);
+        }
+        if (snap.robber_on_me) {
+            const rom = snap.robber_on_me;
+            const cpr = (rom.expected_per_roll || 0).toFixed(2);
+            lines.push(`!! ROBBER  on your ${(rom.resource || '?').toLowerCase()}${rom.number || ''} · ~${cpr}/roll lost`);
+        }
+        if (snap.knight_hint && snap.knight_hint.have > 0) {
+            const v = snap.knight_hint.should_play ? 'play' : 'hold';
+            lines.push(`?? KNIGHT ${v}  ${snap.knight_hint.reason || ''}`);
+        }
+        if (snap.discard_hint && snap.discard_hint.need > 0) {
+            lines.push(`!! DISCARD ${snap.discard_hint.need} cards`);
+        }
+        if (snap.incoming_trade) {
+            const t = snap.incoming_trade;
+            const verdict = (t.verdict || '?').toUpperCase();
+            lines.push(`?? TRADE ${verdict}  from ${t.offerer || '?'}`);
+        }
+        // Opps — one line each.
+        for (const o of (snap.opps || [])) {
+            const flag = o.dev_stash_risk ? ' ⚠' : '';
+            lines.push(`@ ${(o.username || '?').padEnd(12)} ${String(o.vp).padStart(2)}vp  ${String(o.cards).padStart(2)}c${flag}`);
+        }
+        // Recent rolls.
+        const rolls = snap.roll_history || [];
+        if (rolls.length) {
+            lines.push('');
+            lines.push('rolls: ' + rolls.slice(-8).map(r => r.total).join(' '));
+        }
+        // Histogram as a sparkline.
+        const hg = snap.roll_histogram;
+        if (hg && snap.total_rolls > 0) {
+            const max = Math.max(...Object.values(hg));
+            if (max > 0) {
+                const bars = '▁▂▃▄▅▆▇█';
+                const spark = [2,3,4,5,6,7,8,9,10,11,12]
+                    .map(n => bars[Math.min(7, Math.floor((hg[n] || 0) / max * 7))])
+                    .join('');
+                lines.push(`hist:  ${spark}  (n=${snap.total_rolls})`);
+            }
+        }
+        const html = lines.map(l => escapeHtml(l)).join('\n');
+        ui.content.innerHTML = `<pre class="term">${html}</pre>`;
+    }
+
+    // ---- STYLE 3: NEWSPAPER ------------------------------------
+    // Front-page layout. One huge serif headline (top rec or
+    // winning move). Below: a 2-column body with leaderboard on the
+    // left and recent activity on the right. Reads like the morning
+    // paper — calm, consolidated, headline-led.
+    function renderNewspaper(ui, snap, live) {
+        _liveDot(ui, live); _hideExtras(ui);
+        if (!snap || !snap.game_started) {
+            ui.content.innerHTML = '<div class="np"><div class="np-headline">Awaiting Kickoff</div></div>';
+            return;
+        }
+        const me = snap.self || {};
+        const top = (snap.recommendations || []).find(r => r.when === 'now');
+        let headline = 'Pause and Reflect';
+        let kicker = '';
+        if (snap.winning_move && snap.winning_move.message) {
+            headline = 'WIN THIS TURN';
+            kicker = snap.winning_move.message;
+        } else if (top) {
+            headline = (top.kind || '').toUpperCase().replace(/_/g, ' ');
+            kicker = top.detail || '';
+        }
+        const opps = (snap.opps || []).slice().sort((a, b) => (b.vp || 0) - (a.vp || 0));
+        const oppRows = opps.map((o, i) => {
+            const place = ['I', 'II', 'III', 'IV'][i] || (i + 1);
+            const flag = o.dev_stash_risk ? ' †' : '';
+            return `<tr><td class="np-place">${place}</td>`
+                + `<td class="np-name">${escapeHtml(o.username || '?')}</td>`
+                + `<td class="np-vp">${o.vp || 0}</td>`
+                + `<td class="np-cards">${o.cards || 0}c${flag}</td></tr>`;
+        }).join('');
+        const myRolls = (snap.roll_history || []).slice(-5).reverse();
+        const rollRows = myRolls.map(r => {
+            const tag = r.is_you ? 'YOU' : (r.color || '?').slice(0, 3).toUpperCase();
+            return `<tr><td class="np-roll-tag">${escapeHtml(tag)}</td>`
+                + `<td class="np-roll-n">${r.total}</td></tr>`;
+        }).join('') || '<tr><td colspan="2" class="np-empty">— no rolls yet —</td></tr>';
+        const dateline = `Game in progress · ${me.vp || 0} of ${snap.vp_target || 10} VP`;
+        ui.content.innerHTML = `
+<div class="np">
+  <div class="np-dateline">${escapeHtml(dateline)}</div>
+  <div class="np-headline">${escapeHtml(headline)}</div>
+  ${kicker ? `<div class="np-kicker">${escapeHtml(kicker)}</div>` : ''}
+  <div class="np-rule"></div>
+  <div class="np-cols">
+    <div class="np-col">
+      <div class="np-coltitle">Standings</div>
+      <table class="np-table">${oppRows || '<tr><td class="np-empty">—</td></tr>'}</table>
+    </div>
+    <div class="np-col">
+      <div class="np-coltitle">Recent Rolls</div>
+      <table class="np-table">${rollRows}</table>
+    </div>
+  </div>
+</div>`;
+    }
+
+    // ---- STYLE 4: TACTICAL HUD ---------------------------------
+    // Sci-fi mech-warrior overlay. Per-opp horizontal stat bars
+    // (VP gauge filling toward the win threshold). Top: self
+    // ammo-style counter. Below opps: the top rec rendered as a
+    // bracketed callout. No card structure — pure stats grid.
+    function renderTacticalHUD(ui, snap, live) {
+        _liveDot(ui, live); _hideExtras(ui);
+        if (!snap || !snap.game_started) {
+            ui.content.innerHTML = '<div class="hud"><div class="hud-status">[ STANDBY ]</div></div>';
+            return;
+        }
+        const me = snap.self || {};
+        const target = snap.vp_target || 10;
+        const myVp = me.vp || 0;
+        const myPct = Math.min(100, (myVp / target) * 100);
+        // Self ammo readout — VP / cards / hand-state at top.
+        const ammo = `<div class="hud-ammo">
+  <div class="hud-ammo-row"><span class="hud-key">VP</span><span class="hud-val">${myVp}/${target}</span></div>
+  <div class="hud-ammo-row"><span class="hud-key">CARDS</span><span class="hud-val">${me.cards || 0}</span></div>
+  <div class="hud-ammo-row"><span class="hud-key">DEV</span><span class="hud-val">${snap.dev_cards_held ?? 0}</span></div>
+  <div class="hud-bar"><div class="hud-bar-fill" style="width:${myPct.toFixed(1)}%"></div></div>
+</div>`;
+        // Opp stat bars — each opp gets a horizontal VP gauge
+        // colored by their CSS color, plus card count.
+        const opps = (snap.opps || []).map(o => {
+            const pct = Math.min(100, ((o.vp || 0) / target) * 100);
+            const bg = o.color_css || '#888';
+            const danger = (o.vp || 0) >= (target - 2) ? ' danger' : '';
+            return `<div class="hud-opp${danger}">
+  <div class="hud-opp-head">
+    <span class="hud-opp-name">${escapeHtml((o.username || '?').toUpperCase())}</span>
+    <span class="hud-opp-vp">${o.vp || 0}/${target}</span>
+    <span class="hud-opp-cards">${o.cards || 0}c</span>
+  </div>
+  <div class="hud-bar"><div class="hud-bar-fill" style="width:${pct.toFixed(1)}%;background:${bg}"></div></div>
+</div>`;
+        }).join('');
+        // Top rec — bracketed callout.
+        const topRec = (snap.recommendations || []).find(r => r.when === 'now');
+        const recBox = topRec
+            ? `<div class="hud-rec">
+  <div class="hud-rec-bracket">[ TARGET ]</div>
+  <div class="hud-rec-kind">${escapeHtml((topRec.kind || '').toUpperCase().replace(/_/g, ' '))}</div>
+  <div class="hud-rec-detail">${escapeHtml(topRec.detail || '')}</div>
+  ${topRec.score != null ? `<div class="hud-rec-score">SCORE ${topRec.score}</div>` : ''}
+</div>`
+            : '';
+        // Winning-move klaxon.
+        const klaxon = (snap.winning_move && snap.winning_move.message)
+            ? `<div class="hud-klaxon">⚠ ${escapeHtml(snap.winning_move.message)}</div>`
+            : '';
+        ui.content.innerHTML = `<div class="hud">${klaxon}${ammo}<div class="hud-opps">${opps}</div>${recBox}</div>`;
+    }
+
+    // ---- STYLE 5: MINIMAL TILE ---------------------------------
+    // One thing on screen: the next move. If there's an urgent
+    // banner (winning move, robber, discard) it takes the whole
+    // tile. Otherwise the top rec fills it. Below: a tiny strip
+    // with VP standings, and that's everything.
+    function renderMinimal(ui, snap, live) {
+        _liveDot(ui, live); _hideExtras(ui);
+        if (!snap || !snap.game_started) {
+            ui.content.innerHTML = '<div class="mn-tile"><div class="mn-label">waiting</div></div>';
+            return;
+        }
+        const me = snap.self || {};
+        let label = 'Next move';
+        let primary = '—';
+        let detail = '';
+        let cls = '';
+        if (snap.winning_move && snap.winning_move.message) {
+            label = 'Win this turn';
+            primary = 'WIN';
+            detail = snap.winning_move.message;
+            cls = 'mn-win';
+        } else if (snap.discard_hint && snap.discard_hint.need > 0) {
+            label = 'Discard';
+            primary = `${snap.discard_hint.need} cards`;
+            detail = 'pre-roll · pick lowest-utility';
+            cls = 'mn-alert';
+        } else if (snap.robber_on_me) {
+            const rom = snap.robber_on_me;
+            label = 'Robber on you';
+            primary = `${(rom.resource || '?').toLowerCase()}${rom.number || ''}`;
+            detail = `~${(rom.expected_per_roll || 0).toFixed(2)}/roll lost · play knight or trade out`;
+            cls = 'mn-alert';
+        } else {
+            const top = (snap.recommendations || []).find(r => r.when === 'now');
+            if (top) {
+                label = 'Next move';
+                primary = (top.kind || '').toUpperCase().replace(/_/g, ' ');
+                detail = top.detail || '';
+                if (top.score != null) detail += `  ·  ${top.score} score`;
+            } else {
+                label = 'Hold';
+                primary = '—';
+                detail = 'wait for resources or a trade';
+            }
+        }
+        const target = snap.vp_target || 10;
+        const myVp = me.vp || 0;
+        const standings = (snap.opps || []).slice()
+            .sort((a, b) => (b.vp || 0) - (a.vp || 0))
+            .map(o => {
+                const bg = o.color_css || '#888';
+                return `<span class="mn-st-row"><span class="mn-dot" style="background:${bg}"></span>`
+                    + `<span class="mn-st-name">${escapeHtml(o.username || '?')}</span>`
+                    + `<span class="mn-st-vp">${o.vp || 0}</span></span>`;
+            }).join('');
+        ui.content.innerHTML = `
+<div class="mn-tile ${cls}">
+  <div class="mn-label">${escapeHtml(label)}</div>
+  <div class="mn-primary">${escapeHtml(primary)}</div>
+  ${detail ? `<div class="mn-detail">${escapeHtml(detail)}</div>` : ''}
+</div>
+<div class="mn-foot">
+  <span class="mn-self">you · ${myVp}/${target}</span>
+  <span class="mn-standings">${standings}</span>
+</div>`;
+    }
+
     // 36-roll baseline weights — number of dice combos that produce
     // each total. 7 is excluded because the bar wraps that case in CSS;
     // the column's still rendered for hot-7 alarming, but the expected

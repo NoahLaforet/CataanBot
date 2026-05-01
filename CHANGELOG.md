@@ -4,6 +4,46 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.28.2 — 2026-05-01
+
+Major HUD overhaul + critical bridge fixes after Noah's session
+feedback ("the styles are still the same UI", "wrong road
+predictions", "couldn't start game"):
+
+- **Each non-default style is now a fully different RENDERER**, not
+  just a CSS reskin. The dispatcher in renderOverlay swaps the
+  entire DOM tree based on data-style:
+  - **Style 1 (default)** — current dashboard, restored to emojis
+  - **Style 2 terminal** — single scrolling text log, sparkline
+    histogram, opp lines as `@ name vp/cards`, no cards/banners
+  - **Style 3 newspaper** — front-page layout with a serif headline
+    + 2-column body (standings on left, recent rolls on right)
+  - **Style 4 tactical HUD** — stat-bar grid: self ammo readout
+    with VP gauge at top, per-opp horizontal VP bars colored by
+    their CSS color, top rec as a bracketed `[ TARGET ]` callout,
+    pulsing klaxon for winning move
+  - **Style 5 minimal tile** — one giant primary number on a single
+    tile (Win, Discard, Robber, or Next move), tiny VP standings
+    strip below; nothing else
+- **Default HUD reverts to emojis.** The v0.27.0 SVG glyphs felt
+  diagrammatic; emojis read at a glance. Non-default styles still
+  use SVG glyphs when their aesthetic suits.
+- **Fixed: opening-road follow-up recommended an edge I already
+  owned.** The opening-road logic skipped opp-owned edges but not
+  self-owned ones. Catan rejects double-roads, so the click failed
+  in colonist. Now tracks `my_edges` alongside `opp_edges`.
+- **Fixed: bridge crash on malformed type=4 frames.** Colonist
+  sometimes ships type=4 (GameStart) without a usable gameState
+  (auth handshakes, reconnect acks). LiveSession.from_game_start
+  raised LiveSessionError, the bridge logged "decode error" and
+  left the bot half-booted. Now silent no-op on malformed frames.
+- **Fixed: tilesToHtml ReferenceError.** Helper was scoped inside
+  the recs-flow if-block but called from the dev-card-hint
+  placement section outside that scope. Hoisted to module scope.
+- **Fixed: more SVG-rendering-as-text bugs.** The "1 brick from
+  settlement" near-miss banner had the same escapeHtml(svg) bug
+  pattern; same for the userscript fallback path.
+
 ## v0.28.1 — 2026-05-01
 
 Critical bugfix + style overhaul after Noah's mid-session feedback:

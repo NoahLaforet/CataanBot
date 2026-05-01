@@ -2842,3 +2842,293 @@ html[data-style="5"] .panel .monopoly-hint {
   background: var(--bg-1) !important;
   padding: 12px 14px !important;
 }
+
+/* ============================================================
+   STYLE-VARIANT RENDERER STYLES — these target the alternate
+   DOM trees produced by renderTerminal / renderNewspaper /
+   renderTacticalHUD / renderMinimal in panel.js. The dispatcher
+   swaps the entire #content innerHTML so each style draws its
+   own DOM, not just CSS reskins of the default tree.
+   ============================================================ */
+
+/* Style 2 — Terminal */
+html[data-style="2"] .panel .term {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pos);
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Style 3 — Newspaper */
+html[data-style="3"] .panel .np {
+  padding: 6px 4px 12px;
+  font-family: 'Charter', 'Georgia', 'Times New Roman', serif;
+  color: var(--fg);
+}
+html[data-style="3"] .panel .np-dateline {
+  font-size: 11px;
+  font-style: italic;
+  text-align: center;
+  color: var(--fg-mute);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+html[data-style="3"] .panel .np-headline {
+  font-size: 28px;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  margin-bottom: 4px;
+  font-style: italic;
+}
+html[data-style="3"] .panel .np-kicker {
+  font-size: 14px;
+  text-align: center;
+  font-style: italic;
+  color: var(--fg-mute);
+  margin-bottom: 12px;
+}
+html[data-style="3"] .panel .np-rule {
+  border-top: 3px double var(--line-strong);
+  margin: 10px 0;
+}
+html[data-style="3"] .panel .np-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+html[data-style="3"] .panel .np-coltitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  text-align: center;
+  font-weight: 700;
+}
+html[data-style="3"] .panel .np-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: oldstyle-nums tabular-nums;
+}
+html[data-style="3"] .panel .np-table td {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+html[data-style="3"] .panel .np-place {
+  font-weight: 700;
+  width: 24px;
+  font-style: italic;
+}
+html[data-style="3"] .panel .np-name { width: auto; }
+html[data-style="3"] .panel .np-vp {
+  text-align: right;
+  width: 28px;
+  font-weight: 700;
+}
+html[data-style="3"] .panel .np-cards {
+  text-align: right;
+  width: 36px;
+  color: var(--fg-mute);
+}
+html[data-style="3"] .panel .np-roll-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+}
+html[data-style="3"] .panel .np-roll-n {
+  text-align: right;
+  font-weight: 700;
+  font-size: 16px;
+}
+html[data-style="3"] .panel .np-empty {
+  color: var(--fg-mute);
+  font-style: italic;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* Style 4 — Tactical HUD */
+html[data-style="4"] .panel .hud {
+  padding: 4px 4px 10px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+html[data-style="4"] .panel .hud-status {
+  text-align: center;
+  letter-spacing: 0.5em;
+  color: var(--pos);
+  font-size: 14px;
+  padding: 30px 0;
+}
+html[data-style="4"] .panel .hud-klaxon {
+  background: var(--alert);
+  color: #fff;
+  text-align: center;
+  padding: 8px;
+  margin-bottom: 12px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  animation: hudPulse 1.2s infinite alternate;
+}
+@keyframes hudPulse {
+  from { box-shadow: 0 0 0 rgba(255, 62, 138, 0); }
+  to   { box-shadow: 0 0 18px rgba(255, 62, 138, 0.8); }
+}
+html[data-style="4"] .panel .hud-ammo {
+  border: 1px solid var(--line-strong);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  background: rgba(0, 0, 0, 0.30);
+}
+html[data-style="4"] .panel .hud-ammo-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  letter-spacing: 0.10em;
+  color: var(--fg-mute);
+}
+html[data-style="4"] .panel .hud-ammo-row .hud-val {
+  color: var(--pos);
+  font-weight: 700;
+}
+html[data-style="4"] .panel .hud-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  margin-top: 6px;
+  border: 1px solid var(--line);
+}
+html[data-style="4"] .panel .hud-bar-fill {
+  height: 100%;
+  background: var(--pos);
+  transition: width 0.3s;
+}
+html[data-style="4"] .panel .hud-opps { display: flex; flex-direction: column; gap: 8px; }
+html[data-style="4"] .panel .hud-opp {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.20);
+}
+html[data-style="4"] .panel .hud-opp.danger {
+  border-left-color: var(--alert);
+  box-shadow: 0 0 10px rgba(255, 62, 138, 0.30);
+}
+html[data-style="4"] .panel .hud-opp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+html[data-style="4"] .panel .hud-opp-name { flex: 1; font-weight: 700; }
+html[data-style="4"] .panel .hud-opp-vp { color: var(--pos); font-weight: 700; }
+html[data-style="4"] .panel .hud-opp-cards { color: var(--fg-mute); }
+html[data-style="4"] .panel .hud-rec {
+  margin-top: 14px;
+  border: 1px solid var(--pos);
+  padding: 10px 12px;
+  background: rgba(0, 245, 212, 0.05);
+  position: relative;
+}
+html[data-style="4"] .panel .hud-rec-bracket {
+  font-size: 10px;
+  color: var(--pos);
+  letter-spacing: 0.30em;
+  margin-bottom: 4px;
+}
+html[data-style="4"] .panel .hud-rec-kind {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+}
+html[data-style="4"] .panel .hud-rec-detail {
+  font-size: 12px;
+  color: var(--fg-mute);
+  margin-top: 4px;
+}
+html[data-style="4"] .panel .hud-rec-score {
+  font-size: 10px;
+  color: var(--pos);
+  margin-top: 6px;
+  letter-spacing: 0.18em;
+}
+
+/* Style 5 — Minimal Tile */
+html[data-style="5"] .panel .mn-tile {
+  padding: 28px 22px;
+  text-align: center;
+  background: var(--bg-1);
+  border-radius: 8px;
+  margin: 8px 8px 12px;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+html[data-style="5"] .panel .mn-tile.mn-win {
+  background: var(--pos);
+  color: #fff;
+}
+html[data-style="5"] .panel .mn-tile.mn-alert {
+  background: var(--alert);
+  color: #fff;
+}
+html[data-style="5"] .panel .mn-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.20em;
+  font-weight: 600;
+  opacity: 0.6;
+  margin-bottom: 12px;
+}
+html[data-style="5"] .panel .mn-primary {
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+html[data-style="5"] .panel .mn-detail {
+  font-size: 14px;
+  margin-top: 12px;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+html[data-style="5"] .panel .mn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--fg-mute);
+}
+html[data-style="5"] .panel .mn-self {
+  font-weight: 600;
+}
+html[data-style="5"] .panel .mn-standings {
+  display: flex;
+  gap: 10px;
+}
+html[data-style="5"] .panel .mn-st-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+html[data-style="5"] .panel .mn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+html[data-style="5"] .panel .mn-st-name { color: var(--fg-mute); }
+html[data-style="5"] .panel .mn-st-vp { font-weight: 600; color: var(--fg); }
