@@ -27,6 +27,12 @@ playful HUD-style toggle:
   colonist doesn't always emit. Now also parses tradeState.activeOffers
   from the WS diff so offers sent through colonist's UI button alone
   still trigger the banner.
+- **VP target auto-detected from colonist's gameSettings.** Bot kept
+  VP_TARGET=10 internally even when colonist was running a 15-VP game,
+  so every endgame heuristic (close_to_win, leader_threat,
+  win_proximity, recommender bias) fired at the wrong threshold. Now
+  set_vp_target / set_discard_limit pick up colonist's real rules on
+  GameStart. Logs the auto-detect to the bridge stdout for visibility.
 - **5 toggleable HUD styles.** New "style" dropdown in the settings
   drawer cycles between: 1 slate dashboard (default), 2 terminal/CRT,
   3 newspaper/print, 4 cyberpunk neon, 5 minimal light. Each style
