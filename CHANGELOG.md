@@ -4,6 +4,33 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.28.1 — 2026-05-01
+
+Critical bugfix + style overhaul after Noah's mid-session feedback:
+
+- **Fixed SVG glyphs rendering as raw markup text.** Trade banners,
+  robber-on-me, discard hint, and seven-prep all wrapped strings
+  containing inline SVG glyphs in `escapeHtml(...)`, which turned
+  the icons into literal `<svg class="res-glyph res-wood" viewBox=
+  "0 0 24 24" ...>` text on screen. Visible in Noah's 2026-04-30
+  screenshots; latent since v0.27.0 (when SVG replaced emojis), and
+  the recent WS-side trade-offer fix made the banners fire often
+  enough for Noah to actually see it.
+- **5 HUD styles rebuilt as truly different layouts** — not just
+  color/font reskins. Each style has distinct typography, density,
+  decorative chrome, and structural treatment of cards/banners:
+  - **1 operations console** — current dashboard (slate, dense,
+    Inter)
+  - **2 ASCII terminal** — pure black, JetBrains Mono, lowercase
+    `$ ` prompt, dashed dividers, `> `/`[#] ` row prefixes
+  - **3 broadsheet** — cream parchment, centered Charter masthead,
+    double-rule dividers, oldstyle figures
+  - **4 tactical HUD** — scan-line gradient bg, clipped polygon
+    corners on opp cards, neon glow on top rec + magenta-tinted
+    banners, JBM uppercase
+  - **5 field notes** — pure white, generous padding (Apple Notes
+    style), big confident VP numerals, hairline rules
+
 ## v0.28.0 — 2026-04-30
 
 Mid-game bug fixes from Noah's 2026-04-30 ToucherOfKid game, plus a

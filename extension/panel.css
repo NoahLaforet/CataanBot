@@ -2341,31 +2341,46 @@ html, body, .panel {
 }
 
 /* ============================================================
-   STYLE VARIANTS — toggleable via [data-style] on <html>.
-   Style 1 is the default look (no override needed). Styles 2-5
-   override the CSS custom properties defined on .panel. Pure
-   cosmetic — game logic, recs, banners, data unchanged.
+   STYLE VARIANTS — five entirely different layouts/UI types.
+   Style 1 = default (no override). Styles 2-5 reach into
+   layout, typography, spacing, decorative chrome — not just
+   colors. Each is meant to feel like a different app type:
 
-   Removal: delete this block, the <select id="style"> in
-   panel.html, and the bindStyleSelector() block in panel.js.
+     1. operations console (default — current dashboard)
+     2. ascii terminal      (CLI transcript, mono, lines)
+     3. broadsheet          (newspaper, serif, masthead)
+     4. tactical HUD        (sci-fi, brackets, scan-lines)
+     5. field notes         (Apple Notes minimal, big type)
+
+   Pure cosmetic. Game logic, recs, banners, data unchanged.
+
+   Removal: drop this block from panel.css, the
+   <select id="style"> from panel.html, and the
+   bindStyleSelector() function from panel.js.
    ============================================================ */
 
-/* Style 2 — Terminal / CRT
-   Deep black, electric green, JetBrains Mono. No shadows, hard
-   1px borders, no rounded corners. Old-school monitor feel. */
+
+/* ============================================================
+   STYLE 2 — ASCII TERMINAL
+   80-column CLI transcript. Black bg, electric green text,
+   monospace everywhere, no rounded chrome. Header replaced
+   with a shell prompt. Section breaks rendered as ASCII
+   rules ── ── ──. Density is high; line-height tight.
+   ============================================================ */
+
 html[data-style="2"] .panel {
   --bg-0: #050a05;
   --bg-1: #0a1408;
   --bg-2: #0d1c0a;
   --bg-3: #122a0d;
   --line:        rgba(74, 222, 128, 0.10);
-  --line-strong: rgba(74, 222, 128, 0.25);
-  --fg:       #c5f5b8;
+  --line-strong: rgba(74, 222, 128, 0.28);
+  --fg:       #c8f5ba;
   --fg-mute:  #6cc762;
   --fg-dim:   #3a8033;
   --fg-label: #4a9a3f;
   --pos:    #5dff8a;
-  --alert:  #ff5d5d;
+  --alert:  #ff6b6b;
   --watch:  #ffe566;
   --warn:   #6cc762;
   --info:   #6cc762;
@@ -2375,274 +2390,455 @@ html[data-style="2"] .panel {
   --radius-lg: 0;
   --font: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
-  background: var(--bg-0);
-  border: 1px solid var(--line-strong);
-  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.06) inset !important;
+  background: var(--bg-0) !important;
+  border: 1px solid var(--line-strong) !important;
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.05) inset !important;
+  line-height: 1.3 !important;
 }
-html[data-style="2"] .panel .header { background: var(--bg-1); }
-html[data-style="2"] .panel .title { letter-spacing: 0.32em; color: var(--pos); }
-html[data-style="2"] .panel .dot.live { box-shadow: 0 0 8px var(--pos); }
+html[data-style="2"] .panel .header {
+  background: var(--bg-0) !important;
+  border-bottom: 1px solid var(--line-strong);
+  padding: 4px 10px !important;
+  font-family: var(--font-mono);
+}
+html[data-style="2"] .panel .title {
+  color: var(--pos) !important;
+  letter-spacing: 0 !important;
+  text-transform: lowercase !important;
+  font-weight: 400 !important;
+  font-size: calc(13px * var(--font-scale)) !important;
+}
+html[data-style="2"] .panel .title::before {
+  content: "$ ";
+  opacity: 0.5;
+}
+html[data-style="2"] .panel .body {
+  padding: 8px 10px 12px !important;
+  font-family: var(--font-mono);
+  font-size: calc(13px * var(--font-scale));
+}
+html[data-style="2"] .panel .dot { border-radius: 0 !important; width: 8px !important; height: 8px !important; }
+html[data-style="2"] .panel .opp,
+html[data-style="2"] .panel .rec {
+  border-left: 1px dashed var(--line-strong) !important;
+  border-top: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1px dashed var(--line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 4px 8px 4px 12px !important;
+  position: relative;
+}
+html[data-style="2"] .panel .rec::before {
+  content: "> ";
+  color: var(--pos);
+  position: absolute;
+  left: 0;
+  top: 4px;
+}
+html[data-style="2"] .panel .opp::before {
+  content: "[#] ";
+  color: var(--fg-dim);
+  position: absolute;
+  left: 0;
+  top: 4px;
+  font-size: 11px;
+}
+html[data-style="2"] .panel .color-pill {
+  border-radius: 0 !important;
+  font-family: var(--font-mono) !important;
+  padding: 0 4px !important;
+}
+html[data-style="2"] .panel .rec .score,
+html[data-style="2"] .panel .rec .ev {
+  border-radius: 0 !important;
+  font-family: var(--font-mono) !important;
+  background: transparent !important;
+  border: 1px solid var(--line) !important;
+  padding: 0 3px !important;
+}
+html[data-style="2"] .panel .opp .opp-vp,
+html[data-style="2"] .panel .opp .opp-cards,
+html[data-style="2"] .panel .opp .opp-hand,
+html[data-style="2"] .panel .you .opp-vp,
+html[data-style="2"] .panel .you .you-vp {
+  font-family: var(--font-mono) !important;
+}
+html[data-style="2"] .panel .winning-move,
+html[data-style="2"] .panel .gprog,
+html[data-style="2"] .panel .robber-on-me,
+html[data-style="2"] .panel .discard-hint,
+html[data-style="2"] .panel .seven-prep,
+html[data-style="2"] .panel .trade-offer,
+html[data-style="2"] .panel .knight-hint,
+html[data-style="2"] .panel .monopoly-hint {
+  border-radius: 0 !important;
+  border-left: 2px solid var(--watch) !important;
+  background: var(--bg-1) !important;
+  font-family: var(--font-mono) !important;
+}
 
-/* Style 3 — Newspaper / Print
-   Cream parchment, dark ink, serif headlines, hairline rules.
-   For when you want to read the game like the morning paper. */
+
+/* ============================================================
+   STYLE 3 — BROADSHEET
+   Editorial newspaper column. Cream parchment, serif headlines
+   in Charter/Georgia, oldstyle figures for stats. Header is a
+   tall masthead with a centered all-caps title and a thin
+   double rule. Cards become text columns with hairline
+   horizontal rules instead of borders.
+   ============================================================ */
+
 html[data-style="3"] .panel {
-  --bg-0: #f5efde;
-  --bg-1: #ebe3cc;
-  --bg-2: #e0d6ba;
-  --bg-3: #d4c8a4;
-  --line:        rgba(40, 30, 18, 0.15);
-  --line-strong: rgba(40, 30, 18, 0.30);
-  --fg:       #1c1812;
+  --bg-0: #f4ecd8;
+  --bg-1: #ede4c8;
+  --bg-2: #e2d6b0;
+  --bg-3: #d4c697;
+  --line:        rgba(40, 30, 18, 0.18);
+  --line-strong: rgba(40, 30, 18, 0.45);
+  --fg:       #1a1610;
   --fg-mute:  #4a4030;
   --fg-dim:   #6e624a;
-  --fg-label: #6e624a;
+  --fg-label: #5a4f3d;
   --pos:    #2d6a3f;
-  --alert:  #a83232;
-  --watch:  #b87d18;
+  --alert:  #a5302d;
+  --watch:  #b87918;
   --warn:   #6e624a;
-  --info:   #5b6a8c;
-  --accent: #5b6a8c;
+  --info:   #4a5b8a;
+  --accent: #5a3a72;
   --radius-sm: 0;
   --radius:    0;
   --radius-lg: 0;
-  --font: Georgia, 'Times New Roman', serif;
+  --font: 'Charter', 'Georgia', 'Times New Roman', serif;
   --font-mono: 'Courier New', ui-monospace, monospace;
-  background: var(--bg-0);
-  border: 2px solid var(--line-strong);
-  box-shadow: none !important;
+  background: var(--bg-0) !important;
+  border: 1px solid var(--line-strong) !important;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.08), 0 8px 30px rgba(60, 40, 0, 0.10) !important;
+  line-height: 1.5 !important;
 }
 html[data-style="3"] .panel .header {
-  background: var(--bg-0);
-  border-bottom: 2px solid var(--line-strong);
+  background: var(--bg-0) !important;
+  border-bottom: 3px double var(--line-strong) !important;
+  padding: 16px 20px 10px !important;
+  text-align: center;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+  font-family: var(--font);
 }
 html[data-style="3"] .panel .title {
-  font-weight: 900; letter-spacing: 0.05em;
-  text-transform: none; font-style: italic;
+  color: var(--fg) !important;
+  font-family: 'Charter', 'Georgia', serif !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  font-size: calc(20px * var(--font-scale)) !important;
+  flex: 1 0 100% !important;
+  text-align: center;
+  font-style: italic;
+}
+html[data-style="3"] .panel .title::before {
+  content: "❦ ";
+  font-style: normal;
+  color: var(--accent);
+}
+html[data-style="3"] .panel .title::after {
+  content: " ❦";
+  font-style: normal;
+  color: var(--accent);
+}
+html[data-style="3"] .panel .body {
+  padding: 14px 22px 22px !important;
+  font-family: var(--font);
+  font-size: calc(14px * var(--font-scale));
+  font-variant-numeric: oldstyle-nums tabular-nums;
+}
+html[data-style="3"] .panel .opp {
+  border: 0 !important;
+  border-bottom: 1px solid var(--line-strong) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 8px 0 !important;
+}
+html[data-style="3"] .panel .opp:last-child { border-bottom: 0 !important; }
+html[data-style="3"] .panel .rec {
+  border-radius: 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: transparent !important;
+  padding: 8px 0 !important;
+}
+html[data-style="3"] .panel .rec.top {
+  border-bottom: 3px double var(--line-strong) !important;
+  padding-bottom: 12px !important;
+}
+html[data-style="3"] .panel .color-pill {
+  border-radius: 0 !important;
+  font-weight: 700 !important;
+  font-family: var(--font) !important;
+}
+html[data-style="3"] .panel .opp .opp-vp,
+html[data-style="3"] .panel .opp .opp-cards,
+html[data-style="3"] .panel .opp .opp-hand,
+html[data-style="3"] .panel .you-vp {
+  font-family: var(--font) !important;
+  font-variant-numeric: oldstyle-nums tabular-nums !important;
+  font-weight: 700 !important;
+}
+html[data-style="3"] .panel .winning-move,
+html[data-style="3"] .panel .gprog,
+html[data-style="3"] .panel .robber-on-me,
+html[data-style="3"] .panel .discard-hint,
+html[data-style="3"] .panel .seven-prep,
+html[data-style="3"] .panel .trade-offer,
+html[data-style="3"] .panel .knight-hint,
+html[data-style="3"] .panel .monopoly-hint {
+  border-radius: 0 !important;
+  border: 0 !important;
+  border-top: 2px solid var(--line-strong) !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: transparent !important;
+  font-family: var(--font) !important;
+  padding: 8px 0 !important;
 }
 
-/* Style 4 — Cyberpunk Neon
-   Deep navy with magenta + cyan signals. Subtle glow on accents,
-   sharp clipped corners hint at the genre without going full
-   anime. */
+
+/* ============================================================
+   STYLE 4 — TACTICAL HUD
+   Sci-fi mech-warrior overlay. Deep navy bg, neon cyan +
+   magenta accents, scan-line texture, angular clipped
+   corners. Cards become bracketed callouts with corner ticks.
+   Header is a fat status bar with neon underline.
+   ============================================================ */
+
 html[data-style="4"] .panel {
-  --bg-0: #0b0420;
+  --bg-0: #0a0420;
   --bg-1: #110730;
   --bg-2: #170a40;
   --bg-3: #1f0e55;
-  --line:        rgba(255, 0, 200, 0.12);
-  --line-strong: rgba(0, 240, 255, 0.30);
-  --fg:       #f0e6ff;
-  --fg-mute:  #b89cd9;
-  --fg-dim:   #7860a8;
-  --fg-label: #9b7ec9;
+  --line:        rgba(0, 240, 255, 0.12);
+  --line-strong: rgba(0, 240, 255, 0.36);
+  --fg:       #e8dfff;
+  --fg-mute:  #a08bcc;
+  --fg-dim:   #6a5398;
+  --fg-label: #8c70bc;
   --pos:    #00f5d4;
-  --alert:  #ff3e88;
-  --watch:  #ffd43b;
-  --warn:   #b89cd9;
-  --info:   #6ce5ff;
+  --alert:  #ff3a8a;
+  --watch:  #ffe066;
+  --warn:   #a08bcc;
+  --info:   #4ae4ff;
   --accent: #ff3edc;
-  background: linear-gradient(180deg, var(--bg-0) 0%, #1a0635 100%);
-  border: 1px solid var(--line-strong);
+  --radius-sm: 0;
+  --radius:    0;
+  --radius-lg: 0;
+  --font: 'Orbitron', 'JetBrains Mono', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(0, 240, 255, 0.025) 3px,
+      rgba(0, 240, 255, 0.025) 4px
+    ),
+    linear-gradient(180deg, var(--bg-0) 0%, #1a0635 100%) !important;
+  border: 1px solid var(--line-strong) !important;
   box-shadow:
     0 0 0 1px rgba(0, 240, 255, 0.08) inset,
-    0 0 32px rgba(255, 0, 200, 0.18),
+    0 0 28px rgba(255, 0, 200, 0.16),
     0 12px 32px rgba(0, 0, 0, 0.7) !important;
 }
+html[data-style="4"] .panel .header {
+  background: rgba(0, 0, 0, 0.35) !important;
+  border-bottom: 1px solid var(--pos) !important;
+  padding: 8px 14px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 html[data-style="4"] .panel .title {
-  color: #00f5d4;
+  color: var(--pos) !important;
   text-shadow: 0 0 6px rgba(0, 245, 212, 0.6);
+  letter-spacing: 0.22em !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-weight: 700 !important;
 }
 html[data-style="4"] .panel .dot.live {
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent);
+  background: var(--accent) !important;
+  box-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent) !important;
+}
+html[data-style="4"] .panel .body {
+  padding: 14px 16px !important;
+  font-family: var(--font-mono);
+}
+html[data-style="4"] .panel .opp {
+  border: 1px solid rgba(0, 240, 255, 0.18) !important;
+  border-left: 3px solid var(--accent) !important;
+  background: linear-gradient(90deg,
+    rgba(255, 0, 200, 0.06) 0%,
+    rgba(0, 240, 255, 0.03) 50%,
+    transparent 100%) !important;
+  border-radius: 0 !important;
+  clip-path: polygon(
+    0 0,
+    calc(100% - 10px) 0,
+    100% 10px,
+    100% 100%,
+    10px 100%,
+    0 calc(100% - 10px)
+  );
+  padding: 8px 12px !important;
+}
+html[data-style="4"] .panel .opp.tracked    { border-left-color: var(--pos) !important; }
+html[data-style="4"] .panel .opp.hot-knight { border-left-color: var(--watch) !important; }
+html[data-style="4"] .panel .rec {
+  background: rgba(0, 0, 0, 0.25) !important;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 0 !important;
+  position: relative;
+}
+html[data-style="4"] .panel .rec.top {
+  border-left: 3px solid var(--pos) !important;
+  background: linear-gradient(90deg,
+    rgba(0, 245, 212, 0.10) 0%, transparent 80%) !important;
+  box-shadow: 0 0 14px rgba(0, 245, 212, 0.18) !important;
+}
+html[data-style="4"] .panel .rec.top .kind {
+  color: var(--pos) !important;
+}
+html[data-style="4"] .panel .color-pill {
+  border-radius: 0 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+}
+html[data-style="4"] .panel .opp .opp-vp,
+html[data-style="4"] .panel .opp .opp-cards,
+html[data-style="4"] .panel .opp .opp-hand,
+html[data-style="4"] .panel .you .you-vp {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+html[data-style="4"] .panel .winning-move,
+html[data-style="4"] .panel .gprog,
+html[data-style="4"] .panel .robber-on-me,
+html[data-style="4"] .panel .discard-hint,
+html[data-style="4"] .panel .seven-prep,
+html[data-style="4"] .panel .trade-offer,
+html[data-style="4"] .panel .knight-hint,
+html[data-style="4"] .panel .monopoly-hint {
+  border-radius: 0 !important;
+  border-left: 3px solid var(--accent) !important;
+  background: rgba(255, 62, 220, 0.08) !important;
+  box-shadow: 0 0 14px rgba(255, 62, 220, 0.15) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-/* Style 5 — Minimal Light
-   Pure white, dark text, plenty of whitespace, no flourishes.
-   For when you want the HUD to disappear and the data to lead. */
+
+/* ============================================================
+   STYLE 5 — FIELD NOTES
+   Apple-Notes / Things-style minimalism. Pure white bg,
+   refined sans-serif, generous whitespace. Numbers are
+   confident (large) but the chrome disappears. Color pills
+   become small filled dots.
+   ============================================================ */
+
 html[data-style="5"] .panel {
   --bg-0: #ffffff;
-  --bg-1: #f7f7f8;
-  --bg-2: #ededf0;
-  --bg-3: #e0e0e4;
-  --line:        rgba(0, 0, 0, 0.08);
-  --line-strong: rgba(0, 0, 0, 0.18);
+  --bg-1: #fafafa;
+  --bg-2: #f4f4f5;
+  --bg-3: #e7e7ea;
+  --line:        rgba(0, 0, 0, 0.06);
+  --line-strong: rgba(0, 0, 0, 0.12);
   --fg:       #18181b;
   --fg-mute:  #52525b;
-  --fg-dim:   #a1a1aa;
+  --fg-dim:   #9ca3af;
   --fg-label: #71717a;
   --pos:    #16a34a;
   --alert:  #dc2626;
   --watch:  #d97706;
   --warn:   #71717a;
   --info:   #2563eb;
-  --accent: #7c3aed;
-  --radius-sm: 2px;
-  --radius:    4px;
-  --radius-lg: 6px;
+  --accent: #6d28d9;
+  --radius-sm: 4px;
+  --radius:    8px;
+  --radius-lg: 10px;
   --font: 'Inter', -apple-system, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  background: var(--bg-0);
-  border: 1px solid var(--line-strong);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  background: var(--bg-0) !important;
+  border: 1px solid var(--line-strong) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+  line-height: 1.55 !important;
 }
 html[data-style="5"] .panel .header {
-  background: var(--bg-0);
-  border-bottom: 1px solid var(--line);
+  background: var(--bg-0) !important;
+  border-bottom: 1px solid var(--line) !important;
+  padding: 16px 20px !important;
 }
 html[data-style="5"] .panel .title {
-  color: var(--fg);
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  color: var(--fg) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  font-size: calc(15px * var(--font-scale)) !important;
 }
-
-/* Per-style density + layout tweaks (still pure cosmetic). These
-   touch padding, gaps, border radii, and minor decorative details
-   to make each style feel distinct beyond just a color swap. */
-
-/* Style 2 — denser, terminal-tight. */
-html[data-style="2"] .panel .header { padding: 6px 10px; }
-html[data-style="2"] .panel .body { padding: 8px 10px 14px; }
-html[data-style="2"] .panel .rec, html[data-style="2"] .panel .banner {
+html[data-style="5"] .panel .body {
+  padding: 18px 20px 24px !important;
+  gap: 12px;
+}
+html[data-style="5"] .panel .opp {
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
   border-radius: 0 !important;
+  background: transparent !important;
+  padding: 12px 0 !important;
 }
-html[data-style="2"] .panel .title::before {
-  content: "> ";
-  opacity: 0.7;
+html[data-style="5"] .panel .opp:last-child { border-bottom: 0 !important; }
+html[data-style="5"] .panel .opp .opp-vp {
+  font-size: calc(22px * var(--font-scale)) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
 }
-html[data-style="2"] .panel .dot { border-radius: 0; }
-
-/* Style 3 — generous, broadsheet. */
-html[data-style="3"] .panel { box-shadow: 0 1px 0 var(--line-strong) !important; }
-html[data-style="3"] .panel .header {
-  padding: 12px 16px;
-  border-bottom-width: 3px;
-  border-bottom-style: double;
+html[data-style="5"] .panel .opp .opp-vp .lbl {
+  font-size: calc(10px * var(--font-scale)) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  font-weight: 500;
+  color: var(--fg-dim) !important;
 }
-html[data-style="3"] .panel .body { padding: 14px 18px 22px; }
-html[data-style="3"] .panel .title::before {
-  content: "❦ ";
-  font-weight: normal;
-}
-html[data-style="3"] .panel .dot { border-radius: 50%; }
-
-/* Style 4 — neon corners and slight glow on banners. */
-html[data-style="4"] .panel .header {
-  border-bottom: 1px solid rgba(0, 240, 255, 0.20);
-}
-html[data-style="4"] .panel .rec.hero {
-  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.30) inset,
-              0 0 18px rgba(0, 245, 212, 0.15) !important;
-}
-html[data-style="4"] .panel .banner.alert,
-html[data-style="4"] .panel .winning-move {
-  box-shadow: 0 0 14px rgba(255, 62, 136, 0.25) !important;
-}
-
-/* Style 5 — airy, swiss-design margins. */
-html[data-style="5"] .panel .header { padding: 14px 16px; }
-html[data-style="5"] .panel .body { padding: 16px 18px 22px; }
-html[data-style="5"] .panel .rec { box-shadow: none !important; }
-html[data-style="5"] .panel .title { letter-spacing: 0.10em; }
-
-/* ============================================================
-   STYLE VARIANT BOLD-DIFFS — per-style structural / decorative
-   touches that go beyond color/font swaps. Each style now has a
-   distinct visual language at a glance.
-
-   Note: the v0.27.0 redesign uses many !important overrides on
-   .opp, .rec, etc. To beat them we need !important here too.
-   That's not great practice in general but we want each style
-   variant to fully take over the relevant chrome — when Noah
-   picks "newspaper", he should see newspaper, not a hybrid.
-
-   Removal: drop this block alongside the variants block above
-   and the bindStyleSelector() in panel.js.
-   ============================================================ */
-
-/* ---- Style 2 (terminal/CRT) ----
-   Square color pills, no-radius chips, monospace numerals on
-   chips. Underlying .opp keeps its v0.27.0 stripped layout. */
-html[data-style="2"] .panel .color-pill {
+html[data-style="5"] .panel .rec {
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
   border-radius: 0 !important;
-  font-family: var(--font-mono) !important;
+  padding: 12px 0 !important;
 }
-html[data-style="2"] .panel .rec .score,
-html[data-style="2"] .panel .rec .ev {
-  border-radius: 0 !important;
-  font-family: var(--font-mono) !important;
-}
-html[data-style="2"] .panel .opp .opp-vp,
-html[data-style="2"] .panel .opp .opp-cards,
-html[data-style="2"] .panel .opp .opp-hand {
-  font-family: var(--font-mono) !important;
-}
-
-/* ---- Style 3 (newspaper) ----
-   Serif numerals across opp + rec rows; double-rule top recs;
-   square color pills. */
-html[data-style="3"] .panel .color-pill {
-  border-radius: 0 !important;
-  font-weight: 700 !important;
-}
-html[data-style="3"] .panel .opp .opp-vp,
-html[data-style="3"] .panel .opp .opp-cards,
-html[data-style="3"] .panel .opp .opp-hand {
-  font-family: 'Georgia', 'Times New Roman', serif !important;
-  font-variant-numeric: oldstyle-nums tabular-nums !important;
-}
-html[data-style="3"] .panel .rec.top {
-  border-bottom-style: double !important;
-  border-bottom-width: 3px !important;
-}
-
-/* ---- Style 4 (cyberpunk) ----
-   Slanted-corner clip on opp rows, neon left-edge accent on top
-   rec, monospace HUD-style numerals. */
-html[data-style="4"] .panel .opp {
-  border-left: 3px solid var(--accent) !important;
-  background: linear-gradient(90deg,
-    rgba(255, 0, 200, 0.06) 0%,
-    rgba(0, 240, 255, 0.03) 50%,
-    transparent 100%) !important;
-  clip-path: polygon(
-    0 0,
-    calc(100% - 8px) 0,
-    100% 8px,
-    100% 100%,
-    8px 100%,
-    0 calc(100% - 8px)
-  );
-}
-html[data-style="4"] .panel .opp.tracked {
-  border-left-color: var(--pos) !important;
-}
-html[data-style="4"] .panel .opp.hot-knight {
-  border-left-color: var(--watch) !important;
-}
-html[data-style="4"] .panel .opp .opp-vp,
-html[data-style="4"] .panel .opp .opp-cards {
-  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
-}
-html[data-style="4"] .panel .rec.top {
-  border-left: 3px solid var(--pos) !important;
-  background: linear-gradient(90deg,
-    rgba(0, 245, 212, 0.10) 0%, transparent 80%) !important;
-}
-
-/* ---- Style 5 (minimal light) ----
-   Fully-rounded color pills, top rec underlined with a 2px
-   accent rule, .rec score/ev as outlined chips (no fill). */
-html[data-style="5"] .panel .color-pill {
-  border-radius: 999px !important;
-  font-weight: 500 !important;
-}
+html[data-style="5"] .panel .rec:last-child { border-bottom: 0 !important; }
 html[data-style="5"] .panel .rec.top {
   border-bottom: 2px solid var(--accent) !important;
+  padding-bottom: 14px !important;
 }
 html[data-style="5"] .panel .rec .score,
 html[data-style="5"] .panel .rec .ev {
   background: transparent !important;
-  border: 1px solid var(--line) !important;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 999px !important;
+  padding: 1px 8px !important;
+  font-weight: 500;
+}
+html[data-style="5"] .panel .color-pill {
+  border-radius: 999px !important;
+  font-weight: 500 !important;
+  padding: 2px 8px !important;
+}
+html[data-style="5"] .panel .winning-move,
+html[data-style="5"] .panel .gprog,
+html[data-style="5"] .panel .robber-on-me,
+html[data-style="5"] .panel .discard-hint,
+html[data-style="5"] .panel .seven-prep,
+html[data-style="5"] .panel .trade-offer,
+html[data-style="5"] .panel .knight-hint,
+html[data-style="5"] .panel .monopoly-hint {
+  border-radius: 8px !important;
+  border: 1px solid var(--line-strong) !important;
+  border-left: 3px solid var(--accent) !important;
+  background: var(--bg-1) !important;
+  padding: 12px 14px !important;
 }
