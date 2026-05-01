@@ -246,9 +246,22 @@ class LiveGame:
             return []
 
         events = events_from_frame_payload(self.session, payload)
-        results = [
-            apply_event(self.tracker, self.color_map, ev) for ev in events
-        ]
+        # Apply each event INDEPENDENTLY. A single failing event (e.g.
+        # tracker.road raising TrackerError on an invalid placement)
+        # used to nuke the whole frame via the list-comp short-circuit,
+        # silently dropping any later events in the same diff
+        # (settlement + robber + hand sync could all vanish behind one
+        # bad road). Catching per-event keeps the rest of the frame
+        # alive and surfaces the failure as an "error" DispatchResult.
+        results: list[DispatchResult] = []
+        for ev in events:
+            try:
+                results.append(
+                    apply_event(self.tracker, self.color_map, ev))
+            except Exception as e:  # noqa: BLE001
+                results.append(DispatchResult(
+                    event=ev, status="error",
+                    message=f"apply_event raised: {e!r}"))
         for result in results:
             if (result.status == "applied"
                     and isinstance(result.event, BuildEvent)):

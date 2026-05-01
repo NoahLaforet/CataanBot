@@ -5353,3 +5353,47 @@ def test_feed_type4_with_no_game_state_is_silent_noop():
                 g.feed(payload)
                 break
         assert g.started is True
+
+
+def test_feed_isolates_failing_events_from_rest_of_frame():
+    """One bad event in a frame must not kill the others. Pre-fix,
+    apply_event raising (e.g. tracker.road on an invalid placement)
+    short-circuited the whole list-comp and silently dropped every
+    subsequent event in the same diff."""
+    from cataanbot.live_game import LiveGame
+    from cataanbot.events import BuildEvent
+    from cataanbot.live import DispatchResult, ColorMap, apply_event
+    g = LiveGame()
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        if payload.get("type") == 4:
+            g.feed(payload)
+            break
+    assert g.started is True
+
+    # Stub out events_from_frame_payload to return: [bad_road, good_settle].
+    # Bad road has impossible coords (-1, -1) — tracker.road will raise.
+    # Good settle has a valid node from the live map.
+    valid_node = next(iter(g.session.mapping.node_id.values()))
+    known_user = next(iter(g.color_map.as_dict()))  # use a real player
+    bad_road = BuildEvent(
+        player=known_user, piece="road", edge_nodes=(-1, -1))
+    good_settle = BuildEvent(
+        player=known_user, piece="settlement", node_id=int(valid_node),
+    )
+    import cataanbot.live_game as lg_mod
+    original = lg_mod.events_from_frame_payload
+    lg_mod.events_from_frame_payload = lambda sess, payload: [
+        bad_road, good_settle,
+    ]
+    try:
+        results = g.feed({"type": 91, "payload": {}})
+    finally:
+        lg_mod.events_from_frame_payload = original
+
+    # Both events should have a result — bad as "error", good attempted.
+    assert len(results) == 2
+    statuses = [r.status for r in results]
+    assert "error" in statuses, (
+        "bad road should have surfaced as error not killed the frame")
