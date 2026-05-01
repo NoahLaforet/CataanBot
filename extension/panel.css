@@ -1915,6 +1915,18 @@
   .drawer input[type="number"]:focus {
     border-color: var(--accent);
   }
+  .drawer-select {
+    padding: 2px var(--s-2);
+    background: var(--bg-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: calc(11px * var(--font-scale));
+    outline: none;
+    cursor: pointer;
+  }
+  .drawer-select:focus { border-color: var(--accent); }
   .drawer-num-status {
     color: var(--fg-dim);
     font-size: calc(10px * var(--font-scale));
@@ -2318,4 +2330,161 @@ html, body, .panel {
   padding: 3px 6px !important;
   border-bottom: 1px solid var(--line) !important;
   font-size: 12px !important;
+}
+
+/* ============================================================
+   STYLE VARIANTS — toggleable via [data-style] on <html>.
+   Style 1 is the default look (no override needed). Styles 2-5
+   override the CSS custom properties defined on .panel. Pure
+   cosmetic — game logic, recs, banners, data unchanged.
+
+   Removal: delete this block, the <select id="style"> in
+   panel.html, and the bindStyleSelector() block in panel.js.
+   ============================================================ */
+
+/* Style 2 — Terminal / CRT
+   Deep black, electric green, JetBrains Mono. No shadows, hard
+   1px borders, no rounded corners. Old-school monitor feel. */
+html[data-style="2"] .panel {
+  --bg-0: #050a05;
+  --bg-1: #0a1408;
+  --bg-2: #0d1c0a;
+  --bg-3: #122a0d;
+  --line:        rgba(74, 222, 128, 0.10);
+  --line-strong: rgba(74, 222, 128, 0.25);
+  --fg:       #c5f5b8;
+  --fg-mute:  #6cc762;
+  --fg-dim:   #3a8033;
+  --fg-label: #4a9a3f;
+  --pos:    #5dff8a;
+  --alert:  #ff5d5d;
+  --watch:  #ffe566;
+  --warn:   #6cc762;
+  --info:   #6cc762;
+  --accent: #6cc762;
+  --radius-sm: 0;
+  --radius:    0;
+  --radius-lg: 0;
+  --font: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  background: var(--bg-0);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.06) inset !important;
+}
+html[data-style="2"] .panel .header { background: var(--bg-1); }
+html[data-style="2"] .panel .title { letter-spacing: 0.32em; color: var(--pos); }
+html[data-style="2"] .panel .dot.live { box-shadow: 0 0 8px var(--pos); }
+
+/* Style 3 — Newspaper / Print
+   Cream parchment, dark ink, serif headlines, hairline rules.
+   For when you want to read the game like the morning paper. */
+html[data-style="3"] .panel {
+  --bg-0: #f5efde;
+  --bg-1: #ebe3cc;
+  --bg-2: #e0d6ba;
+  --bg-3: #d4c8a4;
+  --line:        rgba(40, 30, 18, 0.15);
+  --line-strong: rgba(40, 30, 18, 0.30);
+  --fg:       #1c1812;
+  --fg-mute:  #4a4030;
+  --fg-dim:   #6e624a;
+  --fg-label: #6e624a;
+  --pos:    #2d6a3f;
+  --alert:  #a83232;
+  --watch:  #b87d18;
+  --warn:   #6e624a;
+  --info:   #5b6a8c;
+  --accent: #5b6a8c;
+  --radius-sm: 0;
+  --radius:    0;
+  --radius-lg: 0;
+  --font: Georgia, 'Times New Roman', serif;
+  --font-mono: 'Courier New', ui-monospace, monospace;
+  background: var(--bg-0);
+  border: 2px solid var(--line-strong);
+  box-shadow: none !important;
+}
+html[data-style="3"] .panel .header {
+  background: var(--bg-0);
+  border-bottom: 2px solid var(--line-strong);
+}
+html[data-style="3"] .panel .title {
+  font-weight: 900; letter-spacing: 0.05em;
+  text-transform: none; font-style: italic;
+}
+
+/* Style 4 — Cyberpunk Neon
+   Deep navy with magenta + cyan signals. Subtle glow on accents,
+   sharp clipped corners hint at the genre without going full
+   anime. */
+html[data-style="4"] .panel {
+  --bg-0: #0b0420;
+  --bg-1: #110730;
+  --bg-2: #170a40;
+  --bg-3: #1f0e55;
+  --line:        rgba(255, 0, 200, 0.12);
+  --line-strong: rgba(0, 240, 255, 0.30);
+  --fg:       #f0e6ff;
+  --fg-mute:  #b89cd9;
+  --fg-dim:   #7860a8;
+  --fg-label: #9b7ec9;
+  --pos:    #00f5d4;
+  --alert:  #ff3e88;
+  --watch:  #ffd43b;
+  --warn:   #b89cd9;
+  --info:   #6ce5ff;
+  --accent: #ff3edc;
+  background: linear-gradient(180deg, var(--bg-0) 0%, #1a0635 100%);
+  border: 1px solid var(--line-strong);
+  box-shadow:
+    0 0 0 1px rgba(0, 240, 255, 0.08) inset,
+    0 0 32px rgba(255, 0, 200, 0.18),
+    0 12px 32px rgba(0, 0, 0, 0.7) !important;
+}
+html[data-style="4"] .panel .title {
+  color: #00f5d4;
+  text-shadow: 0 0 6px rgba(0, 245, 212, 0.6);
+}
+html[data-style="4"] .panel .dot.live {
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+/* Style 5 — Minimal Light
+   Pure white, dark text, plenty of whitespace, no flourishes.
+   For when you want the HUD to disappear and the data to lead. */
+html[data-style="5"] .panel {
+  --bg-0: #ffffff;
+  --bg-1: #f7f7f8;
+  --bg-2: #ededf0;
+  --bg-3: #e0e0e4;
+  --line:        rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.18);
+  --fg:       #18181b;
+  --fg-mute:  #52525b;
+  --fg-dim:   #a1a1aa;
+  --fg-label: #71717a;
+  --pos:    #16a34a;
+  --alert:  #dc2626;
+  --watch:  #d97706;
+  --warn:   #71717a;
+  --info:   #2563eb;
+  --accent: #7c3aed;
+  --radius-sm: 2px;
+  --radius:    4px;
+  --radius-lg: 6px;
+  --font: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--bg-0);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+html[data-style="5"] .panel .header {
+  background: var(--bg-0);
+  border-bottom: 1px solid var(--line);
+}
+html[data-style="5"] .panel .title {
+  color: var(--fg);
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }

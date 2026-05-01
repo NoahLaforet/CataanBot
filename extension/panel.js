@@ -521,6 +521,37 @@
             applyOpacity(parseInt(opacityInput.value, 10));
         });
 
+        // ----------------------------------------------------------
+        // Style selector — sets data-style on <html>, which the CSS
+        // `html[data-style="N"] .panel { ... }` blocks at the bottom
+        // of panel.css key off of. Pure cosmetic; nothing here
+        // touches game logic, recs, or data flow.
+        //
+        // Removal: drop the <select id="style"> from panel.html, the
+        // STYLE VARIANTS block at the bottom of panel.css, and this
+        // bindStyleSelector() function.
+        // ----------------------------------------------------------
+        bindStyleSelector();
+        function bindStyleSelector() {
+            const sel = document.getElementById('style');
+            if (!sel) return;
+            const apply = (n) => {
+                const v = String(n || '1');
+                document.documentElement.setAttribute('data-style', v);
+                try {
+                    localStorage.setItem('cataanbot.style', v);
+                } catch (_) { /* storage blocked */ }
+            };
+            let initial = '1';
+            try {
+                const saved = localStorage.getItem('cataanbot.style');
+                if (saved && /^[1-5]$/.test(saved)) initial = saved;
+            } catch (_) { /* storage blocked */ }
+            sel.value = initial;
+            apply(initial);
+            sel.addEventListener('change', () => apply(sel.value));
+        }
+
         // Game mode config — VP target + discard limit. POSTs to the
         // bridge's /config so a 14-VP / 10-discard variant can be
         // played without restarting. Persisted to localStorage so the

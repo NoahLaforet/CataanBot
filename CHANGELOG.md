@@ -4,6 +4,34 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.28.0 — 2026-04-30
+
+Mid-game bug fixes from Noah's 2026-04-30 ToucherOfKid game, plus a
+playful HUD-style toggle:
+
+- **Postmortem final scores no longer collapse to 2/2.** When colonist's
+  victoryPointsState wasn't usable at game end, the resolver fell to
+  the catanatron live tracker — which reads frozen at 2 if its internal
+  state never advanced. Now derives VP from the pm_events stream
+  (settles + 2*cities + LR/LA flags) before that fallback.
+- **Postmortem no longer credits both players with longest_road.**
+  The old strip-prior-holder logic only fired when previous_holder was
+  set on the VPEvent; the parser doesn't always populate it. Now LR/LA
+  always strip from every other player on each new award.
+- **Knight play retries an empty robber rec.** When _compute_robber_snapshot
+  returned None (game state not ready), the HUD silently dropped the
+  ranking. Now sets a retry flag the snap builder honors on each poll
+  until a non-empty snapshot lands.
+- **Trade offer banner fires on WS-only offers.** Incoming offers came
+  ONLY through the DOM-log "X wants to give ... for ..." pattern, which
+  colonist doesn't always emit. Now also parses tradeState.activeOffers
+  from the WS diff so offers sent through colonist's UI button alone
+  still trigger the banner.
+- **5 toggleable HUD styles.** New "style" dropdown in the settings
+  drawer cycles between: 1 slate dashboard (default), 2 terminal/CRT,
+  3 newspaper/print, 4 cyberpunk neon, 5 minimal light. Pure cosmetic —
+  game logic, recs, and data are unchanged. Persisted in localStorage.
+
 ## v0.24.2 — 2026-04-29
 
 Polish round after the first variant-map (Pond) test:
