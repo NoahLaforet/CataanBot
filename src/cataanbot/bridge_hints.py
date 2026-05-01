@@ -1272,8 +1272,16 @@ def _compute_knight_hint(
     reason = "no urgent reason — hold for now"
     if self_blocked_pips > 0:
         should = True
+        # Translate "pips" (Catan-jargon for the dots under each tile
+        # number, summing to 6 max per tile and predicting how often
+        # it rolls) into something a normal player understands:
+        # expected cards blocked per roll. pips/36 ≈ cards per dice
+        # roll. A player who reads "blocks ~0.42 cards/roll" gets
+        # the magnitude immediately; "10 pips blocked" was opaque
+        # to anyone who hadn't memorized the dot table.
+        cards_per_roll = self_blocked_pips / 36.0
         reason = (f"robber's on you — play to clear it "
-                  f"({self_blocked_pips} pips blocked)")
+                  f"(~{cards_per_roll:.2f} cards/roll blocked)")
     elif largest_army_threat:
         should = True
         reason = "an opp is close to Largest Army — play to deny"

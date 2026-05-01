@@ -1877,7 +1877,12 @@
                         + ' cards bled)';
                 }
             } else {
-                headExtra = ` · ${rom.pips_blocked} pips blocked`;
+                // Translate raw pip count to cards-per-roll so it
+                // reads as "the robber blocks ~0.42 cards each roll"
+                // instead of jargon nobody outside Catan boards
+                // understands. /36 because a pip is 1/36 odds.
+                const cpr = (rom.pips_blocked || 0) / 36;
+                headExtra = ` · blocking ~${cpr.toFixed(2)} cards/roll`;
             }
             parts.push(`<span class="b-ico">🚫</span> `
                 + `robber on your ${escapeHtml(tileLbl)}${headExtra}`);
