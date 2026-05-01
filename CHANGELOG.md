@@ -29,8 +29,21 @@ playful HUD-style toggle:
   still trigger the banner.
 - **5 toggleable HUD styles.** New "style" dropdown in the settings
   drawer cycles between: 1 slate dashboard (default), 2 terminal/CRT,
-  3 newspaper/print, 4 cyberpunk neon, 5 minimal light. Pure cosmetic —
-  game logic, recs, and data are unchanged. Persisted in localStorage.
+  3 newspaper/print, 4 cyberpunk neon, 5 minimal light. Each style
+  also tweaks density, border weight, and one decorative detail (a
+  "> " prompt prefix on terminal, a ❦ glyph on newspaper, neon glow
+  on cyberpunk hero recs, etc.) so they feel genuinely different,
+  not just recolors. Pure cosmetic — game logic, recs, and data are
+  unchanged. Persisted in localStorage.
+- **Opp inferred breakdown reads as a guess.** When an opp isn't fully
+  tracked (any hidden steal in their hand), the per-resource breakdown
+  renders italic + muted instead of the same weight as the
+  authoritative total. Catches Noah's 2026-04-30 complaint that the
+  inferred numbers "looked like ground truth" even when drifting.
+- **Less jargon in the rec strip.** EV pill tooltip says "how much
+  better this move scores than doing nothing" instead of "1-ply EV";
+  move-quality gap pill says "−N.N pts" instead of "−N.N EV"; opp
+  production tag says "0.42/roll" instead of "0.42p".
 
 ## v0.24.2 — 2026-04-29
 
