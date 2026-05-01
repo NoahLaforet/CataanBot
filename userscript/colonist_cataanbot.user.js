@@ -2761,6 +2761,31 @@
         };
     }
 
+    // Tile chips: hoisted to module scope so the dev-card-hint
+    // placement section can call it (its inner-scope copy used to
+    // throw "tilesToHtml is not defined" on hint placements outside
+    // the recs-flow if-block).
+    function tilesToHtml(arr) {
+        return (arr || [])
+            .filter(t => t && t[0] !== 'DESERT')
+            .map(t => {
+                const icon = iconFor(t[0]);
+                const num = t[1];
+                if (num == null) {
+                    return `<span class="tile-chip">`
+                        + `<span class="tile-res">${icon}`
+                        + `</span></span>`;
+                }
+                const hot = (num === 6 || num === 8);
+                const cls = hot ? 'tile-num hot' : 'tile-num';
+                return `<span class="tile-chip">`
+                    + `<span class="${cls}">${num}</span>`
+                    + `<span class="tile-res">${icon}`
+                    + `</span></span>`;
+            })
+            .join('');
+    }
+
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
         if (!snap) {
@@ -2970,7 +2995,7 @@
                     .map(([r, n]) => `${n} ${iconFor(r)}`)
                     .join(' + ');
                 parts.push(`<div class="afford near">`
-                    + `<span class="b-ico">⏳</span> ${escapeHtml(missingStr)}`
+                    + `<span class="b-ico">⏳</span> ${missingStr}`
                     + ` from ${escapeHtml(nb.build)}</div>`);
             } else {
                 parts.push('<div class="afford none">– nothing buildable</div>');
@@ -3022,26 +3047,7 @@
                 (r.when === 'soon' ? soonRecs : nowRecs).push(r);
             }
             // Tile chips: one span per producing tile, number-first so
-            // 6/8 (red-pip rolls) jump out. Returns a string of HTML
-            // fragments joined without separators — spacing is CSS.
-            const tilesToHtml = (arr) => (arr || [])
-                .filter(t => t && t[0] !== 'DESERT')
-                .map(t => {
-                    const icon = iconFor(t[0]);
-                    const num = t[1];
-                    if (num == null) {
-                        return `<span class="tile-chip">`
-                            + `<span class="tile-res">${icon}`
-                            + `</span></span>`;
-                    }
-                    const hot = (num === 6 || num === 8);
-                    const cls = hot ? 'tile-num hot' : 'tile-num';
-                    return `<span class="tile-chip">`
-                        + `<span class="${cls}">${num}</span>`
-                        + `<span class="tile-res">${icon}`
-                        + `</span></span>`;
-                })
-                .join('');
+            // tilesToHtml hoisted to module scope above renderOverlay.
             const renderRec = (r, isTop, optLetter) => {
                 const topCls = isTop ? ' top' : '';
                 // Setup-phase followup recs are kind='opening_settlement'
@@ -3658,9 +3664,9 @@
                 + `<span class="muted">${t.offerer_vp ?? 0} VP</span></span>`
                 + '</div>');
             parts.push('<div class="trade-body">'
-                + '<span class="swap-side">gives ' + escapeHtml(fmtSide(t.give))
+                + '<span class="swap-side">gives ' + fmtSide(t.give)
                 + '</span><span class="swap-arrow">↔</span>'
-                + '<span class="swap-side">wants ' + escapeHtml(fmtSide(t.want))
+                + '<span class="swap-side">wants ' + fmtSide(t.want)
                 + '</span></div>');
             if (t.reason) {
                 parts.push('<div class="trade-reason">'
@@ -3672,10 +3678,10 @@
                 parts.push('<div class="counter">'
                     + '<span class="counter-h">counter:</span>'
                     + '<span class="swap-side">ask '
-                    + escapeHtml(fmtSide(t.counter.give))
+                    + fmtSide(t.counter.give)
                     + '</span><span class="swap-arrow">↔</span>'
                     + '<span class="swap-side">for '
-                    + escapeHtml(fmtSide(t.counter.want))
+                    + fmtSide(t.counter.want)
                     + '</span>'
                     + (t.counter.reason
                         ? `<span class="counter-reason">`
@@ -3832,7 +3838,7 @@
                 headExtra = ` · ${rom.pips_blocked} pips blocked`;
             }
             parts.push(`<span class="b-ico">🚫</span> `
-                + `robber on your ${escapeHtml(tileLbl)}${headExtra}`);
+                + `robber on your ${tileLbl}${headExtra}`);
             parts.push(`<span class="rom-sub">${escapeHtml(subParts.join(' · '))}</span>`);
             parts.push('</div>');
         }
@@ -3864,7 +3870,7 @@
             parts.push('<div class="discard-hint">');
             parts.push(`<div class="dh-h">`
                 + `<span class="b-ico">🎲</span> discard ${dh.need}</div>`);
-            parts.push(`<div class="dh-drops">${escapeHtml(dropText)}</div>`);
+            parts.push(`<div class="dh-drops">${dropText}</div>`);
             if (dh.rationale) {
                 parts.push(`<div class="dh-reason">${escapeHtml(dh.rationale)}</div>`);
             }
@@ -3888,7 +3894,7 @@
             parts.push(`<div class="sp-h">`
                 + `<span class="b-ico">⚠</span> ${escapeHtml(sp.message)}`
                 + `</div>`);
-            parts.push(`<div class="sp-drops">would lose: ${escapeHtml(dropText)}</div>`);
+            parts.push(`<div class="sp-drops">would lose: ${dropText}</div>`);
             parts.push('</div>');
         }
         // Persistent multi-turn plan banner. Sticks across polls so

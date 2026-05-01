@@ -826,6 +826,34 @@
         };
     }
 
+    // Tile chips: one span per producing tile, number-first so 6/8
+    // (red-pip rolls) jump out. Hoisted out of the renderOverlay
+    // recs-flow block so the dev-card-hint placement section (which
+    // also calls tilesToHtml) doesn't blow up with "tilesToHtml is
+    // not defined" — the call site at the rec-hint placement is
+    // outside the if(my_turn || isSetup) block where the local
+    // tilesToHtml used to live. (Bug Noah saw on 2026-05-01.)
+    function tilesToHtml(arr) {
+        return (arr || [])
+            .filter(t => t && t[0] !== 'DESERT')
+            .map(t => {
+                const icon = iconFor(t[0]);
+                const num = t[1];
+                if (num == null) {
+                    return `<span class="tile-chip">`
+                        + `<span class="tile-res">${icon}`
+                        + `</span></span>`;
+                }
+                const hot = (num === 6 || num === 8);
+                const cls = hot ? 'tile-num hot' : 'tile-num';
+                return `<span class="tile-chip">`
+                    + `<span class="${cls}">${num}</span>`
+                    + `<span class="tile-res">${icon}`
+                    + `</span></span>`;
+            })
+            .join('');
+    }
+
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
         if (!snap) {
@@ -1035,7 +1063,7 @@
                     .map(([r, n]) => `${n} ${iconFor(r)}`)
                     .join(' + ');
                 parts.push(`<div class="afford near">`
-                    + `<span class="b-ico">⏳</span> ${escapeHtml(missingStr)}`
+                    + `<span class="b-ico">⏳</span> ${missingStr}`
                     + ` from ${escapeHtml(nb.build)}</div>`);
             } else {
                 parts.push('<div class="afford none">– nothing buildable</div>');
@@ -1100,27 +1128,8 @@
             for (const r of snap.recommendations) {
                 (r.when === 'soon' ? soonRecs : nowRecs).push(r);
             }
-            // Tile chips: one span per producing tile, number-first so
-            // 6/8 (red-pip rolls) jump out. Returns a string of HTML
-            // fragments joined without separators — spacing is CSS.
-            const tilesToHtml = (arr) => (arr || [])
-                .filter(t => t && t[0] !== 'DESERT')
-                .map(t => {
-                    const icon = iconFor(t[0]);
-                    const num = t[1];
-                    if (num == null) {
-                        return `<span class="tile-chip">`
-                            + `<span class="tile-res">${icon}`
-                            + `</span></span>`;
-                    }
-                    const hot = (num === 6 || num === 8);
-                    const cls = hot ? 'tile-num hot' : 'tile-num';
-                    return `<span class="tile-chip">`
-                        + `<span class="${cls}">${num}</span>`
-                        + `<span class="tile-res">${icon}`
-                        + `</span></span>`;
-                })
-                .join('');
+            // tilesToHtml is hoisted to module scope above renderOverlay
+            // so the dev-card-hint placement section can use it too.
             const renderRec = (r, isTop, optLetter) => {
                 const topCls = isTop ? ' top' : '';
                 // Setup-phase followup recs are kind='opening_settlement'
