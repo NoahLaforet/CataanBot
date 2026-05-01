@@ -527,6 +527,14 @@
     margin-left: var(--s-2);
   }
   .opp.tracked .opp-hand { color: var(--pos); }
+  /* Untracked = at least one hidden steal/discard moved cards we
+     couldn't attribute. Italicize the breakdown so Noah reads it
+     as a "best guess" rather than ground truth. The total card
+     count above stays upright — that one IS authoritative. */
+  .opp:not(.tracked) .opp-hand {
+    font-style: italic;
+    color: var(--fg-mute);
+  }
   /* Tactical signals on opp rows — these fire when an opp is about to
      do something dangerous ('can buy settlement', '1 wheat short of city').
      Sized as readable content, not chrome — at 11px they were quieter
