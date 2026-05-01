@@ -807,3 +807,47 @@ def test_tracker_recompute_longest_road_still_transfers_on_real_displacer():
     tracker._recompute_longest_road()
     assert state.player_state[f"P{red_idx}_HAS_ROAD"] is False
     assert state.player_state[f"P{blue_idx}_HAS_ROAD"] is True
+
+
+def test_duplicate_roll_diff_dedupped():
+    """colonist's WS occasionally rebroadcasts a session state frame
+    with the same diceState dict. Without dedup, events_from_diff
+    would emit two RollEvents for the same physical roll, inflating
+    the bridge's total_rolls + roll_histogram.
+
+    Sessions track last_roll_emitted = (cid, d1, d2); a repeat is
+    suppressed. New rolls (different dice or different player) flow
+    through normally."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    sess.current_turn_color_id = 1
+
+    # First roll fires.
+    diff1 = {"diceState": {"dice1": 4, "dice2": 3},
+             "currentState": {"currentTurnPlayerColor": 1}}
+    events = events_from_diff(sess, diff1)
+    rolls = [e for e in events if isinstance(e, RollEvent)]
+    assert len(rolls) == 1
+    assert rolls[0].total == 7
+
+    # Same diff arrives again — colonist resync. Should NOT re-emit.
+    events_dup = events_from_diff(sess, diff1)
+    rolls_dup = [e for e in events_dup if isinstance(e, RollEvent)]
+    assert rolls_dup == [], (
+        "duplicate roll diff was emitted again; dedup didn't fire")
+
+    # Different dice — emits.
+    diff2 = {"diceState": {"dice1": 5, "dice2": 6},
+             "currentState": {"currentTurnPlayerColor": 1}}
+    events2 = events_from_diff(sess, diff2)
+    rolls2 = [e for e in events2 if isinstance(e, RollEvent)]
+    assert len(rolls2) == 1
+    assert rolls2[0].total == 11
+
+    # New player rolling the same combo as the original — also emits.
+    diff3 = {"diceState": {"dice1": 4, "dice2": 3},
+             "currentState": {"currentTurnPlayerColor": 2}}
+    events3 = events_from_diff(sess, diff3)
+    rolls3 = [e for e in events3 if isinstance(e, RollEvent)]
+    assert len(rolls3) == 1

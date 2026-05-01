@@ -454,6 +454,19 @@ def _build_app(jsonl_path: Path | None = None,
         if replayed > 0:
             print(f"[bridge] replayed {replayed} frames from autosave",
                   flush=True)
+            # Rotate the file so future restarts don't include both
+            # the pre-restart history (already replayed into state)
+            # and post-restart frames. Without rotation, the bridge
+            # would replay the full file again on the next start —
+            # state would still rebuild correctly because replay is
+            # idempotent on the LiveGame (each frame computes the same
+            # diff), but the dedup-guarded counters would still be
+            # safe. Rotation is mostly disk-space hygiene.
+            try:
+                archive = ws_jsonl_path.with_suffix(".replayed.jsonl")
+                ws_jsonl_path.replace(archive)
+            except OSError:
+                pass
 
     return app
 

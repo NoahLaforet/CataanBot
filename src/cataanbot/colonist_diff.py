@@ -128,6 +128,18 @@ class LiveSession:
     # lets a roll fall back to the prior turn's color when the current
     # diff omits it.
     current_turn_color_id: int | None = None
+    # Last RollEvent emitted, as ``(roller_cid, d1, d2)``. Used to
+    # suppress duplicate RollEvent emissions when colonist rebroadcasts
+    # a session state frame mid-game (reconnect / late-join / occasional
+    # resync) — the same diceState dict re-fires events_from_diff
+    # without dedup. Two genuinely back-to-back rolls with identical
+    # (player, d1, d2) is mathematically possible but vanishingly rare:
+    # base Catan rotates turns between rolls, so the same player can't
+    # roll twice in a row, and even with knight plays, a second roll
+    # after a knight is impossible (knights are pre-roll only). Two
+    # rolls in a row by the same player with identical dice would have
+    # to be from a bug in colonist itself, not normal play.
+    last_roll_emitted: tuple | None = None
     # Color id currently holding Longest Road / Largest Army per
     # colonist's authoritative mechanic state. ``mechanicLongestRoadState
     # .{cid}.hasLongestRoad`` flips to true when awarded and to false on
@@ -535,9 +547,16 @@ def events_from_diff(
         roller_color = cs.get("currentTurnPlayerColor")
         cid = (int(roller_color) if roller_color is not None
                else sess.current_turn_color_id)
-        player = sess.player_for(cid)
-        out.append(RollEvent(player=player, d1=int(dice["dice1"]),
-                             d2=int(dice["dice2"])))
+        d1 = int(dice["dice1"])
+        d2 = int(dice["dice2"])
+        # Dedup: skip when this exact roll was just emitted. Catches
+        # state-resync rebroadcasts that duplicate a recent roll diff,
+        # which would otherwise inflate roll_histogram + total_rolls.
+        sig = (cid, d1, d2)
+        if sess.last_roll_emitted != sig:
+            sess.last_roll_emitted = sig
+            player = sess.player_for(cid)
+            out.append(RollEvent(player=player, d1=d1, d2=d2))
 
     return out
 
