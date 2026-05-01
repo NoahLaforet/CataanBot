@@ -1555,3 +1555,46 @@ def test_endgame_urgency_bumps_vp_advancing_recs():
             f"got {eight_in_12} (should be < {at_close} from 10-VP test)")
     finally:
         set_vp_target(original)
+
+
+def test_no_one_for_two_longshot_trade_proposals():
+    """Noah marked every '1:N longshot' propose-trade variant 'bad' in
+    his 2026-04-30 feedback log — opps essentially never accept that
+    ratio, so the rec is just clutter at the bottom of the list. The
+    longshot variant was dropped; this guards against re-adding it."""
+    from cataanbot.recommender import recommend_actions
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    hand = {"WOOD": 5, "BRICK": 1, "WHEAT": 1}
+    out = recommend_actions(g, "RED", hand, top=10)
+    longshots = [r for r in out
+                 if r.get("kind") == "propose_trade"
+                 and (r.get("variant") == "1:2 longshot"
+                      or "longshot" in (r.get("detail") or ""))]
+    assert longshots == [], (
+        f"1:2 longshot trade rec resurfaced — Noah explicitly downvoted "
+        f"this variant. Got: {longshots}")
+
+
+def test_dev_card_dropped_at_one_vp_from_win():
+    """When self can win this turn (gap == 1 to VP_TARGET), 'draw a card'
+    is wrong — the right move is the affordable city/settle that grants
+    the same-turn VP. Dev card recs are dropped entirely at gap == 1."""
+    from cataanbot.recommender import recommend_actions
+    from catanatron import Color
+    g = _fresh_game_with_red_settle()
+    # Push RED to VP_TARGET - 1.
+    idx = g.state.color_to_index[Color.RED]
+    from cataanbot.config import VP_TARGET
+    g.state.player_state[f"P{idx}_VICTORY_POINTS"] = VP_TARGET - 1
+    # Hand can afford a dev card AND a city (both buildable).
+    hand = {"WHEAT": 4, "ORE": 4, "SHEEP": 1}
+    out = recommend_actions(g, "RED", hand, top=10)
+    dev_recs = [r for r in out
+                if r.get("kind") == "dev_card" and r.get("when") == "now"]
+    assert dev_recs == [], (
+        f"'draw a card' rec surfaced at gap=1 to win — should have been "
+        f"dropped in favor of city/settle. Got: {dev_recs}")

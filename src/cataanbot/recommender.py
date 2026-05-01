@@ -1481,15 +1481,17 @@ def recommend_actions(
                     continue
             # Candidate variants (give_count, get_count, label, score_adj).
             # 1:1 is the friendliest; 2:1 is a concession offer; 2:2 is
-            # useful when we need two of something (e.g. city); 1:2 is
-            # a longshot but shows up last.
+            # useful when we need two of something (e.g. city). The old
+            # 1:2 "longshot" variant ("offer 1 for 2") was dropped after
+            # Noah marked every 1:2 instance "bad" in his 2026-04-30
+            # feedback log — opps essentially never accept that ratio,
+            # so the rec was just clutter at the bottom of the list.
             variants: list[tuple[int, int, str, float]] = [
                 (1, 1, "1:1 fair", 0.0),
                 (2, 1, "2:1 concede", -0.6),
             ]
             if need_n >= 2:
                 variants.append((2, 2, "2:2 even", -0.2))
-            variants.append((1, 2, "1:2 longshot", -1.2))
             for give_n, get_n, label, adj in variants:
                 best_src = None
                 best_spare = 0
@@ -1527,10 +1529,6 @@ def recommend_actions(
                     propose_detail = (
                         f"offer {give_str} for {get_str} "
                         f"· unlocks {kind_word}")
-                elif label == "1:2 longshot":
-                    propose_detail = (
-                        f"offer {give_str} for {get_str} "
-                        f"(longshot) · unlocks {kind_word}")
                 else:
                     propose_detail = (
                         f"offer {give_str} for {get_str} "
@@ -1594,16 +1592,35 @@ def recommend_actions(
                 # city/settle is worth dramatically more than at the
                 # close_vp threshold.
                 bump = 2.5 if gap == 1 else 1.5
+                # Symmetric penalty on dev_card at endgame: drawing a
+                # blind card at 10 VP gives no immediate advance, so
+                # the rec is misleading even when it's not the top
+                # pick. Halving the score pushes it well below any
+                # affordable city/settle. Dropped entirely at gap == 1
+                # since "you can win this turn but consider drawing"
+                # is never the right read. Noah's 2026-04-30 game had
+                # a "draw a card" rec firing at 10 VP next to an
+                # affordable city — he downvoted it.
+                drop_dev = (gap == 1)
+                kept: list[dict] = []
                 for rec in recs:
                     if rec.get("when") != "now":
+                        kept.append(rec)
                         continue
                     kind = rec.get("kind")
                     unlocks = rec.get("unlocks")
+                    if kind == "dev_card" and drop_dev:
+                        continue
+                    if kind == "dev_card":
+                        rec["score"] = round(
+                            float(rec.get("score", 0.0)) * 0.5, 1)
                     advances_vp = (kind in ("settlement", "city")
                                    or unlocks in ("settlement", "city"))
                     if advances_vp:
                         rec["score"] = round(min(
                             float(rec.get("score", 0.0)) + bump, 10.0), 1)
+                    kept.append(rec)
+                recs = kept
                 # Re-sort because scores changed.
                 recs.sort(key=lambda r: -float(r.get("score", 0.0)))
     except Exception:  # noqa: BLE001
