@@ -191,6 +191,11 @@ def _build_app(jsonl_path: Path | None = None,
         # the recs reflect what the bot was suggesting AT THE TIME OF
         # THE DECISION, even if the per-snapshot recs change after.
         "last_recs_for_self": [],
+        # Persistent multi-turn build plan. Updated by
+        # _track_active_plan on each advisor poll; surfaces on the
+        # snapshot as snap["plan"]. None when self has no soon-recs
+        # worth tracking or when an affordable build supersedes it.
+        "active_plan": None,
         # Running history of self-build classifications (post-setup
         # only). Each entry: {ts, piece, node/edge, rank, classification,
         # top_kind, top_loc, search_delta_gap}. Capped at 30 so a full
@@ -651,6 +656,149 @@ def _track_overlay_state(st, results) -> None:
                 print(f"[overlay] move-quality classify failed: {e!r}",
                       flush=True)
 
+
+
+def _track_active_plan(
+    st, full_recs: list, hand: dict[str, int],
+) -> dict[str, Any] | None:
+    """Maintain a persistent multi-turn plan across advisor polls.
+
+    The recommender is stateless — every poll rebuilds recs from
+    scratch. That makes the HUD feel reactive ("here's what to do
+    now") instead of strategic ("here's what we're working toward").
+    This tracker watches the top "soon" rec and surfaces it as a
+    sticky banner. The plan only changes when:
+
+    * The current target becomes affordable → emit a one-tick
+      "READY!" pulse, then unlock so the next plan can lock in.
+    * A new "soon" rec scores materially better than the active
+      plan (delta >= 1.0). Avoids flip-flopping when scores wobble
+      a tenth between polls.
+    * The active target is no longer in the rec list at all (e.g.
+      the build became impossible — settlement spot got taken,
+      dev deck emptied).
+
+    Returns a small dict for the snapshot::
+
+        {
+          "kind": "settlement" | "city" | "dev_card",
+          "target_node_id": int | None,
+          "missing": {res: count},
+          "progress": {res: have / need},
+          "score": float,
+          "turns_held": int,
+          "ready": bool,
+          "summary": "save for city — need 1 ore"
+        }
+
+    Returns None when there's nothing to plan (no soon recs OR self
+    is already affordable on something better).
+    """
+    if not full_recs:
+        st["active_plan"] = None
+        return None
+
+    # Pull "soon" plans (1-2 cards from a build). They're the natural
+    # multi-turn targets. Filter out road plans — those are
+    # tactical, not strategic.
+    soon_plans = [r for r in full_recs
+                  if r.get("when") == "soon"
+                  and r.get("kind") in ("settlement", "city", "dev_card")]
+
+    # If self has an affordable build that's strictly better than any
+    # plan target, no plan needed — they should just build it.
+    affordable_now = [r for r in full_recs
+                      if r.get("when") == "now"
+                      and r.get("kind") in ("settlement", "city")]
+    top_now_score = (max((float(r.get("score", 0.0))
+                          for r in affordable_now), default=0.0))
+    top_soon_score = (max((float(r.get("score", 0.0))
+                           for r in soon_plans), default=0.0))
+
+    active = st.get("active_plan")
+
+    # Affordable-now path: if there's a same-VP-tier build affordable
+    # right now AND scoring as well as the current plan, drop the plan
+    # so the user just builds.
+    if affordable_now and top_now_score >= top_soon_score:
+        if active is not None:
+            st["active_plan"] = None
+        return None
+
+    if not soon_plans:
+        st["active_plan"] = None
+        return None
+
+    # Sort soon plans by score descending. Top is the candidate.
+    soon_plans.sort(key=lambda r: -float(r.get("score", 0.0)))
+    candidate = soon_plans[0]
+
+    # Decide whether to keep the active plan or swap to the candidate.
+    keep = False
+    if active is not None:
+        same_kind = active.get("kind") == candidate.get("kind")
+        same_node = active.get("target_node_id") == candidate.get("node_id")
+        if same_kind and (same_node or candidate.get("kind") == "dev_card"):
+            keep = True
+        else:
+            # Swap only if the candidate is meaningfully better. Stops
+            # the plan from flipping every time a coin-flip score
+            # tweak shifts the order.
+            cand_score = float(candidate.get("score", 0.0))
+            active_score = float(active.get("score", 0.0))
+            if cand_score - active_score < 1.0:
+                # Re-find the active plan in the current rec list
+                # (its score may have shifted slightly). If it's
+                # gone, swap. If it's still there, keep.
+                still_alive = next(
+                    (r for r in full_recs
+                     if r.get("kind") == active.get("kind")
+                     and r.get("node_id") == active.get(
+                         "target_node_id")),
+                    None)
+                if still_alive is not None:
+                    keep = True
+
+    if not keep:
+        # Lock in the candidate as the new plan.
+        active = {
+            "kind": candidate.get("kind"),
+            "target_node_id": candidate.get("node_id"),
+            "missing": dict(candidate.get("missing") or {}),
+            "score": float(candidate.get("score", 0.0)),
+            "turns_held": 0,
+            "locked_seq": st.get("seq", 0),
+        }
+
+    # Update progress tracking — how many cards we've gathered
+    # toward the missing slots since the plan locked.
+    missing = candidate.get("missing") or {}
+    progress = {}
+    for res, need in missing.items():
+        # We need `need` of res; if we have more than 0, that's progress.
+        progress[res] = {
+            "have": int(hand.get(res, 0) or 0),
+            "need": int(need),
+        }
+    active["missing"] = dict(missing)
+    active["progress"] = progress
+    active["turns_held"] = int(active.get("turns_held", 0)) + 1
+    active["ready"] = sum(missing.values()) == 0
+
+    # Summary line for the HUD. Verb-first English so it reads as
+    # instruction, not data.
+    label = active["kind"] if active["kind"] != "dev_card" else "dev card"
+    if active["ready"]:
+        active["summary"] = f"PLAN READY — build {label} now"
+    else:
+        miss_str = " + ".join(
+            f"{n} {r.lower()}" for r, n in missing.items() if n > 0)
+        active["summary"] = f"saving for {label} — need {miss_str}"
+
+    st["active_plan"] = active
+    # Return a slim copy for the snapshot (avoid round-tripping mutable
+    # state into JSON output).
+    return dict(active)
 
 
 def _maybe_clear_dev_just_bought(st) -> None:
@@ -1213,6 +1361,19 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             snap["recommendations"] = full_recs[:4]
             if full_recs:
                 st["last_recs_for_self"] = full_recs
+            # Persistent multi-turn plan. The recommender is stateless
+            # (every poll regenerates recs from scratch), which makes
+            # the HUD feel reactive instead of strategic. The plan
+            # tracker watches the top "soon" rec and surfaces it as a
+            # sticky banner that only swaps when something materially
+            # better appears — gives Noah a north star across rolls
+            # instead of a fresh suggestion every time he reads the HUD.
+            try:
+                snap["plan"] = _track_active_plan(st, full_recs, hand)
+            except Exception as e:  # noqa: BLE001
+                print(f"[advisor] plan tracking failed: {e!r}",
+                      flush=True)
+                snap["plan"] = None
         except Exception as e:  # noqa: BLE001
             print(f"[advisor] recommend_actions failed: {e!r}",
                   flush=True)

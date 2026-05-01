@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.25.2
+// @version      0.25.3
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1574,6 +1574,44 @@
     0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.0); }
     50%      { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18); }
   }
+
+  /* Persistent multi-turn build plan. Subtler than threat/discard
+     banners — meant to sit in the background as a north star, not
+     compete for attention. Switches to green when ready (build is
+     now affordable). */
+  .plan {
+    border-left: 3px solid var(--info);
+    background: var(--bg-2);
+    padding: var(--s-3) var(--s-4);
+    margin-bottom: var(--s-3);
+    border-radius: var(--radius-sm);
+  }
+  .plan.ready {
+    border-left-color: var(--pos);
+    background: rgba(74, 222, 128, 0.08);
+  }
+  .plan .plan-h {
+    color: var(--fg-label);
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-size: calc(11px * var(--font-scale));
+    margin-bottom: var(--s-1);
+  }
+  .plan.ready .plan-h { color: var(--pos); }
+  .plan .plan-summary {
+    color: var(--fg);
+    font-weight: 600;
+    font-size: calc(13px * var(--font-scale));
+  }
+  .plan .plan-progress {
+    color: var(--fg-mute);
+    font-size: calc(12px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+    margin-top: var(--s-1);
+  }
+  .plan .plan-progress .pos { color: var(--pos); }
+  .plan .plan-progress .fg-mute { color: var(--fg-mute); }
 
   .trade-offer { border-left-color: var(--warn); }
   /* Verdict-driven left-border color so the banner's accent matches
@@ -3822,6 +3860,38 @@
                 + `<span class="b-ico">⚠</span> ${escapeHtml(sp.message)}`
                 + `</div>`);
             parts.push(`<div class="sp-drops">would lose: ${escapeHtml(dropText)}</div>`);
+            parts.push('</div>');
+        }
+        // Persistent multi-turn plan banner. Sticks across polls so
+        // Noah sees a north star even as individual recs reshuffle.
+        // Hidden when no plan is locked (plan is None server-side) —
+        // the recommender already surfaces affordable builds, no need
+        // to compete with them.
+        if (snap.plan && snap.plan.summary) {
+            const plan = snap.plan;
+            const ready = plan.ready ? ' ready' : '';
+            const turnsHeld = plan.turns_held > 1
+                ? ` <span class="muted">held ${plan.turns_held}</span>`
+                : '';
+            const progressParts = [];
+            for (const [res, p] of Object.entries(plan.progress || {})) {
+                const have = p.have || 0;
+                const need = p.need || 0;
+                const cls = have >= need ? 'pos' : 'fg-mute';
+                progressParts.push(
+                    `<span class="${cls}">${have}/${have + need} `
+                    + `${iconFor(res)}</span>`);
+            }
+            parts.push(`<div class="plan${ready}">`);
+            parts.push(`<div class="plan-h">`
+                + `<span class="b-ico">🎯</span> PLAN`
+                + turnsHeld
+                + `</div>`);
+            parts.push(`<div class="plan-summary">${escapeHtml(plan.summary)}</div>`);
+            if (progressParts.length) {
+                parts.push(`<div class="plan-progress">`
+                    + progressParts.join(' · ') + `</div>`);
+            }
             parts.push('</div>');
         }
         if ((snap.robber_targets || []).length

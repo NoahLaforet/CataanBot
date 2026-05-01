@@ -274,3 +274,66 @@ def test_resolve_final_vp_falls_back_to_live_tracker_without_session():
     out = _resolve_final_vp(st)
     assert out == {"RED": 8, "BLUE": 7}, (
         f"Expected live tracker fallback, got {out}")
+
+
+def test_active_plan_locks_and_persists_across_polls():
+    """The plan tracker should lock onto the top 'soon' rec and keep
+    it across polls, only swapping when something materially better
+    appears or the target becomes affordable. Without this, the HUD's
+    'plan' banner would flip-flop on every minor score wobble.
+    """
+    from cataanbot.bridge import _track_active_plan
+
+    st = {"active_plan": None, "seq": 0}
+    # First poll: a settlement plan locks in.
+    recs1 = [
+        {"kind": "settlement", "when": "soon", "node_id": 42,
+         "score": 7.5, "missing": {"SHEEP": 1}},
+        {"kind": "city", "when": "soon", "node_id": 0,
+         "score": 6.0, "missing": {"WHEAT": 2, "ORE": 3}},
+    ]
+    p1 = _track_active_plan(st, recs1, {"WOOD": 1, "BRICK": 1, "WHEAT": 1})
+    assert p1 is not None
+    assert p1["kind"] == "settlement"
+    assert p1["target_node_id"] == 42
+    assert p1["turns_held"] == 1
+
+    # Second poll: scores wobble slightly, candidate same plan but
+    # 0.1 lower. Plan should hold.
+    st["seq"] = 1
+    recs2 = [
+        {"kind": "settlement", "when": "soon", "node_id": 42,
+         "score": 7.4, "missing": {"SHEEP": 1}},
+        {"kind": "city", "when": "soon", "node_id": 0,
+         "score": 6.7, "missing": {"WHEAT": 2, "ORE": 3}},
+    ]
+    p2 = _track_active_plan(st, recs2, {"WOOD": 1, "BRICK": 1, "WHEAT": 1})
+    assert p2 is not None
+    assert p2["target_node_id"] == 42
+    assert p2["turns_held"] == 2  # incremented
+
+    # Third poll: a much better plan appears (delta >= 1.0). Swap.
+    st["seq"] = 2
+    recs3 = [
+        {"kind": "settlement", "when": "soon", "node_id": 42,
+         "score": 7.0, "missing": {"SHEEP": 1}},
+        {"kind": "city", "when": "soon", "node_id": 99,
+         "score": 9.5, "missing": {"WHEAT": 1}},
+    ]
+    p3 = _track_active_plan(st, recs3, {"WOOD": 1, "BRICK": 1, "WHEAT": 1})
+    assert p3 is not None
+    assert p3["kind"] == "city"
+    assert p3["target_node_id"] == 99
+    assert p3["turns_held"] == 1  # reset on swap
+
+    # Fourth poll: target now affordable as a 'now' rec. Plan should
+    # clear so the user just builds it.
+    st["seq"] = 3
+    recs4 = [
+        {"kind": "city", "when": "now", "node_id": 99, "score": 9.5},
+        {"kind": "city", "when": "soon", "node_id": 99,
+         "score": 7.0, "missing": {"WHEAT": 1}},
+    ]
+    p4 = _track_active_plan(st, recs4, {"WHEAT": 2, "ORE": 3})
+    assert p4 is None
+    assert st["active_plan"] is None
