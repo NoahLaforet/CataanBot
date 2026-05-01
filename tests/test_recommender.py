@@ -1455,3 +1455,41 @@ def test_propose_trade_detail_is_verb_first():
     # Lowercase, no jammed-together "1Sheep→1Ore"
     assert "sheep" in detail and "SHEEP" not in detail
     assert "1Sheep" not in detail and "1Ore" not in detail
+
+
+def test_dev_card_recs_suppressed_when_deck_empty():
+    """When dev_deck_remaining=0 the recommender must not surface dev
+    card recs in any form: not the affordable-now path, not the
+    save-for-soon path, not the bank-trade path, not the propose-trade
+    path. Otherwise the user clicks 'buy dev' and nothing happens —
+    classic confidence-eroding misfire."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+
+    # 1. Affordable-now: hand = exact dev cost. With deck empty, no rec.
+    out = recommend_actions(
+        g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 1}, top=8,
+        dev_deck_remaining=0)
+    assert not any(r["kind"] == "dev_card" for r in out), (
+        f"dev_card rec leaked through with empty deck: {out}")
+
+    # 2. Bank-trade unlock: 4 ore to convert. With deck empty, no rec.
+    out = recommend_actions(
+        g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 4}, top=8,
+        dev_deck_remaining=0)
+    assert not any(
+        r["kind"] == "bank_trade" and r.get("unlocks") == "dev_card"
+        for r in out), (
+            f"bank_trade for dev_card leaked with empty deck: {out}")
+
+    # 3. With deck NON-empty, the dev_card rec returns. Sanity check
+    # that we didn't over-filter.
+    out = recommend_actions(
+        g, "RED", {"SHEEP": 1, "WHEAT": 1, "ORE": 1}, top=8,
+        dev_deck_remaining=12)
+    assert any(r["kind"] == "dev_card" for r in out)

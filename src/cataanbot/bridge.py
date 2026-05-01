@@ -1147,6 +1147,16 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # dry on the needed resource.
             bank_for_recs = (
                 snap.get("bank_supply") or {}).get("remaining")
+            # Same idea for dev cards: skip dev-card recs when colonist
+            # has confirmed the deck is empty. Without this, the bot
+            # keeps suggesting "buy a dev card" all the way to game-end
+            # on a depleted deck — the user clicks and nothing happens.
+            # snap["dev_deck"] is populated later in the snapshot
+            # builder, so we compute it directly here.
+            dev_deck_for_recs = None
+            dev_deck_now = _compute_dev_deck_remaining(game)
+            if dev_deck_now:
+                dev_deck_for_recs = dev_deck_now.get("remaining")
             # Pull top-10 once; the visible HUD list is the first 4 of
             # that, and the move-quality classifier (HUD principle #7)
             # uses the whole list so a !/!?/?/?? rank can land outside
@@ -1155,7 +1165,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # which is hot path.
             full_recs = recommend_actions(
                 cat_game, self_color, hand, top=10,
-                bank_supply=bank_for_recs)
+                bank_supply=bank_for_recs,
+                dev_deck_remaining=dev_deck_for_recs)
             snap["recommendations"] = full_recs[:4]
             if full_recs:
                 st["last_recs_for_self"] = full_recs

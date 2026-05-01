@@ -902,6 +902,7 @@ def recommend_actions(
     game, color, hand: dict[str, int], *, top: int = 4,
     opp_hands: dict[str, dict[str, int]] | None = None,
     bank_supply: dict[str, int] | None = None,
+    dev_deck_remaining: int | None = None,
 ) -> list[dict[str, Any]]:
     """Rank what to do with the current hand.
 
@@ -1228,7 +1229,11 @@ def recommend_actions(
     # --- Dev card --------------------------------------------------------
     # Always a sane fallback. Fixed score of 3 on the 1-10 scale — real
     # builds usually outrank it, but it surfaces when nothing else fits.
-    if _hand_can_afford(hand, _DEV_COST):
+    # Suppressed when the deck is known empty: spending the cost on a
+    # rec the user can't physically take is a confidence-eroding misfire.
+    dev_deck_empty = (dev_deck_remaining is not None
+                      and dev_deck_remaining <= 0)
+    if _hand_can_afford(hand, _DEV_COST) and not dev_deck_empty:
         recs.append({
             "kind": "dev_card",
             "when": "now",
@@ -1276,7 +1281,7 @@ def recommend_actions(
                     "tiles": _tile_label(m, node),
                     "rationale": _city_rationale(m, node),
                 })
-    if not _hand_can_afford(hand, _DEV_COST):
+    if not _hand_can_afford(hand, _DEV_COST) and not dev_deck_empty:
         missing = _missing_for(hand, _DEV_COST)
         if 0 < sum(missing.values()) <= _PLAN_MAX_MISSING:
             recs.append({
@@ -1339,6 +1344,10 @@ def recommend_actions(
     ]
     for kind, cost, score_fn, target_fn in _trade_targets:
         if _hand_can_afford(hand, cost):
+            continue
+        # Don't bank-trade for a build that can't physically happen.
+        # dev_card on an empty dev deck is the headline case.
+        if kind == "dev_card" and dev_deck_empty:
             continue
         plan = _plan_bank_trades(
             hand, cost, my_owned_nodes, port_nodes_map,
@@ -1422,6 +1431,8 @@ def recommend_actions(
 
     for kind, cost, score_fn, target_fn in _trade_targets:
         if _hand_can_afford(hand, cost):
+            continue
+        if kind == "dev_card" and dev_deck_empty:
             continue
         missing = _missing_for(hand, cost)
         total_missing = sum(missing.values())
