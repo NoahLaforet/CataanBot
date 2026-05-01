@@ -19,6 +19,54 @@ chrome.runtime.onInstalled.addListener(() => {
         .catch(err => console.warn('[cataanbot] sidePanel setup:', err));
 });
 
+// Toolbar badge — shows "ON" in green when the active tab is on
+// colonist.io so Noah can spot whether the extension is wired up
+// before clicking Start Game. Chrome doesn't allow programmatic
+// auto-opening of the side panel (user gesture required), so the
+// badge is the best we can do as a visual reminder. WS frames ARE
+// captured even with the panel closed (the inject.js content script
+// patches WebSocket at document_start in the page world), but the
+// HUD only renders once the panel is open.
+function setColonistBadge(tabId, isColonist) {
+    try {
+        if (isColonist) {
+            chrome.action.setBadgeText({ tabId, text: 'ON' });
+            chrome.action.setBadgeBackgroundColor({
+                tabId, color: '#16a34a',  // green
+            });
+            chrome.action.setTitle({
+                tabId,
+                title: 'CataanBot active on this tab — click to open panel',
+            });
+        } else {
+            chrome.action.setBadgeText({ tabId, text: '' });
+            chrome.action.setTitle({
+                tabId,
+                title: 'CataanBot — open colonist.io to use',
+            });
+        }
+    } catch (e) {
+        // Tab may have been closed mid-update; safe to ignore.
+    }
+}
+
+function isColonistUrl(url) {
+    return typeof url === 'string' && url.startsWith('https://colonist.io');
+}
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+    try {
+        const tab = await chrome.tabs.get(tabId);
+        setColonistBadge(tabId, isColonistUrl(tab.url));
+    } catch (_) { /* tab gone */ }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url || changeInfo.status === 'complete') {
+        setColonistBadge(tabId, isColonistUrl(tab.url));
+    }
+});
+
 async function postJson(url, payload) {
     try {
         const resp = await fetch(url, {

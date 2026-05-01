@@ -1,16 +1,19 @@
 // Content script — runs in isolated world on colonist.io.
 //
-// Three jobs:
-//  1. Inject inject.js as a real <script> so it lives in the page's
-//     main world and can patch window.WebSocket where colonist
-//     actually uses it. (Content scripts cannot patch page globals
-//     from the isolated world.)
-//  2. Bridge messages between the page world (postMessage from
-//     inject.js) and the extension's service worker (chrome.runtime
-//     .sendMessage), so WS frames + DOM-log payloads land at the
+// Two jobs:
+//  1. Bridge messages between the page world (postMessage from
+//     inject.js, which is loaded via a separate `world: MAIN`
+//     content script entry in manifest.json) and the extension's
+//     service worker, so WS frames + DOM-log payloads land at the
 //     bridge HTTP endpoints.
-//  3. Auto-remove the "Remove Ads" buttons colonist sprinkles
+//  2. Auto-remove the "Remove Ads" buttons colonist sprinkles
 //     throughout its UI.
+//
+// (inject.js used to be appended dynamically as a <script> tag here,
+// but that was async — colonist's bundle could create its WebSocket
+// before our patch installed, missing the GameStart frame. Loading
+// it via manifest content_scripts with world:"MAIN" runs it
+// synchronously at document_start before colonist's app bundle.)
 //
 // The DOM-log scraper here is a faithful port of the userscript's
 // scraper: same class selectors, same structured `parts` payload,
@@ -21,14 +24,7 @@
 (function bootCataanbotContent() {
     const LOG_PREFIX = '[cataanbot]';
 
-    // ---- Step 1: inject inject.js into the main world ----
-    const url = chrome.runtime.getURL('inject.js');
-    const s = document.createElement('script');
-    s.src = url;
-    s.onload = () => s.remove();
-    (document.head || document.documentElement).appendChild(s);
-
-    // ---- Step 2: relay page-world WS frames to background ----
+    // ---- Relay page-world WS frames to background ----
     window.addEventListener('message', (ev) => {
         if (ev.source !== window) return;
         const data = ev.data;

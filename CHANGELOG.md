@@ -4,6 +4,30 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.31.0 — 2026-05-01
+
+Two extension fixes for the "panel must be open before Start Game"
+bug Noah hit on 2026-05-01:
+
+- **inject.js now loads via `world: "MAIN"` content script**, not
+  via dynamic `<script>` injection. The async `<script>` tag
+  appended at document_start was racing colonist's bundle —
+  colonist could create its WebSocket before our patch installed,
+  missing the GameStart frame entirely. Loading inject.js as a
+  proper MV3 main-world content script runs it synchronously
+  before colonist's app code. `web_accessible_resources` removed
+  (no longer needed).
+- **Toolbar badge** now shows "ON" in green when the active tab
+  is on colonist.io. Chrome doesn't allow programmatic side-panel
+  open without a user gesture, so the badge is the discoverability
+  fix — Noah can spot at a glance whether the extension is
+  active. Title text also updates per-tab.
+
+Net effect: WS frames are captured even when the side panel is
+closed (the bot's bridge sees GameStart immediately). The HUD
+itself only renders once the panel is opened, but the bridge
+state is correct from the moment colonist boots the game.
+
 ## v0.30.1 — 2026-05-01
 
 Robustness pass — no UI changes, three bridge-side fixes:
