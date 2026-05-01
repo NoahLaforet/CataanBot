@@ -1530,14 +1530,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # which suggestions reflect it.
     snap["friendly_robber_active"] = bool(
         sess.friendly_robber_active)
+    # bank_supply has to be computed BEFORE recs so the propose-trade
+    # bank-19 guard (line 1489 in recommender.py) actually fires —
+    # without this, the bot suggests "offer brick for wood" even when
+    # all 19 wood cards are sitting in the bank (Noah's 2026-05-01
+    # game). Computed once here and reused by recs + the dev-card
+    # hints below; if it fails the recs path falls back to no-guard
+    # which is the prior behavior.
+    try:
+        snap["bank_supply"] = _compute_bank_supply(game)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] bank_supply failed: {e!r}", flush=True)
     # Mid-game recs: only when it's actually my turn. During setup the
     # opening picks were already populated above, so skip here.
     if not is_setup and snap["my_turn"]:
         try:
             from cataanbot.recommender import recommend_actions
             # Feed the bank_supply we already computed into the rec
-            # planner so port/4:1 trades get skipped when the bank is
-            # dry on the needed resource.
+            # planner so port/4:1 trades + propose-trade get skipped
+            # when the bank is dry / full on the needed resource.
             bank_for_recs = (
                 snap.get("bank_supply") or {}).get("remaining")
             # Same idea for dev cards: skip dev-card recs when colonist
@@ -1817,12 +1828,9 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # card, since we can't tell which type self holds from the log.
     # The hints carry their own context (robber rank, opp resource
     # tally, road-supply check) and the user picks whichever matches
-    # what's actually in their dev card panel.
-    # bank_supply has to be computed first — YoP gates on bank stock.
-    try:
-        snap["bank_supply"] = _compute_bank_supply(game)
-    except Exception as e:  # noqa: BLE001
-        print(f"[advisor] bank_supply failed: {e!r}", flush=True)
+    # what's actually in their dev card panel. bank_supply was
+    # already computed above (before recs) so the dev-card hints
+    # just read the existing snap entry.
     try:
         snap["knight_hint"] = _compute_knight_hint(
             game, display_colors=st.get("display_colors") or {},
