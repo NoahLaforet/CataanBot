@@ -3,10 +3,11 @@
 [![tests](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml/badge.svg)](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml)
 
 A live Settlers of Catan advisor for [colonist.io](https://colonist.io).
-A Tampermonkey userscript streams the in-browser game (DOM log + raw
+A Chrome extension streams the in-browser game (DOM log + raw
 WebSocket frames) to a local FastAPI bridge that runs the strategy
-engine; an in-page overlay renders the recommendations next to the
-game in real time.
+engine; the HUD renders in Chrome's right-side panel — no overlap
+with the game board. (A Tampermonkey userscript fallback is also
+available for non-Chrome browsers.)
 
 Built on top of [catanatron](https://github.com/bcollazo/catanatron)
 (Python Catan engine) — handcrafted heuristics + 1-ply state-eval
@@ -84,19 +85,42 @@ Skip if you only want the offline replay / advisor CLIs.
 ./bin/cataanbot bridge --advisor --ws-jsonl ws_captures/$(date +%Y-%m-%d).jsonl
 ```
 
-Install the userscript:
+### Install the Chrome extension (recommended)
+
+The extension renders the HUD in Chrome's native side panel (same
+mechanism the Claude extension uses) — no overlap with the colonist
+board, no draggable pop-out window to manage.
+
+1. Open `chrome://extensions` in Chrome.
+2. Toggle **Developer mode** (top-right).
+3. Click **Load unpacked** and pick the `extension/` folder in this
+   repo.
+4. Pin the green CataanBot icon to the toolbar (puzzle-piece menu →
+   pin) and click it — the side panel opens on the right.
+5. Open colonist.io and start a game. The bridge terminal logs each
+   event; the panel shows the HUD live.
+
+To pull updates: `git pull`, then click the reload ⟳ icon on the
+CataanBot card in `chrome://extensions`.
+
+When the extension is ready for the Chrome Web Store, listing it
+there ($5 one-time developer fee) gives users automatic updates
+within ~24h of each push, no manual reload needed.
+
+### Install the userscript (fallback for non-Chrome browsers)
+
+If you're on Firefox / Safari / older Chrome, the userscript provides
+the same HUD as a draggable overlay on top of the page:
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or
    Violentmonkey) in your browser.
 2. Open `userscript/colonist_cataanbot.user.js` in this repo, copy
    the contents, paste into a new Tampermonkey script. Save.
 3. Confirm it's enabled on `colonist.io/*`.
-4. Open colonist, start a game. The HUD appears in the top-right;
-   the bridge terminal logs each event.
+4. Open colonist, start a game.
 
 Tampermonkey will pull updates from this repo's `main` branch
-automatically (the `@updateURL` header points at the raw
-GitHub URL).
+automatically (the `@updateURL` header points at the raw GitHub URL).
 
 ## Offline tools
 
@@ -118,7 +142,8 @@ GitHub URL).
 
 ```
 src/cataanbot/        bridge, recommender, tracker, render, advisor
-userscript/           Tampermonkey script (colonist DOM + WS pipe)
+extension/            Chrome side-panel extension (Manifest V3)
+userscript/           Tampermonkey fallback (colonist DOM + WS pipe)
 tests/                pytest, ~580 tests covering parsing, dispatch,
                       tracker arithmetic, recommender heuristics,
                       bridge snapshot shapes
