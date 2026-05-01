@@ -851,3 +851,98 @@ def test_duplicate_roll_diff_dedupped():
     events3 = events_from_diff(sess, diff3)
     rolls3 = [e for e in events3 if isinstance(e, RollEvent)]
     assert len(rolls3) == 1
+
+
+def test_trade_offer_event_from_active_offers():
+    """Colonist's WS ships incoming trade offers via
+    ``tradeState.activeOffers``. Each new id is a TradeOfferEvent for
+    the HUD's incoming-trade banner; partial updates (just
+    playerResponses change) and self-created offers are filtered out."""
+    from cataanbot.events import TradeOfferEvent
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    sess.self_color_id = 1
+    diff = {"tradeState": {"activeOffers": {
+        "abc123": {
+            "id": "abc123",
+            "creator": 5,
+            "offeredResources": [2, 2],  # 2 brick
+            "wantedResources": [3],      # 1 sheep
+            "playerResponses": {"1": 0},
+        },
+    }}}
+    events = events_from_diff(sess, diff)
+    offers = [e for e in events if isinstance(e, TradeOfferEvent)]
+    assert len(offers) == 1
+    o = offers[0]
+    assert o.player == sess.player_for(5)
+    assert o.give == {"BRICK": 2}
+    assert o.want == {"SHEEP": 1}
+
+
+def test_trade_offer_event_dedupped_on_partial_update():
+    """A second diff for the same offer id (e.g. partial response
+    update) must not re-emit a TradeOfferEvent."""
+    from cataanbot.events import TradeOfferEvent
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    sess.self_color_id = 1
+    full = {"tradeState": {"activeOffers": {
+        "abc123": {
+            "id": "abc123",
+            "creator": 5,
+            "offeredResources": [4],
+            "wantedResources": [5],
+            "playerResponses": {"1": 0},
+        },
+    }}}
+    events_from_diff(sess, full)
+    # Partial update — just playerResponses, no creator/offered/wanted.
+    partial = {"tradeState": {"activeOffers": {
+        "abc123": {"playerResponses": {"1": 1}},
+    }}}
+    events = events_from_diff(sess, partial)
+    assert [e for e in events if isinstance(e, TradeOfferEvent)] == []
+
+
+def test_trade_offer_event_skips_self_created_offers():
+    """When self created the offer (creator == self_color_id), no
+    incoming-trade banner — it's an outgoing send, not a decision."""
+    from cataanbot.events import TradeOfferEvent
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    sess.self_color_id = 1
+    diff = {"tradeState": {"activeOffers": {
+        "self01": {
+            "id": "self01",
+            "creator": 1,  # self
+            "offeredResources": [4],
+            "wantedResources": [5],
+            "playerResponses": {"5": 0},
+        },
+    }}}
+    events = events_from_diff(sess, diff)
+    assert [e for e in events if isinstance(e, TradeOfferEvent)] == []
+    # But the id should still be tracked so it doesn't re-fire on a
+    # later partial update.
+    assert "self01" in sess.active_offer_ids
+
+
+def test_trade_offer_id_evicts_on_close():
+    """A closed offer's id must drop from active_offer_ids so the next
+    incoming offer with a fresh id can fire its event."""
+    from cataanbot.events import TradeOfferEvent
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    sess.self_color_id = 1
+    sess.active_offer_ids.add("abc123")
+    diff = {"tradeState": {
+        "activeOffers": {"abc123": None},
+        "closedOffers": {"abc123": {"offeredResources": [2]}},
+    }}
+    events_from_diff(sess, diff)
+    assert "abc123" not in sess.active_offer_ids

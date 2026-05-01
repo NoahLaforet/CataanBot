@@ -39,7 +39,7 @@ from cataanbot.colonist_map import (
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
     Event, HandSyncEvent, ProduceEvent,
-    RobberMoveEvent, RollEvent, VPEvent,
+    RobberMoveEvent, RollEvent, TradeOfferEvent, VPEvent,
 )
 
 # Resource type ints used inside `playerStates.{cid}.resourceCards.cards`.
@@ -202,6 +202,13 @@ class LiveSession:
     # target ranking filters protected victims out so the suggestions
     # match what colonist's UI will actually allow.
     friendly_robber_active: bool = False
+    # Active trade-offer ids we've already emitted a TradeOfferEvent
+    # for. Colonist sends partial updates (e.g. just playerResponses
+    # changes) as repeated entries in tradeState.activeOffers; we
+    # need to dedup so the HUD doesn't re-fire the offer banner on
+    # every keystroke from the offerer. Cleared when the offer key
+    # appears in closedOffers or with a null value.
+    active_offer_ids: set[str] = field(default_factory=set)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -522,6 +529,9 @@ def events_from_diff(
     for ev in _hand_sync_events(sess, diff.get("playerStates") or {}):
         out.append(ev)
 
+    for ev in _trade_offer_events(sess, diff.get("tradeState") or {}):
+        out.append(ev)
+
     _merge_vp_state(sess, diff.get("playerStates") or {})
 
     for ev in _bonus_vp_events(sess, diff):
@@ -745,6 +755,93 @@ def _hand_sync_events(
             player=sess.player_for(cid),
             resources=bag,
         ))
+    return out
+
+
+def _trade_offer_events(
+    sess: LiveSession, trade_state: dict[str, Any],
+) -> list[Event]:
+    """Emit TradeOfferEvent for each new incoming offer in the diff.
+
+    Colonist ships ``tradeState.activeOffers`` as a partial dict — a
+    full payload (with id/creator/offered/wanted) on creation, partial
+    updates (just playerResponses) as opps respond, and the key with
+    a null value on close. We only emit on the FIRST sighting of an id
+    that's a real offer payload, deduping via ``sess.active_offer_ids``.
+
+    Self-creator offers are skipped — the HUD's incoming-trade banner
+    is for offers Noah needs to react to, not ones he just sent. Same
+    for offers in ``closedOffers`` (already past the decision window).
+
+    Until 2026-04-30 the only offer-detection path was the DOM-log
+    "X wants to give ... for ..." text. That worked when colonist
+    surfaced the offer in chat but missed every offer sent through the
+    UI button alone. The WS path catches both.
+    """
+    out: list[Event] = []
+    if not isinstance(trade_state, dict):
+        return out
+    active = trade_state.get("activeOffers")
+    if isinstance(active, dict):
+        for offer_id, payload in active.items():
+            if payload is None:
+                sess.active_offer_ids.discard(offer_id)
+                continue
+            if offer_id in sess.active_offer_ids:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            offered = payload.get("offeredResources")
+            wanted = payload.get("wantedResources")
+            creator = payload.get("creator")
+            if (offered is None or wanted is None
+                    or creator is None):
+                # Partial-update frame (e.g. playerResponses change) —
+                # we already have it cached or it's a status update on
+                # one we've seen. Skip silently.
+                continue
+            if (sess.self_color_id is not None
+                    and int(creator) == int(sess.self_color_id)):
+                # Self-created offer — Noah doesn't need a banner for
+                # his own send.
+                sess.active_offer_ids.add(offer_id)
+                continue
+            give = _ints_to_resource_counter(offered)
+            want = _ints_to_resource_counter(wanted)
+            if not give and not want:
+                continue
+            sess.active_offer_ids.add(offer_id)
+            out.append(TradeOfferEvent(
+                player=sess.player_for(int(creator)),
+                give=give,
+                want=want,
+            ))
+    closed = trade_state.get("closedOffers")
+    if isinstance(closed, dict):
+        for offer_id in closed:
+            sess.active_offer_ids.discard(offer_id)
+    return out
+
+
+def _ints_to_resource_counter(ints: Any) -> dict[str, int]:
+    """Map a list of colonist resource ints to a {resource: count} dict.
+
+    Resource int 0 is the opponent placeholder ("hidden card"); we drop
+    it so a counter for an opp's offer doesn't carry meaningless zero
+    keys. Unknown ints (anything outside _CARD_RESOURCE) are silently
+    skipped — better than poisoning the counter with bogus types.
+    """
+    out: dict[str, int] = {}
+    if not isinstance(ints, list):
+        return out
+    for n in ints:
+        try:
+            res = _CARD_RESOURCE.get(int(n))
+        except (TypeError, ValueError):
+            continue
+        if res is None:
+            continue
+        out[res] = out.get(res, 0) + 1
     return out
 
 
