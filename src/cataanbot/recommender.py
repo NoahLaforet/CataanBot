@@ -1306,8 +1306,10 @@ def recommend_actions(
         return _RES_TITLE.get(r, r.title())
 
     def _fmt_pack(pack: dict[str, int]) -> str:
-        return ", ".join(f"{n} {_resource_title(r)}"
-                         for r, n in pack.items() if n)
+        # Lowercase resource names — less shouty in the HUD, easier to
+        # read at a glance ("4 sheep → 1 ore" vs "4 SHEEP → 1 ORE").
+        return " + ".join(f"{n} {r.lower()}"
+                          for r, n in pack.items() if n)
 
     def _collapse_trade_plan(plan: list[tuple[str, int, str]]) -> tuple[
             dict[str, int], dict[str, int], str]:
@@ -1319,8 +1321,7 @@ def recommend_actions(
         for src, rate, tgt in plan:
             give[src] = give.get(src, 0) + rate
             get[tgt] = get.get(tgt, 0) + 1
-            steps.append(f"{rate} {_resource_title(src)} → "
-                         f"1 {_resource_title(tgt)}")
+            steps.append(f"{rate} {src.lower()} → 1 {tgt.lower()}")
         return give, get, " + ".join(steps)
 
     # Roads deliberately left out: they're cheap (2 cards) and their
@@ -1359,6 +1360,16 @@ def recommend_actions(
         rate_sum = sum(r for _, r, _ in plan)
         trade_score = round(min(max(base_score - 1.0, 2.0), 9.0), 1)
         label_word = _kind_label(kind)
+        # Bank/port trade detail. Read like an English sentence,
+        # ending with what it unlocks so the user gets the "why" tail
+        # ("4 sheep → 1 ore · unlocks city"). Multi-step bank trades
+        # collapse to net give/net get rather than chaining the
+        # individual port hops, which got dense fast.
+        if len(plan) == 1:
+            trade_detail = f"{steps} · unlocks {label_word}"
+        else:
+            trade_detail = (f"{_fmt_pack(give)} → {_fmt_pack(get)} "
+                            f"· unlocks {label_word}")
         rec: dict[str, Any] = {
             "kind": "bank_trade",
             "when": "now",
@@ -1366,10 +1377,7 @@ def recommend_actions(
             "give": give,
             "get": get,
             "unlocks": kind,
-            "detail": (f"{steps} · {label_word}"
-                       if len(plan) == 1
-                       else f"{_fmt_pack(give)} → {_fmt_pack(get)} "
-                            f"· {label_word}"),
+            "detail": trade_detail,
         }
         if node_or_none is not None:
             rec["node_id"] = int(node_or_none)
@@ -1486,6 +1494,36 @@ def recommend_actions(
                     min(base_score - 0.3 + adj, 9.5), 1)
                 propose_score = max(propose_score, 1.5)
                 kind_word = _kind_label(kind)
+                # Propose-trade detail. Verb-first ("Offer X for Y") so
+                # the action is obvious. Variant-specific tags only
+                # appear for non-fair offers since "1:1 fair" is the
+                # default and the give/get already shows the ratio.
+                give_str = (f"{give_n} {best_src.lower()}"
+                            if give_n != 1
+                            else f"1 {best_src.lower()}")
+                get_str = (f"{get_n} {need_res.lower()}"
+                           if get_n != 1
+                           else f"1 {need_res.lower()}")
+                if label == "1:1 fair":
+                    propose_detail = (
+                        f"offer {give_str} for {get_str} "
+                        f"· unlocks {kind_word}")
+                elif label == "2:1 concede":
+                    propose_detail = (
+                        f"offer {give_str} for {get_str} "
+                        f"(concede) · unlocks {kind_word}")
+                elif label == "2:2 even":
+                    propose_detail = (
+                        f"offer {give_str} for {get_str} "
+                        f"· unlocks {kind_word}")
+                elif label == "1:2 longshot":
+                    propose_detail = (
+                        f"offer {give_str} for {get_str} "
+                        f"(longshot) · unlocks {kind_word}")
+                else:
+                    propose_detail = (
+                        f"offer {give_str} for {get_str} "
+                        f"· unlocks {kind_word}")
                 rec = {
                     "kind": "propose_trade",
                     "when": "now",
@@ -1494,10 +1532,7 @@ def recommend_actions(
                     "get": {need_res: get_n},
                     "unlocks": kind,
                     "variant": label,
-                    "detail": (
-                        f"{label} · {give_n}{_resource_title(best_src)}"
-                        f"→{get_n}{_resource_title(need_res)} · "
-                        f"{kind_word}"),
+                    "detail": propose_detail,
                 }
                 if node_or_none is not None:
                     rec["node_id"] = int(node_or_none)

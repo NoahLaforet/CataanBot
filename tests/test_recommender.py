@@ -1401,3 +1401,57 @@ def test_trade_no_counter_when_trimmed_still_bad():
     assert verdict["counter"] is None, verdict
 
 
+
+
+def test_bank_trade_detail_reads_as_english_sentence():
+    """Bank trade rec detail should read as a clean sentence:
+    '4 sheep → 1 ore · unlocks settlement', not the old
+    '4xSHEEP→1xORE · settlement' wall."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    # 1 wheat short of city; 4 surplus sheep means bank can convert.
+    hand = {"WHEAT": 1, "ORE": 3, "SHEEP": 4}
+    out = recommend_actions(g, "RED", hand, top=6)
+    bank_recs = [r for r in out if r["kind"] == "bank_trade"]
+    assert bank_recs, "expected at least one bank_trade rec"
+    detail = bank_recs[0]["detail"]
+    # Lowercase resource, arrow separator, "unlocks" suffix.
+    assert "sheep" in detail and "SHEEP" not in detail
+    assert "→" in detail
+    assert "unlocks" in detail
+
+
+def test_propose_trade_detail_is_verb_first():
+    """Propose-trade detail should start with a verb ('offer …') and
+    end with what it unlocks. Old format was '1:1 fair · 1Sheep→1Ore
+    · settlement' — readable as code, not as instruction."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    hand = {"WOOD": 5, "BRICK": 1, "WHEAT": 1}  # 1 sheep short of settle
+    # Opp has sheep so propose_trade isn't filtered.
+    opp_hands = {"BLUE": {"WOOD": 0, "BRICK": 0, "SHEEP": 3,
+                          "WHEAT": 0, "ORE": 0, "unknown": 0}}
+    bank_supply = {"WOOD": 18, "BRICK": 18, "SHEEP": 16,
+                   "WHEAT": 18, "ORE": 19}
+    out = recommend_actions(
+        g, "RED", hand, top=8,
+        opp_hands=opp_hands, bank_supply=bank_supply)
+    propose_recs = [r for r in out if r["kind"] == "propose_trade"]
+    assert propose_recs, "expected at least one propose_trade rec"
+    detail = propose_recs[0]["detail"]
+    assert detail.startswith("offer "), (
+        f"expected 'offer ...' verb-first, got {detail!r}")
+    assert "unlocks" in detail
+    # Lowercase, no jammed-together "1Sheep→1Ore"
+    assert "sheep" in detail and "SHEEP" not in detail
+    assert "1Sheep" not in detail and "1Ore" not in detail
