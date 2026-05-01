@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.25.0
+// @version      0.25.1
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -21,6 +21,7 @@
     const BRIDGE_URL = 'http://127.0.0.1:8765/log';
     const BRIDGE_WS_URL = 'http://127.0.0.1:8765/ws';
     const BRIDGE_ADVISOR_URL = 'http://127.0.0.1:8765/advisor';
+    const BRIDGE_FEEDBACK_URL = 'http://127.0.0.1:8765/feedback';
     // 500ms poll: bridge bumps `seq` on every WS frame from colonist, so a
     // shorter interval directly halves the worst-case lag between a roll
     // landing in the game and the HUD reflecting it. The advisor endpoint
@@ -36,6 +37,13 @@
     // sees the colonist UI react before the HUD does — feels laggy
     // mid-turn ("HUD says I have 1 brick but I just got another").
     let triggerAdvisorRefresh = () => {};
+
+    // Latest /advisor snapshot — updated by the polling loop, read by
+    // event handlers that need state context (e.g. feedback chips
+    // attaching a "what was happening when I clicked this" hint).
+    // Module-scope so closures across mountOverlay + startAdvisorPoll
+    // see the same value.
+    let latestAdvisorSnap = null;
 
     // Fire-and-forget POST. Used by both the DOM log forwarder (/log)
     // and the WS frame forwarder (/ws). Keeps the userscript quiet even
@@ -1104,6 +1112,35 @@
     gap: var(--s-2);
     font-size: calc(14px * var(--font-scale));
   }
+  /* Feedback chips. Tiny, muted by default — they shouldn't draw the
+     eye. On hover they brighten so the user knows they're clickable.
+     After a click we add .fb-marked so the choice is persistent
+     visually for the rest of the rec's lifetime in the HUD. */
+  .fb-row {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 2px;
+    opacity: 0.45;
+    transition: opacity 120ms ease;
+  }
+  .rec:hover .fb-row { opacity: 1; }
+  .fb {
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+    font-size: calc(11px * var(--font-scale));
+    cursor: pointer;
+    color: var(--fg-mute);
+    line-height: 1;
+  }
+  .fb:hover { background: var(--bg-3); }
+  .fb-up.fb-marked   { background: rgba(74, 222, 128, 0.18);
+                       border-color: var(--pos);
+                       color: var(--pos); }
+  .fb-down.fb-marked { background: rgba(239, 68, 68, 0.18);
+                       border-color: var(--alert);
+                       color: var(--alert); }
   /* Hero top rec — this is the "what do I do NOW" block. Big kind
      label, big tile chips, gradient accent bar on the left. Score and
      detail drop away so the eye only catches verb + target.
@@ -2205,6 +2242,53 @@
             popOut();
         });
 
+        // ---------- Feedback chips on rec cards ----------
+        // Delegated click handler on the panel — survives the
+        // innerHTML rewrites that #content does on every poll, so we
+        // don't have to re-attach listeners per rec card. Reads the
+        // serialized rec dict off the data-rec attribute and posts to
+        // /feedback. The visual state (.fb-marked) is set on the
+        // clicked button so the choice is sticky for the rest of this
+        // rec render — though next /advisor poll will rebuild the
+        // rec list and the marker resets, which matches "you marked
+        // this rec, not the rec slot."
+        panel.addEventListener('click', (e) => {
+            const target = e.target;
+            if (!(target instanceof Element)) return;
+            if (!target.classList.contains('fb')) return;
+            e.stopPropagation();
+            const dataAttr = target.getAttribute('data-rec');
+            if (!dataAttr) return;
+            let recDict;
+            try {
+                recDict = JSON.parse(dataAttr);
+            } catch (err) {
+                console.warn('[cataanbot] bad fb data:', err);
+                return;
+            }
+            const label = target.classList.contains('fb-up') ? 'good' : 'bad';
+            // Hint payload: tiny sliver of game state so the labeled
+            // rec is interpretable later without rebuilding the snap.
+            const snap = latestAdvisorSnap;
+            const hint = (snap && {
+                seq: snap.seq,
+                self_vp: (snap.self || {}).vp,
+                self_cards: (snap.self || {}).cards,
+                round: snap.round,
+                phase: snap.phase,
+            }) || {};
+            postTo(BRIDGE_FEEDBACK_URL, {
+                label, rec: recDict, snapshot_hint: hint,
+            }, { quiet: false });
+            // Mark the chosen button; clear the partner so a flip
+            // (good→bad or vice versa) reads cleanly.
+            target.classList.add('fb-marked');
+            const sibling = target.classList.contains('fb-up')
+                ? target.parentNode.querySelector('.fb-down')
+                : target.parentNode.querySelector('.fb-up');
+            if (sibling) sibling.classList.remove('fb-marked');
+        });
+
         // --------------------------------------------------------------
         // Settings drawer + actions. Holds the New Game reset, pause
         // toggle, opacity slider, and snapshot export. Everything here
@@ -2957,6 +3041,26 @@
                 const optHtml = optLetter
                     ? `<span class="opt">${optLetter}</span>`
                     : '';
+                // Feedback chips. Click 👍 / 👎 to log an opinion on
+                // this rec — POSTs to /feedback so the bridge can
+                // append it to feedback/recs.jsonl. The data-rec
+                // attribute carries a JSON-serialized snapshot of the
+                // rec dict so the click handler doesn't have to
+                // re-resolve the rec from the rendered DOM.
+                const fbPayload = JSON.stringify({
+                    kind: r.kind, when: r.when, score: r.score,
+                    detail: r.detail, give: r.give, get: r.get,
+                    unlocks: r.unlocks, node_id: r.node_id,
+                    edge: r.edge, alt: r.alt,
+                });
+                const fbHtml = `<span class="fb-row">`
+                    + `<button class="fb fb-up" `
+                    + `data-rec='${escapeHtml(fbPayload)}' `
+                    + `title="rec was helpful">👍</button>`
+                    + `<button class="fb fb-down" `
+                    + `data-rec='${escapeHtml(fbPayload)}' `
+                    + `title="rec was bad">👎</button>`
+                    + `</span>`;
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}${altCls}">`
                     + optHtml
                     + `<span class="score ${scoreCls}">${s.toFixed(1)}</span>`
@@ -2964,7 +3068,7 @@
                     + ` <span class="kind">${kindLabel}</span>`
                     + `<span class="tiles">${loc}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
-                    + `</span></div>`);
+                    + `</span>${fbHtml}</div>`);
                 // Opening-settlement picks include a nested road hint:
                 // "your follow-up road sits between these tiles." The
                 // tile chips are the disambiguator — compass direction
@@ -3984,9 +4088,11 @@
                 if (snap && snap.seq !== lastSeq) {
                     lastSeq = snap.seq;
                     lastSnap = snap;
+                    latestAdvisorSnap = snap;
                     renderOverlay(ui, snap, true);
                 } else if (!lastSnap) {
                     renderOverlay(ui, snap, true);
+                    if (snap) latestAdvisorSnap = snap;
                 }
             }).catch(() => {
                 renderOverlay(ui, lastSnap, false);

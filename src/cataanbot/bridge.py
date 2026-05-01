@@ -279,6 +279,48 @@ def _build_app(jsonl_path: Path | None = None,
                 game, results, st["ws_count"], advisor=advisor)
         return {"ok": True, "results": len(results or [])}
 
+    @app.post("/feedback")
+    def feedback(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Log a thumbs-up / thumbs-down on a recommendation.
+
+        Userscript posts ``{label, rec, snapshot_hint}`` per click:
+        ``label`` is "good" or "bad", ``rec`` is the rec dict that
+        was rendered, ``snapshot_hint`` is a small subset of the
+        advisor snapshot (turn/round, self VP, hand size) so the
+        labeled rec has enough context to be reasoned about later
+        without rebuilding the full game state.
+
+        Appends one JSONL line per click to
+        ``feedback/recs.jsonl`` next to the postmortem dir. We don't
+        do any ML here yet; this is the data-collection layer for
+        when sample size is large enough to train against.
+        """
+        label = str(payload.get("label", "")).strip().lower()
+        if label not in ("good", "bad"):
+            return {"ok": False, "error": "label must be 'good' or 'bad'"}
+        rec = payload.get("rec") or {}
+        snapshot_hint = payload.get("snapshot_hint") or {}
+        out_dir = st.get("pm_dir") or (Path.cwd() / "postmortems")
+        out_dir = Path(out_dir).parent / "feedback"
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return {"ok": False, "error": f"could not create dir: {e}"}
+        line = {
+            "ts": time.time(),
+            "label": label,
+            "rec": rec,
+            "snapshot_hint": snapshot_hint,
+        }
+        # Append; one click = one line. Easy to grep and stream-parse.
+        out_path = out_dir / "recs.jsonl"
+        try:
+            with out_path.open("a") as f:
+                f.write(json.dumps(line) + "\n")
+        except OSError as e:
+            return {"ok": False, "error": f"write failed: {e}"}
+        return {"ok": True, "path": str(out_path)}
+
     @app.get("/config")
     def get_config() -> dict[str, Any]:
         """Current VP target + discard limit. Userscript drawer reads
