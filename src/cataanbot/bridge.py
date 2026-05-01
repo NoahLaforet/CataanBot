@@ -728,6 +728,8 @@ def _track_overlay_state(st, results) -> None:
                       flush=True)
             if r.event.total == 7 and is_you:
                 st["robber_pending"] = True
+                # Fresh attempt budget for this placement window.
+                st["robber_snapshot_retry_n"] = 0
                 st["robber_snapshot"] = _compute_robber_snapshot(
                     game, display_colors=st["display_colors"])
             elif r.event.total == 7:
@@ -1098,14 +1100,18 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     game = st["game"]
     from cataanbot import config
 
-    # Late-retry the robber snapshot when an earlier knight-play
-    # compute returned empty (usually because session state wasn't
-    # ready when the DOM log fired). Each snap poll gets another
-    # chance — once the rec lands, the retry flag clears. Bounded at
-    # ~30 attempts (≈4s at the default 150ms poll cadence) so a stuck
-    # retry doesn't burn CPU forever if the RobberMoveEvent that
-    # would normally clear the flag never arrives.
-    if st.get("robber_snapshot_retry") and game is not None:
+    # Late-retry the robber snapshot any time self owes a placement
+    # but the snapshot is empty. Catches both the knight-play case
+    # (DOM-log fires before session is ready) AND the 7-roll case
+    # (Noah's 2026-05-01 game showed the rec missing on a self
+    # 7-roll when the initial compute returned empty for a similar
+    # timing reason). Bounded at ~30 attempts (≈4s at default
+    # poll cadence) so a stuck retry doesn't burn CPU forever.
+    needs_retry = (
+        st.get("robber_snapshot_retry")
+        or (st.get("robber_pending") and not st.get("robber_snapshot"))
+    )
+    if needs_retry and game is not None:
         attempts = int(st.get("robber_snapshot_retry_n") or 0)
         if attempts < 30:
             try:
