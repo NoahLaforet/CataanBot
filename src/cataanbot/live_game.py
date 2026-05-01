@@ -213,10 +213,34 @@ class LiveGame:
         ptype = payload.get("type")
         body = payload.get("payload") or {}
         if ptype == 4:
-            if not self.started:
-                self.start_from_game_state(body)
-            else:
-                self._resync_from_replay(body)
+            # Type=4 frames sometimes ship without a usable gameState
+            # (auth handshakes, reconnect acks, partial server frames).
+            # Treat those as no-ops instead of letting LiveSessionError
+            # bubble out of feed() — a thrown exception here gets caught
+            # at the bridge's /ws handler and printed as
+            # "[ws #N] decode error: GameStart payload has no gameState",
+            # which leaves the bot in a half-booted state and blocks the
+            # real GameStart that follows. Silent skip on malformed
+            # type=4 frames is the right move; the live game keeps
+            # waiting for a proper boot frame.
+            usable = (isinstance(body, dict)
+                      and isinstance(body.get("gameState") or body,
+                                     dict)
+                      and isinstance(
+                          (body.get("gameState") or body).get("mapState"),
+                          dict))
+            if not usable:
+                return []
+            try:
+                if not self.started:
+                    self.start_from_game_state(body)
+                else:
+                    self._resync_from_replay(body)
+            except LiveSessionError:
+                # The detailed pre-check above should have caught this,
+                # but belt-and-suspenders: never let LiveSessionError
+                # bubble out of feed().
+                return []
             return []
         if ptype != 91 or not self.started:
             return []

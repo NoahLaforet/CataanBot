@@ -5328,3 +5328,28 @@ def test_track_overlay_routes_ws_trade_offer_into_pending():
     _track_overlay_state(
         st, [DispatchResult(event=commit, status="applied")])
     assert st["pending_trade_offer"] is None
+
+
+def test_feed_type4_with_no_game_state_is_silent_noop():
+    """Regression for Noah's 2026-05-01 "couldn't start game" bug.
+    Some type=4 frames ship without a usable gameState (auth handshakes,
+    reconnect acks, partial server frames). Letting LiveSessionError
+    bubble out of feed() puts the bot in a half-booted state and the
+    bridge logs '[ws #N] decode error' instead of accepting the next
+    real GameStart. Now a malformed type=4 is a silent no-op."""
+    from cataanbot.live_game import LiveGame
+    g = LiveGame()
+    # Each of these would have crashed pre-fix.
+    g.feed({"type": 4})
+    g.feed({"type": 4, "payload": {}})
+    g.feed({"type": 4, "payload": {"gameState": None}})
+    g.feed({"type": 4, "payload": {"gameState": {}}})
+    g.feed({"type": 4, "payload": {"gameState": {"mapState": None}}})
+    assert g.started is False
+    # And a real GameStart after the malformed ones should still boot.
+    if CAPTURE_EARLY.exists():
+        for payload in _iter_payloads(CAPTURE_EARLY):
+            if payload.get("type") == 4:
+                g.feed(payload)
+                break
+        assert g.started is True
