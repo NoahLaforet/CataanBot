@@ -2545,3 +2545,104 @@ html[data-style="5"] .panel .header { padding: 14px 16px; }
 html[data-style="5"] .panel .body { padding: 16px 18px 22px; }
 html[data-style="5"] .panel .rec { box-shadow: none !important; }
 html[data-style="5"] .panel .title { letter-spacing: 0.10em; }
+
+/* ============================================================
+   STYLE VARIANT BOLD-DIFFS — per-style structural / decorative
+   touches that go beyond color/font swaps. Each style now has a
+   distinct visual language at a glance.
+
+   Note: the v0.27.0 redesign uses many !important overrides on
+   .opp, .rec, etc. To beat them we need !important here too.
+   That's not great practice in general but we want each style
+   variant to fully take over the relevant chrome — when Noah
+   picks "newspaper", he should see newspaper, not a hybrid.
+
+   Removal: drop this block alongside the variants block above
+   and the bindStyleSelector() in panel.js.
+   ============================================================ */
+
+/* ---- Style 2 (terminal/CRT) ----
+   Square color pills, no-radius chips, monospace numerals on
+   chips. Underlying .opp keeps its v0.27.0 stripped layout. */
+html[data-style="2"] .panel .color-pill {
+  border-radius: 0 !important;
+  font-family: var(--font-mono) !important;
+}
+html[data-style="2"] .panel .rec .score,
+html[data-style="2"] .panel .rec .ev {
+  border-radius: 0 !important;
+  font-family: var(--font-mono) !important;
+}
+html[data-style="2"] .panel .opp .opp-vp,
+html[data-style="2"] .panel .opp .opp-cards,
+html[data-style="2"] .panel .opp .opp-hand {
+  font-family: var(--font-mono) !important;
+}
+
+/* ---- Style 3 (newspaper) ----
+   Serif numerals across opp + rec rows; double-rule top recs;
+   square color pills. */
+html[data-style="3"] .panel .color-pill {
+  border-radius: 0 !important;
+  font-weight: 700 !important;
+}
+html[data-style="3"] .panel .opp .opp-vp,
+html[data-style="3"] .panel .opp .opp-cards,
+html[data-style="3"] .panel .opp .opp-hand {
+  font-family: 'Georgia', 'Times New Roman', serif !important;
+  font-variant-numeric: oldstyle-nums tabular-nums !important;
+}
+html[data-style="3"] .panel .rec.top {
+  border-bottom-style: double !important;
+  border-bottom-width: 3px !important;
+}
+
+/* ---- Style 4 (cyberpunk) ----
+   Slanted-corner clip on opp rows, neon left-edge accent on top
+   rec, monospace HUD-style numerals. */
+html[data-style="4"] .panel .opp {
+  border-left: 3px solid var(--accent) !important;
+  background: linear-gradient(90deg,
+    rgba(255, 0, 200, 0.06) 0%,
+    rgba(0, 240, 255, 0.03) 50%,
+    transparent 100%) !important;
+  clip-path: polygon(
+    0 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% 100%,
+    8px 100%,
+    0 calc(100% - 8px)
+  );
+}
+html[data-style="4"] .panel .opp.tracked {
+  border-left-color: var(--pos) !important;
+}
+html[data-style="4"] .panel .opp.hot-knight {
+  border-left-color: var(--watch) !important;
+}
+html[data-style="4"] .panel .opp .opp-vp,
+html[data-style="4"] .panel .opp .opp-cards {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+}
+html[data-style="4"] .panel .rec.top {
+  border-left: 3px solid var(--pos) !important;
+  background: linear-gradient(90deg,
+    rgba(0, 245, 212, 0.10) 0%, transparent 80%) !important;
+}
+
+/* ---- Style 5 (minimal light) ----
+   Fully-rounded color pills, top rec underlined with a 2px
+   accent rule, .rec score/ev as outlined chips (no fill). */
+html[data-style="5"] .panel .color-pill {
+  border-radius: 999px !important;
+  font-weight: 500 !important;
+}
+html[data-style="5"] .panel .rec.top {
+  border-bottom: 2px solid var(--accent) !important;
+}
+html[data-style="5"] .panel .rec .score,
+html[data-style="5"] .panel .rec .ev {
+  background: transparent !important;
+  border: 1px solid var(--line) !important;
+}
