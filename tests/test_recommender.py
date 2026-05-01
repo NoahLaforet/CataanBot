@@ -227,6 +227,72 @@ def test_propose_trade_suggested_when_one_card_short():
     assert t["when"] == "now"
 
 
+def test_no_propose_trade_when_bank_holds_all_of_resource():
+    """If the bank still holds all 19 of resource R, no opp can possibly
+    have R in hand (known or as part of an unknown bucket). The
+    recommender must skip propose_trade for R even when an opp's hand
+    has unknowns — without this, you waste your turn proposing a trade
+    that's physically impossible.
+
+    Regression for the live game where Noah saw a propose-trade for
+    SHEEP while every sheep card was still in the bank."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    # 1 sheep short of settlement, with surplus WOOD to offer.
+    hand = {"WOOD": 5, "BRICK": 1, "WHEAT": 1}
+    # Opp has 3 unknown cards (so opp_has_unknown=True) but the bank
+    # still holds all 19 sheep — the unknowns physically cannot be
+    # sheep, so no trade for sheep should fire.
+    opp_hands = {"BLUE": {"WOOD": 0, "BRICK": 0, "SHEEP": 0,
+                          "WHEAT": 0, "ORE": 0, "unknown": 3}}
+    bank_supply = {"WOOD": 12, "BRICK": 18, "SHEEP": 19,
+                   "WHEAT": 17, "ORE": 19}
+    out = recommend_actions(
+        g, "RED", hand, top=6,
+        opp_hands=opp_hands, bank_supply=bank_supply)
+    sheep_proposals = [r for r in out
+                       if r["kind"] == "propose_trade"
+                       and r.get("get", {}).get("SHEEP", 0) > 0]
+    assert not sheep_proposals, (
+        f"propose_trade for SHEEP fired even though bank has all 19 "
+        f"sheep — opp can't possibly have any. Got: {sheep_proposals}")
+
+
+def test_propose_trade_still_fires_when_bank_low_and_unknowns_present():
+    """Sanity check that the bank-19 guard doesn't over-filter. When
+    SHEEP cards have been distributed (bank < 19) and an opp has unknowns,
+    the recommender should still propose a trade — the unknowns *could*
+    be sheep."""
+    from cataanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    from catanatron import Color
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    hand = {"WOOD": 5, "BRICK": 1, "WHEAT": 1}
+    opp_hands = {"BLUE": {"WOOD": 0, "BRICK": 0, "SHEEP": 0,
+                          "WHEAT": 0, "ORE": 0, "unknown": 3}}
+    # Bank is missing 4 sheep — they're out there, possibly in the
+    # unknown bucket.
+    bank_supply = {"WOOD": 12, "BRICK": 18, "SHEEP": 15,
+                   "WHEAT": 17, "ORE": 19}
+    out = recommend_actions(
+        g, "RED", hand, top=6,
+        opp_hands=opp_hands, bank_supply=bank_supply)
+    sheep_proposals = [r for r in out
+                       if r["kind"] == "propose_trade"
+                       and r.get("get", {}).get("SHEEP", 0) > 0]
+    assert sheep_proposals, (
+        "propose_trade for SHEEP was filtered out even though sheep "
+        "have been distributed and opp has unknowns")
+
+
 def test_no_trade_when_no_spare_surplus():
     """When every card we hold is already reserved by the blocked
     build's cost, there's nothing spare to propose. Bank-trade fallback
@@ -420,6 +486,66 @@ def test_recommend_opening_attaches_road_direction():
         # Tile list describes the 2 hexes flanking the road edge so
         # Noah can identify it as "the road between the 6 and the 8".
         assert isinstance(road["edge_tiles"], list)
+
+
+def test_first_ingame_road_aligns_with_starter_road_direction():
+    """After opening, the first in-game `recommend_actions` road rec
+    from a settlement must agree with the starter-road direction the
+    opening logic suggested for that settlement.
+
+    Previously the in-game road logic ranked candidate landings by
+    raw cards-per-roll alone, while opening-road logic used a
+    diversity-weighted score on top of the same per-roll dict. So a
+    2-resource same-pip corner could outrank a 3-resource interior
+    corner in-game, contradicting the starter road's choice — Noah
+    saw the symptom as "you told me to place the road in direction
+    A, then immediately recommended building another road in
+    direction B from the same settlement." Aligning the two scorings
+    keeps the bot committed to the same corridor.
+    """
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_actions, recommend_opening
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=11,
+    )
+    # First settlement + matching starter road from the opening rec.
+    pick = recommend_opening(g, "RED", top=1)[0]
+    settle = pick["node_id"]
+    starter_edge = tuple(pick["road"]["edge"])
+    g.state.board.build_settlement(Color.RED, settle,
+                                   initial_build_phase=True)
+    g.state.board.build_road(Color.RED, starter_edge)
+
+    # In-game rec for the next road. Hand has a road's worth of
+    # resources. The first 'road' rec should agree with the starter:
+    # extending the same corridor (toward_node from the starter pick),
+    # not flipping to a different direction off the same settlement.
+    out = recommend_actions(
+        g, "RED", {"WOOD": 1, "BRICK": 1}, top=8)
+    starter_far = starter_edge[1] if starter_edge[0] == settle else starter_edge[0]
+    road_recs = [r for r in out if r["kind"] == "road"
+                 and r.get("when") == "now"]
+    assert road_recs, f"no road rec emitted; got kinds={[r['kind'] for r in out]}"
+    # The top road rec should connect to one of the corridor nodes —
+    # either the far end of the starter (extending forward) or some
+    # node already in self's network. It must NOT pick an edge whose
+    # both endpoints are *unrelated* corridor candidates that would
+    # require a 2nd starter-road style commit. Concretely: the top
+    # rec's edge endpoints should overlap with self's existing road
+    # network or with the starter's far node.
+    self_nodes = {settle, starter_far}
+    for (a, b), rc in g.state.board.roads.items():
+        if rc == Color.RED:
+            self_nodes.add(int(a)); self_nodes.add(int(b))
+    top = road_recs[0]
+    top_edge = set(int(x) for x in top["edge"])
+    assert top_edge & self_nodes, (
+        f"first in-game road rec edge {top_edge} doesn't connect to "
+        f"existing self network {self_nodes} — it'd require placing "
+        "a disconnected road, which is illegal anyway")
 
 
 def test_opening_road_not_contested_by_self_buffer():

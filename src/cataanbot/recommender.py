@@ -1015,7 +1015,11 @@ def recommend_actions(
         for nid, (bcol, _bt) in game.state.board.buildings.items():
             if bcol == c:
                 my_nodes.add(int(nid))
-        edge_scores: list[tuple[tuple[int, int], float, int | None]] = []
+        # (edge, raw_prod, landing_node, rank). raw_prod feeds
+        # _score_road for the displayed UI value; rank is the
+        # diversity-weighted prod used for ordering the recs.
+        edge_scores: list[tuple[
+            tuple[int, int], float, int | None, float]] = []
         # Fallback bookkeeping: every buildable edge ranked by its
         # far-end tile production. Used both for the all-sealed case
         # (no edge opens a settle spot, so we emit the best of these
@@ -1040,20 +1044,42 @@ def recommend_actions(
             if far_prod > 0:
                 fallback_candidates.append(((ai, bi), far_prod, far_fb))
             # Look at both endpoints' neighbors for new reachable spots.
+            # Rank candidate landings by diversity-weighted prod (the
+            # same heuristic the opening-road logic uses on its 2-hop
+            # target) so the very first in-game road rec doesn't
+            # disagree with whatever direction the starter road already
+            # committed to. Without diversity in the ranking, a
+            # 3-resource interior corner can lose to a 2-resource
+            # same-pip corner, producing two recs that point at
+            # conflicting directions off the same settlement.
+            #
+            # Diversity feeds *ranking only* — the displayed score is
+            # still raw cards-per-roll, since downstream callers
+            # (evaluate_incoming_trade) compare road-rec scores to
+            # settlement-rec scores, and inflating the road score with
+            # a diversity multiplier here would skew that comparison.
+            best_rank = 0.0
             best_land_prod = 0.0
             best_land_node: int | None = None
             for end in (a, b):
                 for nb in neighbors.get(end, ()):
                     if nb in blocked or nb not in land:
                         continue
-                    p = _node_pip_production(m, nb)
-                    if p > best_land_prod:
-                        best_land_prod = p
+                    nb_prods = m.node_production.get(nb, {})
+                    raw = float(sum(nb_prods.values()))
+                    distinct = sum(1 for v in nb_prods.values() if v > 0)
+                    diversity = (1.15 if distinct >= 3
+                                 else 1.05 if distinct == 2 else 1.0)
+                    rank = raw * diversity
+                    if rank > best_rank:
+                        best_rank = rank
+                        best_land_prod = raw
                         best_land_node = nb
             if best_land_prod > 0 and best_land_node is not None:
                 edge_scores.append(((ai, bi),
-                                    best_land_prod, best_land_node))
-        edge_scores.sort(key=lambda s: -s[1])
+                                    best_land_prod, best_land_node,
+                                    best_rank))
+        edge_scores.sort(key=lambda s: -s[3])
         fallback_candidates.sort(key=lambda s: -s[1])
 
         # Build the primary road rec from edge_scores[0], plus up to 2
@@ -1067,7 +1093,7 @@ def recommend_actions(
         road_rec: dict[str, Any] | None = None
         road_alts: list[dict[str, Any]] = []
         if edge_scores:
-            (edge, prod, landing) = edge_scores[0]
+            (edge, prod, landing, _rank) = edge_scores[0]
             top_prod = prod
             # Road reaches a settle spot eventually — lower score than a
             # direct build since you still have to save for the settle.
@@ -1088,7 +1114,7 @@ def recommend_actions(
             # higher total-alts ceiling so it still gets at least one
             # slot when fallbacks exist.
             min_prod = max(0.0, 0.3 * top_prod) if top_prod > 0.5 else 0.0
-            for (alt_edge, alt_prod, alt_landing) in edge_scores[1:4]:
+            for (alt_edge, alt_prod, alt_landing, _alt_rank) in edge_scores[1:4]:
                 if alt_prod <= min_prod:
                     break
                 road_alts.append({
@@ -1418,7 +1444,18 @@ def recommend_actions(
         if not surplus:
             continue
         emitted_for_kind = 0
+        bank_remaining = (bank_supply or {}).get
         for need_res, need_n in need_pairs:
+            # Bank-derived hard skip: if the bank still holds all 19 of
+            # the resource we'd be asking for, nobody can have it
+            # (known or unknown). 19 - bank == sum across all hands; if
+            # that's 0, it's 0 across all hands. Catches the case where
+            # opp_has_unknown is True but the unknowns physically can't
+            # be need_res — propose-trade for sheep when no sheep have
+            # been distributed yet is dead on arrival.
+            if (bank_supply is not None
+                    and bank_remaining(need_res, 0) >= 19):
+                continue
             if opp_hands is not None and not opp_has_unknown:
                 if opp_resource_total.get(need_res, 0) <= 0:
                     # Nobody has this — no point asking for it.
