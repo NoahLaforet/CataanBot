@@ -399,8 +399,61 @@ def _build_app(jsonl_path: Path | None = None,
         st["dev_cards_bought_this_turn"] = 0
         st["_last_turn_cid"] = None
         st.pop("_booted", None)
+        # Truncate the autosave file too — fresh game means fresh
+        # state on next bridge restart.
+        if ws_jsonl_path is not None:
+            try:
+                ws_jsonl_path.write_text("")
+            except OSError:
+                pass
         print("[bridge] game state reset", flush=True)
         return {"ok": True}
+
+    # Auto-resume: replay frames written by a previous bridge session
+    # so a mid-game restart or page refresh doesn't lose game state.
+    # Frames apply through the same code path as a live POST /ws
+    # (they were recorded from one), so the LiveGame ends up in the
+    # same state it had at the moment the bridge was killed. Errors
+    # are tolerated — a malformed line just stops replay; whatever
+    # state was rebuilt up to that point stays.
+    if ws_jsonl_path is not None and ws_jsonl_path.exists():
+        replayed = 0
+        try:
+            with ws_jsonl_path.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        frame = json.loads(line)
+                    except json.JSONDecodeError:
+                        break
+                    try:
+                        results = _feed_ws_payload(st["game"], frame)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    st["ws_count"] += 1
+                    st["seq"] += 1
+                    if results:
+                        try:
+                            _track_overlay_state(st, results)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    if (st["game"].started
+                            and st.get("_booted") is None):
+                        st["_booted"] = True
+                        try:
+                            st["pm_tracker"] = Tracker(
+                                catan_map=st["game"].tracker
+                                .game.state.board.map)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    replayed += 1
+        except OSError:
+            pass
+        if replayed > 0:
+            print(f"[bridge] replayed {replayed} frames from autosave",
+                  flush=True)
 
     return app
 
@@ -1339,6 +1392,15 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     my_cid = sess.self_color_id
     snap["my_turn"] = (sess.current_turn_color_id is not None
                        and sess.current_turn_color_id == my_cid)
+    # Surface whose turn it is when not self's, so the panel can label
+    # the off-turn ribbon. Falls back to a color string if the cid
+    # isn't in player_names yet (very early-game race).
+    cur_cid_active = sess.current_turn_color_id
+    if cur_cid_active is not None and cur_cid_active != my_cid:
+        snap["current_turn_username"] = sess.player_names.get(
+            cur_cid_active) or f"player {cur_cid_active}"
+    else:
+        snap["current_turn_username"] = None
     # Variant-board flag from colonist's gameSettings. "classic" for
     # base Catan, "variant: ..." with the non-zero flags otherwise.
     # Surfaced so the HUD can warn that strategy isn't yet tuned for
@@ -2149,8 +2211,15 @@ def serve(host: str = "127.0.0.1", port: int = 8765,
           jsonl: str | None = None,
           ws_jsonl: str | None = None,
           advisor: bool = False,
-          postmortem_dir: str | None = None) -> int:
-    """Run the bridge with uvicorn. Blocks until Ctrl-C."""
+          postmortem_dir: str | None = None,
+          autosave: bool = True) -> int:
+    """Run the bridge with uvicorn. Blocks until Ctrl-C.
+
+    ``autosave`` (default True): mirror every inbound /ws frame to
+    ``./sessions/active.jsonl`` so a mid-game bridge restart or page
+    refresh can resume by replaying the file. Override ``--ws-jsonl``
+    takes precedence; if neither is set, autosave kicks in.
+    """
     try:
         import uvicorn
     except ImportError:
@@ -2164,9 +2233,34 @@ def serve(host: str = "127.0.0.1", port: int = 8765,
         print(f"mirroring log events to {jsonl_path}")
 
     ws_jsonl_path = Path(ws_jsonl).expanduser() if ws_jsonl else None
+    if ws_jsonl_path is None and autosave:
+        # Auto-resume default: mirror to a stable path so the bridge
+        # can rebuild game state on restart by replaying frames. Path
+        # lives next to postmortems/ for visibility. Truncated when
+        # the user explicitly resets via /reset.
+        ws_jsonl_path = (Path.cwd() / "sessions" / "active.jsonl"
+                         ).resolve()
     if ws_jsonl_path is not None:
         ws_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         print(f"mirroring WS frames to {ws_jsonl_path}")
+        # Auto-resume: if the file already has frames from a recent
+        # session, replay them through the LiveGame so the bridge
+        # boots with rebuilt state instead of empty.
+        try:
+            import time as _time
+            mtime = ws_jsonl_path.stat().st_mtime if ws_jsonl_path.exists() else 0
+            age_sec = _time.time() - mtime
+            if 0 < age_sec < 6 * 3600:
+                print(f"replaying {ws_jsonl_path} (last modified "
+                      f"{int(age_sec)}s ago) to restore game state…")
+            else:
+                # Truncate stale autosave on cold start (older than 6h
+                # is presumed to be a different game).
+                if ws_jsonl_path.exists() and age_sec >= 6 * 3600:
+                    ws_jsonl_path.write_text("")
+                    print("autosave was stale (>6h); cleared")
+        except OSError:
+            pass
 
     pm_dir: Path | None
     if postmortem_dir is None:

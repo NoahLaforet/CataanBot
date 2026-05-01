@@ -1988,3 +1988,18 @@ body { display: flex; flex-direction: column; }
 #popout { display: none !important; }
 /* Opacity slider doesn't apply to a docked panel (Chrome handles it). */
 .drawer-row:has(#opacity) { display: none !important; }
+
+/* Off-turn ribbon — visible signal when the panel is in watching
+   (rec-suppressed) mode. Subtle muted slate so it doesn't compete
+   with active banners; just a "you're not driving right now" cue. */
+.off-turn-ribbon {
+  background: var(--bg-2);
+  color: var(--fg-mute);
+  border-left: 3px solid var(--info);
+  padding: 6px var(--s-4);
+  margin-bottom: var(--s-3);
+  border-radius: var(--radius-sm);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}

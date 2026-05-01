@@ -994,6 +994,20 @@
         // useful to plan around them even off-turn so you know what to
         // grab when your slot comes up.
         const isSetup = !!snap.setup_phase;
+        // Off-turn ribbon. When it's not my turn (and we're past
+        // setup) the bridge intentionally suppresses rec computation,
+        // but the user benefits from a clear visual cue that the
+        // panel is in "watch" mode — otherwise an empty rec block
+        // looks like a render bug. The ribbon also tells you whose
+        // turn it is when colonist's WS metadata has the username.
+        if (!snap.my_turn && !isSetup) {
+            const turnUser = snap.current_turn_username
+                || snap.current_turn_color || 'an opponent';
+            parts.push(
+                '<div class="off-turn-ribbon">'
+                + '<span class="b-ico">⏳</span> '
+                + `${escapeHtml(String(turnUser))}'s turn — watching</div>`);
+        }
         // Recommendations — only shown when it's my turn (mid-game) or
         // during setup (always useful). Split into:
         //   "best moves"      — things affordable right now
@@ -1913,7 +1927,14 @@
             }
             parts.push('</div>');
         }
-        if ((snap.robber_targets || []).length
+        // Robber targets only render on self's turn. The 'placed'
+        // window from a previous self-turn shouldn't carry over into
+        // the next opp's turn — the ranking is stale by then and just
+        // adds noise. (The bridge clears robber_snapshot on the next
+        // non-7 roll, but turn transitions can race past that, so
+        // double-gate here.)
+        if (snap.my_turn
+            && (snap.robber_targets || []).length
             && (snap.robber_pending
                 || snap.robber_reason === 'knight'
                 || snap.robber_reason === 'placed')) {

@@ -46,6 +46,10 @@ postmortems/
 # gameplay data that doesn't belong in a public repo.
 feedback/
 
+# Auto-saved WS frames for mid-game resume after a bridge restart or
+# page refresh. Per-session live data; not for the public repo.
+sessions/
+
 # Personal scratch notes — useful for local development context but
 # not meant for the public repo. Kept locally; ignored from git so
 # they don't clutter the project's docs surface.
