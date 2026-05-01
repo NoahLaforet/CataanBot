@@ -129,6 +129,27 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
             print("[overlay] knight robber snapshot empty; will retry "
                   "in snap builder", flush=True)
             st["robber_snapshot_retry"] = True
+    elif (isinstance(event, RollEvent) and event.total == 7
+          and game is not None
+          and _is_self_player(game, event.player)):
+        # Backstop for the 7-roll robber rec. _track_overlay_state
+        # already arms robber_pending when the WS-side RollEvent
+        # fires, but if that path missed it (WS frame deduped, parser
+        # didn't emit, etc.) the DOM-log RollEvent for the same 7
+        # still flows through here. Set the same flags so the snap
+        # builder's retry loop can populate the targets even when the
+        # WS arm never happened. Idempotent — if WS already armed,
+        # this is a harmless re-arm with the same values.
+        st["robber_pending"] = True
+        st["robber_snapshot_retry_n"] = 0
+        snap = _compute_robber_snapshot(
+            game, display_colors=st.get("display_colors") or {})
+        if snap:
+            st["robber_snapshot"] = snap
+        else:
+            print("[overlay] 7-roll robber snapshot empty; will retry "
+                  "in snap builder", flush=True)
+            st["robber_snapshot_retry"] = True
     elif isinstance(event, RobberMoveEvent):
         # Drop the urgency — self no longer needs to *pick* — but
         # keep the snapshot around so the overlay's robber panel

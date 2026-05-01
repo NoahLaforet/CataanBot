@@ -1053,12 +1053,26 @@ def _record_self_build_quality(st, ev) -> None:
     mh.append(entry)
     st["move_history"] = mh[-30:]
 
-    # Auto-feedback: if self played the top rec (rank 0 → "!!"), log
-    # an auto thumbs-up so Noah doesn't have to click 👍 on every
-    # rec he agrees with. He only needs to manually 👎 the bad ones.
-    # Distinct label "auto_good" so analysis can separate user-
-    # confirmed marks from inferred ones.
-    if rank == 0 and recs:
+    # Auto-feedback. Three labels emitted from the same path so model
+    # training has a complete picture of every self build:
+    #
+    #   auto_good       — rank 0 ("!!"). Noah played the top rec.
+    #                     Implicit thumbs-up.
+    #   auto_picked_alt — rank > 0 (one of the bot's other recs).
+    #                     Noah saw the top, picked a lower-ranked
+    #                     option instead. Useful for "Noah prefers
+    #                     this kind over that kind in this state."
+    #   auto_offmenu    — rank is None (build wasn't in the rec list
+    #                     at all). HIGH-SIGNAL: Noah thought his move
+    #                     was so much better than the rec list that
+    #                     he didn't even pick from it. The actual
+    #                     piece + loc go in `actual` so a future
+    #                     trainer knows what Noah preferred over the
+    #                     bot's top.
+    #
+    # All three include the cached rec dict (rank's rec for picked_alt,
+    # top rec for offmenu) so the labeled rec is interpretable later.
+    if recs:
         try:
             import json as _json
             import time as _time
@@ -1066,14 +1080,33 @@ def _record_self_build_quality(st, ev) -> None:
             out_dir = st.get("pm_dir") or (_Path.cwd() / "postmortems")
             out_dir = _Path(out_dir).parent / "feedback"
             out_dir.mkdir(parents=True, exist_ok=True)
+            if rank == 0:
+                label = "auto_good"
+                rec_payload = dict(recs[0])
+            elif rank is not None and rank < len(recs):
+                label = "auto_picked_alt"
+                rec_payload = dict(recs[rank])
+            else:
+                label = "auto_offmenu"
+                rec_payload = dict(recs[0])  # what the bot would have suggested
+            hint = {
+                "piece": ev.piece, "loc": loc,
+                "rank": rank,
+                "search_delta_gap": sd_gap,
+                "actual": {
+                    "piece": ev.piece,
+                    "node_id": ev.node_id,
+                    "edge_nodes": (list(ev.edge_nodes)
+                                   if ev.edge_nodes else None),
+                },
+                "top_rec_kind": top_kind,
+                "top_rec_loc": top_loc,
+            }
             line = {
                 "ts": _time.time(),
-                "label": "auto_good",
-                "rec": dict(recs[0]),
-                "snapshot_hint": {
-                    "piece": ev.piece, "loc": loc,
-                    "search_delta_gap": sd_gap,
-                },
+                "label": label,
+                "rec": rec_payload,
+                "snapshot_hint": hint,
             }
             with (out_dir / "recs.jsonl").open("a") as f:
                 f.write(_json.dumps(line, default=str) + "\n")
@@ -2132,6 +2165,16 @@ def _print_dispatch_results(game, results, seq: int,
             # being puzzled by stale recs. Other unhandled events
             # (informational text, etc.) stay quiet.
             print(f"[ws #{seq:05d}] UNHANDLED {cls}: {r.message}",
+                  flush=True)
+        elif r.status == "skipped" and isinstance(r.event, RollEvent):
+            # RollEvents are dispatched as "skipped" (catanatron
+            # doesn't compute payouts; those arrive as separate
+            # ProduceEvents). Surface them anyway so the WS-side
+            # roll stream is visible — Noah hit "11s aren't tracking"
+            # on 2026-05-01 and without this line there's no way to
+            # tell whether the WS RollEvent for an 11 even fired.
+            print(f"[ws #{seq:05d}] RollEvent: {r.event.player} "
+                  f"rolled {r.event.total} ({r.event.d1}+{r.event.d2})",
                   flush=True)
 
     if not advisor:
