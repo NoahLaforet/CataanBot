@@ -6,19 +6,83 @@
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-<div class="panel" id="panel" data-phase="connecting">
+<div class="panel" id="panel">
   <div class="header" id="header">
     <span class="dot" id="dot"></span>
     <span class="title">CataanBot</span>
     <span class="variant-badge" id="variant-badge"></span>
-    <span class="friendly-robber-badge" id="friendly-robber-badge"
-          title="Friendly Robber rule on — ≤2-VP victims protected">friendly robber</span>
-    <button class="hbtn" id="reset" title="Reset bridge state (new game)">↺</button>
+    <span class="friendly-robber-badge" id="friendly-robber-badge" title="Friendly Robber rule is on — players at or below 2 VP are protected; targets ranking has filtered them out.">friendly robber</span>
+    <span class="paused-badge" id="paused-badge">paused</span>
+    <button class="btn settings-btn" id="settings" title="settings (alt+s)">⚙</button>
+    <button class="btn" id="popout" title="pop out into a separate window (alt+o)">⇱</button>
+    <button class="btn" id="toggle" title="collapse/expand (alt+c)">_</button>
+  </div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-row">
+      <span class="drawer-label">actions</span>
+      <button class="drawer-btn danger" id="new-game">new game</button>
+      <button class="drawer-btn" id="copy-snap">copy snapshot</button>
+    </div>
+    <div class="drawer-row">
+      <span class="drawer-label">advisor</span>
+      <label class="toggle"><input type="checkbox" id="pause"/><span>pause banners &amp; recs</span></label>
+    </div>
+    <div class="drawer-row">
+      <span class="drawer-label">opacity</span>
+      <input type="range" id="opacity" min="40" max="100" step="5" value="100"/>
+      <span class="opacity-val" id="opacity-val">100%</span>
+    </div>
+    <div class="drawer-row">
+      <span class="drawer-label">game</span>
+      <label class="drawer-num"><span class="drawer-num-l">VP</span>
+        <input type="number" id="vp-target" min="3" max="20" step="1"/>
+      </label>
+      <label class="drawer-num"><span class="drawer-num-l">discard</span>
+        <input type="number" id="discard-limit" min="3" max="20" step="1"/>
+      </label>
+      <span class="drawer-num-status" id="game-cfg-status"></span>
+    </div>
+    <div class="drawer-row drawer-help">
+      <span class="drawer-label">keys</span>
+      <span class="drawer-hint">alt+p pause &middot; alt+c collapse &middot; alt+n new game &middot; alt+s settings &middot; alt+o pop out</span>
+    </div>
   </div>
   <div class="body" id="body">
-    <div id="status">connecting to bridge at 127.0.0.1:8765&hellip;</div>
-    <div id="content"></div>
+    <div id="content"><span class="muted">waiting for bridge&hellip;</span></div>
+    <!-- Live roll histogram. Lives outside #content so its DOM
+         persists across innerHTML rewrites — that's the only way to
+         get the bar height transitions to fire on actual roll events
+         instead of replaying every poll tick. -->
+    <div id="hist-host" class="hist-host hidden">
+      <div class="hist-h">rolls <span class="hist-total" id="hist-total">0</span></div>
+      <div class="hist" id="hist"></div>
+    </div>
+    <!-- Eval sparkline (HUD principle #6). Shows the bridge's per-roll
+         eval-state series; the line goes green when ahead, red when
+         behind. Persistent SVG so the path animates only on real
+         changes. Hidden until the bridge's eval_history has 2+ samples
+         (one point isn't a line). -->
+    <div id="eval-host" class="eval-host hidden">
+      <div class="eval-h">eval <span class="eval-cur" id="eval-cur">0</span></div>
+      <svg id="eval-graph" class="eval-graph" viewBox="0 0 200 56"
+           preserveAspectRatio="none">
+        <path id="eval-fill" class="eval-fill-pos" d=""></path>
+        <line id="eval-zero" class="eval-zero" x1="0" y1="28" x2="200" y2="28"></line>
+        <path id="eval-line" class="eval-line" d=""></path>
+        <circle id="eval-dot" class="eval-dot" cx="0" cy="28" r="2.5"></circle>
+      </svg>
+    </div>
+    <!-- Move-quality strip (HUD principle #7). Per-build chess-style
+         classification of self plays vs. the bot's top-10 recs at
+         decision time. Hidden until at least one post-setup self build
+         has been graded — empty bridge state otherwise. -->
+    <div id="mq-host" class="mq-host hidden">
+      <div class="mq-h">moves</div>
+      <div class="mq-tally" id="mq-tally"></div>
+      <div class="mq-last" id="mq-last"></div>
+    </div>
   </div>
+  <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
 </div>
 <script src="panel.js"></script>
 </body>

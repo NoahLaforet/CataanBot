@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "CataanBot — Colonist HUD",
   "short_name": "CataanBot",
-  "version": "0.26.0",
-  "description": "Side-panel HUD for colonist.io. Streams game state to the local cataanbot bridge and renders live recommendations, postmortem, and analysis right in Chrome's side panel — no overlap with the game board.",
+  "version": "0.26.1",
+  "description": "Side-panel HUD for colonist.io. Full-feature port of the Tampermonkey userscript v0.25.4 — recommendations, robber targets, knight/monopoly/YoP/RB hints, plan banner, threat banner, win-this-turn callout, eval sparkline, roll histogram, move-quality strip — all in Chrome's side panel.",
   "permissions": [
     "sidePanel",
     "storage",
