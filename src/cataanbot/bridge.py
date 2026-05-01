@@ -75,6 +75,7 @@ from cataanbot.bridge_robber import (
 from cataanbot.bridge_hints import (
     _compute_discard_plan,
     _compute_discard_hint,
+    _compute_seven_prep_hint,
     _compute_monopoly_hint,
     _compute_yop_hint,
     _suggest_rb_placement,
@@ -1517,6 +1518,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["discard_hint"] = _compute_discard_hint(hand, cards)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] discard_hint failed: {e!r}", flush=True)
+    # Pre-roll spend-down warning. Fires when self is over the safe
+    # threshold (DISCARD_LIMIT + 2) but BEFORE a 7 has been rolled.
+    # The reactive discard_hint above only fires after the 7 lands;
+    # this is the prevention.
+    try:
+        snap["seven_prep"] = _compute_seven_prep_hint(hand, cards)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] seven_prep failed: {e!r}", flush=True)
     # Leader-threat banner: flag when any opp is at/near the win
     # threshold so the overlay can shift tone toward defense. Uses the
     # same close_to_win_vp() knob the rest of the bot respects.

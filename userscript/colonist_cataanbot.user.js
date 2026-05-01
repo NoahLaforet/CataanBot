@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.25.1
+// @version      0.25.2
 // @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
@@ -1539,6 +1539,40 @@
     font-size: calc(13px * var(--font-scale));
     font-style: italic;
     margin-top: var(--s-1);
+  }
+
+  /* Pre-roll spend-down warning — same banner archetype as discard-hint
+     but fires before a 7, not after. 'warn' uses amber so it's
+     attention-grabbing without being apocalyptic; 'danger' (10+ cards)
+     escalates to red and pulses to dominate the HUD. */
+  .seven-prep {
+    border-left: 3px solid var(--watch);
+    background: var(--bg-2);
+    padding: var(--s-3) var(--s-4);
+    margin-bottom: var(--s-3);
+    border-radius: var(--radius-sm);
+  }
+  .seven-prep.danger {
+    border-left-color: var(--alert);
+    animation: seven-prep-pulse 1.4s ease-in-out infinite;
+  }
+  .seven-prep .sp-h {
+    color: var(--watch);
+    font-weight: 800;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-size: calc(13px * var(--font-scale));
+    margin-bottom: var(--s-2);
+  }
+  .seven-prep.danger .sp-h { color: var(--alert); }
+  .seven-prep .sp-drops {
+    color: var(--fg);
+    font-size: calc(12px * var(--font-scale));
+    font-variant-numeric: tabular-nums;
+  }
+  @keyframes seven-prep-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.0); }
+    50%      { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18); }
   }
 
   .trade-offer { border-left-color: var(--warn); }
@@ -3767,6 +3801,27 @@
             if (dh.rationale) {
                 parts.push(`<div class="dh-reason">${escapeHtml(dh.rationale)}</div>`);
             }
+            parts.push('</div>');
+        }
+        // Pre-roll spend-down warning. Distinct from the reactive
+        // discard_hint above (which fires AFTER a 7). This one fires
+        // PROACTIVELY at 9+ cards so Noah can spend down before a 7
+        // costs him 4-5 cards. Suppressed during/after a real discard
+        // (when discard_hint is active) so the two banners don't
+        // double up.
+        if (snap.seven_prep && !snap.discard_hint) {
+            const sp = snap.seven_prep;
+            const dropText = Object.entries(sp.would_drop || {})
+                .map(([res, n]) => `${n} ${iconFor(res)}`)
+                .join(' · ');
+            const cls = sp.level === 'danger'
+                ? 'seven-prep danger'
+                : 'seven-prep';
+            parts.push(`<div class="${cls}">`);
+            parts.push(`<div class="sp-h">`
+                + `<span class="b-ico">⚠</span> ${escapeHtml(sp.message)}`
+                + `</div>`);
+            parts.push(`<div class="sp-drops">would lose: ${escapeHtml(dropText)}</div>`);
             parts.push('</div>');
         }
         if ((snap.robber_targets || []).length

@@ -5277,3 +5277,25 @@ def test_game_start_capture_applies_standard_10_vp():
     finally:
         config.set_vp_target(saved_vp)
         config.set_discard_limit(saved_dl)
+
+
+def test_seven_prep_hint_levels_and_threshold():
+    """Pre-roll spend-down warning fires at 9+ cards (DISCARD_LIMIT+2)
+    and escalates to 'danger' at 10+ (DISCARD_LIMIT+3). Below 9, the
+    hint is silent so the HUD doesn't nag at safe-zone hand sizes."""
+    from cataanbot.bridge import _compute_seven_prep_hint
+
+    assert _compute_seven_prep_hint({"WOOD": 7}, 7) is None
+    assert _compute_seven_prep_hint({"WOOD": 8}, 8) is None
+    warn = _compute_seven_prep_hint({"WOOD": 4, "BRICK": 5}, 9)
+    assert warn is not None
+    assert warn["level"] == "warn"
+    assert warn["expected_discard"] == 4
+    danger = _compute_seven_prep_hint({"WOOD": 5, "BRICK": 5}, 10)
+    assert danger is not None
+    assert danger["level"] == "danger"
+    assert danger["expected_discard"] == 5
+    # Banner copy includes the actual numbers so it reads as
+    # actionable not abstract.
+    assert "DUMP TO 7" in danger["message"]
+    assert "5 cards" in danger["message"]

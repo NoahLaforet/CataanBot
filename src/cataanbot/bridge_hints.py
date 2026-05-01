@@ -116,6 +116,51 @@ def _compute_discard_hint(
     }
 
 
+def _compute_seven_prep_hint(
+    hand: dict[str, int], cards: int,
+) -> dict[str, Any] | None:
+    """Pre-roll warning: spend down before the next 7 hits.
+
+    Distinct from ``_compute_discard_hint`` (which fires reactively
+    AFTER a 7 forces a discard). This one fires PROACTIVELY when self
+    is sitting at risky card counts:
+
+    * **danger** (cards >= DISCARD_LIMIT + 3, default 10): expected
+      discard on a 7 would be 5+ cards — game-changing damage. Banner
+      should dominate the HUD.
+    * **warn**   (cards >= DISCARD_LIMIT + 2, default 9): expected
+      discard would be 4+ cards. Worth a clear "spend down" prompt.
+
+    Returns None when self holds DISCARD_LIMIT + 1 or fewer — at 8 cards
+    you'd lose 4 to a 7 but the risk : opportunity-cost ratio doesn't
+    yet justify forcing a spend-down. The proactive warning kicks in
+    one card above that.
+
+    Noah's BrickdDaddy game: caught at 11+ cards 48 times with 4 self-
+    discard blunder annotations. The reactive discard_hint shows up
+    AFTER a 7 lands; this warning is meant to prevent the situation in
+    the first place.
+    """
+    from cataanbot.config import DISCARD_LIMIT
+    if cards < DISCARD_LIMIT + 2:
+        return None
+    expected_discard = cards // 2
+    level = "danger" if cards >= DISCARD_LIMIT + 3 else "warn"
+    # Plan a hypothetical discard so the user sees what they'd lose
+    # if a 7 hit RIGHT NOW. Same logic as the reactive discard_hint —
+    # gives them a concrete handle on what's at stake.
+    drops, _preserve = _compute_discard_plan(hand, expected_discard)
+    return {
+        "level": level,
+        "cards": cards,
+        "expected_discard": expected_discard,
+        "would_drop": drops,
+        "message": (
+            f"DUMP TO {DISCARD_LIMIT} BEFORE YOU ROLL — "
+            f"a 7 right now costs you {expected_discard} cards"),
+    }
+
+
 # Resource tie-breaker weights when a Monopoly would net equal totals
 # across resources — prefer stealing the strategically scarcer cards.
 _MONOPOLY_RES_WEIGHT = {
