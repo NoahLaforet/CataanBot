@@ -103,6 +103,11 @@ board, no draggable pop-out window to manage.
 To pull updates: `git pull`, then click the reload ⟳ icon on the
 CataanBot card in `chrome://extensions`.
 
+The settings drawer (gear icon) has a **style** dropdown with five
+visual variants — slate dashboard (default), terminal/CRT,
+newspaper/print, cyberpunk neon, minimal light. Pure cosmetic, your
+choice persists in localStorage.
+
 When the extension is ready for the Chrome Web Store, listing it
 there ($5 one-time developer fee) gives users automatic updates
 within ~24h of each push, no manual reload needed.
