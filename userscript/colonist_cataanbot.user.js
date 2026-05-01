@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         cataanbot — colonist.io log bridge
 // @namespace    https://github.com/NoahLaforet/CataanBot
-// @version      0.24.2
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.24.2 polish round after Noah's first variant-game test: knight hint copy is conversational (not stat-strings), monopoly hint clears immediately on play (was sticking), robber-targets ranking only shows AFTER the knight is played (no more pre-play tile reveal), and the bridge auto-detects colonist's optional Friendly Robber rule and filters protected ≤2-VP victims out of the suggestions. Render orientation matches colonist's screen.
+// @version      0.25.0
+// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -2035,6 +2035,7 @@
     <span class="friendly-robber-badge" id="friendly-robber-badge" title="Friendly Robber rule is on — players at or below 2 VP are protected; targets ranking has filtered them out.">friendly robber</span>
     <span class="paused-badge" id="paused-badge">paused</span>
     <button class="btn settings-btn" id="settings" title="settings (alt+s)">⚙</button>
+    <button class="btn" id="popout" title="pop out into a separate window (alt+o)">⇱</button>
     <button class="btn" id="toggle" title="collapse/expand (alt+c)">_</button>
   </div>
   <div class="drawer" id="drawer">
@@ -2064,7 +2065,7 @@
     </div>
     <div class="drawer-row drawer-help">
       <span class="drawer-label">keys</span>
-      <span class="drawer-hint">alt+p pause &middot; alt+c collapse &middot; alt+n new game &middot; alt+s settings</span>
+      <span class="drawer-hint">alt+p pause &middot; alt+c collapse &middot; alt+n new game &middot; alt+s settings &middot; alt+o pop out</span>
     </div>
   </div>
   <div class="body" id="body">
@@ -2115,6 +2116,93 @@
         root.getElementById('toggle').addEventListener('click', (e) => {
             e.stopPropagation();
             body.classList.toggle('collapsed');
+        });
+
+        // ---------- Pop-out into a separate browser window ----------
+        // Uses the Document Picture-in-Picture API (Chrome 116+). The
+        // HUD covers a real chunk of the colonist board when docked,
+        // and a PiP window lets the user move it onto a second display
+        // or off to the side. We move the host element (and its shadow
+        // root) wholesale into the PiP document — no re-render, no
+        // duplicate state — so all the existing JS that drives the
+        // panel keeps working without modification.
+        //
+        // When the PiP window closes (user X's it, or browser tab
+        // navigates away), we move the host back into the colonist
+        // page so the HUD survives. If the API isn't available
+        // (Firefox, Safari, older Chrome) we tell the user instead of
+        // failing silently.
+        const popoutBtn = root.getElementById('popout');
+        let pipWindowRef = null;
+        async function popOut() {
+            if (pipWindowRef && !pipWindowRef.closed) {
+                pipWindowRef.focus();
+                return;
+            }
+            const w = unsafeWindow || window;
+            if (!w.documentPictureInPicture
+                || !w.documentPictureInPicture.requestWindow) {
+                console.warn('[cataanbot] documentPictureInPicture not '
+                    + 'available — pop-out needs Chrome 116+ or Edge.');
+                popoutBtn.title = 'Pop-out unavailable in this browser';
+                popoutBtn.disabled = true;
+                return;
+            }
+            try {
+                const pip = await w.documentPictureInPicture.requestWindow({
+                    width: 660,
+                    height: 920,
+                });
+                pipWindowRef = pip;
+                // Mirror the font preconnect into the PiP document so
+                // JetBrains Mono / Inter render the same way they do
+                // in the original tab.
+                const fontLink = pip.document.createElement('link');
+                fontLink.rel = 'stylesheet';
+                fontLink.href = 'https://fonts.googleapis.com/css2'
+                    + '?family=Inter:wght@400;500;600;700;800;900'
+                    + '&family=JetBrains+Mono:wght@400;500;600;700'
+                    + '&display=swap';
+                pip.document.head.appendChild(fontLink);
+                // Reset the PiP body — Chrome ships with default
+                // margin/padding that cuts our 660px width otherwise.
+                pip.document.body.style.cssText = 'margin:0;padding:0;'
+                    + 'background:#0a0d14;height:100vh;overflow:auto;';
+                // Move the host (which carries the shadow root + all
+                // panel state) into the PiP document. We hold a sentinel
+                // span so we can put it back when the PiP closes.
+                const placeholder = document.createElement('span');
+                placeholder.id = 'cataanbot-popout-placeholder';
+                host.parentNode.insertBefore(placeholder, host);
+                // Strip the fixed-positioning so the panel fills the
+                // PiP window naturally; cache the original style to
+                // restore on close.
+                const originalCss = host.style.cssText;
+                host.style.cssText = 'position:static;'
+                    + 'width:100%;display:block;';
+                pip.document.body.appendChild(host);
+                popoutBtn.textContent = '⇲';
+                popoutBtn.title = 'pop back in';
+
+                pip.addEventListener('pagehide', () => {
+                    // PiP closed — reattach to colonist page.
+                    host.style.cssText = originalCss;
+                    if (placeholder.parentNode) {
+                        placeholder.parentNode.replaceChild(host, placeholder);
+                    } else {
+                        document.body.appendChild(host);
+                    }
+                    popoutBtn.textContent = '⇱';
+                    popoutBtn.title = 'pop out into a separate window (alt+o)';
+                    pipWindowRef = null;
+                }, { once: true });
+            } catch (err) {
+                console.warn('[cataanbot] pop-out failed:', err);
+            }
+        }
+        popoutBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            popOut();
         });
 
         // --------------------------------------------------------------
@@ -2387,6 +2475,9 @@
                 }
                 if (newGameBtn.classList.contains('armed')) fireNewGame();
                 else armNewGame();
+            } else if (e.code === 'KeyO') {
+                e.preventDefault();
+                popOut();
             }
         });
 
