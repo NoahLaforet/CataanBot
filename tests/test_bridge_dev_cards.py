@@ -135,6 +135,26 @@ def test_opponent_play_does_not_decrement_self(tmp_path: Path):
     assert st["dev_cards_held"] == 2
 
 
+def test_knight_play_sets_robber_pending_and_retry_when_snapshot_empty(
+    tmp_path: Path,
+):
+    """Regression for the 2026-04-30 ToucherOfKid game where Noah played a
+    knight and the HUD never surfaced the robber-target ranking. The DOM-
+    log knight handler computes the snapshot via _compute_robber_snapshot,
+    which can return None when game state isn't ready (no game.tracker yet,
+    session not fully populated, etc.). Without a retry path, Noah's
+    placement decision was unguided. Now: when the early compute returns
+    empty, the bridge sets a retry flag so the snap builder can recompute
+    on the next poll."""
+    st = _make_state(tmp_path=tmp_path)
+    # Stub session is missing game.tracker so _compute_robber_snapshot
+    # raises (caught) and returns None — exactly the empty-snapshot case.
+    _feed_postmortem(st, _play_knight_payload("Noah"))
+    assert st["robber_pending"] is True
+    assert st["robber_snapshot"] is None
+    assert st.get("robber_snapshot_retry") is True
+
+
 def test_play_floors_held_at_zero(tmp_path: Path):
     # Defensive: if the bridge missed a buy event but saw a play
     # (rare, but DOM-log virtualization can drop lines), we must not

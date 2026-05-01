@@ -1030,6 +1030,20 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     render even before a game has booted — `self` is None until then."""
     game = st["game"]
     from cataanbot import config
+
+    # Late-retry the robber snapshot when an earlier knight-play
+    # compute returned empty (usually because session state wasn't
+    # ready when the DOM log fired). Each snap poll gets another
+    # chance — once the rec lands, the retry flag clears.
+    if st.get("robber_snapshot_retry") and game is not None:
+        try:
+            new_snap = _compute_robber_snapshot(
+                game, display_colors=st.get("display_colors") or {})
+        except Exception:  # noqa: BLE001
+            new_snap = None
+        if new_snap:
+            st["robber_snapshot"] = new_snap
+            st["robber_snapshot_retry"] = False
     snap: dict[str, Any] = {
         "seq": st["seq"],
         "game_started": game.started,
