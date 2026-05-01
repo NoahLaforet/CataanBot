@@ -47,30 +47,39 @@ _DIVERSITY_BY_COUNT = {0: 1.0, 1: 1.0, 2: 1.05, 3: 1.15}
 def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
     """Additive bonus for port access, scaled by production alignment.
 
-    A 2:1 port on a resource the node already produces is a serious
-    asset — trading 2→1 effectively converts every ~2 pips of that
-    resource into 1 pip of anything else. So the bonus scales with the
-    port-resource's production at this corner: 5 pips of WHEAT on a
-    WHEAT 2:1 is much stronger than 1 pip of WHEAT on the same port.
+    All values are in cards-per-roll units to match raw_production
+    (which sums ``map.node_production[node_id]`` — itself in cards-per-
+    roll). The previous tuning was calibrated as if ``resources`` were
+    pip counts (1-5), but the function is always called with cards-per-
+    roll probabilities (0.028-0.139). That made the 3:1 generic bonus
+    (0.10) the same scale as an entire tile of raw production, which
+    let a 2-tile coastal corner with a 3:1 port outrank a 3-tile
+    interior corner — a real misranking on any board with coastal 3:1s.
 
-    2:1 on an unproduced resource is mild — useful only if you plan to
-    expand toward that resource later. 3:1 generic ports are a small
-    catchall bonus.
+    Calibration:
+
+    * **3:1 generic** — 0.005, a near-tiebreaker. Useless turn 1 (no
+      cards to trade) and saves only 1 card per trade later. Should
+      never tier-flip across the diversity boundary.
+    * **2:1 on an unproduced resource** — 0.015, slightly above 3:1.
+      Only valuable if you expand toward the matching resource, but
+      strictly more option value than a generic 3:1.
+    * **2:1 on a produced resource** — 0.30 × cards-per-roll on that
+      resource. A 5-pip-tile wheat corner on a WHEAT 2:1 (0.139
+      cards/roll) picks up ~0.042, comparable to a low-pip extra tile.
+      A 1-pip-tile (0.028) picks up ~0.008. Linear in production so
+      richer corners on matching ports keep their edge.
     """
     if not port_label:
         return 0.0
     if port_label == "3:1":
-        return 0.10
+        return 0.005
     # "WHEAT 2:1", "ORE 2:1", etc.
     port_resource = port_label.split(" ", 1)[0]
-    res_pips = float(resources.get(port_resource, 0.0))
-    if res_pips > 0:
-        # Base value for the port + scaling with production. Calibrated
-        # so a 3-pip wheat corner on a WHEAT 2:1 picks up +0.30, roughly
-        # a pip's worth of "soft" production once you factor in the
-        # steady 2:1 offload rate.
-        return 0.15 + 0.05 * res_pips
-    return 0.08
+    res_prod = float(resources.get(port_resource, 0.0))
+    if res_prod > 0:
+        return 0.30 * res_prod
+    return 0.015
 
 
 # Per-adjacent-node weight for the denial bonus. Kept small so denial is a

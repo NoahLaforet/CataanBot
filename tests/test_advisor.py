@@ -54,23 +54,67 @@ def test_score_opening_top_node_is_on_a_good_number(tracker):
 
 def test_port_bonus_scales_with_produced_resource():
     """A 2:1 port on a produced resource should outweigh 3:1 generic,
-    and a richer-production corner on the same port should be valued
-    more than a leaner one."""
+    a 2:1 on an unproduced resource should still outrank 3:1 generic
+    (resource-specific future option value > pure flexibility), and a
+    richer-production corner on the same port should be valued more
+    than a leaner one."""
     from cataanbot.advisor import _port_bonus
-    # 3:1 generic port: small fixed bonus.
+    # 3:1 generic: tiebreaker only.
     generic = _port_bonus("3:1", {"WHEAT": 0.3, "ORE": 0.3})
-    # 2:1 on unproduced: still small (can't offload until expansion).
+    # 2:1 on unproduced: small but strictly above 3:1.
     unprod = _port_bonus("SHEEP 2:1", {"WHEAT": 0.3, "ORE": 0.3})
-    # 2:1 on a lightly-produced resource: base bonus.
+    # 2:1 on a lightly-produced resource: scales with production.
     prod_light = _port_bonus("WHEAT 2:1", {"WHEAT": 1.0})
     # 2:1 on a strongly-produced resource: base + prod scaling.
     prod_heavy = _port_bonus("WHEAT 2:1", {"WHEAT": 5.0})
     assert generic > 0 and unprod > 0
+    assert unprod > generic, (
+        "2:1 on a future-expansion resource has more option value than "
+        "a generic 3:1 — the previous calibration had this backwards.")
     assert prod_light > generic
     assert prod_light > unprod
     assert prod_heavy > prod_light
     # No port → zero bonus.
     assert _port_bonus(None, {"WHEAT": 3.0}) == 0.0
+
+
+def test_port_bonus_does_not_tier_flip_against_three_tile_corner():
+    """A 2-tile coastal corner with a 3:1 generic port should NOT
+    outrank a 3-tile interior corner with comparable raw production.
+
+    Regression test for the screenshot Noah hit on a real opening
+    pick: a 2-tile coastal `8 wheat / 10 wood + 3:1` showed score 7.3,
+    edging out a 3-tile interior `9 wood / 2 brick / 6 sheep` at 7.2.
+    Root cause was port_bonus(3:1) returning 0.10 — the same
+    magnitude as a whole tile of raw production (cards-per-roll), so
+    the bonus closed the gap that diversity should have kept open.
+
+    The fix is calibration: 3:1 ports return ~0.005, well under the
+    ~0.06 raw-production gap between a 2-tile and 3-tile corner with
+    similar pip totals.
+    """
+    from cataanbot.advisor import _port_bonus
+    # Approximate cards-per-roll for the screenshot's two-tile pick.
+    # 8 (5 pips) ≈ 0.139, 10 (3 pips) ≈ 0.083 → ~0.222 raw across two
+    # distinct resources. Plus a 3:1 port:
+    coastal_two_tile_raw = 0.222
+    coastal_two_tile_diversity = 1.05  # 2 distinct resources
+    coastal_two_tile_port = _port_bonus("3:1", {"WHEAT": 0.139,
+                                                "WOOD": 0.083})
+    coastal_score = (coastal_two_tile_raw * coastal_two_tile_diversity
+                     + coastal_two_tile_port)
+
+    # Three-tile interior: 9 (4 pips) ≈ 0.111, 2 (1 pip) ≈ 0.028,
+    # 6 (5 pips) ≈ 0.139 → ~0.278 raw across 3 resources.
+    interior_three_tile_raw = 0.278
+    interior_three_tile_diversity = 1.15  # 3 distinct resources
+    interior_score = (interior_three_tile_raw * interior_three_tile_diversity
+                      + 0.0)
+
+    assert interior_score > coastal_score, (
+        f"3-tile interior (score={interior_score:.3f}) should outrank "
+        f"2-tile coastal+3:1 (score={coastal_score:.3f}) — port bonus "
+        "is over-weighted")
 
 
 def test_score_second_settlements_excludes_first_node(tracker):
