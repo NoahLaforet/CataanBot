@@ -5299,3 +5299,32 @@ def test_seven_prep_hint_levels_and_threshold():
     # actionable not abstract.
     assert "DUMP TO 7" in danger["message"]
     assert "5 cards" in danger["message"]
+
+
+def test_track_overlay_routes_ws_trade_offer_into_pending():
+    """Regression for the post-b6932a2 follow-up: WS-side TradeOfferEvent
+    must populate `pending_trade_offer` the same way the DOM-log handler
+    does. Without this hook the new WS parser emits the event but the
+    HUD's incoming-trade banner stays empty."""
+    from cataanbot.bridge import _track_overlay_state
+    from cataanbot.events import TradeCommitEvent, TradeOfferEvent
+    from cataanbot.live import DispatchResult
+    st = {"game": None, "pending_trade_offer": None}
+    offer = TradeOfferEvent(
+        player="Bob", give={"BRICK": 2}, want={"SHEEP": 1})
+    _track_overlay_state(
+        st, [DispatchResult(event=offer, status="applied")])
+    assert st["pending_trade_offer"] == {
+        "player": "Bob",
+        "give": {"BRICK": 2},
+        "want": {"SHEEP": 1},
+        "ts": None,
+    }
+    # A subsequent commit (the trade actually executed, or got rolled
+    # past) clears the pending offer — same rule the DOM-log path uses.
+    commit = TradeCommitEvent(
+        giver="Bob", receiver="Alice",
+        gave={"BRICK": 2}, got={"SHEEP": 1})
+    _track_overlay_state(
+        st, [DispatchResult(event=commit, status="applied")])
+    assert st["pending_trade_offer"] is None
