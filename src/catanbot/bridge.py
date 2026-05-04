@@ -2085,6 +2085,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         dev_stash_risk = _is_dev_stash_risk(opp_vp, opp_dev_cards)
         snap["opps"].append({
             "username": user,
+            # True when this slot's username is a synthetic
+            # "playerN" placeholder (no real colonist user latched).
+            # HUD uses this to suppress phantom rows from a 4-color
+            # game where 1-2 seats are bots / disconnected players
+            # whose real names never reached the bridge.
+            "is_placeholder": sess.is_placeholder_username(user),
             "color": c,
             "color_css": st["display_colors"].get(user),
             "cards": real_total,
@@ -2555,6 +2561,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     snap["latest_postmortem"] = {
         "seq": int(st.get("last_postmortem_seq") or 0),
         "available": bool(st.get("last_postmortem_path")),
+        # Unix timestamp of the most recent _write_postmortem. Panel
+        # uses this to distinguish a fresh write (auto-open) from a
+        # stale carryover loaded out of `st` after a panel reload
+        # (record silently, don't re-pop a 30-minute-old game's
+        # postmortem). Float seconds; missing → 0.
+        "written_at": float(st.get("last_postmortem_written_at") or 0),
     }
     return snap
 

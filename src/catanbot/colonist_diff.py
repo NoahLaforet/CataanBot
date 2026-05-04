@@ -398,6 +398,19 @@ class LiveSession:
             return ""
         return self.player_names.get(int(color_id), f"player{int(color_id)}")
 
+    def is_placeholder_username(self, username: str | None) -> bool:
+        """True when ``username`` is a synthetic ``playerN`` slot label
+        rather than a real colonist username. Happens when a seat
+        joined without sending a playerUserStates entry (kicked /
+        disconnected mid-game / replay-from-stale-autosave). Consumers
+        use this to suppress phantom-opp rows in the HUD or to render
+        them with a distinct label (no color leak in streamer mode).
+        """
+        if not username:
+            return True
+        import re
+        return bool(re.match(r"^player\d+$", str(username)))
+
     def vp_total(self, color_id: int | None) -> int:
         """Weighted sum of colonist's victoryPointsState for a color.
 

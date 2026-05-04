@@ -392,8 +392,15 @@ def _write_postmortem(st, game_over) -> None:
         print(f"[pm] render failed: {e}", flush=True)
         return
 
+    import time as _time
     st["pm_written"] = True
     st["last_postmortem_path"] = str(path)
     st["last_postmortem_seq"] = int(
         st.get("last_postmortem_seq") or 0) + 1
+    # Wall-clock timestamp so the panel's auto-open path can tell
+    # "postmortem just wrote" from "panel just opened on a stale
+    # last_postmortem from 30 minutes ago." Without this, opening
+    # the side panel after a game ended (and the panel re-loads)
+    # would record the seq silently and skip the popup.
+    st["last_postmortem_written_at"] = _time.time()
     print(f"\n=== postmortem written → {path} ===\n", flush=True)

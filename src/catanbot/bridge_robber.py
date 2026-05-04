@@ -256,6 +256,12 @@ def _compute_robber_snapshot(
                     "color": c,
                     "color_css": display.get(reverse.get(c, "")),
                     "username": reverse.get(c),
+                    # True when the victim's username is a synthetic
+                    # "playerN" placeholder. Panel renders a "P{N}"
+                    # initial instead of slicing the placeholder, and
+                    # streamer-mode anonymizers skip the lookup.
+                    "is_placeholder": sess.is_placeholder_username(
+                        reverse.get(c)),
                     "pips": pips,
                     "vp": s.victim_vp.get(c, 0),
                     "cards": s.opponent_hand_size.get(c, 0),

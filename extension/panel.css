@@ -1839,16 +1839,22 @@
     background: linear-gradient(90deg,
       rgba(74, 222, 128, 0.14), var(--bg-1) 70%);
     border-left-color: var(--pos);
-    animation: catanbot-play-pulse 2.0s ease-in-out infinite alternate;
+    /* Static green ring + transform-based pulse so the cascade
+       can't kill the glow (see minimal-mode rule below for the
+       longer story). */
+    box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.55),
+                0 0 12px 0 rgba(74, 222, 128, 0.30);
+    animation: catanbot-play-pulse 1.4s ease-in-out infinite alternate;
+    will-change: transform, filter;
   }
   @keyframes catanbot-play-pulse {
     from {
-      box-shadow: inset 2px 0 0 0 var(--pos),
-                  0 0 0 0 rgba(74, 222, 128, 0.0);
+      transform: scale(1.0);
+      filter: brightness(0.95) saturate(0.95);
     }
     to {
-      box-shadow: inset 2px 0 0 0 var(--pos),
-                  0 0 10px 1px rgba(74, 222, 128, 0.30);
+      transform: scale(1.012);
+      filter: brightness(1.20) saturate(1.30);
     }
   }
   .knight-hint.should-play .kh-h,
@@ -2524,8 +2530,13 @@ html, body, .panel {
   border: 0 !important;
   border-left: 2px solid var(--line-strong) !important;
   border-radius: 0 !important;
-  padding: 6px 0 6px 10px !important;
-  margin: 4px 0 !important;
+  /* Tighter vertical rhythm — every section was burning 10px
+     vertical padding (6px top + 4px margin), and with 6+ stacked
+     sections that ate the bottom of the HUD on smaller screens.
+     New: 4px top/bottom, 2px between sections. ~24px shaved off
+     a typical 6-section stack. */
+  padding: 4px 0 4px 10px !important;
+  margin: 2px 0 !important;
   font-size: 12px !important;
   font-weight: 500 !important;
   box-shadow: none !important;
@@ -2626,6 +2637,20 @@ html, body, .panel {
   text-transform: none !important;
   letter-spacing: 0 !important;
 }
+
+/* Robber-targets header tease — clickable text inline with the
+   "robber targets" label that toggles top-3 vs full top-5. */
+.rh-tease {
+  color: var(--fg-mute) !important;
+  font-weight: 400 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  margin-left: 6px !important;
+  font-size: 11px !important;
+}
+.rh-tease:hover { color: var(--fg) !important; }
 .strategy-ranking .srr-body { display: none !important; }
 .strategy-ranking.open .srr-body { display: block !important; }
 .strategy-ranking.open .srr-tease { display: none !important; }
@@ -2746,6 +2771,16 @@ html, body, .panel {
   border-left-width: 4px !important;
   background: linear-gradient(90deg,
     rgba(74, 222, 128, 0.14), var(--bg-1) 70%) !important;
+  /* Static green outline always visible — animation modulates the
+     ring's spread/opacity below. Without this static base the
+     universal `box-shadow: none !important` on .banner-style rules
+     wipes any keyframe-only shadow (per spec, !important inside
+     @keyframes is ignored). */
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.55),
+              0 0 12px 0 rgba(74, 222, 128, 0.30) !important;
+  /* Render as a transform-able element so the scale animation
+     below kicks the GPU layer instead of forcing reflow. */
+  will-change: transform, filter;
 }
 .knight-hint.should-play .kh-verdict.play,
 .dev-hint.should-play .kh-verdict.play {
@@ -2753,19 +2788,17 @@ html, body, .panel {
   color: #0a1810 !important;
   font-weight: 900 !important;
 }
+/* Animate transform + filter — both work reliably with !important
+   inside keyframes (unlike box-shadow). Filter brightens the green
+   wash, transform nudges scale for the breathing motion. */
 @keyframes catanbot-play-pulse-flat {
   from {
-    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
-    background: linear-gradient(90deg,
-      rgba(74, 222, 128, 0.10), var(--bg-1) 75%) !important;
-    filter: brightness(0.95) !important;
+    transform: scale(1.0);
+    filter: brightness(0.92) saturate(0.9);
   }
-  to   {
-    box-shadow: 0 0 28px 6px rgba(74, 222, 128, 0.85),
-                inset 0 0 12px 0 rgba(74, 222, 128, 0.28) !important;
-    background: linear-gradient(90deg,
-      rgba(74, 222, 128, 0.55), var(--bg-1) 82%) !important;
-    filter: brightness(1.15) !important;
+  to {
+    transform: scale(1.015);
+    filter: brightness(1.25) saturate(1.4);
   }
 }
 /* Robber-on-me — every roll the robber sits on a self tile is a

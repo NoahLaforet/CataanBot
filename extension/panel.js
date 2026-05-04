@@ -56,16 +56,34 @@
     // colonist tab. Initialize to whatever the first snap says so a
     // page reload mid-session doesn't re-open a stale postmortem.
     let _seenPostmortemSeq = null;
+    // Postmortems older than this are treated as stale — record the
+    // seq silently rather than re-popping a long-finished game when
+    // the panel reloads. ~3 minutes is enough that a real "game just
+    // ended, panel still settling" pop fires, but a "panel re-opened
+    // 5+ minutes after the game ended" doesn't.
+    const POSTMORTEM_FRESH_SECONDS = 180;
     function _maybeOpenPostmortem(snap) {
         const lp = snap && snap.latest_postmortem;
         if (!lp || !lp.available) return;
         const seq = Number(lp.seq) || 0;
+        const writtenAt = Number(lp.written_at) || 0;
+        const now = Date.now() / 1000;
+        const isFresh = writtenAt > 0
+            && (now - writtenAt) < POSTMORTEM_FRESH_SECONDS;
         if (_seenPostmortemSeq === null) {
             _seenPostmortemSeq = seq;
+            // First time we've seen this snap. Normally we suppress
+            // the popup so a panel reload mid-session doesn't re-
+            // pop a stale postmortem. BUT if the postmortem was
+            // written in the last few minutes, the panel was likely
+            // reloaded right after a game ended — fire the popup
+            // anyway so the user doesn't miss it.
+            if (!isFresh) return;
+        } else if (seq === _seenPostmortemSeq) {
             return;
+        } else {
+            _seenPostmortemSeq = seq;
         }
-        if (seq === _seenPostmortemSeq) return;
-        _seenPostmortemSeq = seq;
         try {
             chrome.runtime.sendMessage({ type: 'open-postmortem' })
                 .catch(() => {});
@@ -291,6 +309,12 @@
         return _positionalAnon.get(username) || 'Opp';
     }
     function anonInitial(username, opts) {
+        // Synthetic "playerN" placeholders (bots / disconnected seats)
+        // — render as "PN" so the slot is identifiable without
+        // leaking a guess about who is who. Identical handling in
+        // streamer and non-streamer mode.
+        const phM = String(username || '').match(/^player(\d+)$/);
+        if (phM) return 'P' + phM[1];
         if (!window.__catanbotStreamer) {
             return (username || '?').slice(0, 1).toUpperCase();
         }
@@ -488,6 +512,26 @@
         panel.addEventListener('click', (e) => {
             const target = e.target;
             if (!(target instanceof Element)) return;
+            // Robber-targets expand/collapse. Default is top-3
+            // visible; click toggles to show all 5.
+            const robberTease = target.closest('[data-robber-toggle]');
+            if (robberTease) {
+                let cur = false;
+                try {
+                    cur = localStorage.getItem(
+                        'cataan-robber-open') === '1';
+                    localStorage.setItem(
+                        'cataan-robber-open', cur ? '0' : '1');
+                } catch (_) { /* localStorage may be blocked */ }
+                // Re-render won't fire until the next /advisor poll.
+                // Update the visible caret + tease text in-place so
+                // the click feels responsive — full table redraw
+                // arrives within ~1s anyway.
+                const newOpen = !cur;
+                robberTease.textContent = newOpen
+                    ? '▾ collapse' : '· more ▸';
+                return;
+            }
             // Strategy ranking toggle. Click anywhere on the header
             // (the data-strat-rank-toggle element); persist the state
             // in localStorage so it stays expanded/collapsed across
@@ -1989,9 +2033,28 @@
                 ? 'robber-h robber-urgent' : 'robber-h';
             const tableCls = robberUrgent
                 ? 'robber robber-urgent' : 'robber';
-            parts.push(`<div class="${headerCls}">${rhTxt}</div>`);
+            // Collapse to top-3 by default to keep the HUD short;
+            // user can expand to see the full top-5 with one click.
+            // Persists in localStorage.
+            let robberOpen = false;
+            try {
+                robberOpen = localStorage.getItem(
+                    'cataan-robber-open') === '1';
+            } catch (_) { /* localStorage may be blocked */ }
+            const showCount = robberOpen
+                ? snap.robber_targets.length
+                : Math.min(3, snap.robber_targets.length);
+            const moreCount = snap.robber_targets.length - showCount;
+            const expandTease = (moreCount > 0 && !robberOpen)
+                ? ` <span class="rh-tease" data-robber-toggle `
+                    + `title="show all ${snap.robber_targets.length}">`
+                    + `· +${moreCount} more ▸</span>`
+                : (robberOpen
+                    ? ` <span class="rh-tease" data-robber-toggle `
+                        + `title="collapse">▾ collapse</span>` : '');
+            parts.push(`<div class="${headerCls}">${rhTxt}${expandTease}</div>`);
             parts.push(`<table class="${tableCls}">`);
-            for (let i = 0; i < snap.robber_targets.length; i++) {
+            for (let i = 0; i < showCount; i++) {
                 const t = snap.robber_targets[i];
                 const tile = t.resource
                     ? `${iconFor(t.resource)}${t.number ?? ''}`
@@ -2042,10 +2105,17 @@
         // dev-card hints, robber-targets) is "what to do this turn" and
         // floats above the self/opps panels via CSS flex order.
         parts.push('</div>');
-        if ((snap.opps || []).length) {
+        // Filter out placeholder seats (synthetic "playerN") — they
+        // clutter the opponents list with rows that have no useful
+        // info (cards count is misleading, no real human or known
+        // bot to track). Their tiles are still scored for robber
+        // targets so blocking value is preserved.
+        const realOpps = (snap.opps || []).filter(
+            o => !o.is_placeholder);
+        if (realOpps.length) {
             parts.push('<div class="sec-h sec-opps">opponents</div>');
             parts.push('<div class="opps">');
-            for (const o of snap.opps) {
+            for (const o of realOpps) {
                 const bg = pillColor(o);
                 const fg = contrastText(bg);
                 const pill = `<span class="color-pill" style="background:${bg};`
