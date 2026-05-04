@@ -782,6 +782,20 @@ def _node_pip_production(m, node_id: int) -> float:
     return float(sum(m.node_production.get(node_id, {}).values()))
 
 
+def _node_pip_production_weighted(m, node_id: int) -> float:
+    """Wheat-biased version of ``_node_pip_production``. Mirrors the
+    opening eval's per-resource weight (Reddit 36k-game finding #2:
+    wheat is the #1 winning resource — used in every major build).
+    Used for ranking / scoring in mid-game settlement recs so a wheat-
+    bearing corner outranks an equal-pip non-wheat one. The unweighted
+    value is what we still surface as "+0.42/roll" so the hint reads
+    as cards-per-roll, not a fudged number."""
+    from cataanbot.advisor import _RESOURCE_WEIGHT
+    return float(sum(
+        v * _RESOURCE_WEIGHT.get(r, 1.0)
+        for r, v in m.node_production.get(node_id, {}).items()))
+
+
 def _tile_label(m, node_id: int) -> list[tuple[str, int | None]]:
     out = []
     for tile in m.adjacent_tiles.get(node_id, []):
@@ -968,8 +982,15 @@ def recommend_actions(
                 c, initial_build_phase=False)
         except Exception:  # noqa: BLE001
             return None
-        scored = [(node, _node_pip_production(m, node)) for node in nodes]
-        scored.sort(key=lambda s: -s[1])
+        # Sort by wheat-weighted production but return raw prod so
+        # downstream "+0.42/roll" labels stay honest.
+        scored = [
+            (node,
+             _node_pip_production(m, node),
+             _node_pip_production_weighted(m, node))
+            for node in nodes
+        ]
+        scored.sort(key=lambda s: -s[2])
         return (int(scored[0][0]), scored[0][1]) if scored else None
 
     def _best_owned_settlement() -> tuple[int, float] | None:
@@ -984,6 +1005,9 @@ def recommend_actions(
 
     # --- Settlements -----------------------------------------------------
     # buildable_node_ids respects distance-2 + road-connectivity rules.
+    # Sort by wheat-weighted production (Reddit finding #2) so a wheat
+    # corner edges out an equal-pip non-wheat one; display the raw
+    # production in the detail so cards-per-roll reads honest.
     if _hand_can_afford(hand, _SETTLEMENT_COST):
         try:
             nodes = game.state.board.buildable_node_ids(
@@ -991,11 +1015,14 @@ def recommend_actions(
         except Exception:  # noqa: BLE001
             nodes = []
         scored = [
-            (node, _node_pip_production(m, node)) for node in nodes
+            (node,
+             _node_pip_production(m, node),
+             _node_pip_production_weighted(m, node))
+            for node in nodes
         ]
-        scored.sort(key=lambda s: -s[1])
-        for node, prod in scored[:3]:
-            base_score = _score_settlement(prod)
+        scored.sort(key=lambda s: -s[2])
+        for node, prod, weighted in scored[:3]:
+            base_score = _score_settlement(weighted)
             score = round(base_score * third_settle_bump, 1)
             detail = f"+{prod:.2f}/roll"
             if third_settle_bump > 1.0:

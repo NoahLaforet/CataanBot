@@ -1819,3 +1819,27 @@ def test_settlement_score_unbumped_after_third_footprint():
             assert "settle #3" not in (r.get("detail") or ""), (
                 f"settle #3 bump leaked past 3rd footprint: "
                 f"{r.get('detail')}")
+
+
+def test_recommender_settlement_picks_wheat_over_equal_pip_ore():
+    """Reddit 36k-game finding #2 propagated to mid-game: a wheat-
+    bearing settlement candidate should rank above an equal-pip ore-
+    bearing one. Tested at the helper level — _node_pip_production
+    returns the honest raw, _node_pip_production_weighted returns the
+    wheat-biased value used for ranking."""
+    from cataanbot.recommender import (
+        _node_pip_production, _node_pip_production_weighted,
+    )
+
+    class FakeMap:
+        node_production = {
+            10: {"WHEAT": 0.139, "BRICK": 0.083},  # wheat node
+            20: {"ORE":   0.139, "BRICK": 0.083},  # ore node
+        }
+    m = FakeMap()
+    # Raw is identical (equal pips):
+    assert abs(_node_pip_production(m, 10)
+               - _node_pip_production(m, 20)) < 1e-9
+    # Weighted prefers wheat:
+    assert (_node_pip_production_weighted(m, 10)
+            > _node_pip_production_weighted(m, 20))
