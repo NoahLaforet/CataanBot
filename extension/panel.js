@@ -76,6 +76,11 @@
         // it currently is (color id) so the panel can render an
         // "opp's turn — watching" hint when it's not us.
         currentTurnPlayerColor: null,
+        // Full game state — populated by events.applySnapshot()
+        // on every WS frame. Carries hands, buildings, roads,
+        // robber, dev-card counts, VP, roll history. Drives the
+        // mid-game standalone path (recs, hints, robber targets).
+        state: null,            // newGameState() — lazy-init w/ lib
     };
     let _standaloneLib = null;  // cached import promise
     async function _loadStandaloneLib() {
@@ -145,84 +150,63 @@
             try {
                 const decoded = lib.decodeMsgpack(frame.b64);
                 let dirty = false;
+                // Lazy-init the JS state container the first time
+                // we see a frame.
+                if (!_standalone.state) {
+                    _standalone.state = lib.newGameState();
+                }
                 // mapState — appears on GameStart frames. Triggers
                 // a board build / rebuild.
-                const ms = _findKey(decoded, 'tileHexStates');
-                if (ms) {
-                    // _findKey returned tileHexStates only; we need
-                    // the full mapState. Walk back via _findMapState.
-                    const fullMs = _findMapState(decoded);
-                    if (fullMs) {
-                        _standalone.mapStateFrame = fullMs;
-                        _standalone.board =
-                            lib.buildBoardFromColonistMap(fullMs);
-                        _standalone.gameStarted = true;
+                const fullMs = _findMapState(decoded);
+                if (fullMs && (!_standalone.board
+                        || _standalone.mapStateFrame !== fullMs)) {
+                    _standalone.mapStateFrame = fullMs;
+                    _standalone.board =
+                        lib.buildBoardFromColonistMap(fullMs);
+                    _standalone.gameStarted = true;
+                    if (_standalone.board) {
+                        _standalone.state.map = _standalone.board;
+                    }
+                    dirty = true;
+                }
+                // Apply the full snapshot to state — buildings,
+                // roads, hands, dev cards, VP, robber, rolls.
+                if (_standalone.state.map) {
+                    if (lib.applySnapshot(_standalone.state, decoded)) {
+                        dirty = true;
+                    }
+                } else {
+                    // No board yet — still latch self color & turn so
+                    // we can show "you are color N" before the board
+                    // arrives. applySnapshot handles those branches
+                    // even when state.map is null.
+                    if (lib.applySnapshot(_standalone.state, decoded)) {
                         dirty = true;
                     }
                 }
-                // playerColor — self's color id, set on GameStart.
-                const pc = _findKey(decoded, 'playerColor');
-                if (typeof pc === 'number'
-                        && _standalone.selfColorId == null) {
-                    _standalone.selfColorId = pc;
-                    dirty = true;
+                // Mirror legacy fields for the existing snap path.
+                if (_standalone.state.selfColorId != null) {
+                    _standalone.selfColorId = _standalone.state.selfColorId;
                 }
-                // currentTurnPlayerColor — whose turn it is now.
-                const ctp = _findKey(decoded, 'currentTurnPlayerColor');
-                if (typeof ctp === 'number'
-                        && ctp !== _standalone.currentTurnPlayerColor) {
-                    _standalone.currentTurnPlayerColor = ctp;
-                    dirty = true;
+                if (_standalone.state.currentTurn != null) {
+                    _standalone.currentTurnPlayerColor =
+                        _standalone.state.currentTurn;
                 }
-                // Bank-remaining counts per player. Each
-                // mechanic*State map keys by colorId; values carry
-                // the bank* count. Used to derive opening progress
-                // (5 - settles_remaining = settles placed).
-                const ms2 = _findKey(decoded, 'mechanicSettlementState');
-                const mc2 = _findKey(decoded, 'mechanicCityState');
-                const mr2 = _findKey(decoded, 'mechanicRoadState');
-                const banks = _standalone.bankRemaining;
-                if (ms2 && typeof ms2 === 'object') {
-                    for (const [cid, st] of Object.entries(ms2)) {
-                        if (st && typeof st === 'object'
-                                && 'bankSettlementAmount' in st) {
-                            const cur = banks[cid] || {};
-                            const newCount = Number(
-                                st.bankSettlementAmount);
-                            if (cur.settles !== newCount) {
-                                cur.settles = newCount;
-                                banks[cid] = cur;
-                                dirty = true;
-                            }
-                        }
+                // Mirror bank counts from state.bank into the legacy
+                // bankRemaining map so existing _makeNoBridgeSnap
+                // opening-phase logic still works.
+                for (const [cid, b] of Object.entries(
+                        _standalone.state.bank || {})) {
+                    _standalone.bankRemaining[cid] =
+                        _standalone.bankRemaining[cid] || {};
+                    if (b.settles != null) {
+                        _standalone.bankRemaining[cid].settles = b.settles;
                     }
-                }
-                if (mc2 && typeof mc2 === 'object') {
-                    for (const [cid, st] of Object.entries(mc2)) {
-                        if (st && typeof st === 'object'
-                                && 'bankCityAmount' in st) {
-                            const cur = banks[cid] || {};
-                            const newCount = Number(st.bankCityAmount);
-                            if (cur.cities !== newCount) {
-                                cur.cities = newCount;
-                                banks[cid] = cur;
-                                dirty = true;
-                            }
-                        }
+                    if (b.cities != null) {
+                        _standalone.bankRemaining[cid].cities = b.cities;
                     }
-                }
-                if (mr2 && typeof mr2 === 'object') {
-                    for (const [cid, st] of Object.entries(mr2)) {
-                        if (st && typeof st === 'object'
-                                && 'bankRoadAmount' in st) {
-                            const cur = banks[cid] || {};
-                            const newCount = Number(st.bankRoadAmount);
-                            if (cur.roads !== newCount) {
-                                cur.roads = newCount;
-                                banks[cid] = cur;
-                                dirty = true;
-                            }
-                        }
+                    if (b.roads != null) {
+                        _standalone.bankRemaining[cid].roads = b.roads;
                     }
                 }
                 if (dirty) window.__catanbotRenderDirty = true;
@@ -279,14 +263,83 @@
                     && _standalone.currentTurnPlayerColor
                         === _standalone.selfColorId;
 
+                // Mid-game recs / hints / robber targets when the
+                // event stream has populated state. Falls back to
+                // empty lists during the opening (no buildings yet).
+                const st = _standalone.state;
+                let recs = [];
+                let knightH = null, monoH = null, yopH = null, rbH = null;
+                let robberTargets = [];
+                let selfBlock = null, oppsBlock = [];
+                if (st && st.selfColor) {
+                    try { recs = lib.recommendActions(st); } catch (_) {}
+                    try { knightH = lib.knightHint(st); } catch (_) {}
+                    try { monoH = lib.monopolyHint(st); } catch (_) {}
+                    try { yopH = lib.yopHint(st); } catch (_) {}
+                    try { rbH = lib.rbHint(st); } catch (_) {}
+                    try {
+                        robberTargets = lib.recommendRobberTargets
+                            ? lib.recommendRobberTargets(st)
+                            : [];
+                    } catch (_) {}
+                    // Self/opps blocks for the panel's status cards.
+                    const selfHand = st.hands[st.selfColor]
+                        || lib.newHand();
+                    const totalSelf = (st.handTotal[st.selfColor]
+                        ?? Object.values(selfHand)
+                            .reduce((s, v) => s + v, 0));
+                    selfBlock = {
+                        color: st.selfColor,
+                        cards: selfHand,
+                        total: totalSelf,
+                        vp: st.vp[st.selfColor] || 0,
+                        settles: 5 - (selfBank?.settles ?? 5),
+                        cities: 4 - (selfBank?.cities ?? 4),
+                        roads: 15 - (selfBank?.roads ?? 15),
+                        dev_cards: st.devCardsByType[st.selfColor]
+                            || lib.newDevCardCounts(),
+                        dev_total: st.devCardsTotal[st.selfColor] || 0,
+                    };
+                    for (const c of st.colors) {
+                        if (c === st.selfColor) continue;
+                        const ob = banks[c] || {};
+                        oppsBlock.push({
+                            color: c,
+                            total: st.handTotal[c] || 0,
+                            vp: st.vp[c] || 0,
+                            settles: 5 - (ob.settles ?? 5),
+                            cities: 4 - (ob.cities ?? 4),
+                            roads: 15 - (ob.roads ?? 15),
+                            dev_total: st.devCardsTotal[c] || 0,
+                        });
+                    }
+                }
+                const lastRoll = st && st.rollHistory.length
+                    ? st.rollHistory[st.rollHistory.length - 1] : null;
                 return {
                     seq: -2,
                     _source: 'standalone',
                     game_started: true,
-                    self: null,
-                    opps: [],
+                    self: selfBlock,
+                    opps: oppsBlock,
                     my_turn: myTurn,
-                    recommendations: [],
+                    recommendations: recs,
+                    knight_hint: knightH,
+                    monopoly_hint: monoH,
+                    yop_hint: yopH,
+                    rb_hint: rbH,
+                    robber_targets: robberTargets,
+                    last_roll: lastRoll,
+                    roll_history: st ? st.rollHistory.slice() : [],
+                    total_rolls: st ? st.totalRolls : 0,
+                    roll_histogram: st
+                        ? { ...st.rollHistogram } : null,
+                    vp_target: st ? st.vpTarget : 10,
+                    discard_limit: st ? st.discardLimit : 7,
+                    game_over: st ? st.gameOver : null,
+                    latest_postmortem: {
+                        seq: 0, available: false, written_at: 0,
+                    },
                     _standaloneOpenings: ranked.slice(0, 8),
                     _standaloneBoard: {
                         tiles: Object.keys(

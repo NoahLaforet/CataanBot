@@ -1,40 +1,533 @@
-// events.js — apply parsed colonist WS events to the JS game state.
+// events.js — apply colonist WS snapshots to the JS game state.
 //
-// Mirror of the bridge's catanatron tracker + hand_tracker.py
-// pipeline. Each handler is small (10-40 lines); the file's job is
-// to dispatch a parsed event to the right mutator.
+// Colonist ships authoritative game state with every WS broadcast
+// (mapState + playerStates + mechanic*State). Rather than porting
+// the full diff parser from src/catanbot/colonist_diff.py
+// line-for-line, we read the snapshot directly and update state
+// in-place. This is ~80% of the bridge's value at ~10% of the code.
 //
-// Phase 1 implementation pending. Stubs in place so the panel can
-// import this and call `applyEvent` unconditionally; non-handled
-// events become no-ops and the existing bridge fallback path takes
-// over.
+// Color identity: we key everything by colonist color id (an int
+// 1..6), not by catanatron's color strings. The standalone path
+// stays self-contained; the panel maps id → display label at the
+// last moment. A "self color" string ("self") and a numeric
+// selfColorId both live on state for convenience.
+//
+// Reverse-engineering reference for snapshot field names lives in
+// src/catanbot/colonist_diff.py — that file's _CARD_RESOURCE,
+// _DEV_CARD_TYPE, and _VP_WEIGHTS tables are mirrored below.
 
-import { newHand, newDevCardCounts, edgeKey } from './state.js';
+import { newHand, newDevCardCounts, edgeKey, RESOURCE_NAMES } from './state.js';
 
-/** Apply one parsed event to the game state in-place.
- *  Returns true when the event modified state, false otherwise.
- *
- *  Event shape mirrors the bridge's parser output:
- *    {kind, ...kind-specific fields}
- *
- *  Example kinds: 'roll', 'build_settlement', 'build_road',
- *  'build_city', 'buy_dev_card', 'play_knight', 'play_monopoly',
- *  'play_year_of_plenty', 'play_road_building', 'trade',
- *  'discard', 'steal', 'monopoly_steal', 'robber_move',
- *  'game_start', 'game_over'.
- */
-export function applyEvent(state, event) {
-    if (!state || !event || !event.kind) return false;
-    // TODO Phase 1 — port the relevant handlers from
-    // src/catanbot/{tracker,hand_tracker,events,parser}.py.
-    return false;
+// Resource type ints inside playerStates.{cid}.resourceCards.cards.
+const _CARD_RESOURCE = {
+    1: 'WOOD', 2: 'BRICK', 3: 'SHEEP', 4: 'WHEAT', 5: 'ORE',
+};
+
+// Dev card type ints inside mechanicDevelopmentCardsState.players.{cid}.
+//   10 = opp placeholder (hidden type)
+//   11 = KNIGHT, 12 = VICTORY_POINT, 13 = MONOPOLY,
+//   14 = ROAD_BUILDING, 15 = YEAR_OF_PLENTY
+const _DEV_CARD_TYPE = {
+    11: 'KNIGHT',
+    12: 'VICTORY_POINT',
+    13: 'MONOPOLY',
+    14: 'ROAD_BUILDING',
+    15: 'YEAR_OF_PLENTY',
+};
+
+// VP weights (matches _VP_WEIGHTS in colonist_diff.py).
+//   0 = settlements (1 VP each)
+//   1 = cities (2 VPs each)
+//   2 = VP dev cards (self only)
+//   4 = has-longest-road flag (2 VPs)
+//   5 = has-largest-army flag (2 VPs)
+const _VP_WEIGHTS = { 0: 1, 1: 2, 2: 1, 4: 2, 5: 2 };
+
+const _BUILDING_BY_TYPE = { 1: 'SETTLEMENT', 2: 'CITY' };
+
+/** Walk a decoded msgpack tree and find any dict that contains `key`.
+ *  Returns the value at that key, or null. Bounded depth so a
+ *  pathological frame can't blow the stack. */
+function _findKey(o, key, depth = 0) {
+    if (depth > 8) return null;
+    if (o && typeof o === 'object' && !Array.isArray(o)
+            && !ArrayBuffer.isView(o)) {
+        if (key in o) return o[key];
+        for (const v of Object.values(o)) {
+            const r = _findKey(v, key, depth + 1);
+            if (r != null) return r;
+        }
+    }
+    if (Array.isArray(o)) {
+        for (const v of o) {
+            const r = _findKey(v, key, depth + 1);
+            if (r != null) return r;
+        }
+    }
+    return null;
 }
 
-/** Convenience: apply a stream of events. */
-export function applyAll(state, events) {
+/** Resolve a colonist tile (x, y, z) to a node id in the JS board.
+ *  Mirrors the cornerSig math in board.js — duplicated to avoid an
+ *  export cycle. Returns the canonical node id (a 3-tile signature
+ *  string) or null if the corner sits outside the parsed board. */
+function _cornerNodeId(board, cx, cy, cz) {
+    let trio;
+    if (cz === 0) {
+        trio = [[cx, cy], [cx, cy - 1], [cx + 1, cy - 1]];
+    } else {
+        trio = [[cx, cy], [cx, cy + 1], [cx - 1, cy + 1]];
+    }
+    const sig = trio.map(([x, y]) => `${x},${y}`).sort().join('|');
+    if (board.nodes[sig]) return sig;
+    // Boundary corner: 2-tile sub-signature.
+    const want = new Set(sig.split('|'));
+    for (const candidate of Object.keys(board.nodes)) {
+        const have = new Set(candidate.split('|'));
+        if (have.size < 2) continue;
+        let ok = true;
+        for (const t of have) if (!want.has(t)) { ok = false; break; }
+        if (ok) return candidate;
+    }
+    return null;
+}
+
+/** Resolve a colonist edge (x, y, z) to an edge id in the JS board. */
+function _edgeId(board, ex, ey, ez) {
+    let endpoints;
+    if (ez === 0) {
+        endpoints = [
+            _cornerNodeId(board, ex, ey, 0),
+            _cornerNodeId(board, ex, ey - 1, 1),
+        ];
+    } else if (ez === 1) {
+        endpoints = [
+            _cornerNodeId(board, ex, ey - 1, 1),
+            _cornerNodeId(board, ex - 1, ey + 1, 0),
+        ];
+    } else {
+        endpoints = [
+            _cornerNodeId(board, ex - 1, ey + 1, 0),
+            _cornerNodeId(board, ex, ey, 1),
+        ];
+    }
+    const [a, b] = endpoints;
+    if (!a || !b) return null;
+    return a < b ? `${a}||${b}` : `${b}||${a}`;
+}
+
+/** Resolve a colonist tile id (the key in tileHexStates) to a JS
+ *  board tile id. They're identical strings in practice; this stays
+ *  a function so a future variant could swap in a remapping. */
+function _tileId(board, tid) {
+    return tid != null && board.tiles[String(tid)]
+        ? String(tid) : null;
+}
+
+/** Ensure per-color buckets exist on state. Keyed by colonist
+ *  color id (string-ified — Object keys are strings anyway, and
+ *  this keeps Set/Map use consistent). */
+function _ensureColor(state, cid) {
+    const key = String(cid);
+    if (!state.hands[key]) state.hands[key] = newHand();
+    if (!state.devCardsByType[key]) {
+        state.devCardsByType[key] = newDevCardCounts();
+    }
+    if (state.devCardsTotal[key] == null) state.devCardsTotal[key] = 0;
+    if (state.playedKnights[key] == null) state.playedKnights[key] = 0;
+    if (state.roadLength[key] == null) state.roadLength[key] = 0;
+    if (state.vp[key] == null) state.vp[key] = 0;
+    if (state.vpCardsInHand[key] == null) state.vpCardsInHand[key] = 0;
+    if (!state.colors.includes(key)) state.colors.push(key);
+    return key;
+}
+
+/** Apply a single decoded msgpack frame to state in-place.
+ *  Returns true when the snapshot meaningfully changed state.
+ *
+ *  Idempotent: applying the same frame twice has no effect after
+ *  the first. State is keyed by colonist color id strings ('1'..'6')
+ *  rather than catanatron color names.
+ */
+export function applySnapshot(state, decoded) {
+    if (!state || !decoded) return false;
+    let dirty = false;
+
+    // --- Self color id (latched once on GameStart). ---------------
+    const pc = _findKey(decoded, 'playerColor');
+    if (typeof pc === 'number' && state.selfColorId == null) {
+        state.selfColorId = pc;
+        state.selfColor = String(pc);
+        _ensureColor(state, pc);
+        dirty = true;
+    }
+
+    // --- Game settings (VP target, discard limit). ----------------
+    const gs = _findKey(decoded, 'gameSettings');
+    if (gs && typeof gs === 'object') {
+        const vpw = Number(gs.victoryPointsToWin);
+        if (vpw && vpw !== state.vpTarget) {
+            state.vpTarget = vpw; dirty = true;
+        }
+        const dl = Number(gs.cardDiscardLimit);
+        if (dl && dl !== state.discardLimit) {
+            state.discardLimit = dl; dirty = true;
+        }
+    }
+
+    // --- Whose turn is it? ----------------------------------------
+    const cs = _findKey(decoded, 'currentState');
+    if (cs && typeof cs === 'object'
+            && cs.currentTurnPlayerColor != null) {
+        const ctp = Number(cs.currentTurnPlayerColor);
+        if (ctp !== state.currentTurn) {
+            state.currentTurn = ctp;
+            dirty = true;
+        }
+    }
+    // Phase from currentState — colonist uses ints; opening = 0..2,
+    // mid-game = 3+. We don't hard-decode; just stash the raw value.
+    if (cs && typeof cs === 'object' && cs.gameState != null) {
+        const ph = Number(cs.gameState);
+        if (ph !== state.phaseRaw) { state.phaseRaw = ph; dirty = true; }
+    }
+
+    // --- GameStart marker. ----------------------------------------
+    if (state.map == null) {
+        // map is built externally (board.js) and assigned on the
+        // panel side. Don't try to rebuild here — applySnapshot is
+        // about state, not topology.
+    }
+
+    // --- Robber tile. ---------------------------------------------
+    const robber = _findKey(decoded, 'mechanicRobberState');
+    if (robber && typeof robber === 'object'
+            && robber.locationTileIndex != null) {
+        const tid = String(Number(robber.locationTileIndex));
+        if (tid !== state.robberTile) {
+            state.robberTile = tid;
+            dirty = true;
+        }
+    }
+
+    // --- Buildings (settlements + cities) from tileCornerStates. --
+    // The full mapState lives on GameStart; later diffs ship just
+    // the touched corners. Both are handled by the same loop —
+    // mutated corners get owner/buildingType, untouched stay.
+    if (state.map) {
+        const corners = _findKey(decoded, 'tileCornerStates');
+        if (corners && typeof corners === 'object') {
+            for (const c of Object.values(corners)) {
+                if (!c || typeof c !== 'object') continue;
+                if (c.x == null || c.y == null || c.z == null) continue;
+                const bt = Number(c.buildingType) || 0;
+                const owner = c.owner == null ? 0 : Number(c.owner);
+                const nodeId = _cornerNodeId(
+                    state.map, Number(c.x), Number(c.y), Number(c.z));
+                if (!nodeId) continue;
+                const prev = state.buildings[nodeId];
+                if (bt === 0) {
+                    if (prev) {
+                        delete state.buildings[nodeId];
+                        dirty = true;
+                    }
+                    continue;
+                }
+                if (!owner) {
+                    // Diff with no owner = upgrade-in-place; reuse
+                    // prior color.
+                    if (!prev) continue;
+                    const kind = _BUILDING_BY_TYPE[bt] || prev.kind;
+                    if (kind !== prev.kind) {
+                        state.buildings[nodeId] = { ...prev, kind };
+                        dirty = true;
+                    }
+                    continue;
+                }
+                _ensureColor(state, owner);
+                const kind = _BUILDING_BY_TYPE[bt] || 'SETTLEMENT';
+                if (!prev || prev.color !== String(owner)
+                        || prev.kind !== kind) {
+                    state.buildings[nodeId] = {
+                        color: String(owner), kind, nodeId,
+                    };
+                    dirty = true;
+                }
+            }
+        }
+
+        // --- Roads from tileEdgeStates. ---------------------------
+        const edges = _findKey(decoded, 'tileEdgeStates');
+        if (edges && typeof edges === 'object') {
+            for (const e of Object.values(edges)) {
+                if (!e || typeof e !== 'object') continue;
+                if (e.x == null || e.y == null || e.z == null) continue;
+                const owner = e.owner == null ? 0 : Number(e.owner);
+                const eid = _edgeId(
+                    state.map, Number(e.x), Number(e.y), Number(e.z));
+                if (!eid) continue;
+                const prev = state.roads[eid];
+                if (!owner) {
+                    if (prev) { delete state.roads[eid]; dirty = true; }
+                    continue;
+                }
+                _ensureColor(state, owner);
+                if (prev !== String(owner)) {
+                    state.roads[eid] = String(owner);
+                    dirty = true;
+                }
+            }
+        }
+    }
+
+    // --- Per-player resource hands + dev cards + VP. --------------
+    const playerStates = _findKey(decoded, 'playerStates');
+    if (playerStates && typeof playerStates === 'object') {
+        for (const [cidStr, pstate] of Object.entries(playerStates)) {
+            if (!pstate || typeof pstate !== 'object') continue;
+            const cid = Number(cidStr);
+            if (!cid) continue;
+            const key = _ensureColor(state, cid);
+
+            // Hands. self gets typed counts, opps get total only.
+            const rc = pstate.resourceCards;
+            if (rc && typeof rc === 'object') {
+                const cards = rc.cards;
+                if (Array.isArray(cards)) {
+                    let total = 0;
+                    let typedTotal = 0;
+                    const tmp = newHand();
+                    for (const ci of cards) {
+                        const ciNum = Number(ci);
+                        const res = _CARD_RESOURCE[ciNum];
+                        if (res) {
+                            tmp[res] = (tmp[res] || 0) + 1;
+                            typedTotal += 1;
+                        }
+                        total += 1;
+                    }
+                    if (typedTotal > 0) {
+                        // self snapshot: real per-resource breakdown
+                        const cur = state.hands[key];
+                        for (const r of RESOURCE_NAMES) {
+                            if (cur[r] !== tmp[r]) {
+                                cur[r] = tmp[r];
+                                dirty = true;
+                            }
+                        }
+                        cur.unknown = 0;
+                        if (state.handTotal[key] !== total) {
+                            state.handTotal[key] = total;
+                            dirty = true;
+                        }
+                    } else {
+                        // opp snapshot: total only.
+                        if (state.handTotal[key] !== total) {
+                            state.handTotal[key] = total;
+                            dirty = true;
+                        }
+                    }
+                }
+            }
+
+            // Dev cards. Self ships typed ints; opps ship 10s.
+            const dev = pstate.developmentCards;
+            if (dev && typeof dev === 'object'
+                    && Array.isArray(dev.cards)) {
+                const counts = newDevCardCounts();
+                let total = 0;
+                for (const di of dev.cards) {
+                    const t = _DEV_CARD_TYPE[Number(di)];
+                    if (t) counts[t] = (counts[t] || 0) + 1;
+                    total += 1;
+                }
+                const prev = state.devCardsByType[key];
+                let changed = false;
+                for (const t of Object.keys(counts)) {
+                    if (prev[t] !== counts[t]) {
+                        prev[t] = counts[t];
+                        changed = true;
+                    }
+                }
+                if (state.devCardsTotal[key] !== total) {
+                    state.devCardsTotal[key] = total;
+                    changed = true;
+                }
+                // Self VP cards in hand for the snap.
+                if (cid === state.selfColorId) {
+                    const vps = counts.VICTORY_POINT || 0;
+                    if (state.vpCardsInHand[key] !== vps) {
+                        state.vpCardsInHand[key] = vps;
+                        changed = true;
+                    }
+                }
+                if (changed) dirty = true;
+            }
+
+            // VP breakdown.
+            const vps = pstate.victoryPointsState;
+            if (vps && typeof vps === 'object') {
+                let total = 0;
+                for (const [k, v] of Object.entries(vps)) {
+                    const w = _VP_WEIGHTS[Number(k)] || 0;
+                    total += w * (Number(v) || 0);
+                }
+                if (state.vp[key] !== total) {
+                    state.vp[key] = total;
+                    dirty = true;
+                }
+            }
+
+            // Played-knight count from mechanicKnightState (when
+            // colonist ships it inside playerStates) — used by hint
+            // logic. Falls back to dev-card-used count below.
+            if (pstate.mechanicKnightState
+                    && typeof pstate.mechanicKnightState === 'object'
+                    && pstate.mechanicKnightState.knightsPlayed != null) {
+                const k = Number(pstate.mechanicKnightState.knightsPlayed);
+                if (state.playedKnights[key] !== k) {
+                    state.playedKnights[key] = k;
+                    dirty = true;
+                }
+            }
+        }
+    }
+
+    // --- Longest Road / Largest Army holders. ---------------------
+    const lr = _findKey(decoded, 'mechanicLongestRoadState');
+    if (lr && typeof lr === 'object') {
+        let holder = null;
+        for (const [cidStr, st] of Object.entries(lr)) {
+            if (st && typeof st === 'object' && st.hasLongestRoad) {
+                holder = String(Number(cidStr));
+            }
+            if (st && typeof st === 'object'
+                    && st.longestRoadCount != null) {
+                const key = _ensureColor(state, Number(cidStr));
+                const n = Number(st.longestRoadCount) || 0;
+                if (state.roadLength[key] !== n) {
+                    state.roadLength[key] = n;
+                    dirty = true;
+                }
+            }
+        }
+        if (state.hasRoad !== holder) { state.hasRoad = holder; dirty = true; }
+    }
+    const la = _findKey(decoded, 'mechanicLargestArmyState');
+    if (la && typeof la === 'object') {
+        let holder = null;
+        for (const [cidStr, st] of Object.entries(la)) {
+            if (st && typeof st === 'object' && st.hasLargestArmy) {
+                holder = String(Number(cidStr));
+            }
+        }
+        if (state.hasArmy !== holder) { state.hasArmy = holder; dirty = true; }
+    }
+
+    // --- Bank counts (settlements / cities / roads remaining). ----
+    const ms2 = _findKey(decoded, 'mechanicSettlementState');
+    if (ms2 && typeof ms2 === 'object') {
+        for (const [cidStr, st] of Object.entries(ms2)) {
+            if (!st || typeof st !== 'object') continue;
+            const key = _ensureColor(state, Number(cidStr));
+            if (st.bankSettlementAmount != null) {
+                const n = Number(st.bankSettlementAmount);
+                if (state.bank[key]?.settles !== n) {
+                    state.bank[key] = state.bank[key] || {};
+                    state.bank[key].settles = n;
+                    dirty = true;
+                }
+            }
+        }
+    }
+    const mc2 = _findKey(decoded, 'mechanicCityState');
+    if (mc2 && typeof mc2 === 'object') {
+        for (const [cidStr, st] of Object.entries(mc2)) {
+            if (!st || typeof st !== 'object') continue;
+            const key = _ensureColor(state, Number(cidStr));
+            if (st.bankCityAmount != null) {
+                const n = Number(st.bankCityAmount);
+                if (state.bank[key]?.cities !== n) {
+                    state.bank[key] = state.bank[key] || {};
+                    state.bank[key].cities = n;
+                    dirty = true;
+                }
+            }
+        }
+    }
+    const mr2 = _findKey(decoded, 'mechanicRoadState');
+    if (mr2 && typeof mr2 === 'object') {
+        for (const [cidStr, st] of Object.entries(mr2)) {
+            if (!st || typeof st !== 'object') continue;
+            const key = _ensureColor(state, Number(cidStr));
+            if (st.bankRoadAmount != null) {
+                const n = Number(st.bankRoadAmount);
+                if (state.bank[key]?.roads !== n) {
+                    state.bank[key] = state.bank[key] || {};
+                    state.bank[key].roads = n;
+                    dirty = true;
+                }
+            }
+        }
+    }
+
+    // --- Roll detection from diceState. ---------------------------
+    const dice = _findKey(decoded, 'diceState');
+    if (dice && typeof dice === 'object'
+            && dice.dice1 != null && dice.dice2 != null) {
+        const d1 = Number(dice.dice1);
+        const d2 = Number(dice.dice2);
+        const total = d1 + d2;
+        const roller = state.currentTurn;
+        const fp = `${roller}|${d1}|${d2}`;
+        if (state._lastRollFp !== fp && total >= 2 && total <= 12) {
+            state._lastRollFp = fp;
+            state.rollHistory.push({
+                total, d1, d2,
+                isYou: roller === state.selfColorId,
+                rollerColor: roller != null ? String(roller) : null,
+                ts: Date.now(),
+            });
+            // Cap history at 200 to keep memory flat across long games.
+            if (state.rollHistory.length > 200) {
+                state.rollHistory.shift();
+            }
+            state.totalRolls += 1;
+            state.rollHistogram[total] = (state.rollHistogram[total] || 0) + 1;
+            dirty = true;
+        }
+    }
+
+    // --- Game-over detection. -------------------------------------
+    const winner = _findKey(decoded, 'winnerPlayerColor');
+    if (typeof winner === 'number' && winner > 0) {
+        if (!state.gameOver || state.gameOver.winnerColor !== String(winner)) {
+            state.gameOver = { winnerColor: String(winner) };
+            dirty = true;
+        }
+    }
+
+    // GameStart latch — once we've seen mapState we're started.
+    if (!state.started && _findKey(decoded, 'tileHexStates')) {
+        state.started = true;
+        dirty = true;
+    }
+
+    return dirty;
+}
+
+/** Apply a stream of decoded frames in order. */
+export function applyAll(state, decodedFrames) {
     let changed = false;
-    for (const ev of events || []) {
-        if (applyEvent(state, ev)) changed = true;
+    for (const d of decodedFrames || []) {
+        if (applySnapshot(state, d)) changed = true;
     }
     return changed;
+}
+
+/** Legacy entry point — kept so existing imports of `applyEvent`
+ *  don't break. Treats `event` as a decoded msgpack frame and calls
+ *  applySnapshot. */
+export function applyEvent(state, event) {
+    return applySnapshot(state, event);
 }

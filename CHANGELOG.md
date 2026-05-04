@@ -4,6 +4,54 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.37.0 — 2026-05-04
+
+Standalone Phase 4: full mid-game state from the extension alone.
+
+The bridge is no longer required for mid-game recs. Colonist ships
+authoritative game state with every WS frame; the standalone path
+now reads it directly into a JS state container and runs the same
+heuristic recommender + dev-card hints + robber-target ranker the
+bridge used to produce. The Python script becomes optional —
+"download from web store, click play" now actually works.
+
+- **Snapshot applier (`lib/events.js`).** New `applySnapshot()`
+  walks each decoded WS frame and updates a `newGameState()`
+  container in-place: buildings (settlements + cities) from
+  `tileCornerStates`, roads from `tileEdgeStates`, robber tile
+  from `mechanicRobberState`, per-color hand from
+  `playerStates.{cid}.resourceCards` (typed for self, count-only
+  for opps), dev cards from `developmentCards.cards`, VP from
+  `victoryPointsState`, longest-road / largest-army holders from
+  `mechanic{LongestRoad,LargestArmy}State`, dice from `diceState`.
+  Idempotent — same frame applied twice is a no-op.
+- **Mid-game recommender (`lib/recommender.js`).** Heuristic port
+  of `recommender.py` minus the 1-ply search rerank: city upgrades
+  ranked by doubled production, settlement placements legal under
+  road network + distance rule, road extensions scored by best
+  landing node, single-swap bank/port trades that unlock a build,
+  dev-card buy. Same 1-10 calibration as the bridge so the panel
+  renders them through the same `renderRec` path.
+- **Robber target ranker.** New `recommendRobberTargets()` picks
+  the highest-EV tile by pip × adjacent-opp pieces × victim hand
+  size; skips self-adjacent tiles per Catan rules.
+- **Dev-card hints (`lib/hints.js`).** `knightHint` flags
+  robber-on-us / opp closing on LA / claim-LA-now;
+  `monopolyHint` picks the best resource via inferred opp totals
+  (production-weighted from settlements + cities) and surfaces
+  unlocks; `yopHint` finds the cheapest pair that unlocks a
+  build; `rbHint` ranks legal road-pair extensions and PLAY-flags
+  when they open a strong landing or tighten a Longest Road race.
+- **Standalone snap upgrade.** `_makeNoBridgeSnap()` in
+  `panel.js` now produces a full mid-game snapshot —
+  recommendations, knight/monopoly/yop/rb hints, robber targets,
+  per-player VP/hand totals, last roll, roll histogram, game-over
+  detection — populated entirely from the JS state container.
+  When the bridge is unreachable, the panel renders the same
+  surfaces it did under bridge mode (modulo strategy v2 archetype
+  scoring + 1-ply search-delta annotations, which stay
+  bridge-only for now).
+
 ## v0.35.0 — 2026-05-04
 
 Strategy v2: archetype tracker, mid-game pivots, tournament-grade

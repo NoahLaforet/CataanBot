@@ -15,7 +15,7 @@ export { newGameState, newHand, newDevCardCounts, edgeKey,
 export { buildBoardFromColonistMap, pipsForNumber,
          PIP_DOTS_BY_NUMBER }
     from './board.js';
-export { applyEvent, applyAll } from './events.js';
+export { applyEvent, applyAll, applySnapshot } from './events.js';
 export { scoreOpeningNodes, scoreSecondSettlements,
          scoreRobberTargets, computeTableScarcity,
          legalNodesAfterPicks,
@@ -24,7 +24,8 @@ export { scoreOpeningNodes, scoreSecondSettlements,
 export { decodeMsgpack, decodeIncomingFrame, decodeOutgoingFrame,
          MsgpackError, toUint8Array }
     from './msgpack.js';
-export { recommendActions, handCanAfford, COSTS }
+export { recommendActions, recommendRobberTargets,
+         handCanAfford, COSTS }
     from './recommender.js';
 export { knightHint, monopolyHint, yopHint, rbHint }
     from './hints.js';
