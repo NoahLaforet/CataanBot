@@ -1015,7 +1015,8 @@
                     standingsTag = ` · <span class="stand-self">you `
                         + `${st.self_vp} (lead)</span>`;
                 } else {
-                    const leadName = escapeHtml(st.leader.username || '?');
+                    const leadName = escapeHtml(
+                        anonName(st.leader.username || '?'));
                     standingsTag = ` · ${leadName} ${st.leader.vp}`
                         + ` <span class="stand-gap">· you ${st.self_vp}`
                         + ` (-${st.gap_to_leader})</span>`;
@@ -1162,12 +1163,15 @@
         // looks like a render bug. The ribbon also tells you whose
         // turn it is when colonist's WS metadata has the username.
         if (!snap.my_turn && !isSetup) {
-            const turnUser = snap.current_turn_username
+            const rawTurnUser = snap.current_turn_username
                 || snap.current_turn_color || 'an opponent';
+            const turnUser = snap.current_turn_username
+                ? anonName(snap.current_turn_username)
+                : String(rawTurnUser);
             parts.push(
                 '<div class="off-turn-ribbon">'
                 + '<span class="b-ico">⏳</span> '
-                + `${escapeHtml(String(turnUser))}'s turn — watching</div>`);
+                + `${escapeHtml(turnUser)}'s turn — watching</div>`);
         }
         // Recommendations — only shown when it's my turn (mid-game) or
         // during setup (always useful). Split into:
@@ -1948,7 +1952,7 @@
             if (lr.is_you) {
                 who = `you rolled <b>${lr.total}</b>`;
             } else if (lr.player) {
-                who = `${escapeHtml(lr.player)} rolled ${lr.total}`;
+                who = `${escapeHtml(anonName(lr.player))} rolled ${lr.total}`;
             } else if (lr.color) {
                 who = `${escapeHtml(lr.color.toLowerCase())} rolled ${lr.total}`;
             } else {
