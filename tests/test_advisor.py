@@ -313,3 +313,77 @@ def test_diversity_multiplier_reflects_composition_over_pips():
     # resource stack. Below ~1.18 the boost stops clearing the gap
     # against ports + denial in real games.
     assert _DIVERSITY_BY_COUNT[3] >= 1.18
+
+
+def test_robber_imminent_multiplier_boosts_target_color():
+    """When an opp is imminent, the robber-target ranker should
+    score their tiles higher than equal-pip tiles of other opps.
+    Past the existing linear VP weight, this gives the imminent
+    color a 2× extra factor — meaningful at lower VPs where the
+    linear weight is small but the imminent threat is real (e.g.
+    7 VP + can-city → vp+2 = 9, target = 10 → would-fire imminent
+    even though 7 is below close_to_win on default 10 target).
+    """
+    from cataanbot.advisor import score_robber_targets
+    from cataanbot.tracker import Tracker
+    from catanatron import Color
+
+    tracker = Tracker(seed=1234)
+    # Place RED on a high-pip spot and BLUE on a similar one so we
+    # have two equal-pip tiles to compare. Pick from buildable nodes
+    # that have at least two pips on adjacent tiles.
+    from cataanbot.advisor import score_opening_nodes
+    top = score_opening_nodes(tracker.game)
+    blue_pick = top[0].node_id
+    # Find the next pick with comparable pips that doesn't share a
+    # tile with blue_pick.
+    red_pick = None
+    blue_tiles = {(t[0], t[1]) for t in top[0].tiles}
+    for cand in top[1:]:
+        cand_tiles = {(t[0], t[1]) for t in cand.tiles}
+        if cand_tiles.isdisjoint(blue_tiles):
+            red_pick = cand.node_id
+            break
+    if red_pick is None:
+        return  # Pathological seed — skip.
+
+    tracker.settle("BLUE", blue_pick)
+    tracker.settle("RED", red_pick)
+
+    # Score without imminent flag.
+    base_scores = score_robber_targets(tracker.game, "WHITE")
+    base_blue_max = max(
+        (s.score for s in base_scores
+         if s.victims.get("BLUE", 0) > 0
+         and s.victims.get("RED", 0) == 0),
+        default=0.0,
+    )
+    base_red_max = max(
+        (s.score for s in base_scores
+         if s.victims.get("RED", 0) > 0
+         and s.victims.get("BLUE", 0) == 0),
+        default=0.0,
+    )
+
+    # Score with BLUE flagged imminent.
+    boosted = score_robber_targets(
+        tracker.game, "WHITE", imminent_color="BLUE")
+    boosted_blue_max = max(
+        (s.score for s in boosted
+         if s.victims.get("BLUE", 0) > 0
+         and s.victims.get("RED", 0) == 0),
+        default=0.0,
+    )
+    boosted_red_max = max(
+        (s.score for s in boosted
+         if s.victims.get("RED", 0) > 0
+         and s.victims.get("BLUE", 0) == 0),
+        default=0.0,
+    )
+
+    # BLUE-only tiles must score strictly higher than they did before.
+    assert boosted_blue_max > base_blue_max, (
+        f"imminent multiplier didn't boost BLUE tiles: "
+        f"base={base_blue_max} boosted={boosted_blue_max}")
+    # RED-only tiles unaffected.
+    assert boosted_red_max == base_red_max

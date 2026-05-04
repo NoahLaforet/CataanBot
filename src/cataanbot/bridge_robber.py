@@ -9,8 +9,79 @@ from __future__ import annotations
 from typing import Any
 
 
+def _detect_imminent_opp_color(game) -> str | None:
+    """Return the catanatron Color name of any opp who could win on
+    their next turn from what we can see, or None.
+
+    Mirrors the LR/LA branch of _compute_leader_threat without
+    requiring the snap.opps[].can_afford slice — useful for callers
+    that run before the snap is fully built (e.g. robber-target
+    scoring on a fresh 7-roll). Conservative: only counts the
+    LR / LA flips (no dev-stash heuristic, no build-affordability
+    inference) since this helper is consumed by the robber-target
+    weight, where over-bumping noise tiles is worse than under-
+    bumping. Build-VP and dev-stash paths still flow through the
+    snap-driven leader-threat detector for the banner.
+    """
+    try:
+        from catanatron import Color  # noqa: F401
+        from cataanbot.config import VP_TARGET
+        sess = game.session
+        if sess is None or sess.self_color_id is None:
+            return None
+        try:
+            self_user = sess.player_names.get(sess.self_color_id)
+            self_color = (game.color_map.get(self_user)
+                          if self_user else None)
+        except Exception:  # noqa: BLE001
+            self_color = None
+        state = game.tracker.game.state
+        ps = state.player_state
+        for col, idx in state.color_to_index.items():
+            col_str = (col.value if hasattr(col, "value")
+                       else str(col)).upper()
+            if self_color is not None and col_str == str(self_color).upper():
+                continue
+            vp = int(ps.get(f"P{idx}_VICTORY_POINTS", 0) or 0)
+            if vp >= VP_TARGET:
+                # Already at target — game is effectively over from
+                # the threat-banner perspective; no point bumping
+                # robber priority here.
+                continue
+            # LA path: +1 knight play takes LA?
+            played = int(ps.get(f"P{idx}_PLAYED_KNIGHT", 0))
+            held = int(ps.get(f"P{idx}_KNIGHT_IN_HAND", 0))
+            has_army = bool(ps.get(f"P{idx}_HAS_ARMY", False))
+            opp_max_played = 0
+            for col2, idx2 in state.color_to_index.items():
+                if idx2 == idx:
+                    continue
+                opp_max_played = max(opp_max_played, int(
+                    ps.get(f"P{idx2}_PLAYED_KNIGHT", 0)))
+            la_threshold = max(3, opp_max_played + 1)
+            if (not has_army and held >= 1 and played + 1 >= la_threshold
+                    and vp + 2 >= VP_TARGET):
+                return col_str
+            # LR path: +1 road takes LR?
+            ll = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0))
+            has_road = bool(ps.get(f"P{idx}_HAS_ROAD", False))
+            opp_max_roads = 0
+            for col2, idx2 in state.color_to_index.items():
+                if idx2 == idx:
+                    continue
+                opp_max_roads = max(opp_max_roads, int(
+                    ps.get(f"P{idx2}_LONGEST_ROAD_LENGTH", 0)))
+            if (not has_road and ll + 1 >= max(5, opp_max_roads + 1)
+                    and vp + 2 >= VP_TARGET):
+                return col_str
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _compute_robber_snapshot(
     game, display_colors: dict[str, str] | None = None, top: int = 5,
+    imminent_color: str | None = None,
 ) -> list[dict[str, Any]] | None:
     """Snapshot the top-N robber rankings for the overlay.
 
@@ -60,11 +131,18 @@ def _compute_robber_snapshot(
     from cataanbot.config import get_friendly_robber_protected_vp
     fr_min = (get_friendly_robber_protected_vp()
               if sess.friendly_robber_active else None)
+    # Auto-detect imminent opp from game state when caller didn't
+    # supply one — robber snapshot may be computed at any point
+    # in the snap-build pipeline so we can't assume snap.threat is
+    # available.
+    if imminent_color is None:
+        imminent_color = _detect_imminent_opp_color(game)
     try:
         scores = score_robber_targets(
             game.tracker.game, color,
             hand_size_override=hand_size_override or None,
             friendly_robber_min_vp=fr_min,
+            imminent_color=imminent_color,
         )
     except Exception:  # noqa: BLE001
         return None

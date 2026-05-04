@@ -300,6 +300,7 @@ def score_robber_targets(
     game: "Game", my_color: str,
     hand_size_override: dict[str, int] | None = None,
     friendly_robber_min_vp: int | None = None,
+    imminent_color: str | None = None,
 ) -> list[RobberScore]:
     """Rank every land tile (except where the robber is now) for blocking value.
 
@@ -319,6 +320,13 @@ def score_robber_targets(
     placed players have exactly 2 from setup). Tiles whose only victims
     are protected are dropped from the ranking entirely; tiles with a
     mix score only the un-protected victims' pips.
+
+    ``imminent_color`` (when given) flags an opp whose threat-level is
+    "imminent" — they could win on their next turn. Tiles adjacent to
+    this color get a 2× extra VP-weight multiplier so robber-target
+    ranking strongly prefers shutting them down over equal-pip tiles
+    of other opps. Live bridge passes this when leader-threat detector
+    fires imminent.
     """
     from catanatron import Color
     from catanatron.state import RESOURCES
@@ -374,8 +382,11 @@ def score_robber_targets(
         # Tiles where every adjacent opp is protected drop out
         # entirely (no victims → score 0 → filtered below).
         opponent_blocked = sum(victims.values())
+        imminent_norm = (imminent_color.upper()
+                         if imminent_color else None)
         weighted = sum(
             pips * _vp_weight(vp_by_color.get(c, 0))
+            * (2.0 if imminent_norm == c.upper() else 1.0)
             for c, pips in victims.items()
         )
         results.append(RobberScore(
