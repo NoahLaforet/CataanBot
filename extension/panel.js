@@ -62,6 +62,41 @@
     //
     // Lazily imports the lib/ modules so the bundle isn't loaded
     // unless we actually need it (CWS users with no bridge).
+    // Username + color cache for the standalone path. Built up from
+    // chat-log entries the content script broadcasts. Keys are the
+    // CSS color string colonist renders the username with (hex or
+    // rgb()); values are the actual username. We also keep the
+    // reverse for convenience and a list-of-usernames so the panel
+    // can show "you are Aria" style hints.
+    const _standaloneNames = {
+        byCss: {},          // 'rgb(...)'/hex → username
+        byUser: {},         // username → css
+        recent: [],         // recent username strings, dedup-ordered
+    };
+    function _normCss(c) {
+        if (!c) return '';
+        return String(c).replace(/\s+/g, '').toLowerCase();
+    }
+    function _stashName(user, css) {
+        if (!user) return;
+        const u = String(user).trim();
+        if (!u) return;
+        if (css) {
+            const k = _normCss(css);
+            if (k && !_standaloneNames.byCss[k]) {
+                _standaloneNames.byCss[k] = u;
+            }
+            if (!_standaloneNames.byUser[u]) {
+                _standaloneNames.byUser[u] = css;
+            }
+        }
+        if (!_standaloneNames.recent.includes(u)) {
+            _standaloneNames.recent.push(u);
+            if (_standaloneNames.recent.length > 12) {
+                _standaloneNames.recent.shift();
+            }
+        }
+    }
     let _standalone = {
         board: null,            // parsed board model from board.js
         mapStateFrame: null,    // raw mapState dict (re-parse safety)
@@ -137,6 +172,28 @@
         }
         return null;
     }
+
+    // Log-entry listener: pulls username + CSS color out of every
+    // chat row the content script forwards. Builds the
+    // _standaloneNames map so snap.self / snap.opps can ship real
+    // usernames instead of "RED"/"BLUE" placeholders.
+    chrome.runtime.onMessage.addListener((msg) => {
+        if (!msg || msg.type !== 'log-entry-broadcast') return false;
+        const p = msg.payload || {};
+        const names = Array.isArray(p.names) ? p.names : [];
+        for (const n of names) {
+            // Prefer foreground color; bg only as fallback when fg
+            // is white-on-color (some banner rows have bg pills).
+            const css = (n.color && String(n.color).trim())
+                || (n.bg && String(n.bg).trim()) || '';
+            _stashName(n.name, css);
+        }
+        if (p.self) _stashName(p.self, '');
+        // Force a re-render so the next standalone snap picks up
+        // the new names without waiting for a WS frame.
+        if (names.length) window.__catanbotRenderDirty = true;
+        return false;
+    });
 
     chrome.runtime.onMessage.addListener((msg) => {
         if (!msg || msg.type !== 'ws-frame-broadcast') return false;
@@ -306,6 +363,52 @@
                         COLONIST_COLOR_NAME[String(cid)] || `P${cid}`;
                     const _colorHex = (cid) =>
                         COLONIST_COLOR_HEX[String(cid)] || '#888';
+                    // Username matching: chat scraper ships
+                    // {username, css} pairs. We pick the chat CSS
+                    // closest by RGB distance to the target color
+                    // id's catanatron hex. Falls back to the color
+                    // name when no match.
+                    function _parseRgb(s) {
+                        if (!s) return null;
+                        const m = String(s).trim().toLowerCase();
+                        let mm = m.match(/^#([0-9a-f]{3})$/);
+                        if (mm) {
+                            const h = mm[1];
+                            return [parseInt(h[0]+h[0],16),
+                                    parseInt(h[1]+h[1],16),
+                                    parseInt(h[2]+h[2],16)];
+                        }
+                        mm = m.match(/^#([0-9a-f]{6})$/);
+                        if (mm) {
+                            return [parseInt(mm[1].slice(0,2),16),
+                                    parseInt(mm[1].slice(2,4),16),
+                                    parseInt(mm[1].slice(4,6),16)];
+                        }
+                        mm = m.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                        if (mm) return [+mm[1], +mm[2], +mm[3]];
+                        return null;
+                    }
+                    function _bestUsernameFor(cid) {
+                        const target = _parseRgb(_colorHex(cid));
+                        if (!target) return null;
+                        let best = null, bestDist = 1e9;
+                        for (const [css, user]
+                                of Object.entries(_standaloneNames.byCss)) {
+                            const rgb = _parseRgb(css);
+                            if (!rgb) continue;
+                            const d = Math.pow(target[0]-rgb[0], 2)
+                                    + Math.pow(target[1]-rgb[1], 2)
+                                    + Math.pow(target[2]-rgb[2], 2);
+                            if (d < bestDist) {
+                                bestDist = d; best = user;
+                            }
+                        }
+                        // Reject if too far away (color hasn't been
+                        // chat-attributed yet). Threshold is loose —
+                        // colonist's reds vary across rows.
+                        if (bestDist > 30000) return null;
+                        return best;
+                    }
                     // Self/opps blocks for the panel's status cards.
                     // Field naming mirrors src/catanbot/bridge.py snap
                     // shape: hand = {res:int}, cards = int total,
@@ -320,10 +423,15 @@
                         cities: 4 - (selfBank?.cities ?? 4),
                         roads: 15 - (selfBank?.roads ?? 15),
                     };
+                    const selfUser =
+                        _bestUsernameFor(st.selfColorId)
+                        || (_standaloneNames.recent[0] || null)
+                        || _colorName(st.selfColorId);
                     selfBlock = {
-                        username: _colorName(st.selfColorId),
+                        username: selfUser,
                         color: _colorName(st.selfColorId),
-                        color_css: _colorHex(st.selfColorId),
+                        color_css: _standaloneNames.byUser[selfUser]
+                            || _colorHex(st.selfColorId),
                         hand: { ...selfHand },
                         cards: totalSelf,
                         afford: null,
@@ -349,11 +457,14 @@
                             cities: 4 - (ob.cities ?? 4),
                             roads: 15 - (ob.roads ?? 15),
                         };
+                        const oppUser = _bestUsernameFor(c)
+                            || _colorName(c);
                         oppsBlock.push({
-                            username: _colorName(c),
+                            username: oppUser,
                             is_placeholder: false,
                             color: _colorName(c),
-                            color_css: _colorHex(c),
+                            color_css: _standaloneNames.byUser[oppUser]
+                                || _colorHex(c),
                             cards: st.handTotal[c] || 0,
                             hand: null,
                             unknown: 0,
@@ -441,6 +552,294 @@
                     round: 0,
                     total_rolls: totalRolls,
                 };
+                // ---------- Extra snap surfaces (mirrors bridge) ----------
+                // Build the pile of derived fields the renderer reads
+                // for the secondary HUD surfaces. All of these are
+                // cheap reads from the JS state container and the lib
+                // helpers we already have.
+
+                // Standings — leader + self gap.
+                let standings = null;
+                if (st && st.colors.length) {
+                    const rows = st.colors.map(c => ({
+                        color: c,
+                        username: c === st.selfColor
+                            ? (selfBlock?.username || _colorName(c))
+                            : (_bestUsernameFor(c) || _colorName(c)),
+                        vp: st.vp[c] || 0,
+                        is_self: c === st.selfColor,
+                    })).sort((a, b) => b.vp - a.vp);
+                    const selfVp = (st.vp[st.selfColor] || 0)
+                        + (st.vpCardsInHand[st.selfColor] || 0);
+                    const leader = rows[0] || null;
+                    standings = {
+                        leader,
+                        rows,
+                        self_vp: selfVp,
+                        self_is_leader: leader && leader.is_self,
+                        gap_to_leader: leader
+                            ? Math.max(0, leader.vp - selfVp)
+                            : 0,
+                    };
+                }
+
+                // Longest-Road race.
+                let lrRace = null;
+                if (st) {
+                    const myLen = st.roadLength[st.selfColor] || 0;
+                    let oppMax = 0, oppMaxColor = null;
+                    for (const c of st.colors) {
+                        if (c === st.selfColor) continue;
+                        const l = st.roadLength[c] || 0;
+                        if (l > oppMax) { oppMax = l; oppMaxColor = c; }
+                    }
+                    if (st.hasRoad === st.selfColor) {
+                        lrRace = {
+                            level: oppMax >= myLen - 1 ? 'contested' : 'safe',
+                            message: `you hold LR (${myLen})`
+                                + (oppMaxColor
+                                    ? ` · closest: ${_bestUsernameFor(oppMaxColor)
+                                        || _colorName(oppMaxColor)} ${oppMax}`
+                                    : ''),
+                        };
+                    } else if (st.hasRoad) {
+                        const holderName =
+                            _bestUsernameFor(st.hasRoad)
+                            || _colorName(st.hasRoad);
+                        lrRace = {
+                            level: myLen + 1 >= oppMax ? 'close' : 'behind',
+                            message: `${holderName} holds LR (${oppMax})`
+                                + ` · you ${myLen}`,
+                        };
+                    } else if (oppMax >= 4 || myLen >= 4) {
+                        lrRace = {
+                            level: 'open',
+                            message: `LR open · longest: `
+                                + (oppMax > myLen
+                                    ? `${_bestUsernameFor(oppMaxColor)
+                                        || _colorName(oppMaxColor)} ${oppMax}`
+                                    : `you ${myLen}`),
+                        };
+                    }
+                }
+
+                // Largest-Army race.
+                let laRace = null;
+                if (st) {
+                    const myK = st.playedKnights[st.selfColor] || 0;
+                    let oppMax = 0, oppMaxColor = null;
+                    for (const c of st.colors) {
+                        if (c === st.selfColor) continue;
+                        const k = st.playedKnights[c] || 0;
+                        if (k > oppMax) { oppMax = k; oppMaxColor = c; }
+                    }
+                    if (st.hasArmy === st.selfColor) {
+                        laRace = {
+                            level: oppMax >= myK - 1 ? 'contested' : 'safe',
+                            message: `you hold LA (${myK} knights)`
+                                + (oppMaxColor
+                                    ? ` · closest: ${_bestUsernameFor(oppMaxColor)
+                                        || _colorName(oppMaxColor)} ${oppMax}`
+                                    : ''),
+                        };
+                    } else if (st.hasArmy) {
+                        const holderName =
+                            _bestUsernameFor(st.hasArmy)
+                            || _colorName(st.hasArmy);
+                        laRace = {
+                            level: myK + 1 >= oppMax ? 'close' : 'behind',
+                            message: `${holderName} holds LA (${oppMax})`
+                                + ` · you ${myK}`,
+                        };
+                    } else if (oppMax >= 2 || myK >= 2) {
+                        laRace = {
+                            level: 'open',
+                            message: `LA open · most knights: `
+                                + (oppMax > myK
+                                    ? `${_bestUsernameFor(oppMaxColor)
+                                        || _colorName(oppMaxColor)} ${oppMax}`
+                                    : `you ${myK}`),
+                        };
+                    }
+                }
+
+                // Threat — opp 2 VP from win.
+                let threat = null;
+                if (st) {
+                    const target = st.vpTarget || 10;
+                    let topOpp = null;
+                    for (const c of st.colors) {
+                        if (c === st.selfColor) continue;
+                        const v = st.vp[c] || 0;
+                        if (!topOpp || v > topOpp.vp) {
+                            topOpp = { color: c, vp: v };
+                        }
+                    }
+                    if (topOpp && topOpp.vp >= target - 2) {
+                        const name = _bestUsernameFor(topOpp.color)
+                            || _colorName(topOpp.color);
+                        const gap = target - topOpp.vp;
+                        threat = {
+                            level: gap <= 1 ? 'critical'
+                                : (gap <= 2 ? 'high' : 'mid'),
+                            leader_color: topOpp.color,
+                            leader_username: name,
+                            leader_vp: topOpp.vp,
+                            message: `${name} at ${topOpp.vp}/${target} VP`
+                                + ` — ${gap} from win`,
+                        };
+                    }
+                }
+
+                // Win-proximity — self N from winning.
+                let winProx = null;
+                if (st && selfBlock) {
+                    const target = st.vpTarget || 10;
+                    const selfTotal = (st.vp[st.selfColor] || 0)
+                        + (st.vpCardsInHand[st.selfColor] || 0);
+                    const gap = target - selfTotal;
+                    if (gap <= 2 && gap > 0) {
+                        winProx = {
+                            level: gap === 1 ? 'next' : 'close',
+                            self_vp: selfTotal,
+                            target,
+                            gap,
+                            message: gap === 1
+                                ? `1 from winning (${selfTotal}/${target} VP)`
+                                : `2 from winning (${selfTotal}/${target} VP)`,
+                        };
+                    }
+                }
+
+                // Winning-move — does any rec land us at the VP target?
+                let winningMove = null;
+                if (st && selfBlock) {
+                    const target = st.vpTarget || 10;
+                    const selfTotal = (st.vp[st.selfColor] || 0)
+                        + (st.vpCardsInHand[st.selfColor] || 0);
+                    if (selfTotal === target - 1) {
+                        // Settle / city / dev-card-VP could clinch.
+                        const wm = (outRecs || []).find(r =>
+                            (r.kind === 'settlement'
+                                || r.kind === 'city')
+                            && r.when === 'now');
+                        if (wm) {
+                            winningMove = {
+                                confidence: 'high',
+                                kind: wm.kind,
+                                message: `WIN — ${wm.kind} now`,
+                                detail: wm.detail,
+                                alternatives: [],
+                            };
+                        }
+                    }
+                }
+
+                // Discard / seven-prep hint when fat-handed.
+                let discardHint = null;
+                let sevenPrep = null;
+                if (st && selfBlock) {
+                    const limit = st.discardLimit || 7;
+                    const total = selfBlock.cards;
+                    if (total > limit) {
+                        // Drop the half from the largest stacks.
+                        const need = Math.floor(total / 2);
+                        const sorted = Object.entries(selfBlock.hand)
+                            .filter(([, n]) => n > 0)
+                            .sort((a, b) => b[1] - a[1]);
+                        const drop = {};
+                        let left = need;
+                        for (const [r, n] of sorted) {
+                            if (left <= 0) break;
+                            const give = Math.min(left, n);
+                            drop[r] = give;
+                            left -= give;
+                        }
+                        discardHint = {
+                            need,
+                            drop,
+                            rationale: 'on a 7 you discard half — '
+                                + 'feed the largest stacks first',
+                        };
+                    } else if (total >= limit - 1 && total >= 6) {
+                        sevenPrep = {
+                            level: total === limit ? 'fat' : 'watch',
+                            cards: total,
+                            limit,
+                            message: total === limit
+                                ? `at the cliff (${total} cards) `
+                                + '— spend before next 7'
+                                : `${total} cards · 1 more = discard risk`,
+                        };
+                    }
+                }
+
+                // Hot numbers — top-2 dice totals seen in last 12 rolls.
+                let hotNumbers = null;
+                let sevensHot = null;
+                if (st && st.totalRolls >= 4) {
+                    const recent = st.rollHistory.slice(-12);
+                    const counts = {};
+                    for (const r of recent) {
+                        counts[r.total] = (counts[r.total] || 0) + 1;
+                    }
+                    const sorted = Object.entries(counts)
+                        .sort((a, b) => b[1] - a[1]);
+                    const top = sorted.filter(([, n]) => n >= 2)
+                        .slice(0, 2)
+                        .map(([num, n]) => ({
+                            number: Number(num),
+                            count: n,
+                        }));
+                    if (top.length) hotNumbers = { numbers: top,
+                                                   window: recent.length };
+                    const sevens = counts['7'] || 0;
+                    if (sevens >= 3) {
+                        sevensHot = {
+                            count: sevens,
+                            window: recent.length,
+                            message: `${sevens} sevens in last `
+                                + `${recent.length} rolls — robber-heavy`,
+                        };
+                    }
+                }
+
+                // Yield summary — per-color expected cards/roll from
+                // node production. Self and opps both get a "prod"
+                // field on their block.
+                if (st && st.map) {
+                    for (const blk of [selfBlock, ...oppsBlock]) {
+                        if (!blk) continue;
+                        const c = blk.color === selfBlock?.color
+                            ? st.selfColor
+                            : (() => {
+                                for (const k of st.colors) {
+                                    if (_colorName(k) === blk.color) return k;
+                                }
+                                return null;
+                            })();
+                        if (!c) continue;
+                        let total = 0;
+                        for (const [nid, b] of Object.entries(st.buildings)) {
+                            if (b.color !== c) continue;
+                            const node = st.map.nodes[nid];
+                            if (!node) continue;
+                            const mult = b.kind === 'CITY' ? 2 : 1;
+                            for (const tid of node.tiles) {
+                                const t = st.map.tiles[tid];
+                                if (!t || !t.resource) continue;
+                                total += (t.pip / 36) * mult;
+                            }
+                        }
+                        blk.prod = Math.round(total * 100) / 100;
+                    }
+                }
+
+                // Production stall — opp went N rolls without producing.
+                // Heuristic: if their hand total hasn't grown in 5+
+                // rolls AND they have producing tiles, they're being
+                // robbed or unlucky. Standalone has no roll-by-roll
+                // hand history, so this is bridge-only for now.
                 // Game-over message — stamp a one-line readable
                 // banner when the state's gameOver tag is set.
                 let gameOverObj = null;
@@ -490,6 +889,17 @@
                     vp_target: st ? st.vpTarget : 10,
                     discard_limit: st ? st.discardLimit : 7,
                     game_over: gameOverObj,
+                    standings,
+                    longest_road_race: lrRace,
+                    largest_army_race: laRace,
+                    threat,
+                    win_proximity: winProx,
+                    winning_move: winningMove,
+                    discard_hint: discardHint,
+                    seven_prep: sevenPrep,
+                    hot_numbers: hotNumbers,
+                    sevens_hot: sevensHot,
+                    round: 0,
                     latest_postmortem: {
                         seq: 0, available: false, written_at: 0,
                     },

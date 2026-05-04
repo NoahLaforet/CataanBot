@@ -104,6 +104,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.type === 'log-entry') {
         postJson(`${BRIDGE_BASE}/log`, msg.payload);
+        // Mirror to extension contexts so the side panel's
+        // standalone path can extract usernames + colors from
+        // chat entries (colonist's WS frames don't carry
+        // usernames; they only come through the chat DOM).
+        try {
+            chrome.runtime.sendMessage({
+                type: 'log-entry-broadcast',
+                payload: msg.payload,
+            }).catch(() => {});
+        } catch (_) { /* no listeners */ }
         return false;
     }
     if (msg.type === 'feedback') {
