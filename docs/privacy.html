@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CatanBot — Privacy Policy</title>
+<style>
+  :root {
+    --bg: #11151f;
+    --bg-1: #161b27;
+    --fg: #e6ebf3;
+    --fg-mute: #b1bbcc;
+    --fg-dim: #6c7790;
+    --accent: #8a93a6;
+    --pos: #4ade80;
+    --line: #2a3042;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 36px 0 12px;
+    color: var(--fg);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .meta {
+    color: var(--fg-dim);
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+  p, li { color: var(--fg-mute); }
+  a { color: var(--pos); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  code { padding: 2px 6px; font-size: 13px; }
+  pre {
+    padding: 12px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    color: var(--fg-mute);
+  }
+  th { color: var(--fg); font-weight: 600; }
+  .tldr {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--pos);
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin: 24px 0;
+    color: var(--fg);
+  }
+  footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--fg-dim);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>CatanBot — Privacy Policy</h1>
+  <div class="meta">Last updated: 2026-05-04</div>
+
+  <div class="tldr">
+    <strong>TL;DR:</strong> CatanBot does not collect, transmit,
+    or store any user data remotely. The Chrome extension talks
+    only to a Python bridge running on your own machine and the
+    colonist.io game tab. No analytics, no telemetry, no
+    third-party requests.
+  </div>
+
+  <h2>What the extension reads</h2>
+  <p>
+    While you have a colonist.io game tab open and the CatanBot
+    side panel pinned, the extension's content scripts:
+  </p>
+  <ul>
+    <li>
+      Inject a hook into the colonist.io page world that observes
+      the WebSocket frames colonist's own JavaScript already sends
+      and receives. Frames are forwarded over
+      <code>chrome.runtime</code> to the extension's service worker.
+    </li>
+    <li>
+      Walk the colonist.io chat log DOM to extract event text
+      (rolls, builds, trades, dev card plays) for the local
+      strategy engine.
+    </li>
+  </ul>
+  <p>
+    The extension does not modify colonist's game state, does not
+    click for you, and does not bypass any colonist UI.
+  </p>
+
+  <h2>What gets transmitted</h2>
+  <p>
+    Every frame and DOM event observed by the extension is
+    forwarded to a single endpoint:
+  </p>
+  <pre>http://127.0.0.1:8765</pre>
+  <p>
+    This is the loopback address — your own machine, never
+    leaves your computer. The Python bridge that listens on that
+    port is also open-source and runs locally. You install it
+    once on your machine; the extension cannot function without
+    it.
+  </p>
+  <p>
+    The extension makes no requests to any other host. There is
+    no fallback, no telemetry endpoint, no analytics service, no
+    remote logging. You can verify this by inspecting the
+    extension's network activity in Chrome's DevTools.
+  </p>
+
+  <h2>What gets stored</h2>
+  <p>Locally, on your machine only:</p>
+  <ul>
+    <li>
+      <strong>Browser-side:</strong> a small
+      <code>chrome.storage.local</code> blob of UI preferences
+      (font scale, streamer-mode toggle, panel section collapse
+      states, opacity).
+    </li>
+    <li>
+      <strong>Bridge-side:</strong> per-game WebSocket frame
+      mirrors in <code>~/Desktop/CataanBot/sessions/active.jsonl</code>
+      (rotates per game, capped at the active session), and an
+      HTML post-mortem of each finished game in
+      <code>postmortems/</code>. These files are written by the
+      bridge process to your own disk.
+    </li>
+  </ul>
+  <p>Nothing is uploaded anywhere.</p>
+
+  <h2>Permissions</h2>
+  <table>
+    <thead>
+      <tr><th>Permission</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>sidePanel</code></td>
+        <td>Renders the HUD in Chrome's native side panel.</td>
+      </tr>
+      <tr>
+        <td><code>storage</code></td>
+        <td>Persists UI preferences across browser sessions.</td>
+      </tr>
+      <tr>
+        <td><code>scripting</code></td>
+        <td>Injects the WebSocket observer into colonist.io.</td>
+      </tr>
+      <tr>
+        <td><code>tabs</code></td>
+        <td>Auto-opens the post-game HTML report in a new tab.</td>
+      </tr>
+      <tr>
+        <td>Host: <code>colonist.io/*</code></td>
+        <td>Reads the game DOM and WebSocket frames. The extension's only data source.</td>
+      </tr>
+      <tr>
+        <td>Host: <code>127.0.0.1:8765</code></td>
+        <td>Talks to your local Python bridge. The only outbound destination.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Open source</h2>
+  <p>
+    CatanBot is GPL-3.0 licensed. Full source is on GitHub:
+    <a href="https://github.com/NoahLaforet/CatanBot">
+      github.com/NoahLaforet/CatanBot</a>.
+    You are free to inspect, audit, and modify the code.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions, issues, or audit requests:
+    <a href="mailto:noah.laforet@icloud.com">noah.laforet@icloud.com</a>
+  </p>
+  <p>
+    GitHub issues:
+    <a href="https://github.com/NoahLaforet/CatanBot/issues">
+      github.com/NoahLaforet/CatanBot/issues</a>
+  </p>
+
+  <footer>
+    Source for this page lives in the repo at
+    <code>docs/privacy.html</code>. Hosted via GitHub Pages
+    on the <code>main</code> branch from the <code>/docs</code>
+    folder.
+  </footer>
+</main>
+</body>
+</html>

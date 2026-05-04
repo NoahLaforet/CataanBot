@@ -120,26 +120,19 @@ GPL-3.0. Full source on GitHub. Issues and contributions welcome.
 ## Required policy assets
 
 ### Privacy policy
-The CWS requires a privacy policy URL. Since the extension is
-local-only and ships nothing offsite, the policy is short:
+Full text lives at `PRIVACY.md` (markdown for the repo) and
+`docs/privacy.html` (styled HTML for hosting). The CWS field
+takes a hosted URL.
 
-```
-CatanBot does not collect, transmit, or store any user data
-remotely. The extension communicates only with a Python bridge
-running on the user's own machine (127.0.0.1:8765) and the
-colonist.io game tab. No telemetry, no analytics, no third-
-party requests. All game state, strategy logs, and postmortems
-remain on the user's machine.
+**To host (one-time setup):**
+1. Open the repo's GitHub settings → Pages.
+2. Source: `Deploy from a branch`. Branch: `main`. Folder: `/docs`.
+3. Save. Wait ~30 seconds for Pages to publish.
+4. URL becomes: `https://noahlaforet.github.io/CatanBot/privacy.html`
+5. Paste that URL into the CWS dev console's privacy-policy field.
 
-Source code is available at https://github.com/NoahLaforet/CatanBot
-under the GPL-3.0 license.
-
-Questions: noah.laforet@icloud.com
-```
-
-Host this at e.g. `noahlaforet.github.io/catanbot-privacy`
-(GitHub Pages, free) or as a section in the repo README and
-link to that anchor.
+The page renders with the same dark palette as the HUD, so it
+looks intentional alongside screenshots.
 
 ### Permission justifications
 The dev-console asks for a one-line justification per permission:
@@ -165,9 +158,15 @@ The dev-console asks for a one-line justification per permission:
 2. In the dev console: Items → New item → upload the zip
 3. Fill in listing fields from this doc
 4. Upload screenshots + promo tile
-5. Paste privacy policy URL
-6. Save draft, hit "Submit for review"
-7. Reviews typically take 1-3 business days
+5. Paste privacy policy URL (after enabling GitHub Pages — see above)
+6. **Visibility → set to UNLISTED.** Per Noah's call, the
+   bridge dependency makes "search-discoverable" too rough
+   on non-technical users for now. Unlisted = installable
+   via direct link, doesn't appear in search. Flip to public
+   later when the one-click installer (see
+   `docs/BRIDGE_DISTRIBUTION.md` Phase 1) is ready.
+7. Save draft, hit "Submit for review"
+8. Reviews typically take 1-3 business days
 
 ---
 
