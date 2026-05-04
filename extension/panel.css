@@ -1290,6 +1290,14 @@
 
   .threat.mid   { border-left-color: var(--accent); color: var(--accent); }
   .threat.close { border-left-color: var(--alert); color: var(--alert); }
+  .threat.imminent {
+    border-left-color: var(--alert);
+    color: var(--alert);
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    background: linear-gradient(90deg,
+      rgba(248, 113, 113, 0.18), var(--bg-1) 60%);
+  }
   .threat.win   {
     border-left-color: var(--alert);
     color: var(--alert);

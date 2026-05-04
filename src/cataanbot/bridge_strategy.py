@@ -176,12 +176,30 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
     if dev_cards > 0 and leader_vp >= close_vp:
         vector.append("dev_vp")
 
-    # Level maps to overlay styling: "win" is effectively over, "close"
-    # = one build from winning, "mid" = worth noticing but not yet
+    # Max VP the leader could plausibly add THIS TURN from what we
+    # can see. Cities (+2) outrank settlements (+1); ties broken by
+    # vp_build availability. Hidden VP cards stack additively but
+    # only when there are enough unplayed dev cards to plausibly
+    # contain them — and even then, conservative: at most +1 from
+    # the stash because we can't know how many of N cards are VPs.
+    max_immediate_vp = 0
+    if "city" in vp_builds:
+        max_immediate_vp += 2
+    elif "settlement" in vp_builds:
+        max_immediate_vp += 1
+    if leader.get("dev_stash_risk"):
+        max_immediate_vp += 1
+
+    # Level maps to overlay styling: "win" is effectively over,
+    # "imminent" = leader could close on their NEXT turn (vp + visible
+    # +VP path ≥ target — the loudest pre-game-over alarm), "close" =
+    # one build from winning, "mid" = worth noticing but not yet
     # urgent. A leader at "mid" with a VP-build in hand gets bumped to
     # "close" — they can actually close faster than their VP suggests.
     if leader_vp >= VP_TARGET:
         level = "win"
+    elif leader_vp + max_immediate_vp >= VP_TARGET:
+        level = "imminent"
     elif leader_vp >= close_vp:
         level = "close"
     elif vp_builds and leader_vp >= close_vp - 1:
@@ -199,7 +217,10 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
         means_parts.append(f"{dev_cards} dev")
     means = f" ({', '.join(means_parts)})" if means_parts else ""
 
-    if level == "close":
+    if level == "imminent":
+        msg = (f"{leader.get('username')} can WIN NEXT TURN — "
+               f"{leader_vp} VP{means}")
+    elif level == "close":
         msg = (f"{leader.get('username')} at {leader_vp} VP — "
                f"one build away{means}")
     elif level == "win":

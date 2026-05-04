@@ -1254,6 +1254,47 @@ def test_leader_threat_vector_flags_vp_build():
     assert "vp_build" in t["threat_vector"]
     assert "can city" in t["message"]
     assert t["gap_to_win"] == 2
+    # Leader at 8 + can-city (+2) = 10 ≥ target → imminent.
+    assert t["level"] == "imminent"
+    assert "WIN NEXT TURN" in t["message"]
+
+
+def test_leader_threat_imminent_when_settle_plus_dev_stash_closes_gap():
+    """Leader at 8 VP holding a settlement cost (+1) AND a dev stash
+    flagged as VP-risk (+1) hits target=10 next turn. The two-source
+    win path is the strictest case the imminent banner covers — no
+    single build closes it, but the visible+hidden combo does."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {
+        "opps": [{
+            "username": "X", "vp": 8, "color": "BLUE",
+            "can_afford": ["settlement"], "dev_cards": 2,
+            "dev_stash_risk": True,
+        }],
+        "self": {"vp": 5},
+    }
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert t["level"] == "imminent"
+    assert "WIN NEXT TURN" in t["message"]
+
+
+def test_leader_threat_close_not_imminent_when_no_vp_path():
+    """Leader at 8 VP with no affordable VP-build and no dev stash
+    can't realistically close to 10 next turn — stays at 'close'
+    (still loud, but not the imminent alarm)."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {
+        "opps": [{
+            "username": "X", "vp": 8, "color": "BLUE",
+            "can_afford": ["road"], "dev_cards": 0,
+        }],
+        "self": {"vp": 5},
+    }
+    t = _compute_leader_threat(snap)
+    assert t is not None
+    assert t["level"] == "close"
+    assert "WIN NEXT TURN" not in t["message"]
 
 
 def test_leader_threat_vector_bumps_mid_to_close_on_vp_build():
