@@ -4,6 +4,82 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.35.0 — 2026-05-04
+
+Strategy v2: archetype tracker, mid-game pivots, tournament-grade
+tuning, post-game frame.
+
+The biggest behavioural shift since the bot stopped using a single
+implicit "good move" notion. The recommender now reads the game
+through five named archetypes, biases its picks toward whichever
+the placements actually enable, and re-evaluates as the game
+progresses. Driven by tournament-player feedback in the
+[36k-game Reddit thread](https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/);
+full plan in `docs/strategy_v2_plan.md`.
+
+- **Strategy archetype tracker.** New `strategy_select` module
+  scores every legal-pair-of-settlements against five archetypes
+  — Ore-Wheat-Sheep, Longest Road rush, Port trader, Road
+  Builder, Balanced. Pre-placement it ships board-affinity scores
+  so the user can pick their first settle to align with whatever
+  the board favors; post-placement it locks in a primary +
+  fallback tag and biases `recommend_actions` accordingly.
+- **HUD strategy banner.** Top of every snap shows the active
+  archetype with full plain-English label, a one-line rationale,
+  and the full ranked list (mini-bars, eligible vs ineligible
+  states). Pre-placement banner reads "🧭 board affinity — pick
+  your first settle to align with a strong archetype below."
+  Hover any archetype label for a "what this means" tooltip.
+- **Mid-game pivot triggers.** Hot-number streaks on self tiles,
+  road-building dev card drawn, monopoly drawn, opp closing on
+  Largest Army, opp crossing the close-to-win VP threshold, or a
+  7 going overdue with a heavy hand — each fires a named trigger
+  that surfaces below the banner. `road_builder_drawn` carries an
+  override that flips the active tag to Longest Road rush so
+  downstream rec biasing reacts immediately.
+- **Knight-hold rules.** Don't burn the first knight to clear a
+  weak (2/3/11/12, pip ≤ 2) robber tile; loosen at 2+ knights or
+  late game. "Strong block available" recommendations now hold
+  the 1st knight by default for concealment.
+- **Robber as resource-control tool.** `score_robber_targets`
+  adds two new bonuses on top of the block-score: +1.0 + 0.2×pip
+  when the tile produces a resource we owe for our next planned
+  build, plus a monopoly-setup bonus that scales with self's
+  share of the resource vs. the table baseline.
+- **Port-pip alignment.** `_port_bonus` halves on weak-pip
+  matches (a 2:1 wheat port whose only matching wheat tile is on
+  a 2/3/11/12 gets half the bonus), and dampens further when
+  table scarcity says opps barely produce the resource (you can
+  extract 1:1 player trades for it instead).
+- **Largest Army defend / snipe / pass.** New `la_defend` option
+  fires when self holds LA and any opp is at 2+ played knights;
+  the existing `largest_army_push` gains a "snipe" annotation
+  when an opp sits exactly 1 knight from claiming.
+- **Longest Road setup vs commit.** `longest_road_push` splits
+  by phase — fires only at roads_needed == 1 in setup phase
+  (self VP < 6, no opp at 8+ VP), at roads_needed ≤ 2 in commit
+  phase (self VP ≥ 7 OR any opp at 8+ VP). chalks777's note that
+  real LR plays come from late-game commits, not early road
+  investment.
+- **Proactive rebalance trades.** When self has 4+ of a single
+  resource AND a non-leader opp holds something we have ≤1 of
+  AND no build-targeted propose_trade already fired, surface a
+  2:1 rebalance trade rec.
+- **Seven-dodge pressure.** New "consider" tier on
+  `seven_prep_hint` that fires at hand size = limit + 1 when
+  pressure crosses 0.6 (hand overshoot + rolls-since-last-7 +
+  opp hands ≥ 7). Catches the soft case where you're "fine right
+  now" but a 7 is statistically overdue.
+- **Game-over frame.** When the session flags a winner, the HUD
+  shows "🏁 GAME OVER · {winner} won — waiting for next game" at
+  the top and suppresses in-game banners. Self-win gets the
+  positive accent (🏆). Clears automatically on the next
+  GameStart.
+- **Plain-English labels everywhere.** The bare archetype tags
+  (OWS, LR_RUSH, RB_CARVED_TILES) used to leak into the HUD as
+  insider jargon; replaced with full names and hover tooltips.
+  "fb:" → "fallback:" etc.
+
 ## v0.34.0 — 2026-05-04
 
 Auto-open postmortem + dark-mode redesign.

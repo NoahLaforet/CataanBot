@@ -98,6 +98,35 @@ machine. The Chrome extension's only network destination is
   build), composition-over-pips diversity bonus, longest-road push
   surfaced 1–2 roads from qualifying, brick-port early-pickup bonus
   on 2:1 ports for owned resources.
+- **Strategy archetype tracker (v2).** Once both opening settlements
+  land, the bot detects which archetype your placements actually
+  enable — Ore-Wheat-Sheep, Longest Road rush, Port trader, Road
+  Builder, or Balanced — and biases recommendations toward it.
+  Each tag carries a one-line rationale; the HUD also surfaces a
+  *strategy ranking* showing all 5 archetype scores so you can see
+  how close the runners-up came. Pre-placement (before settles
+  drop) the same ranking renders as a *board affinity* read so you
+  can pick your first settle to align with whatever the board
+  favors. Driven by tournament-player feedback on the Reddit thread
+  above; full plan in [`docs/strategy_v2_plan.md`](docs/strategy_v2_plan.md).
+- **Mid-game pivot triggers.** Hot-number streaks on your tiles,
+  road-building dev card drawn, monopoly drawn, an opp closing on
+  Largest Army, an opp crossing the close-to-win VP threshold, or
+  a 7 going overdue with a heavy hand — each fires a named trigger
+  that surfaces below the strategy banner so you see *why* the bot
+  is shifting its bias mid-game. Some triggers (road-building
+  drawn → Longest Road rush) carry a strategy override.
+- **Tournament-grade nuance.** Knight-hold rules don't burn your
+  first knight on a weak (2/3/11/12) robber tile; the robber
+  scorer rewards moves that steal a resource you actually need
+  next turn or set up a monopoly; port valuation halves on
+  weak-pip tile alignment and dampens further when the table is
+  short on the resource (you can extract player trades for it
+  instead); Largest Army splits into defend / snipe / pass states;
+  Longest Road splits into setup phase (fire only at 1 road out)
+  vs commit phase (fire at ≤2 roads out, late game). All grounded
+  in the same Reddit thread's top reply from a Catan World
+  Tournament competitor.
 - **Auto-postmortem.** When a game ends, a self-contained HTML report
   is written to `postmortems/` — winner, final VP breakdown, dice
   fairness, hand-dynamics, trade quality, 7-roll impact, plus the
@@ -185,8 +214,9 @@ within ~24h of each push, no manual reload needed.
 ```
 src/catanbot/        bridge, recommender, tracker, render, advisor
 extension/            Chrome side-panel extension (Manifest V3)
-tests/                pytest, ~650 tests covering parsing, dispatch,
+tests/                pytest, ~690 tests covering parsing, dispatch,
                       tracker arithmetic, recommender heuristics,
+                      strategy selector + pivot triggers,
                       bridge snapshot shapes
 docs/                 design notes — DOM/WS protocol recon (colonist),
                       HUD design principles
@@ -199,7 +229,7 @@ postmortems/          auto-generated game-end HTML (gitignored)
 ## Development
 
 ```bash
-.venv/bin/python -m pytest        # ~2s, ~650 tests
+.venv/bin/python -m pytest        # ~2s, ~690 tests
 node --check extension/panel.js
 ```
 
@@ -229,6 +259,12 @@ of objective truth.
   — five of the recommender's strategy biases come from that data
   (3rd-settle timing, wheat priority, composition over pips, LR
   push, port-bonus tempering).
+- **u/chalks777**, multi-time Catan World Tournament competitor —
+  the [extended top reply](https://www.reddit.com/r/boardgames/comments/1ssk2y0/comment/ohmyywz/)
+  on that thread drove the strategy v2 work (archetype selector,
+  pivot triggers, knight-hold rules, robber-as-resource-control,
+  port pip-alignment, LA defend/snipe states, LR setup-vs-commit
+  phases, table-scarcity dampening).
 
 ## License
 
