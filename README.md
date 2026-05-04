@@ -92,7 +92,7 @@ machine. The Chrome extension's only network destination is
   geometry. Auto-detects colonist's dual-GameStart pattern (placeholder
   19-tile frame followed by the real shape) and rebuilds cleanly.
 - **Strategy biases backed by data.** Five tunings in the recommender
-  inspired by [u/Hot-Rooster1675's 36k-game simulation]([https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/]):
+  inspired by [u/Hot-Rooster1675's 36k-game simulation](https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/):
   3rd-settle expansion bump (winners build #3 ~7 turns earlier),
   wheat-priority weight on opening eval (wheat is in every major
   build), composition-over-pips diversity bonus, longest-road push
@@ -225,7 +225,7 @@ of objective truth.
 
 - [catanatron](https://github.com/bcollazo/catanatron) — the Python
   Catan engine that does the heavy lifting under the recommender.
-- [u/Hot-Rooster1675's 36,000-game simulation]([https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/])
+- [u/Hot-Rooster1675's 36,000-game simulation](https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/)
   — five of the recommender's strategy biases come from that data
   (3rd-settle timing, wheat priority, composition over pips, LR
   push, port-bonus tempering).
