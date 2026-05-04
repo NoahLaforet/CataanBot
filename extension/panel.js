@@ -50,6 +50,26 @@
     // see the same value.
     let latestAdvisorSnap = null;
 
+    // Synthetic "no bridge connected" snap used by the panel's
+    // poll loop when the local bridge has been unreachable for
+    // several ticks. Renders a friendly explainer + install link
+    // instead of leaving the panel blank or showing stale data.
+    // Carries the special _source flag the renderer reads to
+    // hide every in-game section and show only the standalone
+    // banner.
+    function _makeNoBridgeSnap() {
+        return {
+            seq: -1,
+            _source: 'no_bridge',
+            game_started: false,
+            self: null,
+            opps: [],
+            recommendations: [],
+            // Every other field falsy so the panel skips its
+            // normal render paths.
+        };
+    }
+
     // Auto-open postmortem when the bridge reports a new one.
     // `latest_postmortem.seq` increments each time _write_postmortem
     // succeeds; we ask the service worker to open a tab next to the
@@ -1227,6 +1247,40 @@
 
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
+        // Standalone "no bridge" path — synthesized by the poll
+        // loop after N consecutive bridge fetches fail. Shows a
+        // friendly explainer instead of the blank "bridge
+        // unreachable" placeholder. Hides every in-game section
+        // (no real game state to render).
+        if (snap && snap._source === 'no_bridge') {
+            ui.content.innerHTML =
+                `<div class="no-bridge-frame">`
+                + `<div class="nb-icon">🛜</div>`
+                + `<div class="nb-head">no bridge connected</div>`
+                + `<div class="nb-body">`
+                + `CatanBot needs a small Python bridge running on `
+                + `your machine to read your colonist.io game and `
+                + `compute recommendations. The bridge is open-source `
+                + `and runs locally — your game state never leaves `
+                + `your computer.`
+                + `</div>`
+                + `<div class="nb-actions">`
+                + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
+                + `target="_blank" rel="noopener" class="nb-btn">`
+                + `install instructions →</a>`
+                + `</div>`
+                + `<div class="nb-footnote">`
+                + `Already installed? Run <code>./bin/catanbot live</code> `
+                + `from the repo and the panel will connect within a `
+                + `few seconds.`
+                + `</div>`
+                + `</div>`;
+            if (ui.histHost) ui.histHost.classList.add('hidden');
+            if (ui.evalHost) ui.evalHost.classList.add('hidden');
+            if (ui.mqHost) ui.mqHost.classList.add('hidden');
+            if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            return;
+        }
         // Streamer mode: build username→color lookup at the top of
         // every render so anonName can resolve "Blue (You)" / "Red"
         // labels by looking up each player's color from the snap.
@@ -2949,6 +3003,13 @@
         }
         let lastSeq = -1;
         let lastSnap = null;
+        // Track consecutive bridge-poll failures. After ~5 fails
+        // (default 5 × 1s = 5s of no bridge) we switch the panel
+        // into a "no bridge connected" frame so users coming from
+        // the Chrome Web Store install (without the local Python
+        // bridge) get a clear explanation instead of a blank panel.
+        let bridgeFailStreak = 0;
+        const BRIDGE_FAIL_THRESHOLD = 5;
         const tick = () => {
             // Re-grab the ui handle every tick in case the host element
             // got nuked (colonist occasionally wipes the DOM between
@@ -2956,6 +3017,7 @@
             // present, a full rebuild if not.
             ui = mountOverlay() || ui;
             getJson(BRIDGE_ADVISOR_URL).then((snap) => {
+                bridgeFailStreak = 0;
                 // Settings outside this closure (streamer mode, etc.)
                 // can set window.__catanbotRenderDirty to force a
                 // re-render even when seq hasn't changed — so toggle
@@ -2974,7 +3036,19 @@
                 }
                 _maybeOpenPostmortem(snap);
             }).catch(() => {
-                renderOverlay(ui, lastSnap, false);
+                bridgeFailStreak += 1;
+                if (bridgeFailStreak >= BRIDGE_FAIL_THRESHOLD) {
+                    // Render the "no bridge" standalone-mode frame
+                    // — this is what CWS users see if they install
+                    // the extension without the bridge. Standalone
+                    // recommender (lib/) wires up here in a later
+                    // commit; for now the frame is informational
+                    // only. Idempotent: re-rendering with the same
+                    // synthetic snap is cheap.
+                    renderOverlay(ui, _makeNoBridgeSnap(), false);
+                } else {
+                    renderOverlay(ui, lastSnap, false);
+                }
             });
         };
         tick();

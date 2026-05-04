@@ -2712,6 +2712,61 @@ html, body, .panel {
   color: var(--pos) !important;
 }
 
+/* No-bridge frame — shown when the local Python bridge has been
+   unreachable for several poll attempts. Surfaces the install
+   path so CWS users coming straight from the listing aren't
+   stuck on a blank panel. */
+.no-bridge-frame {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--fg-mute);
+  max-width: 360px;
+  margin: 0 auto;
+}
+.no-bridge-frame .nb-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+.no-bridge-frame .nb-head {
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+.no-bridge-frame .nb-body {
+  font-size: 12px;
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+.no-bridge-frame .nb-btn {
+  display: inline-block;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--bg-0, #0a0e15) !important;
+  font-weight: 700;
+  font-size: 12px;
+  text-decoration: none;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+.no-bridge-frame .nb-btn:hover { filter: brightness(1.15); }
+.no-bridge-frame .nb-footnote {
+  margin-top: 18px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  line-height: 1.6;
+}
+.no-bridge-frame .nb-footnote code {
+  background: var(--bg-1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+
 /* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
    threats, or knight-asap plays. The flat redesign zeroes out box-
    shadow so these animations have to override that with their own
