@@ -266,9 +266,9 @@
             if (text.includes('received starting resources')
                     && resources.length) {
                 for (const r of resources) _addChat(player, r, 1);
-            } else if ((text.includes(' got ')
-                        || text.startsWith('got '))
-                       && resources.length) {
+            } else if (/\bgot\b/.test(text)
+                       && resources.length
+                       && !text.includes('won the game')) {
                 for (const r of resources) _addChat(player, r, 1);
             }
             // Year of Plenty
