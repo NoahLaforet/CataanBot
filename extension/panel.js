@@ -52,8 +52,13 @@
 
     // Standalone state — populated from broadcast WS frames when
     // the local bridge is unreachable. Holds the parsed board,
-    // last-known mapState, and a small set of derived buildings
-    // so the panel can render opening picks without the bridge.
+    // last-known mapState, and per-color settlement/road/city
+    // BANK COUNTS extracted from each snapshot frame's mechanic*
+    // states. We use those bank counts to derive "round of opening"
+    // (5 - settles_remaining = settles placed) since colonist's
+    // delta frames don't carry coordinates — only the bridge's
+    // chat-log scraper has that, and we don't ship a JS port of
+    // the chat parser yet (Phase 5+ work).
     //
     // Lazily imports the lib/ modules so the bundle isn't loaded
     // unless we actually need it (CWS users with no bridge).
@@ -61,7 +66,16 @@
         board: null,            // parsed board model from board.js
         mapStateFrame: null,    // raw mapState dict (re-parse safety)
         gameStarted: false,
-        // Future: mid-game state lives here once events.js lands.
+        // Self color id from playerColor on the GameStart frame.
+        // Latched once and persists; lets us know which seat is "us".
+        selfColorId: null,
+        // Per-color bank counts. Decrement = placement.
+        //   { [colorId]: { settles: 5, cities: 4, roads: 15 } }
+        bankRemaining: {},
+        // Most recent currentTurnPlayerColor. Tells us whose turn
+        // it currently is (color id) so the panel can render an
+        // "opp's turn — watching" hint when it's not us.
+        currentTurnPlayerColor: null,
     };
     let _standaloneLib = null;  // cached import promise
     async function _loadStandaloneLib() {
@@ -97,28 +111,121 @@
         }
         return null;
     }
+    // Recursively pull the first dict that has a given key out of
+    // a decoded msgpack tree. Used by both the mapState extractor
+    // above and the gameState slice extractors below.
+    function _findKey(o, key, depth = 0) {
+        if (depth > 8) return null;
+        if (o && typeof o === 'object' && !Array.isArray(o)
+                && !ArrayBuffer.isView(o)) {
+            if (key in o) return o[key];
+            for (const v of Object.values(o)) {
+                const r = _findKey(v, key, depth + 1);
+                if (r != null) return r;
+            }
+        }
+        if (Array.isArray(o)) {
+            for (const v of o) {
+                const r = _findKey(v, key, depth + 1);
+                if (r != null) return r;
+            }
+        }
+        return null;
+    }
+
     chrome.runtime.onMessage.addListener((msg) => {
         if (!msg || msg.type !== 'ws-frame-broadcast') return false;
         const frame = msg.frame;
         if (!frame || frame.dir !== 'in') return false;
         // Only attempt msgpack decode on arraybuffer frames; text
         // frames are colonist's lobby/handshake JSON and don't
-        // carry mapState.
+        // carry useful state.
         if (frame.kind !== 'arraybuffer' || !frame.b64) return false;
         _loadStandaloneLib().then((lib) => {
             try {
                 const decoded = lib.decodeMsgpack(frame.b64);
-                const ms = _findMapState(decoded);
+                let dirty = false;
+                // mapState — appears on GameStart frames. Triggers
+                // a board build / rebuild.
+                const ms = _findKey(decoded, 'tileHexStates');
                 if (ms) {
-                    _standalone.mapStateFrame = ms;
-                    _standalone.board =
-                        lib.buildBoardFromColonistMap(ms);
-                    _standalone.gameStarted = true;
-                    // Force a panel re-render so the new opening
-                    // picks land within ~1 tick instead of waiting
-                    // for the next bridge-poll failure cycle.
-                    window.__catanbotRenderDirty = true;
+                    // _findKey returned tileHexStates only; we need
+                    // the full mapState. Walk back via _findMapState.
+                    const fullMs = _findMapState(decoded);
+                    if (fullMs) {
+                        _standalone.mapStateFrame = fullMs;
+                        _standalone.board =
+                            lib.buildBoardFromColonistMap(fullMs);
+                        _standalone.gameStarted = true;
+                        dirty = true;
+                    }
                 }
+                // playerColor — self's color id, set on GameStart.
+                const pc = _findKey(decoded, 'playerColor');
+                if (typeof pc === 'number'
+                        && _standalone.selfColorId == null) {
+                    _standalone.selfColorId = pc;
+                    dirty = true;
+                }
+                // currentTurnPlayerColor — whose turn it is now.
+                const ctp = _findKey(decoded, 'currentTurnPlayerColor');
+                if (typeof ctp === 'number'
+                        && ctp !== _standalone.currentTurnPlayerColor) {
+                    _standalone.currentTurnPlayerColor = ctp;
+                    dirty = true;
+                }
+                // Bank-remaining counts per player. Each
+                // mechanic*State map keys by colorId; values carry
+                // the bank* count. Used to derive opening progress
+                // (5 - settles_remaining = settles placed).
+                const ms2 = _findKey(decoded, 'mechanicSettlementState');
+                const mc2 = _findKey(decoded, 'mechanicCityState');
+                const mr2 = _findKey(decoded, 'mechanicRoadState');
+                const banks = _standalone.bankRemaining;
+                if (ms2 && typeof ms2 === 'object') {
+                    for (const [cid, st] of Object.entries(ms2)) {
+                        if (st && typeof st === 'object'
+                                && 'bankSettlementAmount' in st) {
+                            const cur = banks[cid] || {};
+                            const newCount = Number(
+                                st.bankSettlementAmount);
+                            if (cur.settles !== newCount) {
+                                cur.settles = newCount;
+                                banks[cid] = cur;
+                                dirty = true;
+                            }
+                        }
+                    }
+                }
+                if (mc2 && typeof mc2 === 'object') {
+                    for (const [cid, st] of Object.entries(mc2)) {
+                        if (st && typeof st === 'object'
+                                && 'bankCityAmount' in st) {
+                            const cur = banks[cid] || {};
+                            const newCount = Number(st.bankCityAmount);
+                            if (cur.cities !== newCount) {
+                                cur.cities = newCount;
+                                banks[cid] = cur;
+                                dirty = true;
+                            }
+                        }
+                    }
+                }
+                if (mr2 && typeof mr2 === 'object') {
+                    for (const [cid, st] of Object.entries(mr2)) {
+                        if (st && typeof st === 'object'
+                                && 'bankRoadAmount' in st) {
+                            const cur = banks[cid] || {};
+                            const newCount = Number(st.bankRoadAmount);
+                            if (cur.roads !== newCount) {
+                                cur.roads = newCount;
+                                banks[cid] = cur;
+                                dirty = true;
+                            }
+                        }
+                    }
+                }
+                if (dirty) window.__catanbotRenderDirty = true;
             } catch (_) {
                 // Bad frame; standalone state stays as-is. Bridge
                 // mode (when active) ignores this entirely.
@@ -138,37 +245,68 @@
     // and the panel renders opening picks from the JS recommender
     // instead of the bare install-instructions placeholder.
     function _makeNoBridgeSnap() {
-        if (_standalone.board && _standaloneLib) {
-            // Synchronous use of the lib import is safe here —
-            // the broadcast handler above only sets _standalone.
-            // board after lib is loaded, so import() has already
-            // resolved.
+        if (_standalone.board && _standalone._lib) {
             try {
-                // Top-level access to the cached lib via a
-                // synchronous shortcut: we attach helpers to
-                // _standalone itself once loaded so this path
-                // doesn't need an async hop.
-                if (_standalone._lib) {
-                    const lib = _standalone._lib;
-                    const ranked = lib.scoreOpeningNodes(
-                        _standalone.board);
-                    return {
-                        seq: -2,
-                        _source: 'standalone',
-                        game_started: true,
-                        self: null,
-                        opps: [],
-                        recommendations: [],
-                        // Custom field consumed by the renderer's
-                        // standalone branch below.
-                        _standaloneOpenings: ranked.slice(0, 5),
-                        _standaloneBoard: {
-                            tiles: Object.keys(
-                                _standalone.board.tiles).length,
-                            ports: _standalone.board.ports.length,
-                        },
-                    };
+                const lib = _standalone._lib;
+                // Compute opening-phase progression from bank
+                // counts. Settles in bank: 5 means no placements,
+                // 4 means 1 placed, 3 means 2 placed (= done with
+                // openings for that player).
+                const banks = _standalone.bankRemaining || {};
+                const playersTotal = Object.keys(banks).length;
+                let settlesPlaced = 0;
+                let citiesPlaced = 0;
+                for (const b of Object.values(banks)) {
+                    settlesPlaced += Math.max(
+                        0, 5 - (b.settles || 5));
+                    citiesPlaced += Math.max(
+                        0, 4 - (b.cities || 4));
                 }
+                const expectedOpeningSettles = 2 * playersTotal;
+                const inOpeningPhase = playersTotal > 0
+                    && settlesPlaced < expectedOpeningSettles;
+                const ranked = lib.scoreOpeningNodes(_standalone.board);
+                // Self bank info — drives a "your turn / wait"
+                // status when self color is known.
+                const selfBank =
+                    _standalone.selfColorId != null
+                        ? banks[String(_standalone.selfColorId)]
+                            || banks[_standalone.selfColorId]
+                        : null;
+                const myTurn =
+                    _standalone.currentTurnPlayerColor != null
+                    && _standalone.selfColorId != null
+                    && _standalone.currentTurnPlayerColor
+                        === _standalone.selfColorId;
+
+                return {
+                    seq: -2,
+                    _source: 'standalone',
+                    game_started: true,
+                    self: null,
+                    opps: [],
+                    my_turn: myTurn,
+                    recommendations: [],
+                    _standaloneOpenings: ranked.slice(0, 8),
+                    _standaloneBoard: {
+                        tiles: Object.keys(
+                            _standalone.board.tiles).length,
+                        ports: _standalone.board.ports.length,
+                    },
+                    _standaloneProgress: {
+                        playersTotal,
+                        settlesPlaced,
+                        expectedOpeningSettles,
+                        citiesPlaced,
+                        inOpeningPhase,
+                        selfSettlesPlaced: selfBank
+                            ? Math.max(0, 5 - (selfBank.settles || 5))
+                            : null,
+                        selfCitiesPlaced: selfBank
+                            ? Math.max(0, 4 - (selfBank.cities || 4))
+                            : null,
+                    },
+                };
             } catch (_) { /* fall through to no-bridge */ }
         }
         return {
@@ -1404,8 +1542,40 @@
         if (snap && snap._source === 'standalone') {
             const openings = snap._standaloneOpenings || [];
             const boardInfo = snap._standaloneBoard || {};
+            const progress = snap._standaloneProgress || {};
+
+            // Phase header — opening / mid-game / etc. Standalone
+            // mode currently provides full recs only during the
+            // opening; mid-game we tell the user honestly that the
+            // bridge is needed for the rest.
+            const inOpening = progress.inOpeningPhase;
+            let phaseHeaderHtml = '';
+            if (progress.expectedOpeningSettles) {
+                const placedTotal = progress.settlesPlaced || 0;
+                const expected =
+                    progress.expectedOpeningSettles || 0;
+                const phaseStr = inOpening
+                    ? `OPENING — ${placedTotal}/${expected} placed`
+                    : 'MID-GAME';
+                let selfStr = '';
+                if (progress.selfSettlesPlaced != null) {
+                    selfStr = ` · you: `
+                        + `${progress.selfSettlesPlaced} settle`
+                        + (progress.selfSettlesPlaced === 1
+                           ? '' : 's');
+                }
+                const turnStr = snap.my_turn
+                    ? ' · your turn'
+                    : '';
+                phaseHeaderHtml =
+                    `<div class="sa-phase">`
+                    + `<span class="sa-phase-tag">${phaseStr}</span>`
+                    + `<span class="sa-phase-meta">${selfStr}${turnStr}</span>`
+                    + `</div>`;
+            }
+
             let openingsHtml = '';
-            if (openings.length) {
+            if (inOpening && openings.length) {
                 const rows = openings.map((r, i) => {
                     const tilesStr = (r.tiles || [])
                         .map(([res, num]) =>
@@ -1433,10 +1603,33 @@
                 openingsHtml =
                     `<div class="sa-section-h">opening picks</div>`
                     + rows;
-            } else {
+            } else if (!openings.length) {
                 openingsHtml =
                     `<div class="muted">building board…</div>`;
+            } else {
+                // Mid-game: clearly explain the limitation. Show
+                // the static opening picks below as a reference
+                // but make the status front-and-center.
+                openingsHtml =
+                    `<div class="sa-midgame">`
+                    + `<div class="sa-mg-head">`
+                    + `mid-game recs need the bridge`
+                    + `</div>`
+                    + `<div class="sa-mg-body">`
+                    + `Standalone mode covers opening picks. `
+                    + `For mid-game recommendations (settle/city/`
+                    + `road choices, dev-card play timing, robber `
+                    + `targets, trade evaluation), install the `
+                    + `local Python bridge.`
+                    + `</div>`
+                    + `<div class="sa-mg-actions">`
+                    + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
+                    + `target="_blank" rel="noopener" class="nb-btn">`
+                    + `install bridge →</a>`
+                    + `</div>`
+                    + `</div>`;
             }
+
             ui.content.innerHTML =
                 `<div class="standalone-frame">`
                 + `<div class="sa-banner">`
@@ -1447,13 +1640,15 @@
                 + `local recommender`
                 + `</span>`
                 + `</div>`
+                + phaseHeaderHtml
                 + openingsHtml
                 + `<div class="sa-footnote">`
-                + `For the full HUD (mid-game recs, dev-card hints, `
-                + `robber targets, postmortems) install the local `
-                + `Python bridge — see `
+                + `<b>Want more?</b> The local Python bridge unlocks `
+                + `mid-game recs, dev-card play timing, robber `
+                + `targets, opponent inference, and post-game `
+                + `analysis. `
                 + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
-                + `target="_blank" rel="noopener">install docs</a>.`
+                + `target="_blank" rel="noopener">install docs →</a>`
                 + `</div>`
                 + `</div>`;
             if (ui.histHost) ui.histHost.classList.add('hidden');

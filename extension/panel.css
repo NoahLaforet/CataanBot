@@ -2854,6 +2854,71 @@ html, body, .panel {
   color: var(--pos);
 }
 
+/* Phase header — OPENING (3/8 placed) · you: 1 settle / MID-GAME etc.
+   Lives between the standalone banner and the opening picks. */
+.standalone-frame .sa-phase {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+.standalone-frame .sa-phase-tag {
+  background: var(--bg-1);
+  color: var(--accent);
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.standalone-frame .sa-phase-meta {
+  color: var(--fg-mute);
+  font-size: 11px;
+}
+
+/* Mid-game placeholder — clear messaging that standalone doesn't
+   cover this phase yet, with a CTA to install the bridge. */
+.standalone-frame .sa-midgame {
+  text-align: center;
+  padding: 24px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  margin: 8px 0;
+}
+.standalone-frame .sa-mg-head {
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.standalone-frame .sa-mg-body {
+  color: var(--fg-mute);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.standalone-frame .sa-mg-actions .nb-btn {
+  display: inline-block;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: var(--bg-0, #0a0e15);
+  font-weight: 700;
+  font-size: 11px;
+  text-decoration: none;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+.standalone-frame .sa-mg-actions .nb-btn:hover {
+  filter: brightness(1.15);
+}
+
 /* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
    threats, or knight-asap plays. The flat redesign zeroes out box-
    shadow so these animations have to override that with their own
