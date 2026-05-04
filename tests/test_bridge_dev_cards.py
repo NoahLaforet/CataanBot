@@ -474,3 +474,113 @@ def test_full_buy_play_cycle_across_turns(tmp_path: Path):
     _maybe_clear_dev_just_bought(st)
     _feed_postmortem(st, _play_knight_payload("Noah"))
     assert st["dev_cards_held"] == 0
+
+
+def _stub_game_for_knight_hint(seed: int = 1, settle_node: int = 0):
+    """Minimal stub satisfying _compute_knight_hint's surface area:
+    a fresh catanatron Game with one RED settlement, plus a fake
+    session/color_map that pins self_color_id to RED's player slot.
+
+    Returned wrapper has the same shape bridge.py builds at runtime
+    (game.tracker.game.state, game.session, game.color_map).
+    """
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.tracker import Tracker
+
+    g = Game([RandomPlayer(c) for c in (
+        Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)], seed=seed)
+    g.state.board.build_settlement(
+        Color.RED, settle_node, initial_build_phase=True)
+    tr = Tracker()
+    tr.game = g
+
+    class FakeSess:
+        self_color_id = 0
+        player_names = {0: "noah"}
+        hand_card_counts = {0: 5}
+        friendly_robber_active = False
+        self_dev_bought_this_turn = []
+        dev_card_counts = {0: 0}
+
+    class FakeColorMap:
+        @staticmethod
+        def get(user):
+            return "RED"
+
+        @staticmethod
+        def reverse(color):
+            return "noah"
+
+    return SimpleNamespace(
+        tracker=tr, session=FakeSess(), color_map=FakeColorMap())
+
+
+def _find_weak_pip_setup():
+    """Hunt across seeds + node ids for a board where a weak-pip
+    (<= 2) tile sits adjacent to RED's lone settlement. Returns
+    (wrapper, weak_coord) or (None, None) if nothing matches."""
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER
+
+    for seed in range(1, 30):
+        for settle in range(0, 30):
+            try:
+                wrapper = _stub_game_for_knight_hint(
+                    seed=seed, settle_node=settle)
+            except Exception:  # noqa: BLE001
+                continue
+            state = wrapper.tracker.game.state
+            m = state.board.map
+            for coord, tile in m.land_tiles.items():
+                if not tile.number:
+                    continue
+                if PIP_DOTS_BY_NUMBER.get(tile.number, 0) > 2:
+                    continue
+                if settle in set(tile.nodes.values()):
+                    return wrapper, coord
+    return None, None
+
+
+def test_knight_hint_holds_on_weak_robber_tile_with_one_knight():
+    """Per the strategy v2 plan (P1-4): with only 1 knight in hand and
+    the robber parked on a 2/3/11/12 tile (pip <= 2), the bot should
+    NOT recommend playing — the block is too small to justify burning
+    the knight when it could be held for concealment / a real trigger."""
+    import pytest
+    from catanatron import Color
+    from catanbot.bridge_hints import _compute_knight_hint
+
+    wrapper, weak_coord = _find_weak_pip_setup()
+    if wrapper is None:
+        pytest.skip("no weak-pip tile adjacent to any settle in search")
+    state = wrapper.tracker.game.state
+    idx = state.color_to_index[Color.RED]
+    state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 1
+    state.board.robber_coordinate = weak_coord
+
+    hint = _compute_knight_hint(wrapper)
+    assert hint is not None
+    assert hint["should_play"] is False, (
+        f"single knight should be held when robber sits on weak tile, "
+        f"got reason: {hint['reason']!r}")
+    assert ("weak" in hint["reason"].lower()
+            or "hold" in hint["reason"].lower())
+
+
+def test_knight_hint_plays_on_weak_robber_tile_with_two_knights():
+    """Same setup but 2 knights in hand — the rule loosens, the bot
+    can afford to play one for any block."""
+    import pytest
+    from catanatron import Color
+    from catanbot.bridge_hints import _compute_knight_hint
+
+    wrapper, weak_coord = _find_weak_pip_setup()
+    if wrapper is None:
+        pytest.skip("no weak-pip tile adjacent to any settle in search")
+    state = wrapper.tracker.game.state
+    idx = state.color_to_index[Color.RED]
+    state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 2
+    state.board.robber_coordinate = weak_coord
+
+    hint = _compute_knight_hint(wrapper)
+    assert hint is not None
+    assert hint["should_play"] is True

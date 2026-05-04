@@ -78,6 +78,29 @@ def test_port_bonus_scales_with_produced_resource():
     assert _port_bonus(None, {"WHEAT": 3.0}) == 0.0
 
 
+def test_port_bonus_pip_alignment_halves_on_weak_tile():
+    """Strategy v2 P1-7: a 2:1 wheat port whose only matching tile is
+    on a 2/3/11/12 number (pip <= 2) gets half the bonus. Real port
+    plays only happen on strong-pip alignment per chalks777."""
+    from catanbot.advisor import _port_bonus
+
+    # Same production map (1.0 wheat cards/roll) but different
+    # underlying tile composition — strong vs weak pip on the wheat.
+    strong_tiles = [("WHEAT", 6), ("BRICK", 9)]   # wheat on 6 (pip 5)
+    weak_tiles = [("WHEAT", 3), ("BRICK", 9)]     # wheat on 3 (pip 2)
+
+    strong = _port_bonus("WHEAT 2:1", {"WHEAT": 1.0},
+                         tiles=strong_tiles)
+    weak = _port_bonus("WHEAT 2:1", {"WHEAT": 1.0}, tiles=weak_tiles)
+    no_tiles = _port_bonus("WHEAT 2:1", {"WHEAT": 1.0})
+
+    assert strong == no_tiles, (
+        "strong-pip match should equal the un-guarded baseline")
+    assert weak == strong * 0.5, (
+        f"weak-pip match should halve the bonus: "
+        f"strong={strong}, weak={weak}")
+
+
 def test_port_bonus_does_not_tier_flip_against_three_tile_corner():
     """A 2-tile coastal corner with a 3:1 generic port should NOT
     outrank a 3-tile interior corner with comparable raw production.
@@ -129,7 +152,11 @@ def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
     onto _port_bonus — the same curve that governs first-settle. The
     guard: no port bonus may exceed the per-resource cap (0.15 + 0.05
     * combined-pips-on-that-resource), which is what the shared helper
-    would return."""
+    would return.
+
+    Strategy v2 P1-7 added a pip-alignment penalty (halve when the
+    matching tile is 2/3/11/12), so this test passes ``tiles=`` on
+    both sides of the comparison to keep them aligned."""
     from catanbot.advisor import (
         _port_bonus, score_second_settlements)
     top = score_opening_nodes(tracker.game)[0]
@@ -148,7 +175,7 @@ def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
         had_port_nodes = True
         combined = {r: first_prod.get(r, 0.0) + s.resources.get(r, 0.0)
                     for r in s.resources}
-        expected = _port_bonus(s.port, combined)
+        expected = _port_bonus(s.port, combined, tiles=s.tiles)
         assert abs(s.port_bonus - expected) < 1e-9, (
             f"node {s.node_id} port {s.port}: got {s.port_bonus}, "
             f"expected {expected} from shared helper")
@@ -387,3 +414,93 @@ def test_robber_imminent_multiplier_boosts_target_color():
         f"base={base_blue_max} boosted={boosted_blue_max}")
     # RED-only tiles unaffected.
     assert boosted_red_max == base_red_max
+
+
+def test_score_robber_targets_resource_need_bonus():
+    """Strategy v2 P1-5: when ``needed_resources`` includes a tile's
+    resource, that tile gets a positive ``resource_need_bonus`` and a
+    higher ``score``. Tested by comparing same call with/without the
+    needed_resources arg."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.advisor import score_robber_targets
+
+    g = Game(
+        [RandomPlayer(c) for c in (
+            Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)],
+        seed=1,
+    )
+    # Plant an opp settlement on each of the first land nodes — gives
+    # the scorer something to block.
+    b = g.state.board
+    placed = []
+    from catanbot.advisor import _build_node_neighbors
+    neighbors = _build_node_neighbors(g.state.board.map)
+    cols = [Color.BLUE, Color.WHITE, Color.ORANGE]
+    for nid in sorted(g.state.board.map.land_nodes):
+        if any(n in neighbors.get(nid, set()) for n in placed):
+            continue
+        b.build_settlement(cols[len(placed) % 3], nid,
+                           initial_build_phase=True)
+        placed.append(nid)
+        if len(placed) == 3:
+            break
+
+    base = score_robber_targets(g, "RED")
+    boosted = score_robber_targets(g, "RED",
+                                   needed_resources=["WHEAT"])
+    by_coord = {tuple(s.coord): s for s in base}
+    for s in boosted:
+        b_score = by_coord[tuple(s.coord)].score
+        if s.resource == "WHEAT":
+            assert s.resource_need_bonus > 0, s
+            assert s.score > b_score, (
+                f"wheat tile should rank higher with need bonus: "
+                f"base={b_score}, boosted={s.score}")
+        else:
+            assert s.resource_need_bonus == 0.0
+            assert s.score == b_score
+
+
+def test_score_robber_targets_monopoly_setup_bonus():
+    """Monopoly setup fires when self has a higher production share
+    of a resource than the even-split baseline AND opps share the
+    target tile. Locking the tile concentrates further."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.advisor import score_robber_targets
+
+    g = Game(
+        [RandomPlayer(c) for c in (
+            Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)],
+        seed=1,
+    )
+    b = g.state.board
+    m = b.map
+    # Find any wheat tile and plant BLUE on one of its corners so the
+    # tile has a non-empty `victims` dict — without a victim the
+    # monopoly-setup bonus has nothing to bump.
+    wheat_tile_coord = None
+    blue_node = None
+    for coord, tile in m.land_tiles.items():
+        if tile.resource == "WHEAT" and tile.number:
+            wheat_tile_coord = coord
+            blue_node = next(iter(tile.nodes.values()))
+            break
+    assert wheat_tile_coord is not None, "fixture has no wheat tile"
+    b.build_settlement(Color.BLUE, blue_node, initial_build_phase=True)
+
+    # Self has a heavy WHEAT share already.
+    self_prod = {"WHEAT": 1.0, "ORE": 0.1, "WOOD": 0.0,
+                 "BRICK": 0.0, "SHEEP": 0.0}
+    opp_prod = {"BLUE": {"WHEAT": 0.2, "ORE": 0.5, "WOOD": 0.0,
+                          "BRICK": 0.0, "SHEEP": 0.0}}
+    out = score_robber_targets(
+        g, "RED",
+        opp_production_by_resource=opp_prod,
+        self_production_by_resource=self_prod,
+    )
+    # The wheat tile we planted on should pick up a positive bonus.
+    target = next(
+        (s for s in out if tuple(s.coord) == wheat_tile_coord), None)
+    assert target is not None
+    assert target.monopoly_setup_bonus > 0, (
+        f"expected positive monopoly_setup_bonus, got {target}")

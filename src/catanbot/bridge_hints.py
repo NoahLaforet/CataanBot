@@ -1369,8 +1369,14 @@ def _compute_knight_hint(
     self_blocked_pips = 0
     m = board.map
     robber_tile = m.land_tiles.get(robber) if robber else None
+    # Per-tile pip count for the tile under the robber. Used by the
+    # weak-number guard below: chalks777's note is that the robber on
+    # 2/3/11/12 (pip <= 2) hurts so little it's not worth burning a
+    # knight to clear unless we have 2+ knights stacked.
+    robber_tile_pip = 0
     if robber_tile is not None and robber_tile.number:
         from catanbot.advisor import PIP_DOTS_BY_NUMBER
+        robber_tile_pip = PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
         robber_node_ids = set(robber_tile.nodes.values())
         for nid, (bcol, _bt) in board.buildings.items():
             if bcol != my_enum or int(nid) not in robber_node_ids:
@@ -1454,18 +1460,34 @@ def _compute_knight_hint(
     # you / opp close to LA / you close to LA / a tile worth blocking)
     # so the verdict reads as advice, not a stat dump.
     reason = "no urgent reason — hold for now"
+    # Knight-hold rule (chalks777, see strategy_v2_plan.md P1-4):
+    # with one knight in hand, only play proactively when the robber
+    # is on a meaningful tile (pip > 2 — i.e. NOT 2/3/11/12) AND it's
+    # actually stealing important production. With 2+ knights you can
+    # afford to play one for blocking value or a partial LA push.
+    # Late-game (close-to-win) the rule loosens — every block matters.
+    from catanbot.config import close_to_win_vp
+    self_vp = int(state.player_state.get(
+        f"P{idx}_VICTORY_POINTS", 0) or 0)
+    late_game = self_vp >= close_to_win_vp() - 2
+    knight_stack_ok = (knight_in_hand >= 2 or late_game)
+    weak_robber_tile = (
+        robber_tile is not None and robber_tile_pip <= 2)
     if self_blocked_pips > 0:
-        should = True
-        # Translate "pips" (Catan-jargon for the dots under each tile
-        # number, summing to 6 max per tile and predicting how often
-        # it rolls) into something a normal player understands:
-        # expected cards blocked per roll. pips/36 ≈ cards per dice
-        # roll. A player who reads "blocks ~0.42 cards/roll" gets
-        # the magnitude immediately; "10 pips blocked" was opaque
-        # to anyone who hadn't memorized the dot table.
-        cards_per_roll = self_blocked_pips / 36.0
-        reason = (f"robber's on you — play to clear it "
-                  f"(~{cards_per_roll:.2f} cards/roll blocked)")
+        # Don't fire on a robber-on-me block when the tile is weak AND
+        # we only have one knight in hand AND we're not late-game. Per
+        # tournament-player feedback: burning a single knight to clear
+        # a 2/3/11/12 robber is a waste unless something else justifies
+        # the play.
+        if weak_robber_tile and not knight_stack_ok:
+            reason = (f"robber's on you but on a weak tile "
+                      f"(pip {robber_tile_pip}) — hold knight")
+        else:
+            should = True
+            # Translate "pips" into expected cards blocked per roll.
+            cards_per_roll = self_blocked_pips / 36.0
+            reason = (f"robber's on you — play to clear it "
+                      f"(~{cards_per_roll:.2f} cards/roll blocked)")
     elif largest_army_threat:
         should = True
         reason = "an opp is close to Largest Army — play to deny"
@@ -1478,14 +1500,20 @@ def _compute_knight_hint(
             reason = ("you're 1 knight from Largest Army — "
                       "play it to grab the +2 VP")
     elif top_score >= 4.0:
-        should = True
-        # Name the tile so it's actionable without the score number.
-        if top_target and top_target.get("resource"):
-            tile_lbl = (f"{top_target['resource'].lower()} "
-                        f"{top_target.get('number') or ''}").strip()
-            reason = f"a strong block on {tile_lbl} is available"
+        # Strong block is available — but with only 1 knight in early
+        # game and no LA pressure, holding (concealment) usually beats
+        # spending. Loosen on stack >= 2 OR late-game.
+        if not knight_stack_ok:
+            reason = ("a block exists but you only hold 1 knight — "
+                      "hold for a clearer trigger")
         else:
-            reason = "a strong block is available"
+            should = True
+            if top_target and top_target.get("resource"):
+                tile_lbl = (f"{top_target['resource'].lower()} "
+                            f"{top_target.get('number') or ''}").strip()
+                reason = f"a strong block on {tile_lbl} is available"
+            else:
+                reason = "a strong block is available"
 
     return {
         "have": knight_in_hand,

@@ -69,6 +69,19 @@ _RESOURCE_WEIGHT: dict[str, float] = {
 }
 
 
+# Pip-dot table: each Catan number's odds out of 36 = "pips" — referenced
+# both by the robber scorer (further down) and the port-pip-alignment
+# guard in ``_port_bonus`` (just below). Hoisted to module top so the
+# port helper can import it without a forward reference.
+PIP_DOTS_BY_NUMBER = {
+    2: 1, 12: 1,
+    3: 2, 11: 2,
+    4: 3, 10: 3,
+    5: 4, 9: 4,
+    6: 5, 8: 5,
+}
+
+
 def _weighted_raw_production(counter: dict) -> float:
     """raw production with the WHEAT bias applied. Equivalent to
     ``sum(counter.values())`` when all weights are 1.0."""
@@ -76,7 +89,8 @@ def _weighted_raw_production(counter: dict) -> float:
         v * _RESOURCE_WEIGHT.get(r, 1.0) for r, v in counter.items()))
 
 
-def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
+def _port_bonus(port_label: str | None, resources: dict[str, float],
+                tiles: list[tuple[str, int | None]] | None = None) -> float:
     """Additive bonus for port access, scaled by production alignment.
 
     All values are in cards-per-roll units to match raw_production
@@ -101,6 +115,13 @@ def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
       cards/roll) picks up ~0.042, comparable to a low-pip extra tile.
       A 1-pip-tile (0.028) picks up ~0.008. Linear in production so
       richer corners on matching ports keep their edge.
+
+    ``tiles`` (optional, strategy v2 P1-7): the (resource, number)
+    pairs touching this node. When provided, the produced-resource
+    bonus is HALVED if the best matching-tile has pip <= 2 (numbers
+    2/3/11/12) — chalks777's note that real port plays only happen
+    on strong-pip alignment. Calls that pre-date the strategy v2 work
+    pass tiles=None and get the original (uniform) curve.
     """
     if not port_label:
         return 0.0
@@ -110,7 +131,21 @@ def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
     port_resource = port_label.split(" ", 1)[0]
     res_prod = float(resources.get(port_resource, 0.0))
     if res_prod > 0:
-        return 0.30 * res_prod
+        bonus = 0.30 * res_prod
+        # Pip-alignment penalty: a 2:1 wheat port is much weaker when
+        # the only wheat tile in reach is a 2/3/11/12. Halve when the
+        # best pip on the matching resource's adjacent tile is <= 2.
+        if tiles:
+            best_match_pip = 0
+            for res, num in tiles:
+                if res != port_resource or num is None:
+                    continue
+                p = PIP_DOTS_BY_NUMBER.get(int(num), 0)
+                if p > best_match_pip:
+                    best_match_pip = p
+            if 0 < best_match_pip <= 2:
+                bonus *= 0.5
+        return bonus
     return 0.015
 
 
@@ -172,14 +207,16 @@ def score_opening_nodes(game: "Game",
         distinct = sum(1 for v in resources.values() if v > 0)
         diversity = _DIVERSITY_BY_COUNT.get(distinct, 1.15)
         port_label = node_to_port.get(node_id)
-        port_bonus = _port_bonus(port_label, resources)
-        base = raw * diversity + port_bonus
-        base_by_node[node_id] = base
-
-        tiles = []
+        tiles: list[tuple[str, int | None]] = []
         for tile in m.adjacent_tiles.get(node_id, []):
             label = tile.resource if tile.resource else "DESERT"
             tiles.append((label, tile.number))
+        # Pass tiles into _port_bonus so the pip-alignment guard fires
+        # — a 2:1 wheat port adjacent only to a wheat 2/3/11/12 tile
+        # gets half the bonus, matching the strategy v2 P1-7 plan.
+        port_bonus = _port_bonus(port_label, resources, tiles=tiles)
+        base = raw * diversity + port_bonus
+        base_by_node[node_id] = base
 
         scratch[node_id] = dict(
             raw=raw, diversity=diversity, port_bonus=port_bonus,
@@ -257,13 +294,8 @@ def _build_node_port_labels(m) -> dict[int, str]:
 
 
 # --- robber advisor ------------------------------------------------------
-PIP_DOTS_BY_NUMBER = {
-    2: 1, 12: 1,
-    3: 2, 11: 2,
-    4: 3, 10: 3,
-    5: 4, 9: 4,
-    6: 5, 8: 5,
-}
+# (PIP_DOTS_BY_NUMBER lives near the top of this module so the port
+# helper can use it without a forward reference.)
 
 
 @dataclass
@@ -278,7 +310,16 @@ class RobberScore:
     victim_vp: dict[str, int]  # opponent color → current public VP
     opponent_hand_size: dict[str, int]  # opponent color → total cards in hand
     weighted_opponent_blocked: float  # opponent_blocked with VP weighting
-    score: float               # weighted_opponent_blocked - own_blocked
+    # Strategy v2 P1-5 — robber as resource-control tool. These three
+    # additive bonuses extend the scoring beyond "block opp pips":
+    resource_need_bonus: float = 0.0  # bump when this tile produces a
+                                      # resource we owe for the next build
+    monopoly_setup_bonus: float = 0.0  # bump when locking the tile makes
+                                       # our share of the resource much
+                                       # bigger than the table average —
+                                       # sets up a future trade monopoly
+    score: float = 0.0          # weighted_opponent_blocked - own_blocked
+                                # + resource_need + monopoly_setup
 
 
 def _vp_weight(vp: int, vp_target: int | None = None) -> float:
@@ -301,6 +342,9 @@ def score_robber_targets(
     hand_size_override: dict[str, int] | None = None,
     friendly_robber_min_vp: int | None = None,
     imminent_color: str | None = None,
+    needed_resources: list[str] | None = None,
+    opp_production_by_resource: dict[str, dict[str, float]] | None = None,
+    self_production_by_resource: dict[str, float] | None = None,
 ) -> list[RobberScore]:
     """Rank every land tile (except where the robber is now) for blocking value.
 
@@ -389,6 +433,46 @@ def score_robber_targets(
             * (2.0 if imminent_norm == c.upper() else 1.0)
             for c, pips in victims.items()
         )
+        # Strategy v2 P1-5 — robber as resource-control tool.
+        #
+        # resource_need_bonus: when this tile produces a resource we
+        # owe for our next planned build, blocking it (a) denies an
+        # opponent the production AND (b) sets up a steal of that
+        # exact resource. Worth more than blocking a generic high-
+        # pip resource we don't care about.
+        #
+        # monopoly_setup_bonus: when (my production share of this
+        # resource) is already high relative to the table's average
+        # share, locking the tile concentrates the resource further
+        # — opponents will have to come to us to trade for it. Caps
+        # at +1.0 so it can't dwarf the base block score.
+        resource_need_bonus = 0.0
+        monopoly_setup_bonus = 0.0
+        tile_res = tile.resource
+        if tile_res:
+            if needed_resources and tile_res in needed_resources:
+                resource_need_bonus = 1.0 + 0.2 * pip_dots
+            if (opp_production_by_resource is not None
+                    and self_production_by_resource is not None):
+                self_p = float(self_production_by_resource.get(
+                    tile_res, 0.0))
+                opp_total = sum(
+                    float(opp_production_by_resource.get(c, {})
+                          .get(tile_res, 0.0))
+                    for c in victims)
+                table_total = self_p + opp_total
+                if table_total > 0:
+                    self_share = self_p / table_total
+                    # 1/(N+1) is the "even split" baseline among self
+                    # plus victims-on-this-tile. If we're well above
+                    # that, locking the tile concentrates further.
+                    n_players = 1 + len(victims)
+                    even_share = 1.0 / max(1, n_players)
+                    surplus = max(0.0, self_share - even_share)
+                    monopoly_setup_bonus = min(
+                        1.0, surplus * pip_dots * 0.6)
+        score = (weighted - own_blocked
+                 + resource_need_bonus + monopoly_setup_bonus)
         results.append(RobberScore(
             coord=coord,
             resource=tile.resource,
@@ -400,7 +484,9 @@ def score_robber_targets(
             victim_vp={c: vp_by_color.get(c, 0) for c in victims},
             opponent_hand_size={c: hand_sizes.get(c, 0) for c in victims},
             weighted_opponent_blocked=weighted,
-            score=weighted - own_blocked,
+            resource_need_bonus=resource_need_bonus,
+            monopoly_setup_bonus=monopoly_setup_bonus,
+            score=score,
         ))
 
     # Sort: higher score first; tiebreak by largest single-victim hand size
@@ -622,12 +708,14 @@ def score_second_settlements(
         # pair production so a port pick only blossoms when the two-node
         # plan actually feeds it.
         port_label = node_to_port.get(node_id)
-        port_bonus = _port_bonus(port_label, combined)
-
-        tiles = []
+        tiles: list[tuple[str, int | None]] = []
         for tile in m.adjacent_tiles.get(node_id, []):
             label = tile.resource if tile.resource else "DESERT"
             tiles.append((label, tile.number))
+        # Pass N's tiles to the port helper so the pip-alignment guard
+        # fires on a port whose matching resource only sits on a weak
+        # 2/3/11/12 tile of N. (Strategy v2 P1-7.)
+        port_bonus = _port_bonus(port_label, combined, tiles=tiles)
 
         best_road = _best_opening_road(m, first_node_id, node_id,
                                        neighbors, land_nodes)

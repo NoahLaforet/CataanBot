@@ -82,6 +82,7 @@ def _detect_imminent_opp_color(game) -> str | None:
 def _compute_robber_snapshot(
     game, display_colors: dict[str, str] | None = None, top: int = 5,
     imminent_color: str | None = None,
+    needed_resources: list[str] | None = None,
 ) -> list[dict[str, Any]] | None:
     """Snapshot the top-N robber rankings for the overlay.
 
@@ -137,12 +138,53 @@ def _compute_robber_snapshot(
     # available.
     if imminent_color is None:
         imminent_color = _detect_imminent_opp_color(game)
+    # Strategy v2 P1-5: feed the resource-control inputs through.
+    # opp_production_by_resource is a per-color cards-per-roll map
+    # (excludes self); self_production_by_resource is self's own.
+    # Without these, score_robber_targets falls back to the original
+    # block-based scoring — backward compatible.
+    self_prod_map: dict[str, float] = {}
+    opp_prod_by_color: dict[str, dict[str, float]] = {}
+    try:
+        from catanbot.bridge_economy import _compute_production
+        self_p = _compute_production(game, color)
+        if self_p:
+            self_prod_map = dict(self_p.get("by_resource") or {})
+        for opp_color in reverse:
+            opp_p = _compute_production(game, opp_color)
+            if opp_p:
+                opp_prod_by_color[opp_color] = dict(
+                    opp_p.get("by_resource") or {})
+    except Exception:  # noqa: BLE001
+        # Production helpers can fail on early game state — fall back
+        # to no resource-control inputs rather than crash the snapshot.
+        self_prod_map = {}
+        opp_prod_by_color = {}
+    # Derive needed_resources from self's hand + closest missing build
+    # when the caller didn't supply one. The robber landing on a tile
+    # of a resource we owe for our next planned build is a worth-1pt
+    # bump per pip — small enough to be a tiebreaker, big enough to
+    # tilt against generic high-pip blocks when we're 1 ORE from a
+    # city.
+    if needed_resources is None:
+        try:
+            from catanbot.bridge_economy import _closest_missing_build
+            self_hand = dict(game.tracker.hand(color))
+            closest = _closest_missing_build(self_hand)
+            if closest:
+                needed_resources = list(
+                    (closest.get("missing") or {}).keys())
+        except Exception:  # noqa: BLE001
+            needed_resources = None
     try:
         scores = score_robber_targets(
             game.tracker.game, color,
             hand_size_override=hand_size_override or None,
             friendly_robber_min_vp=fr_min,
             imminent_color=imminent_color,
+            needed_resources=needed_resources,
+            opp_production_by_resource=opp_prod_by_color or None,
+            self_production_by_resource=self_prod_map or None,
         )
     except Exception:  # noqa: BLE001
         return None
@@ -176,6 +218,13 @@ def _compute_robber_snapshot(
             "resource": s.resource,
             "number": s.number,
             "score": round(s.score, 2),
+            # Strategy v2 P1-5 — surface the resource-control bonuses
+            # so the HUD can show "+1.0 we need this" or "+0.4 monopoly
+            # setup" tags next to the rank, not just an opaque number.
+            "resource_need_bonus": round(
+                getattr(s, "resource_need_bonus", 0.0), 2),
+            "monopoly_setup_bonus": round(
+                getattr(s, "monopoly_setup_bonus", 0.0), 2),
             "suggested_victim": suggested_color,
             "victims": [
                 {
