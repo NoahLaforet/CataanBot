@@ -95,6 +95,14 @@ from cataanbot.bridge_postmortem import (
     _write_postmortem,
 )
 
+# Variant labels the recommender is allowed to score against. Classic
+# is always safe; layout-only variants (Twirl, etc.) play standard
+# rules on a custom board so the recs scored from the parsed CatanMap
+# are also valid. Rules-changing variants (5-6 ext, Cities & Knights,
+# Seafarers) stay suppressed because the recommender doesn't model
+# their state machine.
+_RECS_SAFE_VARIANTS: frozenset[str] = frozenset({"classic", "twirl"})
+
 
 def _build_app(jsonl_path: Path | None = None,
                ws_jsonl_path: Path | None = None,
@@ -261,6 +269,35 @@ def _build_app(jsonl_path: Path | None = None,
             return {"ok": False, "error": str(e)}
 
         game = st["game"]
+        # New-game reboot path: LiveGame.feed flipped _just_rebooted
+        # because game-over had fired and a fresh GameStart arrived.
+        # Wipe overlay state so rolls/histogram/robber/postmortem
+        # state from the prior match doesn't carry into the new one.
+        if getattr(game, "_just_rebooted", False):
+            game._just_rebooted = False
+            st["last_roll"] = None
+            st["roll_history"] = []
+            st["total_rolls"] = 0
+            st["roll_histogram"] = {i: 0 for i in range(2, 13)}
+            st["robber_moved_at_rolls"] = None
+            st["robber_pending"] = False
+            st["robber_snapshot"] = None
+            st["opp_card_hist"] = {}
+            st["pm_events"] = []
+            st["pm_results"] = []
+            st["pm_timestamps"] = []
+            st["pm_written"] = False
+            st["display_colors"] = {}
+            st["pending_trade_offer"] = None
+            st["eval_history"] = []
+            st["last_recs_for_self"] = []
+            st["move_history"] = []
+            st["dev_cards_held"] = 0
+            st["dev_cards_bought_this_turn"] = 0
+            st["_last_turn_cid"] = None
+            st.pop("_booted", None)
+            print("[bridge] new game detected — overlay state reset",
+                  flush=True)
         # First frame that boots the game — emit a header.
         if results is None and game.started and st.get("_booted") is None:
             st["_booted"] = True
@@ -342,7 +379,13 @@ def _build_app(jsonl_path: Path | None = None,
     def post_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         """Update VP target and/or discard limit at runtime. Either
         field is optional; missing fields are left untouched. Returns
-        the new full state so the userscript can confirm what stuck."""
+        the new full state so the userscript can confirm what stuck.
+
+        Also accepts ``friendly_robber_active`` so a Noah-side toggle
+        can flip the rule on when colonist's announcement InfoEvent is
+        missed (e.g., bridge started after game booted). Routes onto
+        the live session's flag so the robber-target ranker filters
+        protected victims for the rest of the game."""
         from cataanbot import config
         errors: list[str] = []
         if "vp_target" in payload and payload["vp_target"] is not None:
@@ -355,17 +398,32 @@ def _build_app(jsonl_path: Path | None = None,
                 config.set_discard_limit(int(payload["discard_limit"]))
             except (TypeError, ValueError) as e:
                 errors.append(f"discard_limit: {e}")
+        fr_set = None
+        if "friendly_robber_active" in payload:
+            try:
+                fr_set = bool(payload["friendly_robber_active"])
+                sess = st["game"].session
+                if sess is not None:
+                    sess.friendly_robber_active = fr_set
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"friendly_robber_active: {e}")
         result = {
             "ok": not errors,
             "vp_target": config.get_vp_target(),
             "discard_limit": config.get_discard_limit(),
+            "friendly_robber_active": bool(
+                getattr(st["game"].session, "friendly_robber_active", False)
+                if st["game"].session is not None else False),
         }
         if errors:
             result["errors"] = errors
         else:
+            extra = ""
+            if fr_set is not None:
+                extra = f" friendly_robber={fr_set}"
             print(
                 f"[bridge] config: vp_target={result['vp_target']} "
-                f"discard_limit={result['discard_limit']}",
+                f"discard_limit={result['discard_limit']}{extra}",
                 flush=True,
             )
         return result
@@ -417,55 +475,72 @@ def _build_app(jsonl_path: Path | None = None,
     # same state it had at the moment the bridge was killed. Errors
     # are tolerated — a malformed line just stops replay; whatever
     # state was rebuilt up to that point stays.
-    if ws_jsonl_path is not None and ws_jsonl_path.exists():
+    #
+    # Two-file replay: prior bridge sessions archive the live capture
+    # to ``<name>.replayed.jsonl`` after replay, then start a fresh
+    # live file. A 2nd restart that replayed only the live file would
+    # miss the GameStart frame (which is in the archive). So replay
+    # ``.replayed.jsonl`` first when present, then the live file —
+    # later frames overwrite earlier state via the diff parser, so the
+    # final state matches what the bridge had at kill-time.
+    replay_paths: list[Path] = []
+    if ws_jsonl_path is not None:
+        archive = ws_jsonl_path.with_suffix(".replayed.jsonl")
+        if archive.exists():
+            replay_paths.append(archive)
+        if ws_jsonl_path.exists():
+            replay_paths.append(ws_jsonl_path)
+    if replay_paths:
         replayed = 0
-        try:
-            with ws_jsonl_path.open() as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        frame = json.loads(line)
-                    except json.JSONDecodeError:
-                        break
-                    try:
-                        results = _feed_ws_payload(st["game"], frame)
-                    except Exception:  # noqa: BLE001
-                        continue
-                    st["ws_count"] += 1
-                    st["seq"] += 1
-                    if results:
+        for path in replay_paths:
+            try:
+                with path.open() as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
                         try:
-                            _track_overlay_state(st, results)
-                        except Exception:  # noqa: BLE001
-                            pass
-                    if (st["game"].started
-                            and st.get("_booted") is None):
-                        st["_booted"] = True
+                            frame = json.loads(line)
+                        except json.JSONDecodeError:
+                            break
                         try:
-                            st["pm_tracker"] = Tracker(
-                                catan_map=st["game"].tracker
-                                .game.state.board.map)
+                            results = _feed_ws_payload(st["game"], frame)
                         except Exception:  # noqa: BLE001
-                            pass
-                    replayed += 1
-        except OSError:
-            pass
+                            continue
+                        st["ws_count"] += 1
+                        st["seq"] += 1
+                        if results:
+                            try:
+                                _track_overlay_state(st, results)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        if (st["game"].started
+                                and st.get("_booted") is None):
+                            st["_booted"] = True
+                            try:
+                                st["pm_tracker"] = Tracker(
+                                    catan_map=st["game"].tracker
+                                    .game.state.board.map)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        replayed += 1
+            except OSError:
+                pass
         if replayed > 0:
             print(f"[bridge] replayed {replayed} frames from autosave",
                   flush=True)
-            # Rotate the file so future restarts don't include both
-            # the pre-restart history (already replayed into state)
-            # and post-restart frames. Without rotation, the bridge
-            # would replay the full file again on the next start —
-            # state would still rebuild correctly because replay is
-            # idempotent on the LiveGame (each frame computes the same
-            # diff), but the dedup-guarded counters would still be
-            # safe. Rotation is mostly disk-space hygiene.
+            # Rotate the live file into the archive so the next live
+            # capture starts fresh. APPEND rather than replace so a
+            # multi-restart session keeps its GameStart frame — replace
+            # would clobber the earlier archive on every restart, and
+            # the next restart would boot with no GameStart and an
+            # empty session (the bug Noah hit on 2026-05-02).
             try:
                 archive = ws_jsonl_path.with_suffix(".replayed.jsonl")
-                ws_jsonl_path.replace(archive)
+                content = ws_jsonl_path.read_text()
+                with archive.open("a") as dst:
+                    dst.write(content)
+                ws_jsonl_path.write_text("")
             except OSError:
                 pass
 
@@ -618,7 +693,7 @@ def _track_overlay_state(st, results) -> None:
     """
     from cataanbot.events import (
         BuildEvent, RobberMoveEvent, RollEvent,
-        TradeCommitEvent, TradeOfferEvent,
+        TradeCloseEvent, TradeCommitEvent, TradeOfferEvent,
     )
 
     game = st["game"]
@@ -783,6 +858,7 @@ def _track_overlay_state(st, results) -> None:
                 "player": r.event.player,
                 "give": dict(r.event.give),
                 "want": dict(r.event.want),
+                "offer_id": getattr(r.event, "offer_id", None),
                 "ts": None,
             }
         elif isinstance(r.event, TradeCommitEvent):
@@ -790,6 +866,17 @@ def _track_overlay_state(st, results) -> None:
             # offer's decision window closes the moment a trade is
             # actually executed (or rolled past).
             st["pending_trade_offer"] = None
+        elif isinstance(r.event, TradeCloseEvent):
+            # Standing offer was withdrawn / declined / expired without
+            # a commit. Clear ONLY when the closing offer matches the
+            # one currently banner'd — a stale close from an old offer
+            # shouldn't wipe a fresh banner that just landed.
+            cur = st.get("pending_trade_offer")
+            if cur and (
+                cur.get("offer_id") is None
+                or cur.get("offer_id") == r.event.offer_id
+            ):
+                st["pending_trade_offer"] = None
 
 
 
@@ -1314,13 +1401,31 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                     rec_color = game.color_map.get(user)
                 except Exception:  # noqa: BLE001
                     rec_color = None
+        # Variant-map guard: catanatron's tracker only models the
+        # classic board's node IDs / legal-pick rules, so opening recs
+        # on weekly-random or 5-6-extension maps can suggest corners
+        # that opps already occupy (their build events fail to apply
+        # cleanly on the variant). Suppress entirely until variant
+        # support lands. Bug Noah hit on 2026-05-02 with mapSetting=30.
+        # Layout-only variants (Twirl, etc.) are classic rules with a
+        # custom board — the recommender scores from the parsed
+        # CatanMap, not BASE_MAP_TEMPLATE, so it's safe.
+        variant = "classic"
         try:
-            snap["recommendations"] = recommend_opening(
-                cat_game, rec_color, top=5)
-        except Exception as e:  # noqa: BLE001
-            print(f"[advisor] recommend_opening failed: {e!r}",
-                  flush=True)
+            variant = sess.variant_label()
+        except Exception:  # noqa: BLE001
+            pass
+        if variant not in _RECS_SAFE_VARIANTS:
             snap["recommendations"] = []
+            snap["variant_recs_disabled"] = True
+        else:
+            try:
+                snap["recommendations"] = recommend_opening(
+                    cat_game, rec_color, top=5)
+            except Exception as e:  # noqa: BLE001
+                print(f"[advisor] recommend_opening failed: {e!r}",
+                      flush=True)
+                snap["recommendations"] = []
     if sess.self_color_id is None:
         return snap
     username = sess.player_names.get(sess.self_color_id)
@@ -1358,6 +1463,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # lumps VPs in with playables (we can't see types), so this
     # sometimes fires on "impossible" VP-only hands. Better a false
     # positive than missing a real hit that costs 5+ cards.
+    #
+    # Deck-exhaustion guard: standard Catan only has 2 monopoly cards
+    # (4 in the 5-6 expansion). Once they've all been played across
+    # the table, no opp can possibly hold one — sum PLAYED_MONOPOLY
+    # across every seat and suppress the warning when it hits the
+    # deck's monopoly total. Default to 2 unless gameSettings tells us
+    # otherwise. Bug Noah hit on 2026-05-02: he'd played 2 monopolies
+    # himself and the HUD still claimed monopoly risk.
     mono_risk = None
     MONO_STACK_THRESHOLD = 5
     opps_with_devs = any(
@@ -1365,7 +1478,19 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         for cid in sess.player_names
         if cid != sess.self_color_id
     )
-    if opps_with_devs:
+    monopolies_played = 0
+    try:
+        cat_state = game.tracker.game.state
+        for _c, _idx in cat_state.color_to_index.items():
+            monopolies_played += int(cat_state.player_state.get(
+                f"P{_idx}_PLAYED_MONOPOLY", 0))
+    except Exception:  # noqa: BLE001
+        pass
+    # gameSettings.extensionSetting != 0 → 5-6 player extension (4 monopolies)
+    gs = getattr(sess, "game_settings", None) or {}
+    deck_monopolies = 4 if gs.get("extensionSetting") else 2
+    monopoly_in_play = max(0, deck_monopolies - monopolies_played)
+    if opps_with_devs and monopoly_in_play > 0:
         big_stacks = [(r, n) for r, n in hand.items()
                       if n >= MONO_STACK_THRESHOLD]
         if big_stacks:
@@ -1538,6 +1663,14 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     my_cid = sess.self_color_id
     snap["my_turn"] = (sess.current_turn_color_id is not None
                        and sess.current_turn_color_id == my_cid)
+    # Belt-and-suspenders: when it's not self's turn the robber-target
+    # ranking is stale — drop it from the snap so a panel render that
+    # missed the my_turn gate can't paint a "robber placed · ranking"
+    # section into someone else's turn (Noah's report 2026-05-02).
+    if not snap["my_turn"]:
+        snap["robber_targets"] = []
+        if snap.get("robber_reason") == "placed":
+            snap["robber_reason"] = None
     # Surface whose turn it is when not self's, so the panel can label
     # the off-turn ribbon. Falls back to a color string if the cid
     # isn't in player_names yet (very early-game race).
@@ -1600,10 +1733,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # the visible top-4. Doing this in two recommend_actions
             # calls would double the search-rerank cost on every poll,
             # which is hot path.
-            full_recs = recommend_actions(
-                cat_game, self_color, hand, top=10,
-                bank_supply=bank_for_recs,
-                dev_deck_remaining=dev_deck_for_recs)
+            # Variant-map guard: the recommender's settlement/road
+            # search assumes classic-board node IDs and legality. On
+            # rules-changing variants (5-6 ext, C&K, Seafarers) the
+            # results are unreliable — suppress until support lands.
+            # Layout-only variants (Twirl etc.) pass through. Same
+            # whitelist as opening recs above.
+            variant_now = "classic"
+            try:
+                variant_now = sess.variant_label()
+            except Exception:  # noqa: BLE001
+                pass
+            if variant_now not in _RECS_SAFE_VARIANTS:
+                full_recs = []
+                snap["variant_recs_disabled"] = True
+            else:
+                full_recs = recommend_actions(
+                    cat_game, self_color, hand, top=10,
+                    bank_supply=bank_for_recs,
+                    dev_deck_remaining=dev_deck_for_recs)
             snap["recommendations"] = full_recs[:4]
             if full_recs:
                 st["last_recs_for_self"] = full_recs
@@ -2011,6 +2159,46 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] winning_move failed: {e!r}", flush=True)
         snap["winning_move"] = None
+    # 3rd-settle milestone banner — Reddit 36k-game finding: winners
+    # build settle #3 6.7-8.7 turns earlier than losers, and 10.9% of
+    # losers never build it at all. Single biggest pre-mid-game
+    # predictor of winning. Surface a nudge once opening's done and
+    # the player hasn't expanded — disappears the moment settle #3
+    # lands. Silent during setup and after the milestone is hit.
+    snap["milestone"] = None
+    try:
+        pieces = snap["self"].get("pieces") or {}
+        settle_count = int(pieces.get("settle") or 0)
+        city_count = int(pieces.get("city") or 0)
+        # Total building footprints — settles + cities. The Reddit
+        # finding is about board EXPANSION, not just raw settle count;
+        # upgrading an opening settle to a city keeps total footprint
+        # at 2 but doesn't add new tile coverage. Milestone fires
+        # whenever the player hasn't expanded past the opening 2.
+        total_footprint = settle_count + city_count
+        if (not is_setup and total_footprint == 2
+                and int(st.get("total_rolls") or 0) >= 5):
+            # Compute deficit toward settlement so the banner can hint
+            # what's missing (e.g. "1 sheep away"). _closest_missing_build
+            # returns the nearest-miss for any build; we filter to
+            # settlement specifically so the milestone doesn't say
+            # "build settle #3" while pointing at a city deficit.
+            from cataanbot.recommender import _SETTLEMENT_COST
+            missing: dict[str, int] = {}
+            for r, n in _SETTLEMENT_COST.items():
+                d = n - hand.get(r, 0)
+                if d > 0:
+                    missing[r] = d
+            snap["milestone"] = {
+                "kind": "third_settle",
+                "headline": "settle #3 — biggest predictor",
+                "detail": ("the 36k-game data: winners build #3 ~7 "
+                           "turns earlier than losers"),
+                "missing": missing,
+            }
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] milestone failed: {e!r}", flush=True)
+        snap["milestone"] = None
     # Persistent robber-on-me warning — visible every snapshot while
     # the robber sits on a self tile, not just during a 7-roll or when
     # a knight is in hand.

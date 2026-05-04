@@ -39,7 +39,8 @@ from cataanbot.colonist_map import (
 from cataanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
     Event, HandSyncEvent, ProduceEvent,
-    RobberMoveEvent, RollEvent, TradeOfferEvent, VPEvent,
+    DevCardPlayEvent, RobberMoveEvent, RollEvent, TradeCloseEvent,
+    TradeOfferEvent, VPEvent,
 )
 
 # Resource type ints used inside `playerStates.{cid}.resourceCards.cards`.
@@ -77,6 +78,15 @@ _DEV_CARD_TYPE = {
 # flag (2 VPs). Anything else we haven't seen defaults to 0 so an
 # unexpected tracking key doesn't inflate the total.
 _VP_WEIGHTS: dict[int, int] = {0: 1, 1: 2, 2: 1, 4: 2, 5: 2}
+
+# Colonist mapSetting ids for layout-only variants where the rules are
+# classic Catan but the board is a custom shape. Recs are safe on these
+# because the recommender scores geometry from the parsed CatanMap,
+# not the canonical 19-tile template. Promotion path: capture a game
+# on a new weekly map, confirm tiles are types 0..5 only, add the id.
+_KNOWN_LAYOUT_VARIANTS: dict[int, str] = {
+    31: "twirl",
+}
 
 
 class LiveSessionError(RuntimeError):
@@ -209,6 +219,10 @@ class LiveSession:
     # every keystroke from the offerer. Cleared when the offer key
     # appears in closedOffers or with a null value.
     active_offer_ids: set[str] = field(default_factory=set)
+    # One-shot gate so the WS-side GameOverEvent emission fires exactly
+    # once. Without this, every subsequent diff after the winning
+    # transition would re-emit GameOverEvent and flood the postmortem.
+    game_over_emitted: bool = False
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -346,12 +360,14 @@ class LiveSession:
 
         Returns ``"classic"`` when all four variant flags
         (modeSetting / extensionSetting / scenarioSetting / mapSetting)
-        are 0 AND no unknown tile types are on the board. Otherwise
-        returns ``"variant"`` with whatever signal fired ("variant:
-        ext=2, tiles={6,7}") so the HUD can warn the user that
-        strategy may not be tuned for this map. Once we capture and
-        decode the specific flag/tile values, this promotes to real
-        names ("seafarers", "cities-and-knights", "black-forest").
+        are 0 AND no unknown tile types are on the board. Layout-only
+        variants where colonist plays standard Catan rules on a custom
+        board (Twirl mapSetting=31, etc.) get a known short name so
+        the recs gate can let them through — the recommender's
+        geometry-blind scoring is safe on any classic-rule layout.
+        Anything else returns ``"variant"`` with whatever signal fired
+        ("variant: ext=2, tiles={6,7}") so the HUD can warn the user
+        that strategy may not be tuned for this map.
         """
         gs = self.game_settings or {}
         flag_keys = (
@@ -362,6 +378,13 @@ class LiveSession:
                    if isinstance(gs.get(k), int) and gs[k] != 0}
         if not nonzero and not self.non_classic_tiles:
             return "classic"
+        # Known layout-only variants — classic rules, custom board.
+        # Promotion safe: variant tile types must still be empty, and
+        # the only nonzero flag must be the map id we recognize.
+        if (not self.non_classic_tiles
+                and set(nonzero) == {"mapSetting"}
+                and nonzero["mapSetting"] in _KNOWN_LAYOUT_VARIANTS):
+            return _KNOWN_LAYOUT_VARIANTS[nonzero["mapSetting"]]
         parts = []
         for k, v in nonzero.items():
             parts.append(f"{k.replace('Setting','')}={v}")
@@ -534,6 +557,25 @@ def events_from_diff(
 
     _merge_vp_state(sess, diff.get("playerStates") or {})
 
+    # WS-side game-over detection. The DOM-log "X won the game" parser
+    # is intermittent (extension's chat-log scraper goes dark sometimes),
+    # so missing GameOverEvent means no postmortem gets written. Walk
+    # the merged victoryPointsState — any color whose weighted total
+    # hits the configured VP target wins. Emit ONCE; the per-session
+    # gate prevents duplicate emissions on later diffs.
+    if not sess.game_over_emitted:
+        from cataanbot.config import get_vp_target
+        from cataanbot.events import GameOverEvent as _GameOverEvent
+        try:
+            vp_target = int(get_vp_target())
+        except Exception:  # noqa: BLE001
+            vp_target = 10
+        for cid in sess.victory_points_state.keys():
+            if sess.vp_total(cid) >= vp_target:
+                sess.game_over_emitted = True
+                out.append(_GameOverEvent(winner=sess.player_for(cid)))
+                break
+
     for ev in _bonus_vp_events(sess, diff):
         out.append(ev)
 
@@ -661,8 +703,32 @@ def _dev_card_buy_events(
         if cid == sess.self_color_id and "developmentCardsUsed" in pstate:
             used = pstate.get("developmentCardsUsed")
             if isinstance(used, list):
-                sess.self_dev_used = [
+                new_used = [
                     int(x) for x in used if isinstance(x, int)]
+                # Multiset diff vs. the previous list — every newly
+                # appearing type-int is a self play we haven't emitted
+                # yet. Without this the WS path was silent on plays;
+                # the DOM-log "X used a Knight" parse was the only
+                # source of DevCardPlayEvent. When the DOM-log path
+                # is dark (no /log POSTs from the extension) the
+                # robber-rec on self knight play never fires.
+                from collections import Counter
+                added = Counter(new_used) - Counter(sess.self_dev_used)
+                sess.self_dev_used = new_used
+                self_user = sess.player_names.get(cid)
+                for type_int, n in added.items():
+                    name = _DEV_CARD_TYPE.get(int(type_int))
+                    if not name or name == "VICTORY_POINT":
+                        # VP cards aren't actively "played" — they just
+                        # reveal. Skip so we don't spurious-fire a play
+                        # event for VP unveiling.
+                        continue
+                    card_kind = name.lower()
+                    for _ in range(n):
+                        out.append(DevCardPlayEvent(
+                            player=self_user or sess.player_for(cid),
+                            card=card_kind,
+                        ))
             elif used is None:
                 # Diff that doesn't ship the field — leave cached
                 # value alone. Colonist clears bought_this_turn to
@@ -785,6 +851,13 @@ def _trade_offer_events(
     if isinstance(active, dict):
         for offer_id, payload in active.items():
             if payload is None:
+                # Offer was withdrawn / expired / declined with no commit.
+                # Emit a close event so the HUD's incoming-trade banner
+                # can clear the moment the decision window closes —
+                # without this, the banner sticks around with the last
+                # offer's verdict until the next offer (or game over).
+                if offer_id in sess.active_offer_ids:
+                    out.append(TradeCloseEvent(offer_id=str(offer_id)))
                 sess.active_offer_ids.discard(offer_id)
                 continue
             if offer_id in sess.active_offer_ids:
@@ -815,10 +888,13 @@ def _trade_offer_events(
                 player=sess.player_for(int(creator)),
                 give=give,
                 want=want,
+                offer_id=str(offer_id),
             ))
     closed = trade_state.get("closedOffers")
     if isinstance(closed, dict):
         for offer_id in closed:
+            if offer_id in sess.active_offer_ids:
+                out.append(TradeCloseEvent(offer_id=str(offer_id)))
             sess.active_offer_ids.discard(offer_id)
     return out
 

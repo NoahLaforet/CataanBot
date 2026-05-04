@@ -70,6 +70,42 @@ def _apply_game_settings(body: dict[str, Any]) -> None:
             pass
 
 
+def _gamestart_shape_changed(session, body: dict[str, Any]) -> bool:
+    """True if the new GameStart body's mapState shape differs from the
+    one the session was booted with.
+
+    Colonist sends two GameStart frames in a row on weekly maps like
+    Twirl: a 19/54/72/9 placeholder followed by the real variant shape
+    (Twirl: 42/126/168/12). Treating the second frame as a reconnect
+    leaves the placeholder mapping in place and every diff with a
+    corner/edge id past the placeholder range vanishes silently.
+    Compare the four counts; if any moved, the bridge needs to rebuild
+    from scratch.
+    """
+    game_state = body.get("gameState") if "gameState" in body else body
+    if not isinstance(game_state, dict):
+        return False
+    new_ms = game_state.get("mapState")
+    if not isinstance(new_ms, dict):
+        return False
+    new_counts = (
+        len(new_ms.get("tileHexStates") or {}),
+        len(new_ms.get("tileCornerStates") or {}),
+        len(new_ms.get("tileEdgeStates") or {}),
+        len(new_ms.get("portEdgeStates") or {}),
+    )
+    mapping = getattr(session, "mapping", None)
+    if mapping is None:
+        return False
+    cur_counts = (
+        len(mapping.tile_coord),
+        len(mapping.node_id),
+        len(mapping.edge_nodes),
+        len(mapping.port_edges),
+    )
+    return new_counts != cur_counts
+
+
 @dataclass
 class LiveGame:
     """Container for one in-progress colonist game.
@@ -244,8 +280,44 @@ class LiveGame:
             if not usable:
                 return []
             try:
+                # New-game detection: if we already saw end-of-game in
+                # this session (game_over_emitted toggled by the WS-side
+                # GameOver detector) and a GameStart frame arrives, this
+                # is a fresh match — boot from scratch instead of
+                # resyncing into the prior game's tracker. Without this,
+                # rolls/VPs/buildings accumulated across games (Noah's
+                # 2026-05-02 case where the new game showed VP=13 from
+                # the prior win).
+                rebooted = False
+                if (self.started and self.session is not None
+                        and getattr(self.session,
+                                    "game_over_emitted", False)):
+                    # Force a fresh boot — clear session + tracker so
+                    # `started` flips False, then start_from_game_state
+                    # rebuilds everything for the new match.
+                    self.session = None
+                    self.tracker = None
+                    rebooted = True
+                # Shape-mismatch reboot: weekly maps like Twirl ship two
+                # GameStart frames in sequence — first a 19/54/72/9
+                # placeholder, then the real variant shape (Twirl is
+                # 42/126/168/12). Without rebuilding, the placeholder
+                # mapping stays and every diff with a corner/edge id
+                # past the placeholder range silently drops, so
+                # settlements/roads vanish and the next valid build
+                # fails with "Invalid Road Placement".
+                if (self.started and self.session is not None
+                        and _gamestart_shape_changed(self.session, body)):
+                    self.session = None
+                    self.tracker = None
+                    rebooted = True
                 if not self.started:
                     self.start_from_game_state(body)
+                    if rebooted:
+                        # Surface to callers (bridge) so they can clear
+                        # their own overlay state (rolls, histogram,
+                        # robber targets, etc.).
+                        self._just_rebooted = True
                 else:
                     self._resync_from_replay(body)
             except LiveSessionError:

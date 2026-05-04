@@ -703,3 +703,24 @@ def test_tracker_with_colonist_map_survives_reset():
     # is a land node and a fresh settle succeeds on it.
     assert node_id in tracker.game.state.board.map.land_nodes
     tracker.settle("WHITE", node_id)
+
+
+def test_build_mapping_handles_twirl_weekly_shape():
+    """Twirl (weekly map, captured 2026-05-03) is a 42/126/168/12 board.
+    Captured fixture must round-trip through build_mapping with every
+    corner/edge bijective and all 12 ports anchored."""
+    fp = Path(__file__).parent / "fixtures/twirl_mapState.json"
+    if not fp.exists():
+        pytest.skip("twirl fixture not present")
+    ms = json.loads(fp.read_text())["gameState"]["mapState"]
+    assert (len(ms["tileHexStates"]),
+            len(ms["tileCornerStates"]),
+            len(ms["tileEdgeStates"]),
+            len(ms["portEdgeStates"])) == (42, 126, 168, 12)
+    m = build_mapping(ms)
+    assert len(m.tile_coord) == 42
+    assert len(m.node_id) == 126
+    assert len(set(m.node_id.values())) == 126
+    assert len(m.edge_nodes) == 168
+    assert len(set(m.edge_nodes.values())) == 168
+    assert len(m.port_edges) == 12

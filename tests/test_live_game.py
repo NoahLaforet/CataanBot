@@ -6,6 +6,7 @@ extraction or dispatch regresses, the counts stop matching the capture.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -5318,6 +5319,7 @@ def test_track_overlay_routes_ws_trade_offer_into_pending():
         "player": "Bob",
         "give": {"BRICK": 2},
         "want": {"SHEEP": 1},
+        "offer_id": None,
         "ts": None,
     }
     # A subsequent commit (the trade actually executed, or got rolled
@@ -5397,3 +5399,48 @@ def test_feed_isolates_failing_events_from_rest_of_frame():
     statuses = [r.status for r in results]
     assert "error" in statuses, (
         "bad road should have surfaced as error not killed the frame")
+
+
+def test_second_gamestart_with_different_shape_reboots_mapping():
+    """Twirl ships two GameStart frames in a row: a 19/54/72/9 placeholder
+    followed by the real 42/126/168/12 board. The bridge has to detect
+    the shape change and rebuild — treating the second as a reconnect
+    leaves the placeholder mapping in place and every diff with a
+    corner/edge id past the placeholder range silently drops."""
+    fp = Path(__file__).parent / "fixtures/twirl_mapState.json"
+    if not fp.exists():
+        pytest.skip("twirl fixture not present")
+    twirl_gs = json.loads(fp.read_text())["gameState"]
+
+    # Synthesize a minimal 19/54/72/9 placeholder by reusing fort4092's
+    # GameStart (shipped with the repo for other tests). It boots
+    # cleanly into a classic-shape mapping, which is what we want to
+    # see overwritten by the Twirl frame.
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("classic capture not present")
+    from cataanbot.live_game import LiveGame
+    g = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        if payload.get("type") == 4:
+            g.feed(payload)
+            break
+    assert g.started
+    # Classic placeholder mapping is in place.
+    assert len(g.session.mapping.tile_coord) == 19
+
+    # Build a synthetic GameStart payload around the Twirl gameState.
+    # LiveGame.start_from_game_state expects the outer body shape that
+    # frame.payload carries for type=4 frames.
+    twirl_payload = {
+        "type": 4,
+        "payload": {
+            "playerColor": 0,
+            "playerUserStates": {},
+            "gameState": twirl_gs,
+        },
+    }
+    g.feed(twirl_payload)
+    # The mapping must now match Twirl's shape, not the placeholder's.
+    assert len(g.session.mapping.tile_coord) == 42
+    assert len(g.session.mapping.node_id) == 126
+    assert len(g.session.mapping.edge_nodes) == 168
