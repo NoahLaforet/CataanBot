@@ -154,6 +154,13 @@
         // separator.
         el.textContent = anon + ' ';
         el.dataset[STREAMER_DATA_FLAG] = anon;
+        // Preserve the real username so the chat serializer can ship
+        // it to the bridge under the same key the panel uses for
+        // display_colors lookup. Without this, serializeEntry reads
+        // the post-rewrite "Aria" / "Bran" / ... and the bridge
+        // stores colors under the anon name while the panel queries
+        // by the real catanatron-side username — perpetual miss.
+        el.dataset.cataanonReal = txt;
     }
     function anonymizeColonistDOM() {
         if (!streamerOn) return;
@@ -423,7 +430,14 @@
             const hasInlineBg = /background(-color)?\s*:/i.test(style);
             if (elNode.tagName === 'SPAN'
                     && (hasInlineColor || hasInlineBg)) {
-                const name = (elNode.innerText || '').trim();
+                // Prefer the pre-anon real username when the
+                // anonymizer rewrote this element. Bridge stores
+                // colors keyed by real username (matches what panel
+                // queries); shipping the anon would silently break
+                // the lookup in streamer mode.
+                const name = (
+                    elNode.dataset && elNode.dataset.cataanonReal)
+                    || (elNode.innerText || '').trim();
                 if (name) {
                     // Streamer-mode hard-blank rule overrides colonist's
                     // inline color with `color: transparent !important`,

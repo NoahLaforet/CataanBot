@@ -4,6 +4,23 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.13 — 2026-05-04
+
+Second half of the orange-pill fix: bridge was storing colors
+keyed by the anonymized name, but the panel queries by real
+username — perpetual miss in streamer mode.
+
+content.js's anonymizer rewrites textContent in-place ("Wiburg"
+→ "Cyrus"), and serializeEntry then reads `innerText` to build
+the `names` array. So the bridge was getting `{name: "Cyrus",
+bg: orange}` and storing `display_colors["Cyrus"]`, but the
+panel does `display_colors.get("Wiburg")` — `display_colors`
+keys by catanatron-side real usernames everywhere else.
+
+- **content.js** stashes the original username on
+  `el.dataset.cataanonReal` when rewriting; serializeEntry now
+  prefers it over `innerText`.
+
 ## v0.33.12 — 2026-05-04
 
 Fix the orange-pill-renders-white bug for real this time.
