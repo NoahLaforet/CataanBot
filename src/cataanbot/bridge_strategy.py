@@ -433,8 +433,8 @@ def _compute_winning_move(
     # for the difference (i.e. our visible VP is short, but the cards
     # in hand close the gap on reveal). Fires only on self's turn —
     # off-turn this just adds noise. This is the case Noah lost on
-    # 2026-05-03 vs Plunder101: 8 visible + 2 VP cards = 10 effective,
-    # but he never claimed before Plunder hit 10 first.
+    # 2026-05-03 vs an opp: 8 visible + 2 VP cards = 10 effective,
+    # but he never claimed before opp hit 10 first.
     if gap <= 0:
         vp_held = int(snap.get("dev_cards_vp_held") or 0)
         if vp_held > 0 and snap.get("my_turn"):

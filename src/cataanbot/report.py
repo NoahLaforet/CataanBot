@@ -412,7 +412,7 @@ def build_report(
             # (colonist's announcement may not name the prior holder
             # on every transfer), so previous_holder alone left both
             # players holding longest_road in the 2026-04-30
-            # ToucherOfKid postmortem.
+            # opp postmortem.
             try:
                 cur_color = color_map.get(event.player)
             except Exception:  # noqa: BLE001
@@ -1088,8 +1088,8 @@ def _format_scoreboard(report: ReplayReport) -> list[str]:
         # threshold but didn't claim — usually because their VP cards
         # weren't revealable on the right turn (just-bought rule), or
         # because the opp closed first on their own turn. Concrete
-        # actionable feedback: Noah's 2026-05-03 vs Plunder101 loss
-        # where he ended at 12 effective VP (target 10) but Plunder
+        # actionable feedback: Noah's 2026-05-03 vs an opp loss
+        # where he ended at 12 effective VP (target 10) but opp
         # crossed first on their turn.
         miss_tag = ""
         if (winner_color and color != winner_color

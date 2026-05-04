@@ -26,7 +26,7 @@ invalidated" + "gave up waiting for scroller" errors.
   only checking opp_vp >= close_to_win_vp threshold).
 - **Win-this-turn claim path** — fires when self.vp ≥ target with
   held VP cards covering the gap and it's self's turn. Came out of
-  the 2026-05-03 vs Plunder101 loss where Noah was at 8 visible +
+  the 2026-05-03 vs an opp loss where Noah was at 8 visible +
   2 held VP cards but never claimed.
 - **Knight-hint LA-deny** widened — fires when any opp has played
   ≥3 knights, regardless of their visible VP (was: ≥2 played AND
@@ -47,8 +47,8 @@ invalidated" + "gave up waiting for scroller" errors.
   pulses were too subtle to register as "blinking" against the
   dim panel.
 - **Robber-target pill** shows the player's username initial
-  ("P" for Piane5462) instead of catanatron's internal color
-  letter ("R" when Piane was remapped to RED internally).
+  ("P" for opp) instead of catanatron's internal color
+  letter ("R" when opp was remapped to RED internally).
 - **Road Building** keeps both placements visible while
   free_roads_available > 0 (was: hint vanished after the card
   played, leaving the second free-road suggestion on the floor).
@@ -128,8 +128,7 @@ Twirl variant support, Reddit-36k-game-finding tunings, and a real
 ### Win detection
 - **Claim path for held VP cards** — winning-move banner now fires
   when self.vp ≥ target with held VP cards covering the gap and
-  it's self's turn. Came directly out of a 2026-05-03 loss vs
-  Plunder101 where Noah was at 8 visible + 2 held VP cards but
+  it's self's turn. Came directly out of a 2026-05-03 loss vs an opp where Noah was at 8 visible + 2 held VP cards but
   never claimed before the opp won on their next turn. Banner
   reads "WIN THIS TURN — VP cards in hand bring you to N · play
   any move to claim".
@@ -374,7 +373,7 @@ Critical bugfix + style overhaul after Noah's mid-session feedback:
 
 ## v0.28.0 — 2026-04-30
 
-Mid-game bug fixes from Noah's 2026-04-30 ToucherOfKid game, plus a
+Mid-game bug fixes from Noah's 2026-04-30 opp game, plus a
 playful HUD-style toggle:
 
 - **Postmortem final scores no longer collapse to 2/2.** When colonist's

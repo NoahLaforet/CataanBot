@@ -138,7 +138,7 @@ def test_opponent_play_does_not_decrement_self(tmp_path: Path):
 def test_knight_play_sets_robber_pending_and_retry_when_snapshot_empty(
     tmp_path: Path,
 ):
-    """Regression for the 2026-04-30 ToucherOfKid game where Noah played a
+    """Regression for the 2026-04-30 opp game where Noah played a
     knight and the HUD never surfaced the robber-target ranking. The DOM-
     log knight handler computes the snapshot via _compute_robber_snapshot,
     which can return None when game state isn't ready (no game.tracker yet,

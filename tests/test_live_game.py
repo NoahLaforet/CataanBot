@@ -1580,7 +1580,7 @@ def test_winning_move_silent_when_already_won():
 
 
 def test_winning_move_fires_when_vp_cards_already_close_the_gap():
-    """The 2026-05-03 vs Plunder101 loss pattern: 8 visible VP + 2
+    """The 2026-05-03 vs an opp loss pattern: 8 visible VP + 2
     held VP cards = 10 effective VP, but Noah never claimed before
     the opp won on their turn. winning-move should surface this on
     self's turn so the banner says 'WIN THIS TURN — VP cards bring
@@ -5736,7 +5736,7 @@ def test_knight_hint_fires_at_3_played_even_below_la_threat_vp():
     explicitly racing for LA, even at low VP. The pre-fix trigger
     only fired once they hit largest_army_threat_vp (~7 of 10) — by
     which point they often had the title. The pattern came out of
-    Noah's 2026-05-03 vs Esfahani loss (opp played 5 knights total)."""
+    Noah's 2026-05-03 vs an opp loss (opp played 5 knights total)."""
     from cataanbot.colonist_proto import load_capture
     from cataanbot.live_game import LiveGame
     from cataanbot.bridge import _compute_knight_hint

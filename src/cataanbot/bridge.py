@@ -1661,7 +1661,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # significantly higher than self's AND the game is past mid_late
     # VP, surface "engine gap" so Noah can pivot to trade-aggressive /
     # spend-down mode. Pattern came directly out of his 2026-05-03 vs
-    # Plunder101 loss: Plunder out-produced 86 → 64, won via the
+    # opp loss: opp out-produced 86 → 64, won via the
     # bigger engine. Threshold of 1.5× is intentionally loud — by the
     # time the gap is that wide on a settled board, you're not catching
     # up via natural rolls.

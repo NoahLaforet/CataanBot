@@ -40,10 +40,19 @@ search, no ML.
   annotation (`!! / ! / ?! / ? / ??` chess grading vs the bot's top
   picks at decision time), opponent hand inference + production rate.
 - **Variant board support.** Same Catan rules, different layouts —
-  weekly-rotation maps like Pond (24 tiles, interior lake) build a
-  fresh catanatron CatanMap from colonist's authoritative tile/edge
-  data. Opening picks, recommender, and 2:1 port trade rates all work
-  on the actual geometry.
+  weekly-rotation maps like **Pond** (24 tiles, interior lake) and
+  **Twirl** (42 tiles, swirl-shape) build a fresh catanatron CatanMap
+  from colonist's authoritative tile/edge data. Opening picks,
+  recommender, and 2:1 port trade rates all work on the actual
+  geometry. Auto-detects colonist's dual-GameStart pattern (placeholder
+  19-tile frame followed by the real shape) and rebuilds cleanly.
+- **Strategy biases backed by data.** Five tunings in the recommender
+  inspired by [u/Hot-Rooster1675's 36k-game simulation](https://www.reddit.com/r/boardgames/comments/...):
+  3rd-settle expansion bump (winners build #3 ~7 turns earlier),
+  wheat-priority weight on opening eval (wheat is in every major
+  build), composition-over-pips diversity bonus, longest-road push
+  surfaced 1–2 roads from qualifying, brick-port early-pickup bonus
+  on 2:1 ports for owned resources.
 - **Auto-postmortem.** When a game ends, a self-contained HTML report
   is written to `postmortems/` — winner, final VP breakdown, dice
   fairness, hand-dynamics, trade quality, 7-roll impact, plus the
@@ -77,10 +86,10 @@ Skip if you only want the offline replay / advisor CLIs.
 ## Live play on colonist.io
 
 ```bash
-# Start the bridge
-./bin/cataanbot bridge --advisor
+# Start the bridge with the live advisor on
+./bin/cataanbot live
 
-# Mirror every WS frame to disk for later replay/audit
+# Or the lower-level bridge command, with custom WS mirror path
 ./bin/cataanbot bridge --advisor --ws-jsonl ws_captures/$(date +%Y-%m-%d).jsonl
 ```
 
@@ -101,11 +110,6 @@ board, no draggable pop-out window to manage.
 
 To pull updates: `git pull`, then click the reload ⟳ icon on the
 CataanBot card in `chrome://extensions`.
-
-The settings drawer (gear icon) has a **style** dropdown with five
-visual variants — slate dashboard (default), terminal/CRT,
-newspaper/print, cyberpunk neon, minimal light. Pure cosmetic, your
-choice persists in localStorage.
 
 When the extension is ready for the Chrome Web Store, listing it
 there ($5 one-time developer fee) gives users automatic updates
@@ -136,7 +140,7 @@ within ~24h of each push, no manual reload needed.
 ```
 src/cataanbot/        bridge, recommender, tracker, render, advisor
 extension/            Chrome side-panel extension (Manifest V3)
-tests/                pytest, ~620 tests covering parsing, dispatch,
+tests/                pytest, ~650 tests covering parsing, dispatch,
                       tracker arithmetic, recommender heuristics,
                       bridge snapshot shapes
 docs/                 design notes — DOM/WS protocol recon (colonist),
@@ -150,11 +154,36 @@ postmortems/          auto-generated game-end HTML (gitignored)
 ## Development
 
 ```bash
-.venv/bin/python -m pytest        # ~1.5s, ~620 tests
+.venv/bin/python -m pytest        # ~2s, ~650 tests
 node --check extension/panel.js
 ```
 
 CI runs `pytest` on every push (see `.github/workflows/tests.yml`).
+
+## What this project is — and isn't
+
+CataanBot is a **decision support tool** for live colonist.io games.
+It reads the page (DOM log + WebSocket frames) and renders
+recommendations into a side panel. It does not click for you, it
+does not interact with colonist's game state, it does not bypass
+any UI rules — every action still happens through your own clicks.
+Think of it as a chess-engine analysis bar in the side panel, not
+a bot that plays autonomously.
+
+The strategy engine is heuristic, not ML, not perfect. The
+move-quality classifier (`!! / ! / ?! / ? / ??`) compares your
+actual play against the engine's top recommendation at decision
+time — useful as honest feedback after the fact, not as a claim
+of objective truth.
+
+## Acknowledgements
+
+- [catanatron](https://github.com/bcollazo/catanatron) — the Python
+  Catan engine that does the heavy lifting under the recommender.
+- [u/Hot-Rooster1675's 36,000-game simulation](https://www.reddit.com/r/boardgames/)
+  — five of the recommender's strategy biases come from that data
+  (3rd-settle timing, wheat priority, composition over pips, LR
+  push, port-bonus tempering).
 
 ## License
 

@@ -16,7 +16,7 @@ on top of the colonist board.
 7. Start the bridge from a terminal:
 
    ```bash
-   cd /Users/noah/Desktop/CataanBot
+   cd path/to/CataanBot
    ./bin/cataanbot bridge
    ```
 

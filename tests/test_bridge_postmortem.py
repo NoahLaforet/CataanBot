@@ -89,7 +89,7 @@ def test_feed_postmortem_without_game_over_writes_nothing(tmp_path: Path):
 
 
 def test_resolve_final_vp_falls_back_to_build_events():
-    """Regression for the 2026-04-30 ToucherOfKid postmortem where the
+    """Regression for the 2026-04-30 opp postmortem where the
     colonist + tracker paths both returned 2/2 (impossible — winner had
     to have 10+ VP). Build-derived fallback uses pm_events to compute
     settles + 2*cities + LR/LA flags, which works whenever the DOM log

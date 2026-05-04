@@ -979,7 +979,7 @@ def test_longest_road_transfer_strips_without_previous_holder():
     without naming who lost it. The report must still strip the prior
     holder by virtue of LR being a single-holder award.
 
-    Regression for the 2026-04-30 ToucherOfKid postmortem where the
+    Regression for the 2026-04-30 opp postmortem where the
     parser missed previous_holder on the LR transfer and both players
     rendered with longest_road in the final scoreboard."""
     from cataanbot.events import VPEvent
@@ -1002,8 +1002,8 @@ def test_longest_road_transfer_strips_without_previous_holder():
 def test_scoreboard_flags_loser_who_had_enough_vp():
     """When a non-winner's tracker VP at game end is at/above the
     win target, the postmortem should flag it — they had enough but
-    the opp closed first. Came out of Noah's 2026-05-03 vs Plunder101
-    loss: he ended at 12 effective VP (target 10) but Plunder crossed
+    the opp closed first. Came out of Noah's 2026-05-03 vs an opp
+    loss: he ended at 12 effective VP (target 10) but opp crossed
     on their own turn first.
     """
     from cataanbot.report import build_report, format_report

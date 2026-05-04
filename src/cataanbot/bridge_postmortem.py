@@ -125,7 +125,7 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
             # the placement as still pending so the snap builder can
             # retry on the next poll instead of leaving Noah without
             # a target ranking after his knight play (the bug Noah
-            # reported on the 2026-04-30 ToucherOfKid game).
+            # reported on the 2026-04-30 opp game).
             print("[overlay] knight robber snapshot empty; will retry "
                   "in snap builder", flush=True)
             st["robber_snapshot_retry"] = True
@@ -180,7 +180,7 @@ def _resolve_final_vp(st) -> dict[str, int]:
     2. **Build-derived fallback.** Walk pm_events for BuildEvent +
        VPEvent and tally settles + 2*cities + LR/LA flags directly.
        This catches games where colonist's session got cleared at
-       game-end (the source of Noah's 2026-04-30 ToucherOfKid bug
+       game-end (the source of Noah's 2026-04-30 opp bug
        where the postmortem rendered both players at 2 VP).
     3. **Live tracker fallback.** ``game.tracker.vp_status()`` reads
        the WS-driven live tracker. Less reliable than build counts

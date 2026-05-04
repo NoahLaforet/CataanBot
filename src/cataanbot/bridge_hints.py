@@ -1383,7 +1383,7 @@ def _compute_knight_hint(
     #   (b) played >= 3 — "they're explicitly playing for LA" even
     #       at low VP. By the time the (a) trigger fires the race
     #       is often already lost; (b) catches the build-up phase.
-    # Came out of Noah's 2026-05-03 loss vs Esfahani: opp played 5
+    # Came out of Noah's 2026-05-03 loss vs an opp: opp played 5
     # knights total but the deny-LA hint never fired loudly enough
     # to push Noah's own knights into play.
     from cataanbot.config import largest_army_threat_vp
