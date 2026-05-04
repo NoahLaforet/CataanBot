@@ -27,6 +27,37 @@ const BRIDGE_BASE = 'http://127.0.0.1:8765';
 //     waiting for the next state delta.
 let lastGameStartFrame = null;
 let lastStateFrame = null;
+
+// MV3 service workers get terminated after ~30s idle, which would
+// drop the in-memory cache exactly when the side panel mounts and
+// asks for a replay. Mirror to chrome.storage.session so the cache
+// survives a service-worker restart within the browser session.
+// chrome.storage.session is in-memory only (cleared when the
+// browser closes) so it's the right tier — no on-disk write churn
+// for every WS frame. Reads/writes are async; we await the read
+// in the replay handler but fire-and-forget the writes.
+function _persistFrame(slot, frame) {
+    try {
+        chrome.storage.session.set({ [slot]: frame }).catch(() => {});
+    } catch (_) { /* storage API unavailable */ }
+}
+async function _loadCachedFrames() {
+    try {
+        const got = await chrome.storage.session.get([
+            'lastGameStartFrame', 'lastStateFrame']);
+        if (got.lastGameStartFrame && !lastGameStartFrame) {
+            lastGameStartFrame = got.lastGameStartFrame;
+        }
+        if (got.lastStateFrame && !lastStateFrame) {
+            lastStateFrame = got.lastStateFrame;
+        }
+    } catch (_) {}
+}
+// Hydrate on every service worker boot. chrome.storage.session
+// loads asynchronously; the request-replay handler also calls
+// this so a panel mount that hits a cold service worker still
+// gets the cached frames replayed once they arrive.
+_loadCachedFrames();
 // Base64 boundary-aligned variants of the key strings. msgpack
 // embeds string keys as raw ascii at unpredictable byte offsets, so
 // we check all three b64 phasings and accept any match.
@@ -58,13 +89,27 @@ function _b64Variants(s) {
 }
 const _GAMESTART_B64S = _b64Variants('tileHexStates');
 const _PLAYERSTATES_B64S = _b64Variants('playerStates');
+// GameStart frames carry the full mapState (hex states, corner
+// states, edge states, port states) and run ~6-10kB of base64.
+// Incremental deltas are typically <1kB. Treat any frame larger
+// than ~3kB as a likely GameStart even if the b64 sniff misses,
+// so we don't lose the cache to a key-string alignment edge case.
+const LIKELY_GAMESTART_MIN_BYTES = 3072;
 function _frameLooksLikeGameStart(frame) {
     if (!frame || frame.kind !== 'arraybuffer' || !frame.b64) return false;
-    return _GAMESTART_B64S.some(v => frame.b64.includes(v));
+    if (_GAMESTART_B64S.some(v => frame.b64.includes(v))) return true;
+    // Size-based fallback: large frames are GameStart-class even
+    // when the literal key bytes happen to straddle a chunk
+    // boundary in the msgpack stream.
+    return frame.b64.length >= LIKELY_GAMESTART_MIN_BYTES;
 }
 function _frameLooksLikeState(frame) {
     if (!frame || frame.kind !== 'arraybuffer' || !frame.b64) return false;
-    return _PLAYERSTATES_B64S.some(v => frame.b64.includes(v));
+    return _PLAYERSTATES_B64S.some(v => frame.b64.includes(v))
+        // State frames also tend to be >500 bytes; any frame
+        // mid-game large enough to carry playerStates is worth
+        // caching even if the sniff misses.
+        || frame.b64.length >= 768;
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -143,12 +188,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         postJson(`${BRIDGE_BASE}/ws`, msg.frame);
         // Cache for the replay path so a panel that opens mid-game
         // can recover the GameStart + most-recent state without
-        // waiting for the next colonist delta.
+        // waiting for the next colonist delta. Mirrored to
+        // chrome.storage.session so the cache survives a service
+        // worker restart (MV3 kills idle SWs after ~30s).
         if (_frameLooksLikeGameStart(msg.frame)) {
             lastGameStartFrame = msg.frame;
+            _persistFrame('lastGameStartFrame', msg.frame);
         }
         if (_frameLooksLikeState(msg.frame)) {
             lastStateFrame = msg.frame;
+            _persistFrame('lastStateFrame', msg.frame);
         }
         // Broadcast the frame to all extension contexts (the side
         // panel listens for these). The panel uses them as its data
@@ -171,34 +220,45 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // state without waiting for the next colonist delta. Both
         // frames go through the same broadcast channel a live
         // frame would, so the panel listener handles them
-        // identically.
-        try {
-            if (lastGameStartFrame) {
-                chrome.runtime.sendMessage({
-                    type: 'ws-frame-broadcast',
-                    frame: lastGameStartFrame,
-                    replay: true,
-                }).catch(() => {});
+        // identically. Pulls from chrome.storage.session as a
+        // fallback when the in-memory cache is empty (cold service
+        // worker after MV3 idle-kill).
+        (async () => {
+            if (!lastGameStartFrame || !lastStateFrame) {
+                await _loadCachedFrames();
             }
-            if (lastStateFrame
-                    && lastStateFrame !== lastGameStartFrame) {
-                chrome.runtime.sendMessage({
-                    type: 'ws-frame-broadcast',
-                    frame: lastStateFrame,
-                    replay: true,
-                }).catch(() => {});
-            }
-        } catch (_) {}
-        if (sendResponse) sendResponse({
-            ok: true,
-            had_game_start: !!lastGameStartFrame,
-            had_state: !!lastStateFrame,
-        });
-        return true;
+            try {
+                if (lastGameStartFrame) {
+                    chrome.runtime.sendMessage({
+                        type: 'ws-frame-broadcast',
+                        frame: lastGameStartFrame,
+                        replay: true,
+                    }).catch(() => {});
+                }
+                if (lastStateFrame
+                        && lastStateFrame !== lastGameStartFrame) {
+                    chrome.runtime.sendMessage({
+                        type: 'ws-frame-broadcast',
+                        frame: lastStateFrame,
+                        replay: true,
+                    }).catch(() => {});
+                }
+            } catch (_) {}
+            if (sendResponse) sendResponse({
+                ok: true,
+                had_game_start: !!lastGameStartFrame,
+                had_state: !!lastStateFrame,
+            });
+        })();
+        return true;  // keep the message channel open for the async response
     }
     if (msg.type === 'reset-replay-cache') {
         lastGameStartFrame = null;
         lastStateFrame = null;
+        try {
+            chrome.storage.session.remove([
+                'lastGameStartFrame', 'lastStateFrame']).catch(() => {});
+        } catch (_) {}
         if (sendResponse) sendResponse({ ok: true });
         return true;
     }

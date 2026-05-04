@@ -246,6 +246,7 @@
     // hand inference to the inferredHands map.
     chrome.runtime.onMessage.addListener((msg) => {
         if (!msg || msg.type !== 'log-entry-broadcast') return false;
+        _diag.chatEntries += 1;
         const p = msg.payload || {};
         const names = Array.isArray(p.names) ? p.names : [];
         for (const n of names) {
@@ -364,14 +365,39 @@
         return false;
     });
 
+    // Diagnostics counters — visible from the side panel's
+    // DevTools console as `window.__catanbotDiag`. Bumped on
+    // each event so a confused user can run
+    //   __catanbotDiag
+    // and immediately see whether frames are arriving, getting
+    // decoded, finding mapState, etc.
+    const _diag = window.__catanbotDiag = {
+        wsBroadcastsReceived: 0,
+        wsBroadcastsFiltered: 0,   // dir!=in or non-binary
+        decodeAttempts: 0,
+        decodeErrors: 0,
+        mapStateFound: 0,
+        boardsBuilt: 0,
+        snapshotsApplied: 0,
+        replayRequests: 0,
+        replayResponses: 0,
+        chatEntries: 0,
+        lastError: null,
+    };
     chrome.runtime.onMessage.addListener((msg) => {
         if (!msg || msg.type !== 'ws-frame-broadcast') return false;
+        _diag.wsBroadcastsReceived += 1;
         const frame = msg.frame;
-        if (!frame || frame.dir !== 'in') return false;
+        if (!frame || frame.dir !== 'in') {
+            _diag.wsBroadcastsFiltered += 1; return false;
+        }
         // Only attempt msgpack decode on arraybuffer frames; text
         // frames are colonist's lobby/handshake JSON and don't
         // carry useful state.
-        if (frame.kind !== 'arraybuffer' || !frame.b64) return false;
+        if (frame.kind !== 'arraybuffer' || !frame.b64) {
+            _diag.wsBroadcastsFiltered += 1; return false;
+        }
+        _diag.decodeAttempts += 1;
         _loadStandaloneLib().then((lib) => {
             try {
                 const decoded = lib.decodeMsgpack(frame.b64);
@@ -403,11 +429,13 @@
                     return `${keys.length}|${types}`;
                 };
                 const newFp = _msFingerprint(fullMs);
+                if (fullMs) _diag.mapStateFound += 1;
                 if (fullMs && (!_standalone.board
                         || _standalone.mapStateFingerprint !== newFp)) {
                     const wasBoardLoaded = !!_standalone.board;
                     _standalone.mapStateFrame = fullMs;
                     _standalone.mapStateFingerprint = newFp;
+                    _diag.boardsBuilt += 1;
                     _standalone.board =
                         lib.buildBoardFromColonistMap(fullMs);
                     _standalone.gameStarted = true;
@@ -434,6 +462,7 @@
                 if (_standalone.state.map) {
                     if (lib.applySnapshot(_standalone.state, decoded)) {
                         dirty = true;
+                        _diag.snapshotsApplied += 1;
                     }
                 } else {
                     // No board yet — still latch self color & turn so
@@ -442,6 +471,7 @@
                     // even when state.map is null.
                     if (lib.applySnapshot(_standalone.state, decoded)) {
                         dirty = true;
+                        _diag.snapshotsApplied += 1;
                     }
                 }
                 // Mirror legacy fields for the existing snap path.
@@ -470,9 +500,11 @@
                     }
                 }
                 if (dirty) window.__catanbotRenderDirty = true;
-            } catch (_) {
+            } catch (e) {
                 // Bad frame; standalone state stays as-is. Bridge
                 // mode (when active) ignores this entirely.
+                _diag.decodeErrors += 1;
+                _diag.lastError = String(e && e.message || e);
             }
         }).catch(() => {
             // Lib import failed (extension context invalidated,
@@ -1388,13 +1420,31 @@
     // waiting for the user to start a new game. Fired once on
     // load + again every 30s as a safety net (colonist resync, etc.).
     function _requestReplay() {
+        _diag.replayRequests += 1;
         try {
             chrome.runtime.sendMessage({ type: 'request-replay' })
+                .then((resp) => {
+                    if (resp && (resp.had_game_start || resp.had_state)) {
+                        _diag.replayResponses += 1;
+                    }
+                })
                 .catch(() => {});
         } catch (_) {}
     }
     _requestReplay();
     setInterval(_requestReplay, 30000);
+
+    // Log a one-line console diagnostic every 10s for the first 30s
+    // after panel mount, so a user inspecting the side panel's
+    // DevTools console (right-click panel → Inspect) immediately
+    // sees whether frames are flowing in.
+    let _diagTicks = 0;
+    const _diagTimer = setInterval(() => {
+        _diagTicks += 1;
+        console.log('[catanbot] diag t+' + (_diagTicks * 10) + 's',
+            JSON.stringify(_diag));
+        if (_diagTicks >= 3) clearInterval(_diagTimer);
+    }, 10000);
 
     // Auto-open postmortem when the bridge reports a new one.
     // `latest_postmortem.seq` increments each time _write_postmortem
