@@ -747,6 +747,10 @@ def test_format_report_includes_move_annotations_section():
     assert "Move annotations" in out
     assert "!!" in out
     assert "Monopoly" in out
+    # Per-player glyph tally line on the player header (e.g.
+    # "Alice (RED): !!:1") so the annotated-moves section reads as a
+    # quick at-a-glance summary before drilling into per-move detail.
+    assert "!!:1" in out
 
 
 def test_move_annotations_knight_steals_from_fat_opp():

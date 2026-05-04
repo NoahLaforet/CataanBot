@@ -848,12 +848,24 @@ def _format_move_annotations(report: ReplayReport) -> list[str]:
         by_color.setdefault(a.color, []).append(a)
     players = _players_in_color_order(report.players)
     any_shown = False
+    # Glyph order matches the chess.com / lichess convention:
+    # !! best, ! good, ?! dubious, ? mistake, ?? blunder.
+    glyph_order = ("!!", "!", "?!", "?", "??")
     for color, stats in players:
         anns = by_color.get(color)
         if not anns:
             continue
         any_shown = True
-        lines.append(f"  {stats.username} ({color}):")
+        # Per-player tally line — a one-glance read of how the player
+        # rated overall, before scanning the per-move detail. Empties
+        # are skipped so a clean "!!:2 !:3" reads cleanly without zero-
+        # padding noise.
+        tally: dict[str, int] = {}
+        for a in anns:
+            tally[a.glyph] = tally.get(a.glyph, 0) + 1
+        tally_str = " ".join(
+            f"{g}:{tally[g]}" for g in glyph_order if tally.get(g))
+        lines.append(f"  {stats.username} ({color}): {tally_str}")
         for a in anns:
             lines.append(
                 f"    {a.glyph:<3} #{a.event_index:<4}  "
