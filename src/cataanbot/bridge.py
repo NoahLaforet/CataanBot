@@ -1911,7 +1911,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     pending = st.get("pending_trade_offer")
     if pending:
         snap["incoming_trade"] = _evaluate_pending_trade(
-            st, game, self_color, hand, pending)
+            st, game, self_color, hand, pending, snap=snap)
     # Clear the just-bought-this-turn carve-out when self's turn
     # ends — _maybe_clear_dev_just_bought is a one-int-compare guard
     # that runs every snap so we don't need a separate EndTurnEvent.
@@ -2306,7 +2306,9 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
 
 
 def _evaluate_pending_trade(st, game, self_color, self_hand,
-                            pending: dict[str, Any]) -> dict[str, Any] | None:
+                            pending: dict[str, Any],
+                            *, snap: dict[str, Any] | None = None,
+                            ) -> dict[str, Any] | None:
     """Build the ``incoming_trade`` snapshot field — offer metadata plus
     a verdict from ``recommender.evaluate_incoming_trade``.
 
@@ -2339,14 +2341,9 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
     # carrying just this offerer.
     try:
         from cataanbot.bridge_strategy import _compute_leader_threat
-        opp_entry = next(
-            (o for o in (st.get("opps_cache") or [])
-             if o.get("username") == offerer), None)
-        # Walk current snap.opps when cache miss — opps_cache is a
-        # bridge-side optimization; trade eval may run before it
-        # populates on a fresh frame.
-        if opp_entry is None:
-            for o in (st.get("opps") or []):
+        opp_entry = None
+        if snap is not None:
+            for o in (snap.get("opps") or []):
                 if o.get("username") == offerer:
                     opp_entry = o
                     break
