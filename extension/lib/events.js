@@ -153,13 +153,41 @@ export function applySnapshot(state, decoded) {
     if (!state || !decoded) return false;
     let dirty = false;
 
-    // --- Self color id (latched once on GameStart). ---------------
+    // --- Self color id (latched once on GameStart, or via the
+    //     resourceCards-typed sniff if we joined mid-game and
+    //     missed the GameStart frame). The bridge mirrors this:
+    //     colonist ships real type ints in resourceCards.cards
+    //     for the viewer's own slot only; opps see zero-fills,
+    //     so any slot with a non-zero card int is necessarily
+    //     the self-player (see colonist_diff.py:818-822).
     const pc = _findKey(decoded, 'playerColor');
     if (typeof pc === 'number' && state.selfColorId == null) {
         state.selfColorId = pc;
         state.selfColor = String(pc);
         _ensureColor(state, pc);
         dirty = true;
+    } else if (state.selfColorId == null) {
+        const ps = _findKey(decoded, 'playerStates');
+        if (ps && typeof ps === 'object') {
+            for (const [cidStr, pstate] of Object.entries(ps)) {
+                if (!pstate || typeof pstate !== 'object') continue;
+                const rc = pstate.resourceCards;
+                if (!rc || !Array.isArray(rc.cards)) continue;
+                for (const ci of rc.cards) {
+                    if (Number(ci) > 0) {
+                        const cid = Number(cidStr);
+                        if (cid) {
+                            state.selfColorId = cid;
+                            state.selfColor = String(cid);
+                            _ensureColor(state, cid);
+                            dirty = true;
+                        }
+                        break;
+                    }
+                }
+                if (state.selfColorId != null) break;
+            }
+        }
     }
 
     // --- Game settings (VP target, discard limit). ----------------

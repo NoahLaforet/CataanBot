@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CatanBot — Colonist HUD",
   "short_name": "CatanBot",
-  "version": "0.37.13",
+  "version": "0.37.14",
   "description": "Live Catan advisor for colonist.io. Side-panel HUD with move recommendations, opening-pick rankings, dev-card play timing, robber-target scoring, opponent hand inference, and post-game analysis. Local-only — your game never leaves your machine.",
   "permissions": [
     "sidePanel",
