@@ -210,36 +210,49 @@
     };
 
     // Streamer mode anonymizer. When the toggle is on, every real
-    // username in the HUD is replaced with a stable generic label
-    // ("you" for self, "Opp 1" / "Opp 2" / etc. for everyone else
-    // in stable seat order). Off, returns the username unchanged.
-    // Mapping is rebuilt per-snap so seat changes between games
-    // re-anonymize correctly.
-    let _opp_anon_map = new Map();
-    let _opp_anon_seq = 0;
-    function _resetAnonMap() {
-        _opp_anon_map = new Map();
-        _opp_anon_seq = 0;
+    // username in the HUD is replaced with the player's color name
+    // ("Blue (You)" for self, "Red" / "Orange" / etc. for opps).
+    // Colors are public game state — visible on the board — so this
+    // hides the username while keeping the label meaningful.
+    // _username_to_color is populated at the top of every render
+    // from snap.self + snap.opps, so anonName can look colors up
+    // without each call site having to thread color through.
+    const _username_to_color = new Map();
+    function _populateAnonColors(snap) {
+        _username_to_color.clear();
+        if (snap && snap.self && snap.self.username) {
+            _username_to_color.set(snap.self.username, snap.self.color);
+        }
+        for (const o of (snap && snap.opps) || []) {
+            if (o && o.username) {
+                _username_to_color.set(o.username, o.color);
+            }
+        }
+    }
+    function _colorLabel(color) {
+        if (!color) return 'Player';
+        // RED → Red, etc.
+        return color.charAt(0).toUpperCase()
+            + color.slice(1).toLowerCase();
     }
     function anonName(username, opts) {
         if (!window.__catanbotStreamer) return username || '';
         if (!username) return '';
-        if (opts && opts.isSelf) return 'you';
-        if (!_opp_anon_map.has(username)) {
-            _opp_anon_seq += 1;
-            _opp_anon_map.set(username, `Opp ${_opp_anon_seq}`);
-        }
-        return _opp_anon_map.get(username);
+        const color = _username_to_color.get(username);
+        const label = _colorLabel(color);
+        if (opts && opts.isSelf) return `${label} (You)`;
+        return label;
     }
-    // Single-letter for color pills (matches the "P" / "B" style).
+    // Single-letter for color pills (R/B/W/O — matches catanatron
+    // color first-letter convention but derived from the resolved
+    // color, not the raw username).
     function anonInitial(username, opts) {
         if (!window.__catanbotStreamer) {
             return (username || '?').slice(0, 1).toUpperCase();
         }
-        if (opts && opts.isSelf) return 'Y';
-        const name = anonName(username, opts);  // "Opp 1"
-        const m = name.match(/(\d+)$/);
-        return m ? m[1] : '?';
+        const color = _username_to_color.get(username);
+        if (color) return color.charAt(0).toUpperCase();
+        return '?';
     }
     const iconFor = (res) => RES_EMOJI[res]
         || RES_SVG[res]
@@ -903,16 +916,10 @@
 
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
-        // Streamer mode: rebuild the username→label map at the top
-        // of every render so seat-order labels stay stable WITHIN a
-        // game but reset cleanly across games.
-        _resetAnonMap();
-        // Pre-seed in opps array order so labels match seat order.
-        if (window.__catanbotStreamer && snap && snap.opps) {
-            for (const o of snap.opps) {
-                if (o && o.username) anonName(o.username);
-            }
-        }
+        // Streamer mode: build username→color lookup at the top of
+        // every render so anonName can resolve "Blue (You)" / "Red"
+        // labels by looking up each player's color from the snap.
+        _populateAnonColors(snap);
         if (!snap) {
             ui.content.innerHTML =
                 '<span class="err">bridge unreachable</span>';

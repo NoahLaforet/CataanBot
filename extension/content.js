@@ -34,17 +34,56 @@
     // DOM change so the rewrite usually sticks within a frame.
     let streamerOn = false;
     const STREAMER_DATA_FLAG = 'cataanonymized';
-    const _anonMap = new Map();        // real-name → "Opp N"
-    let _anonSelfName = null;          // detected from localStorage userState
-    let _anonSeq = 0;
-    function anonLabelFor(name) {
-        if (!name) return name;
-        if (_anonSelfName && name === _anonSelfName) return 'You';
-        if (!_anonMap.has(name)) {
-            _anonSeq += 1;
-            _anonMap.set(name, `Opp ${_anonSeq}`);
+    let _anonSelfName = null;
+    // Map RGB tuples to canonical color names. Colonist's player
+    // colors don't always land on exact palette values (CSS module
+    // hashes, theme adjustments) — match by closest squared
+    // distance instead of exact equality.
+    const _COLOR_PALETTE = [
+        ['Red',    [207,  68,  73]],
+        ['Blue',   [ 66, 133, 244]],
+        ['White',  [240, 240, 240]],
+        ['Orange', [240, 150,  35]],
+        ['Green',  [ 60, 175,  90]],
+        ['Brown',  [120,  82,  45]],
+    ];
+    function _parseRgb(s) {
+        if (!s) return null;
+        const m = s.match(/(\d+)\D+(\d+)\D+(\d+)/);
+        if (!m) return null;
+        return [+m[1], +m[2], +m[3]];
+    }
+    function classifyColor(rgbStr) {
+        const rgb = _parseRgb(rgbStr);
+        if (!rgb) return 'Player';
+        let best = 'Player', bestD = Infinity;
+        for (const [name, [pr, pg, pb]] of _COLOR_PALETTE) {
+            const d = (rgb[0] - pr) ** 2 + (rgb[1] - pg) ** 2
+                + (rgb[2] - pb) ** 2;
+            if (d < bestD) { bestD = d; best = name; }
         }
-        return _anonMap.get(name);
+        return best;
+    }
+    function anonLabelFor(name, el) {
+        if (!name) return name;
+        // Detect color from the element's inline style — color: or
+        // background-color:. The same span that carries the player
+        // name carries the player's color.
+        let colorStr = el && el.style && el.style.color;
+        if (!colorStr || colorStr === 'inherit') {
+            try {
+                colorStr = window.getComputedStyle(el).color;
+            } catch (_) {}
+        }
+        // Try background if color is generic (fallback).
+        if (!colorStr) {
+            colorStr = el && el.style && el.style.backgroundColor;
+        }
+        const colorName = classifyColor(colorStr);
+        if (_anonSelfName && name === _anonSelfName) {
+            return `${colorName} (You)`;
+        }
+        return colorName;
     }
     function anonymizeColonistDOM() {
         if (!streamerOn) return;
@@ -68,7 +107,7 @@
             if (txt.length > 30 || txt.includes(' ') && txt.length > 16) {
                 continue;
             }
-            const anon = anonLabelFor(txt);
+            const anon = anonLabelFor(txt, el);
             if (anon !== txt) {
                 el.textContent = anon;
                 el.dataset[STREAMER_DATA_FLAG] = anon;
@@ -110,8 +149,6 @@
                 document.querySelectorAll(
                     `[data-${STREAMER_DATA_FLAG.replace(/([A-Z])/g, '-$1').toLowerCase()}]`
                 ).forEach(el => delete el.dataset[STREAMER_DATA_FLAG]);
-                _anonMap.clear();
-                _anonSeq = 0;
             }
         });
     } catch (_) { /* extension context may be invalidated */ }
