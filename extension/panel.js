@@ -288,20 +288,55 @@
                             ? lib.computeStrategy(st)
                             : null;
                     } catch (_) {}
+                    // colonist color id → catanatron-shaped color
+                    // name + display hex. Standard convention from
+                    // capture inspection: 1=red, 2=blue, 3=orange,
+                    // 4=white, 5=green, 6=brown. Falls back to a
+                    // gray if a future variant adds new ids.
+                    const COLONIST_COLOR_NAME = {
+                        '1': 'RED', '2': 'BLUE', '3': 'ORANGE',
+                        '4': 'WHITE', '5': 'GREEN', '6': 'BROWN',
+                    };
+                    const COLONIST_COLOR_HEX = {
+                        '1': '#e8715f', '2': '#4aa7d4',
+                        '3': '#e29a4a', '4': '#f0f0f0',
+                        '5': '#7ac74f', '6': '#a07045',
+                    };
+                    const _colorName = (cid) =>
+                        COLONIST_COLOR_NAME[String(cid)] || `P${cid}`;
+                    const _colorHex = (cid) =>
+                        COLONIST_COLOR_HEX[String(cid)] || '#888';
                     // Self/opps blocks for the panel's status cards.
+                    // Field naming mirrors src/catanbot/bridge.py snap
+                    // shape: hand = {res:int}, cards = int total,
+                    // pieces = {settles, cities, roads}.
                     const selfHand = st.hands[st.selfColor]
                         || lib.newHand();
                     const totalSelf = (st.handTotal[st.selfColor]
                         ?? Object.values(selfHand)
                             .reduce((s, v) => s + v, 0));
-                    selfBlock = {
-                        color: st.selfColor,
-                        cards: selfHand,
-                        total: totalSelf,
-                        vp: st.vp[st.selfColor] || 0,
+                    const myPieces = {
                         settles: 5 - (selfBank?.settles ?? 5),
                         cities: 4 - (selfBank?.cities ?? 4),
                         roads: 15 - (selfBank?.roads ?? 15),
+                    };
+                    selfBlock = {
+                        username: _colorName(st.selfColorId),
+                        color: _colorName(st.selfColorId),
+                        color_css: _colorHex(st.selfColorId),
+                        hand: { ...selfHand },
+                        cards: totalSelf,
+                        afford: null,
+                        next_build: null,
+                        vp: st.vp[st.selfColor] || 0,
+                        hand_drift: false,
+                        pieces: myPieces,
+                        vp_breakdown: null,
+                        knights_played:
+                            st.playedKnights[st.selfColor] || 0,
+                        ports: [],
+                        production: null,
+                        monopoly_risk: null,
                         dev_cards: st.devCardsByType[st.selfColor]
                             || lib.newDevCardCounts(),
                         dev_total: st.devCardsTotal[st.selfColor] || 0,
@@ -309,32 +344,106 @@
                     for (const c of st.colors) {
                         if (c === st.selfColor) continue;
                         const ob = banks[c] || {};
-                        oppsBlock.push({
-                            color: c,
-                            total: st.handTotal[c] || 0,
-                            vp: st.vp[c] || 0,
+                        const oppPieces = {
                             settles: 5 - (ob.settles ?? 5),
                             cities: 4 - (ob.cities ?? 4),
                             roads: 15 - (ob.roads ?? 15),
-                            dev_total: st.devCardsTotal[c] || 0,
+                        };
+                        oppsBlock.push({
+                            username: _colorName(c),
+                            is_placeholder: false,
+                            color: _colorName(c),
+                            color_css: _colorHex(c),
+                            cards: st.handTotal[c] || 0,
+                            hand: null,
+                            unknown: 0,
+                            hand_tracked: false,
+                            card_delta: 0,
+                            card_delta_window: 0,
+                            vp: st.vp[c] || 0,
+                            dev_cards: st.devCardsTotal[c] || 0,
+                            dev_stash_risk: false,
+                            knights_played: st.playedKnights[c] || 0,
+                            pieces: oppPieces,
                         });
                     }
                 }
                 const lastRoll = st && st.rollHistory.length
                     ? st.rollHistory[st.rollHistory.length - 1] : null;
+                // Dev-card top-level fields the hint block reader uses.
+                // Self-only typed counts are authoritative; VP and
+                // playable break down from the typed counts.
+                let devHeld = 0, devVpHeld = 0, devNonVp = 0;
+                let devPlayable = 0;
+                if (st && st.selfColor) {
+                    const dev = st.devCardsByType[st.selfColor]
+                        || lib.newDevCardCounts();
+                    devVpHeld = dev.VICTORY_POINT || 0;
+                    devNonVp = (dev.KNIGHT || 0)
+                        + (dev.MONOPOLY || 0)
+                        + (dev.YEAR_OF_PLENTY || 0)
+                        + (dev.ROAD_BUILDING || 0);
+                    devHeld = devVpHeld + devNonVp;
+                    // Playable: standalone has no per-turn purchase
+                    // tracking, so we treat all non-VP cards as
+                    // playable. The "just bought / play next turn"
+                    // distinction stays bridge-only.
+                    devPlayable = devNonVp;
+                }
+                // Bank supply for the bank-row card. Standalone tracks
+                // each player's bank-remaining counts; the global
+                // resource bank (cards remaining in the deck) we don't
+                // have. Skip — renderer hides when missing.
+                // Opening phase: convert the JS opening-pick ranking
+                // into proper `opening_settlement` recommendations so
+                // the standard renderer's setup-phase rec block
+                // consumes them. We preempt the mid-game recs during
+                // opening because city/road/dev_card aren't legal yet.
+                let outRecs = recs;
+                if (inOpeningPhase) {
+                    const openingRecs = ranked.slice(0, 8).map((o) => {
+                        // Calibrate openings to the same 1-10 score
+                        // band the bridge ships. The advisor's `score`
+                        // typically lives in [0.20, 0.55]; map that
+                        // to [4, 10] so the renderer's strong/decent/
+                        // weak buckets line up.
+                        const s = Math.round(
+                            Math.min(10,
+                                Math.max(2, o.score * 14 + 2.5)
+                            ) * 10) / 10;
+                        return {
+                            kind: 'opening_settlement',
+                            when: 'now',
+                            score: s,
+                            detail: 'opening pick',
+                            node_id: o.nodeId,
+                            tiles: o.tiles,
+                            port: o.port || null,
+                            resources: o.resources || null,
+                        };
+                    });
+                    outRecs = openingRecs;
+                }
                 return {
                     seq: -2,
                     _source: 'standalone',
                     game_started: true,
+                    setup_phase: inOpeningPhase,
                     self: selfBlock,
                     opps: oppsBlock,
                     my_turn: myTurn,
-                    recommendations: recs,
+                    recommendations: outRecs,
                     knight_hint: knightH,
                     monopoly_hint: monoH,
                     yop_hint: yopH,
                     rb_hint: rbH,
                     strategy,
+                    dev_cards_held: devHeld,
+                    dev_cards_vp_held: devVpHeld,
+                    dev_cards_non_vp_held: devNonVp,
+                    dev_cards_playable: devPlayable,
+                    dev_cards_just_bought: 0,
+                    dev_cards_type_known: true,
                     robber_targets: robberTargets,
                     last_roll: lastRoll,
                     roll_history: st ? st.rollHistory.slice() : [],
@@ -1595,128 +1704,15 @@
             if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
             return;
         }
-        // Standalone "live without bridge" path — board built from
-        // the GameStart frame's mapState, opening picks scored by
-        // the JS recommender. Phase 3 of the standalone rollout;
-        // mid-game state mutations land later (events.js port).
-        if (snap && snap._source === 'standalone') {
-            const openings = snap._standaloneOpenings || [];
-            const boardInfo = snap._standaloneBoard || {};
-            const progress = snap._standaloneProgress || {};
-
-            // Phase header — opening / mid-game / etc. Standalone
-            // mode currently provides full recs only during the
-            // opening; mid-game we tell the user honestly that the
-            // bridge is needed for the rest.
-            const inOpening = progress.inOpeningPhase;
-            let phaseHeaderHtml = '';
-            if (progress.expectedOpeningSettles) {
-                const placedTotal = progress.settlesPlaced || 0;
-                const expected =
-                    progress.expectedOpeningSettles || 0;
-                const phaseStr = inOpening
-                    ? `OPENING — ${placedTotal}/${expected} placed`
-                    : 'MID-GAME';
-                let selfStr = '';
-                if (progress.selfSettlesPlaced != null) {
-                    selfStr = ` · you: `
-                        + `${progress.selfSettlesPlaced} settle`
-                        + (progress.selfSettlesPlaced === 1
-                           ? '' : 's');
-                }
-                const turnStr = snap.my_turn
-                    ? ' · your turn'
-                    : '';
-                phaseHeaderHtml =
-                    `<div class="sa-phase">`
-                    + `<span class="sa-phase-tag">${phaseStr}</span>`
-                    + `<span class="sa-phase-meta">${selfStr}${turnStr}</span>`
-                    + `</div>`;
-            }
-
-            let openingsHtml = '';
-            if (inOpening && openings.length) {
-                const rows = openings.map((r, i) => {
-                    const tilesStr = (r.tiles || [])
-                        .map(([res, num]) =>
-                            `<span class="sa-tile">`
-                            + (res === 'DESERT' ? '🏜'
-                                : (iconFor(res) || res.slice(0, 2)))
-                            + (num ? `<b>${num}</b>` : '')
-                            + `</span>`)
-                        .join('');
-                    const portStr = r.port
-                        ? `<span class="sa-port">⚓ ${r.port.kind}`
-                            + (r.port.resource
-                                ? ' ' + r.port.resource.toLowerCase()
-                                : '')
-                            + `</span>`
-                        : '';
-                    return `<div class="sa-rec">`
-                        + `<span class="sa-rank">${i + 1}.</span>`
-                        + `<span class="sa-score">`
-                            + r.score.toFixed(2) + `</span>`
-                        + `<span class="sa-tiles">${tilesStr}</span>`
-                        + portStr
-                        + `</div>`;
-                }).join('');
-                openingsHtml =
-                    `<div class="sa-section-h">opening picks</div>`
-                    + rows;
-            } else if (!openings.length) {
-                openingsHtml =
-                    `<div class="muted">building board…</div>`;
-            } else {
-                // Mid-game: clearly explain the limitation. Show
-                // the static opening picks below as a reference
-                // but make the status front-and-center.
-                openingsHtml =
-                    `<div class="sa-midgame">`
-                    + `<div class="sa-mg-head">`
-                    + `mid-game recs need the bridge`
-                    + `</div>`
-                    + `<div class="sa-mg-body">`
-                    + `Standalone mode covers opening picks. `
-                    + `For mid-game recommendations (settle/city/`
-                    + `road choices, dev-card play timing, robber `
-                    + `targets, trade evaluation), install the `
-                    + `local Python bridge.`
-                    + `</div>`
-                    + `<div class="sa-mg-actions">`
-                    + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
-                    + `target="_blank" rel="noopener" class="nb-btn">`
-                    + `install bridge →</a>`
-                    + `</div>`
-                    + `</div>`;
-            }
-
-            ui.content.innerHTML =
-                `<div class="standalone-frame">`
-                + `<div class="sa-banner">`
-                + `<span class="sa-pill">standalone</span>`
-                + `<span class="sa-meta">`
-                + `${boardInfo.tiles || '?'} tiles · `
-                + `${boardInfo.ports || '?'} ports · `
-                + `local recommender`
-                + `</span>`
-                + `</div>`
-                + phaseHeaderHtml
-                + openingsHtml
-                + `<div class="sa-footnote">`
-                + `<b>Want more?</b> The local Python bridge unlocks `
-                + `mid-game recs, dev-card play timing, robber `
-                + `targets, opponent inference, and post-game `
-                + `analysis. `
-                + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
-                + `target="_blank" rel="noopener">install docs →</a>`
-                + `</div>`
-                + `</div>`;
-            if (ui.histHost) ui.histHost.classList.add('hidden');
-            if (ui.evalHost) ui.evalHost.classList.add('hidden');
-            if (ui.mqHost) ui.mqHost.classList.add('hidden');
-            if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
-            return;
-        }
+        // Standalone "live without bridge" path: the snap is shaped
+        // like a bridge snap (recs, hints, self/opps, strategy, roll
+        // history). We let the standard renderer below consume it
+        // unchanged. The only standalone-specific UI is a thin pill
+        // appended to the panel's variant badge so the user knows
+        // the recs are coming from the JS recommender, not the
+        // bridge. Inserted via dataset hook so panel.css can style it.
+        // No early return — standard render continues with the rich
+        // snap.
         // Streamer mode: build username→color lookup at the top of
         // every render so anonName can resolve "Blue (You)" / "Red"
         // labels by looking up each player's color from the snap.
@@ -1786,7 +1782,24 @@
         // colonist will actually let you pick.
         ui.panel.dataset.friendlyRobber = snap.friendly_robber_active
             ? '1' : '0';
+        // Standalone mode flag — drives a "no-bridge" pill in the
+        // header so the user knows recs are coming from the JS
+        // recommender rather than the local bridge. Cleared the
+        // moment a real bridge snap shows up (different _source).
+        ui.panel.dataset.standalone =
+            (snap._source === 'standalone') ? '1' : '0';
         const parts = [];
+        // Top-of-content STANDALONE banner — small, dismiss-free.
+        // Tells the user the source of recs without pretending the
+        // panel is bridge-connected.
+        if (snap._source === 'standalone') {
+            parts.push(
+                '<div class="standalone-banner">'
+                + '<span class="sb-pill">STANDALONE</span> '
+                + '<span class="sb-meta">no bridge — '
+                + 'JS recommender</span>'
+                + '</div>');
+        }
         // WIN THIS TURN banner — highest-priority signal. Renders above
         // every other HUD element so Noah never misses a single-move
         // win. Covers: settle/city (+1 VP), road→LR (+2 VP), knight→LA
