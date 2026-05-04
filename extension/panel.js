@@ -1127,6 +1127,20 @@
         _standalone._lib = lib;
     }).catch(() => { /* import failed; standalone path silent */ });
 
+    // Frame replay — when the panel mounts mid-game, the GameStart
+    // frame already happened. Ask background.js to re-broadcast its
+    // cached copy so the standalone path can build the board without
+    // waiting for the user to start a new game. Fired once on
+    // load + again every 30s as a safety net (colonist resync, etc.).
+    function _requestReplay() {
+        try {
+            chrome.runtime.sendMessage({ type: 'request-replay' })
+                .catch(() => {});
+        } catch (_) {}
+    }
+    _requestReplay();
+    setInterval(_requestReplay, 30000);
+
     // Auto-open postmortem when the bridge reports a new one.
     // `latest_postmortem.seq` increments each time _write_postmortem
     // succeeds; we ask the service worker to open a tab next to the

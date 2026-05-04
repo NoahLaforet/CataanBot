@@ -12,6 +12,61 @@
 
 const BRIDGE_BASE = 'http://127.0.0.1:8765';
 
+// Frame replay cache. The standalone path needs the most-recent
+// GameStart frame (the one carrying mapState) to build the JS board,
+// and the most-recent full-state frame (anything with playerStates
+// or mechanic*State) to populate hands / buildings. When the side
+// panel mounts AFTER those frames already passed (user opened the
+// panel mid-game, reloaded the panel during a game, etc.) the panel
+// asks us to replay them via 'request-replay'. We keep:
+//
+//   lastGameStartFrame — first frame after a (re)connect that ships
+//     a tileHexStates payload. Replaced on each new GameStart.
+//   lastStateFrame     — most recent frame carrying playerStates
+//     so opening progress / hands can be reconstructed without
+//     waiting for the next state delta.
+let lastGameStartFrame = null;
+let lastStateFrame = null;
+// Base64 boundary-aligned variants of the key strings. msgpack
+// embeds string keys as raw ascii at unpredictable byte offsets, so
+// we check all three b64 phasings and accept any match.
+function _b64Variants(s) {
+    // Wrap s with 0..2 leading bytes so the b64 alignment shifts.
+    // Then take the middle slice that's guaranteed to be in the
+    // encoded version of `s` regardless of the alignment.
+    const out = [];
+    for (let pad = 0; pad < 3; pad += 1) {
+        const padded = '\x00'.repeat(pad) + s + '\x00'.repeat((3 - (pad + s.length) % 3) % 3);
+        // base64 manually
+        let bin = '';
+        for (let i = 0; i < padded.length; i += 1) {
+            bin += padded.charCodeAt(i).toString(2).padStart(8, '0');
+        }
+        let b64 = '';
+        const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        for (let i = 0; i < bin.length; i += 6) {
+            b64 += CHARS[parseInt(bin.slice(i, i + 6).padEnd(6, '0'), 2)];
+        }
+        // Skip the padded-byte chunks at start/end so we get a
+        // substring that's stable across this alignment.
+        const startSkip = Math.ceil((pad * 8) / 6);
+        const endSkip = pad === 0 ? 0 : Math.ceil(((3 - (pad + s.length) % 3) % 3 * 8) / 6);
+        const slice = b64.slice(startSkip, b64.length - endSkip);
+        if (slice.length >= 8) out.push(slice);
+    }
+    return out;
+}
+const _GAMESTART_B64S = _b64Variants('tileHexStates');
+const _PLAYERSTATES_B64S = _b64Variants('playerStates');
+function _frameLooksLikeGameStart(frame) {
+    if (!frame || frame.kind !== 'arraybuffer' || !frame.b64) return false;
+    return _GAMESTART_B64S.some(v => frame.b64.includes(v));
+}
+function _frameLooksLikeState(frame) {
+    if (!frame || frame.kind !== 'arraybuffer' || !frame.b64) return false;
+    return _PLAYERSTATES_B64S.some(v => frame.b64.includes(v));
+}
+
 chrome.runtime.onInstalled.addListener(() => {
     // Open the side panel on action-icon click. Chrome's side-panel
     // API requires this opt-in; without it the icon does nothing.
@@ -86,13 +141,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || typeof msg !== 'object') return false;
     if (msg.type === 'ws-frame') {
         postJson(`${BRIDGE_BASE}/ws`, msg.frame);
-        // Also broadcast the frame to all extension contexts (the
-        // side panel listens for these). The panel uses them as
-        // its data source when the local bridge is unreachable —
-        // standalone mode runs the JS recommender directly off
-        // the same colonist WS frames the bridge would have
-        // consumed. When the bridge IS up, the panel ignores
-        // the broadcast and uses /advisor as before.
+        // Cache for the replay path so a panel that opens mid-game
+        // can recover the GameStart + most-recent state without
+        // waiting for the next colonist delta.
+        if (_frameLooksLikeGameStart(msg.frame)) {
+            lastGameStartFrame = msg.frame;
+        }
+        if (_frameLooksLikeState(msg.frame)) {
+            lastStateFrame = msg.frame;
+        }
+        // Broadcast the frame to all extension contexts (the side
+        // panel listens for these). The panel uses them as its data
+        // source when the local bridge is unreachable — standalone
+        // mode runs the JS recommender directly off the same colonist
+        // WS frames the bridge would have consumed. When the bridge
+        // IS up, the panel ignores the broadcast and uses /advisor.
         try {
             chrome.runtime.sendMessage({
                 type: 'ws-frame-broadcast', frame: msg.frame,
@@ -101,6 +164,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // Don't await — service worker shouldn't hold the message
         // channel open just so a fire-and-forget POST can resolve.
         return false;
+    }
+    if (msg.type === 'request-replay') {
+        // Side panel just mounted. Replay the cached GameStart +
+        // last state frame so the standalone path can recover its
+        // state without waiting for the next colonist delta. Both
+        // frames go through the same broadcast channel a live
+        // frame would, so the panel listener handles them
+        // identically.
+        try {
+            if (lastGameStartFrame) {
+                chrome.runtime.sendMessage({
+                    type: 'ws-frame-broadcast',
+                    frame: lastGameStartFrame,
+                    replay: true,
+                }).catch(() => {});
+            }
+            if (lastStateFrame
+                    && lastStateFrame !== lastGameStartFrame) {
+                chrome.runtime.sendMessage({
+                    type: 'ws-frame-broadcast',
+                    frame: lastStateFrame,
+                    replay: true,
+                }).catch(() => {});
+            }
+        } catch (_) {}
+        if (sendResponse) sendResponse({
+            ok: true,
+            had_game_start: !!lastGameStartFrame,
+            had_state: !!lastStateFrame,
+        });
+        return true;
+    }
+    if (msg.type === 'reset-replay-cache') {
+        lastGameStartFrame = null;
+        lastStateFrame = null;
+        if (sendResponse) sendResponse({ ok: true });
+        return true;
     }
     if (msg.type === 'log-entry') {
         postJson(`${BRIDGE_BASE}/log`, msg.payload);
