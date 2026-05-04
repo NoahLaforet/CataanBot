@@ -12,6 +12,51 @@ Built on top of [catanatron](https://github.com/bcollazo/catanatron)
 (Python Catan engine) — handcrafted heuristics + 1-ply state-eval
 search, no ML.
 
+## Architecture
+
+```
+   ┌──────────────────────────┐
+   │      colonist.io         │
+   │   (browser game tab)     │
+   └──────────┬───────────────┘
+              │
+       inject.js           content.js
+   (page-world WS hook)  (DOM-log scraper)
+              │                 │
+              └────────┬────────┘
+                       ▼
+              chrome runtime
+                       │
+                       ▼
+              background.js   ← Chrome MV3 service worker
+                       │
+                       ▼
+              POST /ws  +  POST /log
+                       │
+                       ▼
+              ┌────────────────────────┐
+              │   FastAPI bridge       │  127.0.0.1:8765
+              │   (Python, local)      │
+              │                        │
+              │  • event parser        │
+              │  • catanatron tracker  │
+              │  • recommender         │
+              │  • postmortem render   │
+              └────────┬───────────────┘
+                       │
+              GET /advisor  (snapshot, polled ~1Hz)
+                       │
+                       ▼
+              ┌────────────────────────┐
+              │   Chrome side panel    │  panel.js / panel.css
+              │   (the HUD)            │
+              └────────────────────────┘
+```
+
+The bridge runs locally — your game state never leaves your
+machine. The Chrome extension's only network destination is
+`127.0.0.1:8765`.
+
 ---
 
 ## What it does, today
