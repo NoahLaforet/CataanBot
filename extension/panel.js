@@ -547,14 +547,12 @@
                 localStorage.setItem(
                     'catanbot.streamer', on ? '1' : '0');
             } catch (_) {}
-            // Force a render with the new flag — but only after the
-            // poll loop has populated latestAdvisorSnap. At init time
-            // (before the first tick) latestAdvisorSnap is null and
-            // we just let the next ~1s poll re-render naturally.
-            if (typeof latestAdvisorSnap !== 'undefined'
-                    && latestAdvisorSnap) {
-                renderOverlay(ui, latestAdvisorSnap, true);
-            }
+            // Cross-closure dirty flag — the polling tick reads this
+            // and forces a re-render even when snap.seq hasn't moved.
+            // Lets the toggle take effect on the next poll (≤1s)
+            // instead of waiting for the next game frame, which can
+            // be many seconds off-turn.
+            window.__catanbotRenderDirty = true;
         }
         try {
             const savedStreamer =
@@ -2545,7 +2543,14 @@
             // present, a full rebuild if not.
             ui = mountOverlay() || ui;
             getJson(BRIDGE_ADVISOR_URL).then((snap) => {
-                if (snap && snap.seq !== lastSeq) {
+                // Settings outside this closure (streamer mode, etc.)
+                // can set window.__catanbotRenderDirty to force a
+                // re-render even when seq hasn't changed — so toggle
+                // changes take effect immediately, not "whenever the
+                // next game frame arrives" (could be many seconds).
+                const dirty = !!window.__catanbotRenderDirty;
+                window.__catanbotRenderDirty = false;
+                if (snap && (snap.seq !== lastSeq || dirty)) {
                     lastSeq = snap.seq;
                     lastSnap = snap;
                     latestAdvisorSnap = snap;
