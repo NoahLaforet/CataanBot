@@ -771,6 +771,8 @@
         const mqHost = document.getElementById('mq-host');
         const mqTally = document.getElementById('mq-tally');
         const mqLast = document.getElementById('mq-last');
+        const devDeckHost = document.getElementById('dev-deck-host');
+        const devDeck = document.getElementById('dev-deck');
         // Pre-populate the 11 columns once. renderOverlay only mutates
         // bar heights + class flags from here on — the column DOM never
         // gets rebuilt, which is what lets CSS height transitions fire
@@ -796,6 +798,7 @@
             histHost, hist, histTotal,
             evalHost, evalGraph, evalLine, evalFill, evalDot, evalCur,
             mqHost, mqTally, mqLast,
+            devDeckHost, devDeck,
             variantBadge,
         };
     }
@@ -836,6 +839,7 @@
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
+            if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
             return;
         }
         if (!snap.game_started) {
@@ -844,6 +848,7 @@
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
+            if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
             // Clear header pills too — they shouldn't persist across
             // a reset/new-game while the next game's settings load.
             ui.panel.dataset.variant = 'classic';
@@ -876,6 +881,10 @@
                 ui.panel.dataset.variant = 'classic';
                 ui.variantBadge.textContent = '';
                 ui.variantBadge.title = '';
+            } else if (snap.variant_recs_disabled) {
+                ui.panel.dataset.variant = 'non-classic';
+                ui.variantBadge.textContent = 'variant — recs OFF';
+                ui.variantBadge.title = `${variant} — bot can't track this map's node IDs reliably (catanatron underneath only models classic). Recommendations suppressed to avoid suggesting occupied corners. Histogram + opp tracking still work.`;
             } else {
                 ui.panel.dataset.variant = 'non-classic';
                 ui.variantBadge.textContent = 'variant map';
@@ -1005,9 +1014,9 @@
                 .filter(([, n]) => n > 0)
                 .map(([r, n]) => {
                     const cls = (r === monoRes) ? ' class="mono-risk"' : '';
-                    return `<span${cls}>${n} ${iconFor(r)}</span>`;
+                    return `<span${cls}>${iconFor(r)} ${n}</span>`;
                 })
-                .join('  ') || '<span class="muted">∅</span>';
+                .join('') || '<span class="muted">∅</span>';
             parts.push(`<div class="hand">${hand}</div>`);
             if (me.monopoly_risk) {
                 const mr = me.monopoly_risk;
@@ -1034,7 +1043,7 @@
                 // "nothing buildable" because it says what to aim for.
                 const nb = me.next_build;
                 const missingStr = Object.entries(nb.missing || {})
-                    .map(([r, n]) => `${n} ${iconFor(r)}`)
+                    .map(([r, n]) => `${iconFor(r)} ${n}`)
                     .join(' + ');
                 parts.push(`<div class="afford near">`
                     + `<span class="b-ico">⏳</span> ${missingStr}`
@@ -1525,9 +1534,55 @@
             // header (knight ×N, monopoly ×N) and stand out visually.
             parts.push(devBlocks.join(''));
         }
+        // Robber targets — render INSIDE recs-flow so the ranking sits
+        // right under the recommendations instead of below all the cards
+        // (which forced Noah to scroll every time he played a knight or
+        // rolled a 7). Only rendered on self's turn — the 'placed'
+        // window from a previous self-turn shouldn't carry into the
+        // next opp's turn (stale ranking). The bridge clears
+        // robber_snapshot on the next non-7 roll, but turn transitions
+        // can race past that, so double-gate here.
+        if (snap.my_turn
+            && (snap.robber_targets || []).length
+            && (snap.robber_pending
+                || snap.robber_reason === 'knight'
+                || snap.robber_reason === 'placed')) {
+            const rhTxt = snap.robber_reason === 'knight'
+                ? 'knight → robber targets'
+                : snap.robber_reason === 'placed'
+                    ? 'robber placed · ranking'
+                    : 'robber targets';
+            parts.push(`<div class="robber-h">${rhTxt}</div>`);
+            parts.push('<table class="robber">');
+            for (let i = 0; i < snap.robber_targets.length; i++) {
+                const t = snap.robber_targets[i];
+                const tile = t.resource
+                    ? `${iconFor(t.resource)}${t.number ?? ''}`
+                    : 'DES';
+                const victims = (t.victims || []).map(v => {
+                    const bg = v.color_css || COLOR_HEX[v.color] || '#888';
+                    const fg = contrastText(bg);
+                    const star = v.suggested ? '★' : '';
+                    const pill = `<span class="color-pill" style="background:${bg};`
+                        + `color:${fg};font-size:calc(10px * var(--font-scale));${
+                            v.suggested ? 'outline:2px solid #ffd36e;' : ''
+                        }">${escapeHtml((v.color || '?').slice(0, 1))}</span>`;
+                    const label = `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
+                    return v.suggested
+                        ? `<span class="victim-top">${star}${label}</span>`
+                        : label;
+                }).join(' ') || '<span class="muted">—</span>';
+                parts.push(`<tr>`
+                    + `<td>${i + 1}.</td>`
+                    + `<td>${tile}</td>`
+                    + `<td>${t.score > 0 ? '+' : ''}${t.score}</td>`
+                    + `<td>${victims}</td></tr>`);
+            }
+            parts.push('</table>');
+        }
         // Close .recs-flow — everything above (recs, plan-ahead, long-game,
-        // dev-card hints) is "what to do this turn" and floats above the
-        // self/opps panels via CSS flex order.
+        // dev-card hints, robber-targets) is "what to do this turn" and
+        // floats above the self/opps panels via CSS flex order.
         parts.push('</div>');
         if ((snap.opps || []).length) {
             parts.push('<div class="sec-h sec-opps">opponents</div>');
@@ -1547,14 +1602,14 @@
                 const hand = o.hand || {};
                 for (const [res, n] of Object.entries(hand)) {
                     if (n > 0) {
-                        handParts.push(`${n} ${iconFor(res)}`);
+                        handParts.push(`<span>${iconFor(res)} ${n}</span>`);
                     }
                 }
                 if ((o.unknown || 0) > 0) {
-                    handParts.push(`${o.unknown} ?`);
+                    handParts.push(`<span>? ${o.unknown}</span>`);
                 }
                 const breakdown = handParts.length
-                    ? `<span class="opp-hand">${handParts.join('  ')}</span>`
+                    ? `<span class="opp-hand">${handParts.join('')}</span>`
                     : '';
                 const trackCls = o.hand_tracked ? ' tracked' : '';
                 // Hand-drift indicator. When an opp has 2+ unknown
@@ -1699,13 +1754,13 @@
                 ? `<span class="color-pill" style="background:${bg};`
                     + `color:${fg};">${escapeHtml(t.offerer)}</span> `
                 : '';
-            // Pack -> "1 🧱 2 🐑" for both sides of the swap.
+            // Pack -> "🧱 1 🐑 2" for both sides of the swap.
             const fmtSide = (pack) => {
                 const keys = Object.keys(pack || {});
                 if (!keys.length) return '∅';
                 return keys
                     .filter(r => pack[r] > 0)
-                    .map(r => `${pack[r]} ${iconFor(r)}`)
+                    .map(r => `${iconFor(r)} ${pack[r]}`)
                     .join(' ');
             };
             const verdictCls = ['accept', 'decline', 'consider']
@@ -1773,11 +1828,11 @@
                 const bPairs = Object.entries(y.blocked || {})
                     .filter(([_, n]) => n > 0);
                 const gained = gPairs.length
-                    ? gPairs.map(([r, n]) => `+${n} ${iconFor(r)}`).join(' ')
+                    ? gPairs.map(([r, n]) => `${iconFor(r)} +${n}`).join(' ')
                     : '';
                 const blocked = bPairs.length
                     ? ' <span class="roll-blocked">blocked: '
-                        + bPairs.map(([r, n]) => `${n} ${iconFor(r)}`).join(' ')
+                        + bPairs.map(([r, n]) => `${iconFor(r)} ${n}`).join(' ')
                         + '</span>'
                     : '';
                 if (gained || blocked) {
@@ -1927,7 +1982,7 @@
         if (snap.discard_hint && snap.discard_hint.need > 0) {
             const dh = snap.discard_hint;
             const dropText = Object.entries(dh.drop)
-                .map(([res, n]) => `${n} ${iconFor(res)}`)
+                .map(([res, n]) => `${iconFor(res)} ${n}`)
                 .join(' · ');
             parts.push('<div class="discard-hint">');
             parts.push(`<div class="dh-h">`
@@ -1947,7 +2002,7 @@
         if (snap.seven_prep && !snap.discard_hint) {
             const sp = snap.seven_prep;
             const dropText = Object.entries(sp.would_drop || {})
-                .map(([res, n]) => `${n} ${iconFor(res)}`)
+                .map(([res, n]) => `${iconFor(res)} ${n}`)
                 .join(' · ');
             const cls = sp.level === 'danger'
                 ? 'seven-prep danger'
@@ -1991,59 +2046,51 @@
             }
             parts.push('</div>');
         }
-        // Robber targets only render on self's turn. The 'placed'
-        // window from a previous self-turn shouldn't carry over into
-        // the next opp's turn — the ranking is stale by then and just
-        // adds noise. (The bridge clears robber_snapshot on the next
-        // non-7 roll, but turn transitions can race past that, so
-        // double-gate here.)
-        if (snap.my_turn
-            && (snap.robber_targets || []).length
-            && (snap.robber_pending
-                || snap.robber_reason === 'knight'
-                || snap.robber_reason === 'placed')) {
-            // Header depends on why targets are showing: a forced 7-roll
-            // placement is urgent ("robber targets"); a knight-held hint
-            // is advisory ("knight → robber targets"); a "placed" state
-            // lingers after placement so Noah can see the ranking through
-            // the rest of the turn ("robber placed — ranking").
-            const rhTxt = snap.robber_reason === 'knight'
-                ? 'knight → robber targets'
-                : snap.robber_reason === 'placed'
-                    ? 'robber placed · ranking'
-                    : 'robber targets';
-            parts.push(`<div class="robber-h">${rhTxt}</div>`);
-            parts.push('<table class="robber">');
-            for (let i = 0; i < snap.robber_targets.length; i++) {
-                const t = snap.robber_targets[i];
-                const tile = t.resource
-                    ? `${iconFor(t.resource)}${t.number ?? ''}`
-                    : 'DES';
-                const victims = (t.victims || []).map(v => {
-                    const bg = v.color_css || COLOR_HEX[v.color] || '#888';
-                    const fg = contrastText(bg);
-                    const star = v.suggested ? '★' : '';
-                    const pill = `<span class="color-pill" style="background:${bg};`
-                        + `color:${fg};font-size:calc(10px * var(--font-scale));${
-                            v.suggested ? 'outline:2px solid #ffd36e;' : ''
-                        }">${escapeHtml((v.color || '?').slice(0, 1))}</span>`;
-                    const label = `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
-                    return v.suggested
-                        ? `<span class="victim-top">${star}${label}</span>`
-                        : label;
-                }).join(' ') || '<span class="muted">—</span>';
-                parts.push(`<tr>`
-                    + `<td>${i + 1}.</td>`
-                    + `<td>${tile}</td>`
-                    + `<td>${t.score > 0 ? '+' : ''}${t.score}</td>`
-                    + `<td>${victims}</td></tr>`);
-            }
-            parts.push('</table>');
-        }
         ui.content.innerHTML = parts.join('');
         renderHistogram(ui, snap);
         renderEvalGraph(ui, snap);
         renderMoveQuality(ui, snap);
+        renderDevDeckByType(ui, snap);
+    }
+
+    // Dev-deck remaining-by-type strip — base deck count minus
+    // PLAYED_{type} summed across all seats. Tells Noah at a glance
+    // whether knights are scarce (LA contestability), monopolies are
+    // depleted (no more big-pot risk), etc. Lives at the very bottom
+    // of the HUD per Noah's 2026-05-02 ask. VP cards intentionally
+    // dropped — they sit hidden in hands and never log a "played"
+    // action so we can't infer remaining from plays.
+    function renderDevDeckByType(ui, snap) {
+        if (!ui || !ui.devDeckHost) return;
+        const dd = (snap && snap.dev_deck) || null;
+        const byType = (dd && dd.by_type) || null;
+        if (!byType) {
+            ui.devDeckHost.classList.add('hidden');
+            return;
+        }
+        ui.devDeckHost.classList.remove('hidden');
+        const ORDER = ['KNIGHT', 'MONOPOLY', 'ROAD_BUILDING',
+                       'YEAR_OF_PLENTY'];
+        const LABEL = {
+            KNIGHT: 'kn', MONOPOLY: 'mn',
+            ROAD_BUILDING: 'rb', YEAR_OF_PLENTY: 'yop',
+        };
+        const cells = [];
+        for (const type of ORDER) {
+            const t = byType[type];
+            if (!t) continue;
+            const remaining = Number(t.remaining || 0);
+            const base = Number(t.base || 0);
+            const cls = remaining === 0 ? 'dev-cell out'
+                : remaining <= 1 ? 'dev-cell low' : 'dev-cell';
+            cells.push(
+                `<span class="${cls}" title="${type.toLowerCase()} `
+                + `· ${remaining} of ${base} remaining (in deck or held)">`
+                + `<span class="dev-lbl">${LABEL[type]}</span>`
+                + `<span class="dev-num">${remaining}</span>`
+                + '</span>');
+        }
+        ui.devDeck.innerHTML = cells.join('');
     }
 
     // 36-roll baseline weights — number of dice combos that produce

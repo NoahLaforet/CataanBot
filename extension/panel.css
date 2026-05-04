@@ -350,10 +350,12 @@
   }
 
   /* Hand row — resource counts, big and airy. Bumped to 17px so the
-     resource counts are legible at a glance without leaning in. */
+     resource counts are legible at a glance without leaning in.
+     Cells render icon-first so the eye lands on the resource, then
+     reads the number. Separator bars between cells make it obvious
+     which number belongs to which resource. */
   .hand {
     display: flex; flex-wrap: wrap;
-    gap: var(--s-2) var(--s-5);
     padding: var(--s-2) 0;
     font-size: calc(17px * var(--font-scale));
     font-weight: 600;
@@ -362,7 +364,17 @@
   }
   .hand span {
     display: inline-flex; align-items: center;
-    gap: 3px;
+    gap: 5px;
+    padding: 0 10px;
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  .hand span:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .hand .muted {
+    border-left: 0;
+    padding-left: 0;
   }
   .hand .mono-risk {
     color: var(--watch);
@@ -523,8 +535,17 @@
     font-size: calc(16px * var(--font-scale));
     font-weight: 600;
     display: inline-flex; flex-wrap: wrap;
-    gap: var(--s-1) var(--s-3);
     margin-left: var(--s-2);
+  }
+  .opp .opp-hand > span {
+    display: inline-flex; align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    border-left: 1px solid rgba(255, 255, 255, 0.16);
+  }
+  .opp .opp-hand > span:first-child {
+    padding-left: 0;
+    border-left: 0;
   }
   .opp.tracked .opp-hand { color: var(--pos); }
   /* Untracked = at least one hidden steal/discard moved cards we
@@ -892,6 +913,44 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
   }
+
+  /* Dev-deck remaining-by-type strip — knight / monopoly / road-bldg /
+     YoP. VP cards excluded (plays not logged). Lives at the very
+     bottom of the body so it doesn't compete with active recs. */
+  .dev-deck-host {
+    margin: var(--s-3) 0 var(--s-2);
+  }
+  .dev-deck-host.hidden { display: none; }
+  .dev-deck-host .dev-deck-h {
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+    margin: 0 0 var(--s-2);
+  }
+  .dev-deck {
+    display: flex; gap: var(--s-2); flex-wrap: wrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .dev-deck .dev-cell {
+    display: inline-flex; align-items: baseline; gap: 5px;
+    padding: 3px 8px;
+    background: var(--bg-3);
+    border-radius: var(--radius-sm);
+    font-size: calc(13px * var(--font-scale));
+    color: var(--fg);
+  }
+  .dev-deck .dev-cell.low { color: var(--watch); }
+  .dev-deck .dev-cell.out { color: var(--alert); opacity: 0.7; }
+  .dev-deck .dev-lbl {
+    color: var(--fg-dim);
+    font-size: calc(11px * var(--font-scale));
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .dev-deck .dev-num { font-weight: 700; }
 
   .yield-sum {
     color: var(--fg-mute);
@@ -2127,7 +2186,6 @@ html, body, .panel {
 .hand {
   font-size: 14px !important;
   font-weight: 500 !important;
-  gap: 4px 12px !important;
 }
 .afford {
   font-size: 13px !important;
