@@ -103,6 +103,16 @@ class TradeOfferEvent:
     player: str
     give: dict[str, int]
     want: dict[str, int]  # may be {} if the offer is open-ended
+    offer_id: str | None = None  # WS-side colonist offer id; None for DOM-log
+
+
+@dataclass
+class TradeCloseEvent:
+    """A standing trade offer was withdrawn / declined / expired with no
+    commit. Mirrors colonist's ``activeOffers[id] = null`` and
+    ``closedOffers[id]`` signals so the HUD's incoming-trade banner can
+    clear the moment the offer's decision window closes."""
+    offer_id: str
 
 
 @dataclass
