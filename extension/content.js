@@ -195,7 +195,12 @@
         scroller.querySelectorAll(SEL.entry).forEach(processEntry);
 
         const observer = new MutationObserver((mutations) => {
-            if (!isAtBottom(scroller)) return;
+            // No isAtBottom gate — when Noah scrolled up to read chat
+            // history mid-game, log_events would silently fall to 0
+            // because every new entry was filtered out. Per-node
+            // dedup via dataset[NODE_KEY_ATTR] + recentSeen handles
+            // any double-processing risk; we don't need the scroll
+            // guard.
             for (const m of mutations) {
                 m.addedNodes.forEach((n) => {
                     if (!(n instanceof Element)) return;
@@ -213,9 +218,9 @@
         // missed. MutationObservers can batch rapid insertions
         // (common on colonist's virtualized list) and occasionally
         // skip nodes; the per-node dedup above means re-scanning is
-        // cheap and idempotent.
+        // cheap and idempotent. Same no-isAtBottom-gate reasoning as
+        // the observer above.
         setInterval(() => {
-            if (!isAtBottom(scroller)) return;
             scroller.querySelectorAll(SEL.entry).forEach(processEntry);
         }, 500);
     }
