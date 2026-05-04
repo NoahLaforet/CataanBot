@@ -275,3 +275,27 @@ def test_vp_weight_scales_with_custom_target():
     assert _vp_weight(3, vp_target=12) == 1.0
     assert _vp_weight(4, vp_target=12) == 1.0
     assert _vp_weight(7, vp_target=12) == pytest.approx(2.2)
+
+
+def test_weighted_raw_production_boosts_wheat():
+    """Reddit 36k-game finding #2: wheat is the #1 winning resource
+    (used in every major build). _weighted_raw_production should
+    return a higher number for an equal-pip wheat node vs an equal-
+    pip non-wheat node so the opening eval reads wheat as more
+    valuable per card.
+    """
+    from cataanbot.advisor import _weighted_raw_production
+
+    # Same total cards/roll, different resource composition.
+    wheat_node = {"WHEAT": 0.139, "BRICK": 0.083}
+    ore_node   = {"ORE":   0.139, "BRICK": 0.083}
+    assert (_weighted_raw_production(wheat_node)
+            > _weighted_raw_production(ore_node)), (
+        "wheat-bearing corner should score above an ore-bearing "
+        "corner of equal total pip production")
+    # Bias is small enough not to swamp diversity differences.
+    diff = (_weighted_raw_production(wheat_node)
+            - _weighted_raw_production(ore_node))
+    assert diff < 0.05, (
+        f"wheat bias is too aggressive: {diff:.4f} cards/roll over "
+        f"the equal-pip baseline")

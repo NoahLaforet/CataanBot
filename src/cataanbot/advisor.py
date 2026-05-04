@@ -44,6 +44,31 @@ class NodeScore:
 _DIVERSITY_BY_COUNT = {0: 1.0, 1: 1.0, 2: 1.05, 3: 1.15}
 
 
+# Per-resource weight applied to ``node_production`` cards-per-roll
+# before raw is summed. Reddit 36k-game finding #2: wheat is the #1
+# winning resource — used in every major build (settle, city, dev
+# card). The flat sum treats it as equal-value-per-card with brick
+# and ore, which under-weights wheat-bearing corners against ore-
+# heavy stacks that benefit from the standard layout's clustering of
+# 6/8 tiles on ore. The 1.10× boost is intentionally small: a real
+# tiebreaker but never enough to flip across the diversity boundary
+# on its own.
+_RESOURCE_WEIGHT: dict[str, float] = {
+    "WHEAT": 1.10,
+    "WOOD": 1.0,
+    "BRICK": 1.0,
+    "SHEEP": 1.0,
+    "ORE": 1.0,
+}
+
+
+def _weighted_raw_production(counter: dict) -> float:
+    """raw production with the WHEAT bias applied. Equivalent to
+    ``sum(counter.values())`` when all weights are 1.0."""
+    return float(sum(
+        v * _RESOURCE_WEIGHT.get(r, 1.0) for r, v in counter.items()))
+
+
 def _port_bonus(port_label: str | None, resources: dict[str, float]) -> float:
     """Additive bonus for port access, scaled by production alignment.
 
@@ -134,7 +159,7 @@ def score_opening_nodes(game: "Game",
     scratch: dict[int, dict] = {}
     for node_id in land_nodes:
         counter = m.node_production.get(node_id, {})
-        raw = float(sum(counter.values()))
+        raw = _weighted_raw_production(counter)
         resources = {r: float(v) for r, v in counter.items()}
 
         distinct = sum(1 for v in resources.values() if v > 0)
