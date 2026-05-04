@@ -943,6 +943,24 @@ def recommend_actions(
     # self building; cheap but not zero-cost.
     self_expected = _compute_self_expected_per_roll(
         m, game.state.board, c)
+    # Third-settle expansion bump (Reddit 36k-game finding #1: winners
+    # build #3 settle 6.7-8.7 turns earlier than losers; biggest pre-
+    # mid-game predictor). When self has built only the opening 2
+    # footprints (2 settles, 0 cities), expand-the-board plays should
+    # outrank cities/roads of similar score. The bump is multiplicative
+    # on rank, intentionally narrow in scope: clears the moment a 3rd
+    # footprint lands.
+    self_settle_count = 0
+    self_city_count = 0
+    for _nid, (bcol, btype) in game.state.board.buildings.items():
+        if bcol != c:
+            continue
+        if btype == "SETTLEMENT":
+            self_settle_count += 1
+        elif btype == "CITY":
+            self_city_count += 1
+    third_settle_bump = (
+        1.25 if (self_settle_count + self_city_count) == 2 else 1.0)
 
     def _best_settlement_spot() -> tuple[int, float] | None:
         try:
@@ -977,12 +995,17 @@ def recommend_actions(
         ]
         scored.sort(key=lambda s: -s[1])
         for node, prod in scored[:3]:
+            base_score = _score_settlement(prod)
+            score = round(base_score * third_settle_bump, 1)
+            detail = f"+{prod:.2f}/roll"
+            if third_settle_bump > 1.0:
+                detail += " · settle #3"
             recs.append({
                 "kind": "settlement",
                 "when": "now",
                 "node_id": int(node),
-                "score": _score_settlement(prod),
-                "detail": f"+{prod:.2f}/roll",
+                "score": score,
+                "detail": detail,
                 "tiles": _tile_label(m, int(node)),
                 "rationale": _settle_rationale(m, int(node), self_expected),
             })
@@ -1314,14 +1337,19 @@ def recommend_actions(
             best = _best_settlement_spot()
             if best is not None:
                 node, prod = best
+                base_score = _score_settlement(prod)
+                score = round(base_score * third_settle_bump, 1)
+                detail = (f"{_format_missing(missing)} "
+                          f"· +{prod:.2f}/roll")
+                if third_settle_bump > 1.0:
+                    detail += " · settle #3"
                 recs.append({
                     "kind": "settlement",
                     "when": "soon",
                     "node_id": node,
-                    "score": _score_settlement(prod),
+                    "score": score,
                     "missing": missing,
-                    "detail": (f"{_format_missing(missing)} "
-                               f"· +{prod:.2f}/roll"),
+                    "detail": detail,
                     "tiles": _tile_label(m, node),
                     "rationale": _settle_rationale(
                         m, node, self_expected),

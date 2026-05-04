@@ -2273,7 +2273,7 @@ html, body, .panel {
 .discard-hint, .seven-prep, .plan, .gprog,
 .trade-offer, .knight-hint, .dev-hint,
 .banner, .winning-move, .opps-h, .progression,
-.off-turn-ribbon {
+.off-turn-ribbon, .milestone {
   background: transparent !important;
   border: 0 !important;
   border-left: 2px solid var(--line-strong) !important;
@@ -2294,6 +2294,9 @@ html, body, .panel {
 }
 .plan { border-left-color: var(--info) !important; }
 .plan.ready { border-left-color: var(--pos) !important; }
+.milestone { border-left-color: var(--info) !important; color: var(--fg) !important; }
+.milestone .ms-head { font-weight: 700; }
+.milestone .ms-tail { color: var(--fg-mute); margin-left: 4px; }
 .off-turn-ribbon {
   background: var(--bg-1) !important;
   border-radius: 4px !important;

@@ -1897,6 +1897,27 @@
                 + escapeHtml(snap.threat.message)
                 + '</div>');
         }
+        // 3rd-settle milestone — biggest pre-mid-game predictor of
+        // winning per the Reddit 36k-game data (winners build #3
+        // ~7 turns earlier than losers; 10.9% of losers never build
+        // it). Backend fires snap.milestone whenever footprint == 2
+        // past turn 5; here we render it with the resource deficit
+        // so Noah sees what to aim for.
+        if (snap.milestone && snap.milestone.kind === 'third_settle') {
+            const ms = snap.milestone;
+            const missingFrag = Object.entries(ms.missing || {})
+                .filter(([, n]) => n > 0)
+                .map(([r, n]) => `${iconFor(r)} ${n}`)
+                .join(' + ');
+            const missingTail = missingFrag
+                ? ` · need ${missingFrag}`
+                : ' · ready to build';
+            parts.push(`<div class="milestone third-settle">`
+                + `<span class="b-ico">🏗</span> `
+                + `<span class="ms-head">${escapeHtml(ms.headline)}</span>`
+                + `<span class="ms-tail">${missingTail}</span>`
+                + '</div>');
+        }
         // Self close-to-win banner — symmetric with snap.threat but
         // fires on self VP hitting the close threshold.
         if (snap.win_proximity && snap.win_proximity.message) {

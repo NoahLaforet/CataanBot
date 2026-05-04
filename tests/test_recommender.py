@@ -1753,3 +1753,69 @@ def test_road_rec_marked_supports_plan_when_tiles_overlap():
             overlapping_marked += 1
     # No assertion failure means either nothing overlaps (fine) or
     # every overlapping road got marked. Either is acceptable.
+
+
+def test_settlement_score_bumped_when_only_two_footprints():
+    """3rd-settle expansion bias (Reddit 36k-game finding #1): when
+    self has built only the opening 2 footprints, settlement recs
+    should outrank what they'd be at 3+ footprints. The bump shows in
+    detail as '· settle #3' so the user reads why it's prioritized.
+    """
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_actions
+
+    # Two-footprint state: RED has 2 settlements with road network
+    # extended one hop past the opening so distance-2 leaves at
+    # least one buildable node. Hand affords settlement.
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=1,
+    )
+    b = g.state.board
+    b.build_settlement(Color.RED, 0, initial_build_phase=True)
+    b.build_road(Color.RED, (0, 1))
+    b.build_road(Color.RED, (1, 2))
+    b.build_settlement(Color.RED, 25, initial_build_phase=True)
+    b.build_road(Color.RED, (25, 26))
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 0}
+
+    out = recommend_actions(g, "RED", hand, top=10)
+    settle_recs = [r for r in out
+                   if r["kind"] == "settlement" and r["when"] == "now"]
+    assert settle_recs, "expected at least one 'now' settlement rec"
+    # Detail must call out the bump so the rec is self-explanatory.
+    assert any("settle #3" in (r.get("detail") or "")
+               for r in settle_recs), (
+        f"expected '· settle #3' in detail; got: "
+        f"{[r.get('detail') for r in settle_recs]}")
+
+
+def test_settlement_score_unbumped_after_third_footprint():
+    """The 3rd-settle bump must clear once a 3rd footprint lands so
+    the bias doesn't bleed into mid- and late-game settlement recs."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_actions
+
+    # Three-footprint state: 2 settles + 1 city.
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=1,
+    )
+    b = g.state.board
+    b.build_settlement(Color.RED, 0, initial_build_phase=True)
+    b.build_road(Color.RED, (0, 1))
+    b.build_settlement(Color.RED, 25, initial_build_phase=True)
+    b.build_road(Color.RED, (25, 26))
+    b.build_city(Color.RED, 0)
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 0}
+
+    out = recommend_actions(g, "RED", hand, top=10)
+    settle_recs = [r for r in out
+                   if r["kind"] == "settlement" and r["when"] == "now"]
+    if settle_recs:
+        for r in settle_recs:
+            assert "settle #3" not in (r.get("detail") or ""), (
+                f"settle #3 bump leaked past 3rd footprint: "
+                f"{r.get('detail')}")
