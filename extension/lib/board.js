@@ -161,13 +161,16 @@ export function buildBoardFromColonistMap(mapState) {
     const portStates = mapState.portEdgeStates || {};
     if (Object.keys(hexStates).length === 0) return null;
 
+    const cornerStates = mapState.tileCornerStates || {};
+    const edgeStates = mapState.tileEdgeStates || {};
+
     const tiles = {};
     const nodes = {};
     const edges = {};
 
-    // Pass 1: tiles. Pre-allocate so subsequent passes can
-    // reference each tile by id.
+    // Pass 1: tiles.
     const axialByTid = {};
+    const tileSigToId = {};
     for (const [tid, t] of Object.entries(hexStates)) {
         const ax = Number(t.x);
         const ay = Number(t.y);
@@ -186,90 +189,75 @@ export function buildBoardFromColonistMap(mapState) {
             edges: [],
         };
         axialByTid[tid] = [ax, ay];
-    }
-
-    // Pass 2: corners. For every tile, register its NORTH (z=0)
-    // and SOUTH (z=1) corners by signature. Dedup happens
-    // naturally because two tiles share the same corner
-    // signature for their shared corner.
-    for (const [tid, t] of Object.entries(hexStates)) {
-        const [ax, ay] = [Number(t.x), Number(t.y)];
-        for (const cz of [0, 1]) {
-            const sig = cornerSig(ax, ay, cz);
-            if (!nodes[sig]) {
-                nodes[sig] = {
-                    id: sig,
-                    tiles: [],
-                    neighbors: new Set(),
-                    port: null,
-                };
-            }
-            if (!nodes[sig].tiles.includes(tid)) {
-                nodes[sig].tiles.push(tid);
-            }
-            tiles[tid].nodes.push(sig);
-        }
-    }
-
-    // For tiles on the inner board, the other 4 corners belong
-    // to neighbour tiles. Walk neighbours and back-link any
-    // signatures that include this tile.
-    const tileSigToId = {};
-    for (const [tid, [ax, ay]] of Object.entries(axialByTid)) {
         tileSigToId[tileSig(ax, ay)] = tid;
     }
+
+    // Pass 2: corners. Colonist's tileCornerStates is the
+    // authoritative list of every unique corner — each entry
+    // has (x, y, z) of the OWNING tile. We compute the corner's
+    // 3-tile signature from those coords and use it as the
+    // node id. Multiple colonist corner ids can resolve to the
+    // same signature when colonist ships redundant entries
+    // (rare, but observed on some variant maps); the dict-by-
+    // signature dedup handles that cleanly.
+    for (const c of Object.values(cornerStates)) {
+        const cx = Number(c.x), cy = Number(c.y), cz = Number(c.z);
+        const sig = cornerSig(cx, cy, cz);
+        if (!nodes[sig]) {
+            nodes[sig] = {
+                id: sig,
+                tiles: [],
+                neighbors: new Set(),
+                port: null,
+            };
+        }
+    }
+    // Back-link tiles → nodes. For each node sig, look up which
+    // tiles in its 3-tile signature actually exist in the
+    // dataset and add the node to those tiles' nodes lists.
     for (const node of Object.values(nodes)) {
         for (const ts of node.id.split('|')) {
             const ttid = tileSigToId[ts];
-            if (ttid && !tiles[ttid].nodes.includes(node.id)) {
-                tiles[ttid].nodes.push(node.id);
+            if (ttid) {
+                if (!node.tiles.includes(ttid)) node.tiles.push(ttid);
+                if (!tiles[ttid].nodes.includes(node.id)) {
+                    tiles[ttid].nodes.push(node.id);
+                }
             }
         }
     }
 
-    // Pass 3: edges. Each tile owns its NW/W/SW (z=0/1/2). The
-    // other 3 belong to neighbours' z=0/1/2 entries — they get
-    // registered when those neighbours iterate. Endpoint sigs
-    // may resolve to existing node ids or to sub-sigs (boundary
-    // corners).
-    for (const [tid, t] of Object.entries(hexStates)) {
-        const [ax, ay] = [Number(t.x), Number(t.y)];
-        for (const ez of [0, 1, 2]) {
-            const [sigA, sigB] = edgeEndpoints(ax, ay, ez);
-            const a = resolveNodeSig(nodes, sigA);
-            const b = resolveNodeSig(nodes, sigB);
-            if (!a || !b) continue;  // boundary edge; node missing
-            const eid = edgeKeyFromSigs(a, b);
-            if (!edges[eid]) {
-                edges[eid] = { id: eid, a, b, tiles: [] };
-                nodes[a].neighbors.add(b);
-                nodes[b].neighbors.add(a);
-            }
-            if (!edges[eid].tiles.includes(tid)) {
-                edges[eid].tiles.push(tid);
-            }
-            if (!tiles[tid].edges.includes(eid)) {
-                tiles[tid].edges.push(eid);
-            }
+    // Pass 3: edges. Same idea — colonist's tileEdgeStates is
+    // the authoritative list of every unique edge with (x, y, z)
+    // of the owning tile. Each entry resolves to two endpoint
+    // signatures via edgeEndpoints; we look those up in the
+    // node dict and connect.
+    for (const e of Object.values(edgeStates)) {
+        const ex = Number(e.x), ey = Number(e.y), ez = Number(e.z);
+        const [sigA, sigB] = edgeEndpoints(ex, ey, ez);
+        const a = resolveNodeSig(nodes, sigA);
+        const b = resolveNodeSig(nodes, sigB);
+        if (!a || !b) continue;  // boundary edge; node missing
+        const eid = edgeKeyFromSigs(a, b);
+        if (!edges[eid]) {
+            edges[eid] = { id: eid, a, b, tiles: [] };
+            nodes[a].neighbors.add(b);
+            nodes[b].neighbors.add(a);
         }
     }
 
-    // Pass 3b: back-link non-owned edges to tiles. An edge that
-    // tile T touches but doesn't own (T's NE/E/SE edges, owned
-    // by NE/E/SE neighbour tiles) should still appear in T's
-    // edges[] so distance/longest-road computations can iterate
-    // T's full edge set. An edge belongs to T iff both of its
-    // endpoint nodes are in T's nodes list.
+    // Pass 4: back-link edges to tiles. An edge belongs to
+    // tile T iff both of its endpoint nodes are in T's nodes
+    // list. Cheaper than tracking edge ownership through the
+    // colonist (x, y, z) coords because we already have the
+    // per-tile node lists from Pass 2.
     for (const tile of Object.values(tiles)) {
         const tileNodeSet = new Set(tile.nodes);
         for (const eid of Object.keys(edges)) {
             const e = edges[eid];
-            if (tile.edges.includes(eid)) continue;
             if (tileNodeSet.has(e.a) && tileNodeSet.has(e.b)) {
-                tile.edges.push(eid);
-                if (!e.tiles.includes(tile.id)) {
-                    e.tiles.push(tile.id);
-                }
+                if (!tile.edges.includes(eid)) tile.edges.push(eid);
+                if (!e.tiles.includes(tile.id)) e.tiles.push(tile.id);
             }
         }
     }

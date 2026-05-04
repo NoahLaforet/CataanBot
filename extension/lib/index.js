@@ -17,9 +17,13 @@ export { buildBoardFromColonistMap, pipsForNumber,
     from './board.js';
 export { applyEvent, applyAll } from './events.js';
 export { scoreOpeningNodes, scoreSecondSettlements,
-         scoreRobberTargets,
+         scoreRobberTargets, computeTableScarcity,
+         legalNodesAfterPicks,
          DIVERSITY_BY_COUNT, RESOURCE_WEIGHT }
     from './advisor.js';
+export { decodeMsgpack, decodeIncomingFrame, decodeOutgoingFrame,
+         MsgpackError, toUint8Array }
+    from './msgpack.js';
 export { recommendActions, handCanAfford, COSTS }
     from './recommender.js';
 export { knightHint, monopolyHint, yopHint, rbHint }
