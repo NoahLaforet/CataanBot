@@ -1030,6 +1030,23 @@ def recommend_actions(
         for nid, (bcol, _bt) in game.state.board.buildings.items():
             if bcol == c:
                 my_nodes.add(int(nid))
+        # Set of resources self already produces — feeds the port-match
+        # bonus below. Walk owned settlements/cities and union the
+        # resource keys of each tile they touch. A 2:1 port matching one
+        # of these is high-value (Noah's brick-port-on-brick-9 case);
+        # 2:1 on a non-produced resource is mostly noise.
+        owned_resources: set[str] = set()
+        for nid, (bcol, btype) in game.state.board.buildings.items():
+            if bcol != c or btype not in ("SETTLEMENT", "CITY"):
+                continue
+            prods = m.node_production.get(int(nid), {}) or {}
+            for r, v in prods.items():
+                if v > 0:
+                    owned_resources.add(r)
+        # Port-label index — used to detect when a candidate landing
+        # node lands on a 2:1 of a resource self already produces.
+        from cataanbot.advisor import _build_node_port_labels
+        node_to_port = _build_node_port_labels(m)
         # (edge, raw_prod, landing_node, rank). raw_prod feeds
         # _score_road for the displayed UI value; rank is the
         # diversity-weighted prod used for ordering the recs.
@@ -1085,7 +1102,23 @@ def recommend_actions(
                     distinct = sum(1 for v in nb_prods.values() if v > 0)
                     diversity = (1.15 if distinct >= 3
                                  else 1.05 if distinct == 2 else 1.0)
-                    rank = raw * diversity
+                    # Port-match bonus. A 2:1 port on a resource self
+                    # already produces is high-value (e.g. Noah's brick
+                    # 9 settle + brick port one road away on 2026-05-02).
+                    # Skip 3:1 ports — Reddit 36k-game finding suggests
+                    # generic-port chasing on random boards is net-
+                    # negative. Bonus is multiplicative on rank only —
+                    # the displayed score still reflects raw production
+                    # so downstream comparisons against settle-rec
+                    # scores stay calibrated.
+                    port_label = node_to_port.get(nb)
+                    port_bonus = 1.0
+                    if (port_label and port_label != "3:1"
+                            and ":" in port_label):
+                        port_res = port_label.split(" ", 1)[0]
+                        if port_res in owned_resources:
+                            port_bonus = 1.4
+                    rank = raw * diversity * port_bonus
                     if rank > best_rank:
                         best_rank = rank
                         best_land_prod = raw
@@ -1096,6 +1129,20 @@ def recommend_actions(
                                     best_rank))
         edge_scores.sort(key=lambda s: -s[3])
         fallback_candidates.sort(key=lambda s: -s[1])
+
+        def _port_detail_suffix(landing: int | None) -> str:
+            """Empty string unless landing has a 2:1 port matching one of
+            self's produced resources. Returns ' · port' suffix for the
+            road's detail text so Noah knows WHY a road is top-ranked."""
+            if landing is None:
+                return ""
+            label = node_to_port.get(landing)
+            if not label or label == "3:1" or ":" not in label:
+                return ""
+            res = label.split(" ", 1)[0]
+            if res not in owned_resources:
+                return ""
+            return f" · {res.lower()} port"
 
         # Build the primary road rec from edge_scores[0], plus up to 2
         # landing-target alternates from edge_scores[1:3]. After that,
@@ -1118,7 +1165,7 @@ def recommend_actions(
                 "edge": list(edge),
                 "landing_node": landing,
                 "score": _score_road(prod),
-                "detail": f"→ {prod:.2f}-prod spot",
+                "detail": f"→ {prod:.2f}-prod spot{_port_detail_suffix(landing)}",
                 "tiles": _edge_tiles(m, edge[0], edge[1]),
             }
             # Landing-target alternates: edges with their own future
@@ -1138,7 +1185,8 @@ def recommend_actions(
                     "edge": list(alt_edge),
                     "landing_node": alt_landing,
                     "score": _score_road(alt_prod),
-                    "detail": f"→ {alt_prod:.2f}-prod spot",
+                    "detail": (f"→ {alt_prod:.2f}-prod spot"
+                               f"{_port_detail_suffix(alt_landing)}"),
                     "tiles": _edge_tiles(m, alt_edge[0], alt_edge[1]),
                     "alt": True,
                 })
@@ -1637,6 +1685,37 @@ def recommend_actions(
                 recs = kept
                 # Re-sort because scores changed.
                 recs.sort(key=lambda r: -float(r.get("score", 0.0)))
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Plan-alignment annotation: when a "soon" settlement plan is in
+    # the rec list AND some road rec's tiles overlap with the plan's
+    # tiles, mark that road's detail with "→ supports plan". Helps
+    # Noah see WHICH road advances the active plan vs. opens a new
+    # corridor — addresses the 2026-05-02 confusion where the top
+    # road went one way and the soon-settle plan went another.
+    try:
+        soon_settle_tiles: list[tuple[str, int | None]] = []
+        for rec in recs:
+            if (rec.get("kind") == "settlement"
+                    and rec.get("when") == "soon"):
+                tiles = rec.get("tiles") or []
+                soon_settle_tiles = [
+                    tuple(t) if isinstance(t, list) else t
+                    for t in tiles
+                ]
+                break
+        if soon_settle_tiles:
+            soon_set = {(r, n) for (r, n) in soon_settle_tiles}
+            for rec in recs:
+                if rec.get("kind") != "road":
+                    continue
+                rt = [tuple(t) if isinstance(t, list) else t
+                      for t in (rec.get("tiles") or [])]
+                if any((r, n) in soon_set for (r, n) in rt):
+                    detail = rec.get("detail") or ""
+                    if "supports plan" not in detail:
+                        rec["detail"] = f"{detail} · supports plan"
     except Exception:  # noqa: BLE001
         pass
 

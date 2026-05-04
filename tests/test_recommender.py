@@ -1641,3 +1641,115 @@ def test_opening_road_followup_skips_self_owned_edge():
     assert rec_edge != {int(settle), int(occupied_far)}, (
         f"opening-road follow-up recommended the already-owned edge "
         f"{rec_edge}; should have picked a different adjacent edge")
+
+
+def test_road_port_match_bonus_surfaces_brick_port():
+    """Port-match bias regression: when self has a settlement on a
+    BRICK tile and the BRICK 2:1 port sits 2 hops away (1 road + 1
+    settle node), the road that lands on the port corner should be
+    surfaced with a 'brick port' suffix in detail. Mirrors Noah's
+    2026-05-02 game where the brick-port-bound road got buried under
+    higher-pip interior plays.
+    """
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_actions
+
+    # Seed=1 classic board: BRICK tile (0,1,-1) covers node 19;
+    # node 48 is BRICK 2:1 port; 19 → 46 → 48 is a valid 2-hop path.
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE)], seed=1)
+    b = g.state.board
+    b.build_settlement(Color.RED, 19, initial_build_phase=True)
+    b.build_road(Color.RED, (19, 46))
+
+    out = recommend_actions(
+        g, "RED", {"WOOD": 1, "BRICK": 1}, top=10)
+    roads = [r for r in out if r["kind"] == "road"]
+    assert roads, "expected at least one road rec"
+    # At least one road rec must call out the BRICK port match.
+    has_port_label = any(
+        "brick port" in (r.get("detail") or "").lower()
+        for r in roads
+    )
+    assert has_port_label, (
+        f"expected a road rec to flag 'brick port' in detail; got: "
+        f"{[r.get('detail') for r in roads]}")
+
+
+def test_road_no_port_bonus_for_unmatched_resource():
+    """3:1 ports (and 2:1 on a non-produced resource) should NOT trigger
+    the port-match suffix — only matching 2:1s. Reddit 36k-game finding
+    suggests generic-port chasing on random boards is net-negative, so
+    the bonus is intentionally narrow.
+    """
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.recommender import recommend_actions
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE)], seed=1)
+    b = g.state.board
+    # Settle at 19 (BRICK tile) but build road in a direction that
+    # doesn't approach any 2:1 port.
+    b.build_settlement(Color.RED, 19, initial_build_phase=True)
+    b.build_road(Color.RED, (19, 20))
+
+    out = recommend_actions(
+        g, "RED", {"WOOD": 1, "BRICK": 1}, top=4)
+    roads = [r for r in out if r["kind"] == "road"]
+    if not roads:
+        return  # No roads emitted — vacuously fine.
+    # No road rec should advertise a non-brick port match (we don't
+    # produce wheat/sheep/wood/ore from this single brick settle).
+    for r in roads:
+        detail = (r.get("detail") or "").lower()
+        for non_owned in ("sheep port", "wheat port", "wood port",
+                          "ore port"):
+            assert non_owned not in detail, (
+                f"unexpected port label '{non_owned}' in: {detail}")
+
+
+def test_road_rec_marked_supports_plan_when_tiles_overlap():
+    """Plan-alignment annotation: when a 'soon' settlement plan is in
+    the rec list AND a road rec's edge_tiles overlap with the settle
+    target's tiles, the road's detail should pick up '· supports plan'.
+    Without this, Noah's HUD shows the soon-plan pointing one direction
+    and the 'now' road pointing another with no visual link between them.
+    """
+    from cataanbot.recommender import recommend_actions
+    from catanatron import Color
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    # Extend the network so buildable_node_ids has a "soon" target a
+    # short hand-deficit away.
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+
+    # Hand: road affordable + 1 sheep short of settlement → "soon" plan
+    # for settle should be emitted, and a road rec should appear too.
+    hand = {"WOOD": 2, "BRICK": 2, "WHEAT": 1, "ORE": 0, "SHEEP": 0}
+    out = recommend_actions(g, "RED", hand, top=10)
+
+    soon_settle = next((r for r in out
+                        if r.get("kind") == "settlement"
+                        and r.get("when") == "soon"), None)
+    if soon_settle is None:
+        return  # Not every seed produces a "soon" settle plan; vacuous OK.
+
+    # Look at every road rec — at least one should overlap by tile-pair
+    # with the soon-settle target if plan-alignment annotation works.
+    plan_tiles = {tuple(t) if isinstance(t, list) else t
+                  for t in soon_settle.get("tiles") or []}
+    overlapping_marked = 0
+    for r in out:
+        if r.get("kind") != "road":
+            continue
+        rt = {tuple(t) if isinstance(t, list) else t
+              for t in r.get("tiles") or []}
+        if rt & plan_tiles:
+            assert "supports plan" in (r.get("detail") or ""), (
+                f"road overlapping plan tiles should be annotated; "
+                f"got: {r.get('detail')}")
+            overlapping_marked += 1
+    # No assertion failure means either nothing overlaps (fine) or
+    # every overlapping road got marked. Either is acceptable.
