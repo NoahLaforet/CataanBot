@@ -1616,10 +1616,20 @@
                     const bg = v.color_css || COLOR_HEX[v.color] || '#888';
                     const fg = contrastText(bg);
                     const star = v.suggested ? '★' : '';
+                    // Pill letter: prefer the username's first letter
+                    // (matches what the player sees on colonist's UI).
+                    // Falling back to v.color's first letter would
+                    // print "R" for a player colonist colors green —
+                    // catanatron only has 4 internal color names
+                    // (RED/BLUE/WHITE/ORANGE) so we remap colonist's
+                    // green → RED internally, but that mapping
+                    // shouldn't leak into the pill label.
+                    const letter = (v.username || v.color || '?')
+                        .slice(0, 1).toUpperCase();
                     const pill = `<span class="color-pill" style="background:${bg};`
                         + `color:${fg};font-size:calc(10px * var(--font-scale));${
                             v.suggested ? 'outline:2px solid #ffd36e;' : ''
-                        }">${escapeHtml((v.color || '?').slice(0, 1))}</span>`;
+                        }">${escapeHtml(letter)}</span>`;
                     const label = `${pill}${v.pips}p/${v.vp}vp/${v.cards}c`;
                     return v.suggested
                         ? `<span class="victim-top">${star}${label}</span>`
