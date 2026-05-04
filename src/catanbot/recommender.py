@@ -931,6 +931,8 @@ def recommend_actions(
     opp_hands: dict[str, dict[str, int]] | None = None,
     bank_supply: dict[str, int] | None = None,
     dev_deck_remaining: int | None = None,
+    strategy_tag: str | None = None,
+    strategy_phase: str | None = None,
 ) -> list[dict[str, Any]]:
     """Rank what to do with the current hand.
 
@@ -946,6 +948,13 @@ def recommend_actions(
     Returns up to ``top`` dicts, sorted by heuristic score descending:
         {kind, when, score, detail, node_id?, edge?, tiles?, missing?}
     where ``kind`` ∈ {settlement, city, road, dev_card}.
+
+    ``strategy_tag`` (when given) biases the final ordering by archetype:
+    OWS pads dev/city scores; LR_RUSH pads road scores in the late
+    phase; PORT_TRADE pads roads pointing at relevant ports;
+    RB_CARVED_TILES holds road pads until late game (chalks777's note
+    that real RB doesn't invest in roads early). ``strategy_phase`` is
+    passed alongside to gate phase-sensitive biases.
     """
     from catanatron import Color
 
@@ -1742,6 +1751,76 @@ def recommend_actions(
                 recs.sort(key=lambda r: -float(r.get("score", 0.0)))
     except Exception:  # noqa: BLE001
         pass
+
+    # Strategy-tag bias. Surfaces the active archetype's preferences as
+    # small score adjustments — not enough to override a clear better
+    # rec, but enough to break ties in the strategy's direction. Tags
+    # come from ``catanbot.strategy_select`` (see strategy_v2 plan):
+    #
+    #   OWS              → +0.5 dev_card, +0.3 city
+    #   LR_RUSH (late+)  → +0.6 road; (early/mid) +0.2 road
+    #   PORT_TRADE       → +0.4 road if landing on a port node
+    #   RB_CARVED_TILES  → -0.4 road in early/mid, +0.8 road in late+
+    #                      (chalks777: real RB doesn't road-spam early,
+    #                       it claims LR in the last 2 rounds)
+    #   BALANCED         → no bias (the floor)
+    #
+    # Bias is multiplied through unless the rec is already at or below
+    # 1.0 — the score floor — so a soft "save for X" rec doesn't get
+    # bumped above an actually-affordable build by archetype alone.
+    if strategy_tag and strategy_tag != "BALANCED":
+        try:
+            late_phase = strategy_phase in ("late", "endgame")
+            any_bumped = False
+            for rec in recs:
+                if rec.get("when") != "now":
+                    continue
+                kind = rec.get("kind")
+                bump = 0.0
+                if strategy_tag == "OWS":
+                    if kind == "dev_card":
+                        bump = 0.5
+                    elif kind == "city":
+                        bump = 0.3
+                elif strategy_tag == "LR_RUSH":
+                    if kind == "road":
+                        bump = 0.6 if late_phase else 0.2
+                elif strategy_tag == "PORT_TRADE":
+                    # Bias only roads landing on a port node, not all
+                    # roads — chasing port-adjacency on every road
+                    # would steamroll the existing landing-prod logic.
+                    if kind == "road":
+                        landing = rec.get("landing_node")
+                        if landing is not None:
+                            from catanbot.advisor import (
+                                _build_node_port_labels,
+                            )
+                            labels = _build_node_port_labels(m)
+                            if labels.get(int(landing)):
+                                bump = 0.4
+                elif strategy_tag == "RB_CARVED_TILES":
+                    if kind == "road":
+                        bump = 0.8 if late_phase else -0.4
+                if bump != 0.0 and float(rec.get("score", 0.0)) > 1.0:
+                    rec["score"] = round(min(max(
+                        float(rec.get("score", 0.0)) + bump, 1.0), 10.0), 1)
+                    any_bumped = True
+            # Re-sort only when at least one bump fired. The key mirrors
+            # ``search_rerank``'s bucket order (search-scored now → other
+            # now → soon) so a "soon" plan can't leapfrog actionable
+            # recs just because its raw score is higher.
+            if any_bumped:
+                def _bucket_key(rec: dict) -> tuple[int, float]:
+                    sd = rec.get("search_delta")
+                    when = rec.get("when", "now")
+                    if sd is not None:
+                        return (0, -float(sd))
+                    if when == "now":
+                        return (1, -float(rec.get("score", 0.0)))
+                    return (2, -float(rec.get("score", 0.0)))
+                recs.sort(key=_bucket_key)
+        except Exception:  # noqa: BLE001
+            pass
 
     # Plan-alignment annotation: when a "soon" settlement plan is in
     # the rec list AND some road rec's tiles overlap with the plan's

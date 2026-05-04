@@ -88,6 +88,7 @@ from catanbot.bridge_hints import (
 from catanbot.bridge_strategy import (
     _compute_longest_road_race,
     _compute_leader_threat,
+    _compute_strategy_tag,
     _compute_win_proximity,
     _compute_winning_move,
 )
@@ -221,6 +222,12 @@ def _build_app(jsonl_path: Path | None = None,
         # snapshot as snap["plan"]. None when self has no soon-recs
         # worth tracking or when an affordable build supersedes it.
         "active_plan": None,
+        # Last-emitted strategy tag snap (from
+        # ``_compute_strategy_tag``). Stored so the next call can pass
+        # the prior tag in for stickiness — without it the primary tag
+        # can flicker between similarly-scored archetypes on every WS
+        # frame. Reset only on /reset.
+        "last_strategy": None,
         # Running history of self-build classifications (post-setup
         # only). Each entry: {ts, piece, node/edge, rank, classification,
         # top_kind, top_loc, search_delta_gap}. Capped at 30 so a full
@@ -1849,6 +1856,35 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["bank_supply"] = _compute_bank_supply(game)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] bank_supply failed: {e!r}", flush=True)
+    # Strategy tag — computed BEFORE the rec call so the active
+    # archetype can bias rec scoring. Snap field is also exposed so
+    # the HUD can render the rationale + pivot triggers as a banner.
+    # Silent during setup (selector returns None until both opening
+    # settlements are placed). Stored on `st` for stickiness across
+    # snaps so the primary tag doesn't flicker between similarly-
+    # scored archetypes on every WS frame.
+    try:
+        dev_just = []
+        if sess.self_color_id is not None:
+            try:
+                dev_just = list(getattr(
+                    sess, "self_dev_bought_this_turn", []) or [])
+            except Exception:  # noqa: BLE001
+                dev_just = []
+        self_hand_size = sum(int(v) for v in (hand or {}).values())
+        snap["strategy"] = _compute_strategy_tag(
+            game, self_color,
+            rolls_so_far=int(st.get("total_rolls") or 0),
+            previous_snap=st.get("last_strategy"),
+            roll_history=list(st.get("roll_history") or []),
+            self_dev_just_bought=dev_just,
+            self_hand_size=self_hand_size,
+        )
+        if snap.get("strategy"):
+            st["last_strategy"] = snap["strategy"]
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] strategy tag failed: {e!r}", flush=True)
+        snap["strategy"] = None
     # Mid-game recs: only when it's actually my turn. During setup the
     # opening picks were already populated above, so skip here.
     if not is_setup and snap["my_turn"]:
@@ -1890,10 +1926,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 full_recs = []
                 snap["variant_recs_disabled"] = True
             else:
+                strat_snap = snap.get("strategy") or {}
                 full_recs = recommend_actions(
                     cat_game, self_color, hand, top=10,
                     bank_supply=bank_for_recs,
-                    dev_deck_remaining=dev_deck_for_recs)
+                    dev_deck_remaining=dev_deck_for_recs,
+                    strategy_tag=strat_snap.get("active"),
+                    strategy_phase=strat_snap.get("phase"))
             snap["recommendations"] = full_recs[:4]
             if full_recs:
                 st["last_recs_for_self"] = full_recs

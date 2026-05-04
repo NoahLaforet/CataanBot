@@ -1843,3 +1843,111 @@ def test_recommender_settlement_picks_wheat_over_equal_pip_ore():
     # Weighted prefers wheat:
     assert (_node_pip_production_weighted(m, 10)
             > _node_pip_production_weighted(m, 20))
+
+
+# --- strategy-tag biases ---------------------------------------------
+
+def _setup_for_full_hand_bias():
+    """Setup that gives RED a long-enough road net + opponent footprints
+    so settle / city / road / dev recs all have legal targets and the
+    strategy-tag bias has every kind to act on."""
+    from catanatron import Color
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    return g
+
+
+def test_ows_bias_pads_dev_card_score():
+    """OWS pads the dev_card score so it climbs vs the unbiased baseline.
+    Both runs use the same hand + game; the only delta is the tag."""
+    from catanbot.recommender import recommend_actions
+
+    g = _setup_for_full_hand_bias()
+    hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 2, "WHEAT": 2, "ORE": 1}
+    base = recommend_actions(g, "RED", hand, top=10)
+    biased = recommend_actions(
+        g, "RED", hand, top=10,
+        strategy_tag="OWS", strategy_phase="early")
+
+    def _score(recs, kind):
+        for r in recs:
+            if r.get("kind") == kind and r.get("when") == "now":
+                return float(r["score"])
+        return None
+
+    base_dev = _score(base, "dev_card")
+    biased_dev = _score(biased, "dev_card")
+    if base_dev is not None and biased_dev is not None:
+        assert biased_dev > base_dev, (
+            f"OWS should bump dev_card; base={base_dev}, biased={biased_dev}")
+
+
+def test_lr_rush_late_phase_pads_road_score():
+    from catanbot.recommender import recommend_actions
+
+    g = _setup_for_full_hand_bias()
+    hand = {"WOOD": 2, "BRICK": 2}
+    base = recommend_actions(g, "RED", hand, top=10)
+    biased = recommend_actions(
+        g, "RED", hand, top=10,
+        strategy_tag="LR_RUSH", strategy_phase="late")
+
+    def _top_road(recs):
+        for r in recs:
+            if r.get("kind") == "road" and r.get("when") == "now":
+                return float(r["score"])
+        return None
+
+    base_road = _top_road(base)
+    biased_road = _top_road(biased)
+    if base_road is not None and biased_road is not None:
+        assert biased_road > base_road, (
+            f"LR_RUSH late should bump road; "
+            f"base={base_road}, biased={biased_road}")
+
+
+def test_rb_carved_tiles_early_phase_dampens_road_score():
+    """RB_CARVED_TILES in early phase should NOT push roads — chalks777
+    notes that real RB doesn't road-spam until the last 2 rounds. The
+    bias should be slightly negative on roads in early/mid."""
+    from catanbot.recommender import recommend_actions
+
+    g = _setup_for_full_hand_bias()
+    hand = {"WOOD": 2, "BRICK": 2}
+    base = recommend_actions(g, "RED", hand, top=10)
+    biased = recommend_actions(
+        g, "RED", hand, top=10,
+        strategy_tag="RB_CARVED_TILES", strategy_phase="early")
+
+    def _top_road(recs):
+        for r in recs:
+            if r.get("kind") == "road" and r.get("when") == "now":
+                return float(r["score"])
+        return None
+
+    base_road = _top_road(base)
+    biased_road = _top_road(biased)
+    if base_road is not None and biased_road is not None:
+        # Bias is -0.4 in early phase. Allow equality at the score
+        # floor (1.0) since clamping can collapse the difference.
+        assert biased_road <= base_road, (
+            f"RB early should not bump road; "
+            f"base={base_road}, biased={biased_road}")
+
+
+def test_unknown_strategy_tag_is_a_no_op():
+    """Passing an unrecognized tag should silently no-op rather than
+    crashing or randomly bumping scores."""
+    from catanbot.recommender import recommend_actions
+
+    g = _setup_for_full_hand_bias()
+    hand = {"WOOD": 2, "BRICK": 2, "SHEEP": 2, "WHEAT": 2, "ORE": 1}
+    base = recommend_actions(g, "RED", hand, top=10)
+    biased = recommend_actions(
+        g, "RED", hand, top=10,
+        strategy_tag="MADE_UP_TAG", strategy_phase="early")
+    # Same kinds in same order, same scores.
+    assert [r.get("kind") for r in base] == [r.get("kind") for r in biased]
+    assert [r.get("score") for r in base] == [r.get("score") for r in biased]

@@ -9,6 +9,77 @@ from __future__ import annotations
 from typing import Any
 
 
+def _compute_strategy_tag(
+    game,
+    self_color: str | None,
+    *,
+    rolls_so_far: int = 0,
+    previous_snap: dict[str, Any] | None = None,
+    roll_history: list[dict[str, Any]] | None = None,
+    self_dev_just_bought: list[int] | None = None,
+    self_hand_size: int = 0,
+) -> dict[str, Any] | None:
+    """Run the post-placement strategy selector and fold pivot triggers.
+
+    Returns the snap-shaped dict (see ``StrategyTag.to_snap``) or None
+    when self has fewer than 2 settlements placed (still in setup).
+
+    ``previous_snap`` lets the selector apply stickiness — without it
+    the primary tag can flicker between similarly-scored archetypes
+    on every WS frame. The bridge passes the prior call's result.
+
+    Pivot triggers are detected on every call (cheap) and folded into
+    the returned ``pivot_triggers`` + ``override_tag`` fields.
+    """
+    if self_color is None:
+        return None
+    try:
+        from catanbot.strategy_select import (
+            StrategyTag, detect_pivot_triggers, merge_triggers_into_tag,
+            select_strategy,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    previous: StrategyTag | None = None
+    if previous_snap:
+        try:
+            previous = StrategyTag(
+                primary=str(previous_snap.get("primary") or "BALANCED"),
+                fallback=previous_snap.get("fallback"),
+                rationale=str(previous_snap.get("rationale") or ""),
+                phase=str(previous_snap.get("phase") or "early"),
+                set_at_rolls=int(previous_snap.get("set_at_rolls") or 0),
+            )
+        except Exception:  # noqa: BLE001
+            previous = None
+
+    try:
+        tag = select_strategy(
+            game.tracker.game, self_color,
+            rolls_so_far=rolls_so_far, previous=previous,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if tag is None:
+        return None
+    try:
+        triggers = detect_pivot_triggers(
+            game.tracker.game, self_color,
+            roll_history=roll_history,
+            self_dev_just_bought=self_dev_just_bought,
+            self_hand_size=self_hand_size,
+        )
+    except Exception:  # noqa: BLE001
+        triggers = []
+    merged = merge_triggers_into_tag(tag, triggers)
+    out = merged.to_snap()
+    # Surface the trigger details (not just names) so the HUD can show
+    # one-line copy. Aligned by index with ``pivot_triggers``.
+    out["pivot_details"] = [t.detail for t in triggers]
+    return out
+
+
 def _compute_longest_road_race(
     game, self_color: str | None,
 ) -> dict[str, Any] | None:
