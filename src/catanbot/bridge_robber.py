@@ -176,6 +176,30 @@ def _compute_robber_snapshot(
                     (closest.get("missing") or {}).keys())
         except Exception:  # noqa: BLE001
             needed_resources = None
+    # Build vp_override from colonist's victoryPointsState — same
+    # source the opps panel uses, so robber scoring agrees with the
+    # numbers Noah sees in the HUD. _get_vp falls back to catanatron
+    # when colonist data isn't available, so this is safe to apply
+    # uniformly. Without this, the two paths drift on missed VP-card
+    # buys and the robber scoring read 14 VP for an opp the panel
+    # showed at 11 VP (Noah, 2026-05-04).
+    vp_override: dict[str, int] = {}
+    try:
+        from catanbot.bridge_economy import _get_vp
+        for opp_color in reverse:
+            try:
+                vp_override[opp_color] = int(_get_vp(game, opp_color))
+            except Exception:  # noqa: BLE001
+                continue
+        # Self too, so own_blocked weighting (if it ever uses it) is
+        # consistent. _vp_weight only applies to victim contributions
+        # today, but no harm including self.
+        try:
+            vp_override[color] = int(_get_vp(game, color))
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        vp_override = {}
     try:
         scores = score_robber_targets(
             game.tracker.game, color,
@@ -185,6 +209,7 @@ def _compute_robber_snapshot(
             needed_resources=needed_resources,
             opp_production_by_resource=opp_prod_by_color or None,
             self_production_by_resource=self_prod_map or None,
+            vp_override=vp_override or None,
         )
     except Exception:  # noqa: BLE001
         return None

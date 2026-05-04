@@ -1434,6 +1434,7 @@ def _compute_strategic_options(
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
     playable_count: int = 0,
+    non_vp_held: int | None = None,
 ) -> dict[str, Any] | None:
     """Recommend whether to play a Knight dev card this turn.
 
@@ -1491,6 +1492,18 @@ def _compute_knight_hint(
     except Exception:  # noqa: BLE001
         pass
     playable_knights = knight_in_hand - bought_knights_this_turn
+    # Hard cap by snap.dev_cards_non_vp_held when the bridge passes
+    # it through. Catanatron's KNIGHT_IN_HAND can drift on missed
+    # play events (Noah saw the knight hint fire PLAY when the
+    # only dev card he held was a VP card, 2026-05-04 testing).
+    # non_vp_held is the colonist-side authoritative count of
+    # play-able dev cards (any type) — if it's 0, no knight rec
+    # can possibly be valid this turn.
+    if non_vp_held is not None and non_vp_held <= 0:
+        return None
+    if (non_vp_held is not None
+            and playable_knights > non_vp_held):
+        playable_knights = non_vp_held
     if playable_knights <= 0:
         return None
     knight_in_hand = playable_knights

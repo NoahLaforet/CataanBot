@@ -3185,7 +3185,17 @@ def test_snapshot_populates_robber_targets_when_self_holds_knight():
     # only show after self actually plays the knight (or rolls a 7),
     # so opponents can't see which tile we'd target while we're still
     # deciding whether to play.
+    #
+    # Bridge has a "non_vp_held cap" guard (added 2026-05-04) that
+    # prevents firing when the session's dev_card_counts indicates
+    # zero playable cards — catches catanatron-side drift. The test
+    # bypasses the session pipeline by writing player_state
+    # directly, so we also bump sess.dev_card_counts to keep the
+    # two sources coherent. Without this, the cap rightly vetoes
+    # the rec.
     cat.state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 1
+    sess.dev_card_counts[sess.self_color_id] = (
+        sess.dev_card_counts.get(sess.self_color_id, 0) + 1)
     snap = _build_advisor_snapshot(dict(base_st))
     assert snap["knight_hint"]["have"] == 1
     # robber_reason stays None, targets stay empty until play

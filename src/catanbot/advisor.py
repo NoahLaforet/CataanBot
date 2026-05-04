@@ -407,6 +407,7 @@ def score_robber_targets(
     needed_resources: list[str] | None = None,
     opp_production_by_resource: dict[str, dict[str, float]] | None = None,
     self_production_by_resource: dict[str, float] | None = None,
+    vp_override: dict[str, int] | None = None,
 ) -> list[RobberScore]:
     """Rank every land tile (except where the robber is now) for blocking value.
 
@@ -457,6 +458,17 @@ def score_robber_targets(
     if hand_size_override:
         for c, n in hand_size_override.items():
             hand_sizes[c.upper()] = int(n)
+    # VP_OVERRIDE: prefer the colonist victoryPointsState figure
+    # over catanatron's player_state when the bridge passes one
+    # through. Catanatron's count drifts on missed VP-card buys
+    # and on settle/city events the tracker silently skips —
+    # leaving the robber scorer with stale numbers that compound
+    # through _vp_weight (Noah saw an opp at 14 VP per catanatron
+    # but 11 VP per colonist on 2026-05-04, which made every
+    # robber score a +100 outlier).
+    if vp_override:
+        for c, n in vp_override.items():
+            vp_by_color[c.upper()] = int(n)
 
     results: list[RobberScore] = []
     for coord, tile in m.land_tiles.items():

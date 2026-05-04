@@ -2255,9 +2255,20 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # already computed above (before recs) so the dev-card hints
     # just read the existing snap entry.
     try:
+        # Hard cap: when colonist's non-VP dev count is 0 AND we
+        # have any dev-card session data at all, no play-hint can
+        # be valid regardless of what catanatron's KNIGHT_IN_HAND
+        # counter shows. Catanatron drift on missed play events
+        # used to fire phantom PLAY recs (Noah saw it 2026-05-04
+        # with a 1-VP-card hand showing "knight PLAY"). When sess
+        # has zero dev tracking (test fixtures, fresh game) we
+        # leave the cap off and trust catanatron's per-type count.
+        sess_has_dev_data = dev_held > 0
+        cap = non_vp_held if sess_has_dev_data else None
         snap["knight_hint"] = _compute_knight_hint(
             game, display_colors=st.get("display_colors") or {},
-            playable_count=hint_fallback)
+            playable_count=hint_fallback,
+            non_vp_held=cap)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
     # Robber-targets ranking is only surfaced when the player ACTUALLY

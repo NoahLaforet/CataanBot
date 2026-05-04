@@ -297,7 +297,17 @@
         if (opts && opts.isSelf) return 'Y';
         if (_anonSelfUsername === username) return 'Y';
         if (_bridgeSelfUsername === username) return 'Y';
-        return anonName(username).slice(0, 1).toUpperCase();
+        const label = anonName(username);
+        // "Opp 1" / "Opp 2" / "Opp 3" all start with "O" — slicing
+        // the first letter collapses every opponent's pill onto the
+        // same initial (Noah saw all-O pills in the robber-targets
+        // table). Pull the trailing digit instead so each opp gets
+        // a distinct initial. For non-positional fantasy labels
+        // (Aria / Bran / Cyrus) the first letter is already unique
+        // so the regular slice path is fine.
+        const m = String(label || '').match(/(\d+)\s*$/);
+        if (m) return m[1];
+        return label.slice(0, 1).toUpperCase() || '?';
     }
     const iconFor = (res) => RES_EMOJI[res]
         || RES_SVG[res]
@@ -2008,10 +2018,22 @@
                         ? `<span class="victim-top">${star}${label}</span>`
                         : label;
                 }).join(' ') || '<span class="muted">—</span>';
+                // Score display: late-game compounding (VP weight ×
+                // imminent multiplier × pips on a city stack) used
+                // to push scores into the +100 range, breaking
+                // table column width. Rescale within the visible
+                // batch so the top score reads as ~10 and others
+                // are proportional. Underlying ranking is preserved.
+                const maxScore = Math.max(...snap.robber_targets
+                    .map(x => Math.abs(x.score || 0)), 1);
+                const norm = maxScore > 10
+                    ? Math.round((t.score / maxScore) * 100) / 10
+                    : t.score;
+                const scoreCell = norm > 0 ? `+${norm}` : `${norm}`;
                 parts.push(`<tr>`
                     + `<td>${i + 1}.</td>`
                     + `<td>${tile}</td>`
-                    + `<td>${t.score > 0 ? '+' : ''}${t.score}</td>`
+                    + `<td>${scoreCell}</td>`
                     + `<td>${victims}</td></tr>`);
             }
             parts.push('</table>');
@@ -2290,9 +2312,22 @@
             const oys = lr.opponent_yields;
             if (Array.isArray(oys) && oys.length) {
                 const parts2 = oys.map((o) => {
+                    // Streamer mode: never leak the catanatron color
+                    // name ("white", "red", etc.) — those are the
+                    // exact strings someone watching a stream would
+                    // use to figure out who is who. Prefer the anon
+                    // label for the username; fall back to a
+                    // capitalized color initial only when not in
+                    // streamer mode.
+                    const labelRaw = o.username
+                        ? anonName(o.username)
+                        : ((o.color || '').toLowerCase());
+                    const label = window.__catanbotStreamer
+                        ? (o.username ? labelRaw : 'opp')
+                        : labelRaw;
                     const g = o.gained_total > 0
-                        ? `${escapeHtml((o.color || '').toLowerCase())} +${o.gained_total}`
-                        : escapeHtml((o.color || '').toLowerCase());
+                        ? `${escapeHtml(label)} +${o.gained_total}`
+                        : escapeHtml(label);
                     const b = o.blocked_total > 0
                         ? ` <span class="oy-blk">(${o.blocked_total} blk)</span>`
                         : '';
