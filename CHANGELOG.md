@@ -4,6 +4,26 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.11 — 2026-05-04
+
+Defensive panel fix: kill the local fantasy-name counter entirely.
+After v0.33.10, the panel still showed Dara/Elin/Fynn while chat
+showed Aria/Bran/Cyrus — the side panel persists across colonist
+tab reloads, so its `_anonSeq` counter carried forward to the
+next game and assigned slots 3+ on top of stale entries from a
+previous game. The bridge map fix only helps if the bridge map
+is populated; with the bridge running stale code (no
+`/streamer-anon` endpoint), the panel was falling back to its
+poisoned local counter.
+
+- **panel.js** drops the local `_name_to_anon` / `_anonSeq` /
+  `_FANTASY_NAMES`. When the bridge map has the username, use it.
+  Otherwise return a positional `Opp 1` / `Opp 2` / `Opp 3`
+  derived from this snap's opps order — never a fantasy name.
+  This guarantees panel labels can only ever match chat or
+  fall back to a label that's obviously different (so the user
+  knows the bridge sync hasn't landed).
+
 ## v0.33.10 — 2026-05-04
 
 Fix the panel-vs-chat name desync. content.js (colonist tab) and

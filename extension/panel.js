@@ -209,40 +209,45 @@
         WHEAT: '🌾', ORE: '⛰️',
     };
 
-    // Streamer mode anonymizer — fantasy-name labels assigned in
-    // stable seat-encounter order. Self always reads "You";
-    // opponents get "Aria" / "Bran" / "Cyrus" / etc. Color-name
-    // labels were tried in 0.33.3 but colonist's player-color
-    // shuffling made them unreliable, so we dropped that approach.
-    const _FANTASY_NAMES = [
-        'Aria', 'Bran', 'Cyrus', 'Dara',
-        'Elin', 'Fynn', 'Gaia', 'Hugo',
-    ];
-    const _name_to_anon = new Map();
-    let _anonSeq = 0;
+    // Streamer mode anonymizer — fantasy-name assignment lives in
+    // content.js (the only context with DOM access to colonist's
+    // chat + banners). Panel receives the username→fantasy-name map
+    // through the advisor snap and uses it for all pill rendering.
     let _anonSelfUsername = null;
     // Authoritative map shipped from content.js via the bridge. The
-    // panel and content.js previously each had their own counter, so
+    // panel and content.js previously each had their own counter so
     // when both saw the same usernames in different orders the panel
     // assigned later fantasy names than chat (Elin/Dara/Fynn vs
-    // Aria/Bran/Cyrus on 2026-05-04). We now prefer the bridge map
-    // and fall back to the local counter only when it's empty (e.g.
-    // the very first render before content.js has POSTed anything).
+    // Aria/Bran/Cyrus on 2026-05-04). The bridge is now the single
+    // source of truth for assignment. Fallback when the bridge map
+    // is empty is *positional* — "Opp 1 / Opp 2 / Opp 3" derived
+    // from the opps order in this snap — so the panel can never
+    // produce a fantasy name that disagrees with chat. The previous
+    // local-counter fallback caused a stale-state regression: side
+    // panel persists across colonist tab reloads, so its counter
+    // carried forward to a new game and assigned slots 3+.
     let _bridgeAnonMap = {};
     let _bridgeSelfUsername = null;
+    let _positionalAnon = new Map();   // username → "Opp N" per render
     function _populateAnonColors(snap) {
         _bridgeAnonMap = (snap && snap.streamer_anon) || {};
         _bridgeSelfUsername = (snap && snap.streamer_self_username)
             || null;
-        // Re-seed self detection each render. _name_to_anon survives
-        // across renders so labels stay stable within a game.
         _anonSelfUsername = (snap && snap.self && snap.self.username)
             || _bridgeSelfUsername || null;
-        // Pre-walk opps so seat order is deterministic. Only matters
-        // for the local-fallback counter — the bridge map already
-        // owns assignment when present.
+        // Rebuild positional fallback fresh per render. Stable within
+        // a render because snap.opps is delivered in catanatron
+        // color-id order; only used when the bridge hasn't shipped a
+        // fantasy label for this username yet.
+        _positionalAnon = new Map();
+        let i = 1;
         for (const o of (snap && snap.opps) || []) {
-            if (o && o.username) anonName(o.username);
+            if (o && o.username
+                    && o.username !== _anonSelfUsername
+                    && o.username !== _bridgeSelfUsername) {
+                _positionalAnon.set(o.username, `Opp ${i}`);
+                i += 1;
+            }
         }
     }
     function anonName(username, opts) {
@@ -252,23 +257,16 @@
         if (_anonSelfUsername === username) return 'You';
         if (_bridgeSelfUsername === username) return 'You';
         // Bridge-shipped map wins. content.js owns assignment because
-        // it sees colonist's chat / banners directly; panel-side
-        // assignment is only used as a fallback before the first
-        // streamer-anon POST has landed.
+        // it sees colonist's chat / banners directly. If the bridge
+        // hasn't seen this username yet (very first render of a new
+        // game, or bridge running stale code without the
+        // /streamer-anon endpoint), fall back to a positional label
+        // so we never invent a fantasy name that disagrees with chat.
         if (Object.prototype.hasOwnProperty
                 .call(_bridgeAnonMap, username)) {
             return _bridgeAnonMap[username];
         }
-        if (!_name_to_anon.has(username)) {
-            const slot = _FANTASY_NAMES[
-                _anonSeq % _FANTASY_NAMES.length];
-            const ordinal = Math.floor(
-                _anonSeq / _FANTASY_NAMES.length);
-            _name_to_anon.set(username,
-                ordinal === 0 ? slot : `${slot} ${ordinal + 1}`);
-            _anonSeq += 1;
-        }
-        return _name_to_anon.get(username);
+        return _positionalAnon.get(username) || 'Opp';
     }
     function anonInitial(username, opts) {
         if (!window.__catanbotStreamer) {
