@@ -208,6 +208,39 @@
         WOOD: '🌲', BRICK: '🧱', SHEEP: '🐑',
         WHEAT: '🌾', ORE: '⛰️',
     };
+
+    // Streamer mode anonymizer. When the toggle is on, every real
+    // username in the HUD is replaced with a stable generic label
+    // ("you" for self, "Opp 1" / "Opp 2" / etc. for everyone else
+    // in stable seat order). Off, returns the username unchanged.
+    // Mapping is rebuilt per-snap so seat changes between games
+    // re-anonymize correctly.
+    let _opp_anon_map = new Map();
+    let _opp_anon_seq = 0;
+    function _resetAnonMap() {
+        _opp_anon_map = new Map();
+        _opp_anon_seq = 0;
+    }
+    function anonName(username, opts) {
+        if (!window.__catanbotStreamer) return username || '';
+        if (!username) return '';
+        if (opts && opts.isSelf) return 'you';
+        if (!_opp_anon_map.has(username)) {
+            _opp_anon_seq += 1;
+            _opp_anon_map.set(username, `Opp ${_opp_anon_seq}`);
+        }
+        return _opp_anon_map.get(username);
+    }
+    // Single-letter for color pills (matches the "P" / "B" style).
+    function anonInitial(username, opts) {
+        if (!window.__catanbotStreamer) {
+            return (username || '?').slice(0, 1).toUpperCase();
+        }
+        if (opts && opts.isSelf) return 'Y';
+        const name = anonName(username, opts);  // "Opp 1"
+        const m = name.match(/(\d+)$/);
+        return m ? m[1] : '?';
+    }
     const iconFor = (res) => RES_EMOJI[res]
         || RES_SVG[res]
         || `<span class="res-glyph res-fallback">`
@@ -499,6 +532,32 @@
         } catch (_) { applyPaused(false); }
         pauseInput.addEventListener('change', () => {
             applyPaused(pauseInput.checked);
+        });
+
+        // Streamer mode — when on, every username in the HUD is
+        // replaced with "you" / "Opp 1" / "Opp 2" so screen-recordings
+        // and demos don't expose real handles. Persisted in
+        // localStorage so toggle survives reloads. Read by the global
+        // anonName() helper that wraps every username render.
+        const streamerInput = document.getElementById('streamer-mode');
+        function applyStreamer(on) {
+            panel.dataset.streamer = on ? '1' : '0';
+            window.__catanbotStreamer = !!on;
+            try {
+                localStorage.setItem(
+                    'catanbot.streamer', on ? '1' : '0');
+            } catch (_) {}
+            // Force a render with the new flag
+            if (lastSnap) renderOverlay(ui, lastSnap, true);
+        }
+        try {
+            const savedStreamer =
+                localStorage.getItem('catanbot.streamer') === '1';
+            streamerInput.checked = savedStreamer;
+            applyStreamer(savedStreamer);
+        } catch (_) { applyStreamer(false); }
+        streamerInput.addEventListener('change', () => {
+            applyStreamer(streamerInput.checked);
         });
 
         // Opacity slider — applies to the host element (outside shadow)
@@ -833,6 +892,16 @@
 
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
+        // Streamer mode: rebuild the username→label map at the top
+        // of every render so seat-order labels stay stable WITHIN a
+        // game but reset cleanly across games.
+        _resetAnonMap();
+        // Pre-seed in opps array order so labels match seat order.
+        if (window.__catanbotStreamer && snap && snap.opps) {
+            for (const o of snap.opps) {
+                if (o && o.username) anonName(o.username);
+            }
+        }
         if (!snap) {
             ui.content.innerHTML =
                 '<span class="err">bridge unreachable</span>';
@@ -958,7 +1027,7 @@
             const bg = pillColor(me);
             const fg = contrastText(bg);
             const pill = `<span class="color-pill" style="background:${bg};`
-                + `color:${fg};">${escapeHtml(me.username)}</span>`;
+                + `color:${fg};">${escapeHtml(anonName(me.username, {isSelf: true}))}</span>`;
             // Meta trailer: cards · knights. Piece counts (Xs/Yc/Zr)
             // were dropped — they read as cryptic shorthand and Catan's
             // own UI already shows them. Knights-played stays since it's
@@ -1624,8 +1693,7 @@
                     // (RED/BLUE/WHITE/ORANGE) so we remap colonist's
                     // green → RED internally, but that mapping
                     // shouldn't leak into the pill label.
-                    const letter = (v.username || v.color || '?')
-                        .slice(0, 1).toUpperCase();
+                    const letter = anonInitial(v.username || v.color);
                     const pill = `<span class="color-pill" style="background:${bg};`
                         + `color:${fg};font-size:calc(10px * var(--font-scale));${
                             v.suggested ? 'outline:2px solid #ffd36e;' : ''
@@ -1654,7 +1722,7 @@
                 const bg = pillColor(o);
                 const fg = contrastText(bg);
                 const pill = `<span class="color-pill" style="background:${bg};`
-                    + `color:${fg};">${escapeHtml(o.username)}</span>`;
+                    + `color:${fg};">${escapeHtml(anonName(o.username))}</span>`;
                 // Inferred hand breakdown + unknown remainder. The hand
                 // comes from the tracker (produce + known trades + builds
                 // etc). Unknown counts reflect 3rd-party steals and
@@ -1815,7 +1883,7 @@
             const fg = contrastText(bg);
             const offererPill = t.offerer
                 ? `<span class="color-pill" style="background:${bg};`
-                    + `color:${fg};">${escapeHtml(t.offerer)}</span> `
+                    + `color:${fg};">${escapeHtml(anonName(t.offerer))}</span> `
                 : '';
             // Pack -> "🧱 1 🐑 2" for both sides of the swap.
             const fmtSide = (pack) => {
@@ -1955,9 +2023,18 @@
         // them. The live HUD just doesn't.
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';
+            // Streamer mode: replace the leader's real name in the
+            // message with the anonymized label. The threat compute
+            // hard-codes "{username} at N VP" / similar templates,
+            // so a substring swap is safe.
+            let msg = snap.threat.message;
+            if (window.__catanbotStreamer && snap.threat.leader_username) {
+                msg = msg.split(snap.threat.leader_username).join(
+                    anonName(snap.threat.leader_username));
+            }
             parts.push(`<div class="threat ${lvl}">`
                 + `<span class="b-ico">⚠️</span> `
-                + escapeHtml(snap.threat.message)
+                + escapeHtml(msg)
                 + '</div>');
         }
         // 3rd-settle milestone — biggest pre-mid-game predictor of
@@ -1996,7 +2073,8 @@
         // toward dev cards / trades / robber pressure.
         if (snap.engine_deficit) {
             const ed = snap.engine_deficit;
-            const leader = escapeHtml(ed.leader_username || 'opp');
+            const leader = escapeHtml(
+                anonName(ed.leader_username || 'opp'));
             parts.push(`<div class="engine-deficit">`
                 + `<span class="b-ico">⚙️</span> `
                 + `engine gap — ${leader} `
