@@ -67,21 +67,27 @@
         return true;
     }
     function _isInputLike(el) {
-        // Don't rewrite the user's compose box, search fields, etc.
-        // contenteditable shows up in some chat designs; the input
-        // itself in colonist's compose row was getting clobbered.
-        let cur = el;
-        for (let i = 0; cur && i < 4; i++, cur = cur.parentElement) {
-            const tag = cur.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
-            if (cur.getAttribute
-                    && cur.getAttribute('contenteditable') === 'true') {
-                return true;
-            }
-            if (cur.getAttribute
-                    && cur.getAttribute('role') === 'textbox') {
-                return true;
-            }
+        // Don't rewrite the user's compose box. Tighter check than
+        // before — only flag the actual input/textarea and its
+        // immediate wrapper, not anything 4 levels up. The wider
+        // walk was over-skipping chat-message usernames whose
+        // ancestor tree happened to include a sibling input.
+        if (!el) return false;
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            return true;
+        }
+        if (el.getAttribute
+                && el.getAttribute('contenteditable') === 'true') {
+            return true;
+        }
+        const p = el.parentElement;
+        if (!p) return false;
+        if (p.tagName === 'INPUT' || p.tagName === 'TEXTAREA') {
+            return true;
+        }
+        if (p.getAttribute
+                && p.getAttribute('contenteditable') === 'true') {
+            return true;
         }
         return false;
     }
@@ -142,12 +148,26 @@
     // changes. localStorage on the colonist page is a different
     // origin than the panel's; chrome.storage.local is shared
     // across extension contexts.
+    function _burstAnon() {
+        // First pass right away, then a few delayed re-passes to
+        // catch elements that hadn't rendered yet (banners
+        // sometimes lazy-mount, chat history sometimes paginates).
+        // The 0/100/300/700ms cadence covers ~95% of late-render
+        // cases without flooding.
+        if (!streamerOn) return;
+        anonymizeColonistDOM();
+        for (const ms of [100, 300, 700, 1500]) {
+            setTimeout(() => {
+                if (streamerOn) anonymizeColonistDOM();
+            }, ms);
+        }
+    }
     try {
         chrome.storage.local.get(['streamer'], (res) => {
             streamerOn = !!(res && res.streamer);
             if (streamerOn) {
                 _refreshSelfName();
-                anonymizeColonistDOM();
+                _burstAnon();
             }
         });
         chrome.storage.onChanged.addListener((changes, area) => {
@@ -155,7 +175,7 @@
             streamerOn = !!changes.streamer.newValue;
             if (streamerOn) {
                 _refreshSelfName();
-                anonymizeColonistDOM();
+                _burstAnon();
             } else {
                 // Toggle off: clear the dedup flag so a future
                 // toggle-on re-applies. Real names stay where
