@@ -2322,6 +2322,43 @@
             copySnapshot();
         });
 
+        // Force-replay button — manually trigger background to
+        // re-broadcast the cached GameStart frame. Useful escape
+        // hatch when extension mode shows "waiting for game start"
+        // even though a colonist game is in progress.
+        const replayBtn = document.getElementById('replay-frames');
+        if (replayBtn) {
+            replayBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                replayBtn.classList.remove('flash-ok', 'flash-bad');
+                try {
+                    chrome.runtime.sendMessage({ type: 'request-replay' })
+                        .then((resp) => {
+                            const ok = resp
+                                && (resp.had_game_start || resp.had_state);
+                            replayBtn.classList.add(
+                                ok ? 'flash-ok' : 'flash-bad');
+                            replayBtn.textContent = ok
+                                ? 'replayed ✓'
+                                : 'no cached frame';
+                            setTimeout(() => {
+                                replayBtn.classList.remove(
+                                    'flash-ok', 'flash-bad');
+                                replayBtn.textContent = 'force replay';
+                            }, 1800);
+                        })
+                        .catch(() => {
+                            replayBtn.classList.add('flash-bad');
+                            replayBtn.textContent = 'replay failed';
+                            setTimeout(() => {
+                                replayBtn.classList.remove('flash-bad');
+                                replayBtn.textContent = 'force replay';
+                            }, 1800);
+                        });
+                } catch (_) {}
+            });
+        }
+
         // Keyboard shortcuts. Alt+<letter> avoids typing collisions with
         // colonist's chat and the board. Uses e.code (KeyP/KeyC/etc)
         // because on macOS Alt produces special chars for e.key.

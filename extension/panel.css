@@ -2127,6 +2127,11 @@
     color: var(--pos);
     border-color: var(--pos);
   }
+  .drawer-btn.flash-bad {
+    background: rgba(248, 113, 113, 0.18);
+    color: var(--neg);
+    border-color: var(--neg);
+  }
 
   .toggle {
     display: inline-flex; align-items: center;
