@@ -1297,6 +1297,93 @@ def test_leader_threat_close_not_imminent_when_no_vp_path():
     assert "WIN NEXT TURN" not in t["message"]
 
 
+def _fake_game_with_player_state(state_dict: dict[str, object]):
+    """Minimal stub matching what _compute_leader_threat reads off the
+    catanatron game when probing LR / LA proximity. Only need the
+    player_state dict and the color_to_index map."""
+    from catanatron import Color
+
+    class _State:
+        player_state = state_dict
+        color_to_index = {
+            Color.BLUE: 0, Color.RED: 1, Color.WHITE: 2, Color.ORANGE: 3,
+        }
+
+    class _CatGame:
+        state = _State()
+
+    class _Tracker:
+        game = _CatGame()
+
+    class _Game:
+        tracker = _Tracker()
+
+    return _Game()
+
+
+def test_leader_threat_imminent_when_la_one_play_away():
+    """Reddit 36k-game finding #4 corollary: LA wins are sticky and
+    leak past the threat banner when only the build-VP path is
+    checked. 8 VP leader with 2 played knights + 1 in hand → playing
+    that knight makes 3, the LA threshold (no opp at 3 yet), +2 VP →
+    10. Banner should fire 'imminent' even without a city in hand."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {
+        "opps": [{
+            "username": "X", "vp": 8, "color": "BLUE",
+            "can_afford": [], "dev_cards": 1,
+        }],
+        "self": {"vp": 5},
+    }
+    g = _fake_game_with_player_state({
+        "P0_PLAYED_KNIGHT": 2,
+        "P0_KNIGHT_IN_HAND": 1,
+        "P0_HAS_ARMY": False,
+        "P1_PLAYED_KNIGHT": 0,
+        "P2_PLAYED_KNIGHT": 0,
+        "P3_PLAYED_KNIGHT": 0,
+        "P0_LONGEST_ROAD_LENGTH": 2,
+        "P0_HAS_ROAD": False,
+        "P1_LONGEST_ROAD_LENGTH": 0,
+        "P2_LONGEST_ROAD_LENGTH": 0,
+        "P3_LONGEST_ROAD_LENGTH": 0,
+    })
+    t = _compute_leader_threat(snap, game=g)
+    assert t is not None
+    assert t["level"] == "imminent"
+    assert "la_push" in t["threat_vector"]
+
+
+def test_leader_threat_imminent_when_lr_one_road_away():
+    """Leader at 8 VP, 4 roads in chain, no opp threatening the
+    title → +1 road claims LR (+2 VP) → 10. Same imminent path."""
+    from cataanbot.bridge import _compute_leader_threat
+    snap = {
+        "opps": [{
+            "username": "X", "vp": 8, "color": "BLUE",
+            "can_afford": [], "dev_cards": 0,
+        }],
+        "self": {"vp": 5},
+    }
+    g = _fake_game_with_player_state({
+        "P0_PLAYED_KNIGHT": 0,
+        "P0_KNIGHT_IN_HAND": 0,
+        "P0_HAS_ARMY": False,
+        "P1_PLAYED_KNIGHT": 0,
+        "P2_PLAYED_KNIGHT": 0,
+        "P3_PLAYED_KNIGHT": 0,
+        "P0_LONGEST_ROAD_LENGTH": 4,
+        "P0_HAS_ROAD": False,
+        "P1_LONGEST_ROAD_LENGTH": 0,
+        "P2_LONGEST_ROAD_LENGTH": 0,
+        "P3_LONGEST_ROAD_LENGTH": 0,
+    })
+    t = _compute_leader_threat(snap, game=g)
+    assert t is not None
+    assert t["level"] == "imminent"
+    assert "lr_push" in t["threat_vector"]
+
+
 def test_leader_threat_vector_bumps_mid_to_close_on_vp_build():
     """A leader at 7 VP normally reads 'mid', but if they can afford a
     VP build they can close faster than VP suggests — bump to 'close'.

@@ -2133,7 +2133,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # Leader-threat banner: flag when any opp is at/near the win
     # threshold so the overlay can shift tone toward defense. Uses the
     # same close_to_win_vp() knob the rest of the bot respects.
-    snap["threat"] = _compute_leader_threat(snap)
+    snap["threat"] = _compute_leader_threat(snap, game=game)
     # Self close-to-win banner — symmetric with leader_threat but for
     # self. Dev-card count comes from the session directly (snap doesn't
     # carry the unplayed tally — ``vp_breakdown.vp_cards`` is the played

@@ -133,7 +133,9 @@ def _compute_longest_road_race(
     return None
 
 
-def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
+def _compute_leader_threat(
+    snap: dict[str, Any], game=None,
+) -> dict[str, Any] | None:
     """Flag the highest-VP opp and label the urgency.
 
     Returns a dict or None when nobody's ahead enough to warrant a
@@ -147,6 +149,11 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
     toward the win total the moment their total hits target). These
     convert the banner from "watch the leader" to "the leader can
     actually end it now" — which is a different decision for Noah.
+
+    When ``game`` is provided, also reads catanatron's player_state
+    to detect LR/LA proximity (1 road / 1 knight from claiming +2
+    VP). These add to max_immediate_vp so the imminent tier catches
+    "opp at 8 VP with 4 played knights and 1 in hand" too.
     """
     from cataanbot.config import close_to_win_vp, mid_late_vp, VP_TARGET
     opps = snap.get("opps") or []
@@ -189,6 +196,68 @@ def _compute_leader_threat(snap: dict[str, Any]) -> dict[str, Any] | None:
         max_immediate_vp += 1
     if leader.get("dev_stash_risk"):
         max_immediate_vp += 1
+    # LR / LA proximity: a +2 VP swing if leader can claim the title
+    # next turn. Reads catanatron's player_state when game is wired
+    # through (no-op when called from a unit test that passes only
+    # snap). Conservative additivity: only one of LR/LA can fire
+    # immediately, so we take the max — but knight-play and road-
+    # build are independent of city/settlement spend, so they DO
+    # stack with the build-VP path above.
+    la_lr_bonus = 0
+    if game is not None:
+        try:
+            from catanatron import Color
+            state = game.tracker.game.state
+            ps = state.player_state
+            leader_color = leader.get("color")
+            leader_enum = (Color[leader_color.upper()]
+                           if isinstance(leader_color, str)
+                           else None)
+            leader_idx = state.color_to_index.get(leader_enum)
+            if leader_idx is not None:
+                # LA: leader's played knights + 1 ≥ max(3, opp_max+1)
+                # AND leader doesn't already hold LA AND has knight in
+                # hand. LA flip = +2 VP next turn.
+                lp = int(ps.get(f"P{leader_idx}_PLAYED_KNIGHT", 0))
+                lk_held = int(ps.get(
+                    f"P{leader_idx}_KNIGHT_IN_HAND", 0))
+                l_has_army = bool(ps.get(
+                    f"P{leader_idx}_HAS_ARMY", False))
+                opp_max_knights = 0
+                for col, idx in state.color_to_index.items():
+                    if idx == leader_idx:
+                        continue
+                    opp_max_knights = max(opp_max_knights, int(
+                        ps.get(f"P{idx}_PLAYED_KNIGHT", 0)))
+                la_threshold = max(3, opp_max_knights + 1)
+                if (not l_has_army and lk_held >= 1
+                        and lp + 1 >= la_threshold):
+                    la_lr_bonus = max(la_lr_bonus, 2)
+                    if "la_push" not in vector:
+                        vector.append("la_push")
+                # LR: leader's road length + 1 ≥ max(5, opp_max+1) AND
+                # leader doesn't already hold LR. We can't see whether
+                # they have road resources, but they often will if they
+                # also have buildings affordable, so treat the path as
+                # possible whenever the chain qualifies. +2 VP next turn.
+                ll = int(ps.get(
+                    f"P{leader_idx}_LONGEST_ROAD_LENGTH", 0))
+                l_has_road = bool(ps.get(
+                    f"P{leader_idx}_HAS_ROAD", False))
+                opp_max_roads = 0
+                for col, idx in state.color_to_index.items():
+                    if idx == leader_idx:
+                        continue
+                    opp_max_roads = max(opp_max_roads, int(
+                        ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0)))
+                if (not l_has_road
+                        and ll + 1 >= max(5, opp_max_roads + 1)):
+                    la_lr_bonus = max(la_lr_bonus, 2)
+                    if "lr_push" not in vector:
+                        vector.append("lr_push")
+        except Exception:  # noqa: BLE001
+            pass
+    max_immediate_vp += la_lr_bonus
 
     # Level maps to overlay styling: "win" is effectively over,
     # "imminent" = leader could close on their NEXT turn (vp + visible
