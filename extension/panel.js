@@ -173,24 +173,193 @@
         return null;
     }
 
-    // Log-entry listener: pulls username + CSS color out of every
-    // chat row the content script forwards. Builds the
-    // _standaloneNames map so snap.self / snap.opps can ship real
-    // usernames instead of "RED"/"BLUE" placeholders.
+    // Inferred opp hands from chat-log parsing. The WS layer gives
+    // us authoritative HAND TOTALS for every player but only typed
+    // counts for self (opps' resourceCards.cards is zero-filled).
+    // Chat lines like "Aria received starting resources [grain]"
+    // and "Aria got [grain] [grain]" reveal which resources
+    // actually moved. We accumulate them per-username here and
+    // expose to the snap builder, which writes them into opp.hand
+    // when it can match the username to a colonist color id.
+    //
+    // Best-effort: trades / discards on a 7 / steals can drift the
+    // count vs. WS total. The bridge has a full hand-tracker with
+    // unknown-bucket and drift counters; standalone is intentionally
+    // simpler. When drift gets bad, the panel's hand_tracked flag
+    // stays false so the user reads it as approximate.
+    const _chatHands = {};   // username → {res: count}
+    const COLONIST_TO_CATAN = {
+        Lumber: 'WOOD', Brick: 'BRICK', Wool: 'SHEEP',
+        Grain: 'WHEAT', Ore: 'ORE',
+        // Lower-case + plurals seen in some scraper paths:
+        lumber: 'WOOD', brick: 'BRICK', wool: 'SHEEP',
+        grain: 'WHEAT', ore: 'ORE',
+    };
+    function _addChat(user, res, n) {
+        if (!user || !res || !n) return;
+        const h = _chatHands[user] || {
+            WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0,
+        };
+        h[res] = (h[res] || 0) + n;
+        if (h[res] < 0) h[res] = 0;
+        _chatHands[user] = h;
+    }
+    function _resetChatHand(user) {
+        _chatHands[user] = {
+            WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0,
+        };
+    }
+    function _firstName(parts) {
+        for (const p of parts || []) {
+            if (p && p.kind === 'name' && p.name) return p.name;
+        }
+        return null;
+    }
+    function _iconsToResources(parts) {
+        const out = [];
+        for (const p of parts || []) {
+            if (p && p.kind === 'icon' && p.alt) {
+                const res = COLONIST_TO_CATAN[p.alt]
+                    || COLONIST_TO_CATAN[p.alt.toLowerCase()];
+                if (res) out.push(res);
+            }
+        }
+        return out;
+    }
+    function _findNameAfter(parts, marker) {
+        // Find a 'name' part that appears after the first 'text'
+        // part containing `marker`. Used for "stole from <Y>" to
+        // capture the victim, not the thief.
+        let seenMarker = false;
+        for (const p of parts || []) {
+            if (p && p.kind === 'text' && p.text
+                    && p.text.toLowerCase().includes(marker)) {
+                seenMarker = true;
+            } else if (seenMarker && p && p.kind === 'name' && p.name) {
+                return p.name;
+            }
+        }
+        return null;
+    }
+
+    // Log-entry listener: stashes usernames and applies chat-driven
+    // hand inference to the inferredHands map.
     chrome.runtime.onMessage.addListener((msg) => {
         if (!msg || msg.type !== 'log-entry-broadcast') return false;
         const p = msg.payload || {};
         const names = Array.isArray(p.names) ? p.names : [];
         for (const n of names) {
-            // Prefer foreground color; bg only as fallback when fg
-            // is white-on-color (some banner rows have bg pills).
             const css = (n.color && String(n.color).trim())
                 || (n.bg && String(n.bg).trim()) || '';
             _stashName(n.name, css);
         }
         if (p.self) _stashName(p.self, '');
-        // Force a re-render so the next standalone snap picks up
-        // the new names without waiting for a WS frame.
+
+        const text = String(p.text || '').toLowerCase();
+        const player = _firstName(p.parts);
+        const resources = _iconsToResources(p.parts);
+
+        if (player) {
+            // Production from setup phase or rolls. Setup-phase
+            // starting resources land once per opp at game start;
+            // "got" is the regular roll-payout phrasing.
+            if (text.includes('received starting resources')
+                    && resources.length) {
+                for (const r of resources) _addChat(player, r, 1);
+            } else if ((text.includes(' got ')
+                        || text.startsWith('got '))
+                       && resources.length) {
+                for (const r of resources) _addChat(player, r, 1);
+            }
+            // Year of Plenty
+            else if (text.includes('took from bank')
+                    && resources.length) {
+                for (const r of resources) _addChat(player, r, 1);
+            }
+            // Discard on a 7
+            else if (text.includes('discarded')
+                    && resources.length) {
+                for (const r of resources) _addChat(player, r, -1);
+            }
+            // Build/place — debit the build cost. "placed" is free
+            // (setup phase or Road Building card) so skip those.
+            else if (text.includes('built a')) {
+                if (text.includes('settlement')) {
+                    _addChat(player, 'WOOD', -1);
+                    _addChat(player, 'BRICK', -1);
+                    _addChat(player, 'SHEEP', -1);
+                    _addChat(player, 'WHEAT', -1);
+                } else if (text.includes('city')) {
+                    _addChat(player, 'WHEAT', -2);
+                    _addChat(player, 'ORE', -3);
+                } else if (text.includes('road')) {
+                    _addChat(player, 'WOOD', -1);
+                    _addChat(player, 'BRICK', -1);
+                }
+            }
+            // Dev card buy
+            else if (text.includes('bought')
+                    && text.includes('development card')) {
+                _addChat(player, 'SHEEP', -1);
+                _addChat(player, 'WHEAT', -1);
+                _addChat(player, 'ORE', -1);
+            }
+            // Trade with bank: "X gave bank [a] [a] [a] [a] and took [b]"
+            else if (text.includes('gave bank')
+                    && text.includes('and took')) {
+                // Pre-"and took" icons are gave; post are got.
+                let gaveDone = false;
+                const give = [];
+                const got = [];
+                for (const part of (p.parts || [])) {
+                    if (part.kind === 'text'
+                            && /and took/i.test(part.text || '')) {
+                        gaveDone = true; continue;
+                    }
+                    if (part.kind === 'icon' && part.alt) {
+                        const res = COLONIST_TO_CATAN[part.alt]
+                            || COLONIST_TO_CATAN[part.alt.toLowerCase()];
+                        if (!res) continue;
+                        (gaveDone ? got : give).push(res);
+                    }
+                }
+                for (const r of give) _addChat(player, r, -1);
+                for (const r of got) _addChat(player, r, 1);
+            }
+            // Steal with revealed resource: "you stole from X [res]"
+            else if (text.includes('you stole from')
+                    && resources.length) {
+                // self steals from `player`. We can't update self
+                // (state.hands is canonical from WS); just debit
+                // the victim.
+                _addChat(player, resources[0], -1);
+            }
+            // "X stole from you [res]" — opp stole from us; credit X.
+            else if (text.includes('stole from you')
+                    && resources.length) {
+                _addChat(player, resources[0], 1);
+            }
+            // Monopoly: "X stole N [res]" (no "from"). All opps
+            // lose their `res`; X gains them all. Hard to model
+            // perfectly without per-opp accounting; just clear
+            // every opp's `res` and credit X with N. The N is in
+            // the chat text as a number; rough best-effort.
+            else if (text.includes('stole')
+                    && !text.includes('from')
+                    && resources.length) {
+                const m = (p.text || '').match(/(\d+)/);
+                const n = m ? Number(m[1]) : 0;
+                if (n > 0 && resources[0]) {
+                    // Zero out everyone else's res then give to player.
+                    for (const u of Object.keys(_chatHands)) {
+                        if (u === player) continue;
+                        _chatHands[u][resources[0]] = 0;
+                    }
+                    _addChat(player, resources[0], n);
+                }
+            }
+        }
+
         if (names.length) window.__catanbotRenderDirty = true;
         return false;
     });
@@ -622,16 +791,32 @@
                         };
                         const oppUser = _bestUsernameFor(c)
                             || _colorName(c);
+                        // Inferred per-resource hand from chat
+                        // parsing. Sum of inferred resources should
+                        // approximate WS's authoritative hand TOTAL;
+                        // when they diverge by ≤1 we call it
+                        // "tracked", otherwise we leave the unknown
+                        // bucket non-zero so the panel renders the
+                        // ~? chip flagging drift.
+                        const inf = _chatHands[oppUser];
+                        const infTotal = inf
+                            ? Object.values(inf).reduce(
+                                (s, v) => s + v, 0) : 0;
+                        const wsTotal = st.handTotal[c] || 0;
+                        const unknown = inf
+                            ? Math.max(0, wsTotal - infTotal) : 0;
+                        const tracked = inf && Math.abs(
+                            wsTotal - infTotal) <= 1;
                         oppsBlock.push({
                             username: oppUser,
                             is_placeholder: false,
                             color: _colorName(c),
                             color_css: _standaloneNames.byUser[oppUser]
                                 || _colorHex(c),
-                            cards: st.handTotal[c] || 0,
-                            hand: null,
-                            unknown: 0,
-                            hand_tracked: false,
+                            cards: wsTotal,
+                            hand: inf ? { ...inf } : null,
+                            unknown,
+                            hand_tracked: tracked,
                             card_delta: 0,
                             card_delta_window: 0,
                             vp: st.vp[c] || 0,
