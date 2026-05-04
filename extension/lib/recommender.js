@@ -30,10 +30,16 @@ const COSTS = {
 
 function _clip(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-/** Settlement 1-10 score from corner production. */
+/** Settlement 1-10 score from corner production. Mirrors the
+ *  opening-pick calibration: production-weighted base × diversity
+ *  multiplier (more resources covered = more valuable). */
 function _scoreSettlement(prod) {
     const total = Object.values(prod).reduce((s, v) => s + v, 0);
-    return Math.round(_clip(total * 12.0 + 2.0, 2.0, 10.0) * 10) / 10;
+    const distinct = Object.values(prod).filter(v => v > 0).length;
+    const diversity = distinct >= 3 ? 1.22
+        : (distinct === 2 ? 1.08 : 1.0);
+    return Math.round(_clip(total * 12.0 * diversity + 2.0,
+        2.0, 10.0) * 10) / 10;
 }
 
 /** City 1-10 score: doubled production + 3 base. */
@@ -377,22 +383,27 @@ function _bankTradeRecs(state, hand, opts) {
     return recs.slice(0, 2);
 }
 
-/** Dev-card buy rec — simple, fires when affordable + bank has cards. */
-function _devCardRec(state, hand) {
-    if (!handCanAfford(hand, COSTS.dev_card)) {
-        return {
-            kind: 'dev_card',
-            when: 'soon',
-            score: 4.5,
-            detail: 'buy dev card',
-            missing: _missing(hand, COSTS.dev_card),
-        };
-    }
+/** Dev-card buy rec. Score scales with how stuck the player is
+ *  (no settle/road/city better than this) and game phase — mid-late
+ *  it's a serious play, opening it's noise. */
+function _devCardRec(state, hand, otherRecs) {
+    const can = handCanAfford(hand, COSTS.dev_card);
+    // Best non-dev now-rec score, if any. If no settle/road/city
+    // is even close, dev card becomes the primary play.
+    const nonDevTop = (otherRecs || [])
+        .filter(r => r.kind !== 'dev_card' && r.when === 'now')
+        .reduce((m, r) => Math.max(m, r.score || 0), 0);
+    let score = 4.5;
+    if (state.totalRolls >= 8) score += 0.5;
+    if (nonDevTop === 0) score += 1.5; // nothing else affordable
+    if (state.hasArmy === state.selfColor) score -= 0.5;
+    score = Math.min(8.0, Math.max(2.5, score));
     return {
         kind: 'dev_card',
-        when: 'now',
-        score: 4.5,
+        when: can ? 'now' : 'soon',
+        score: Math.round(score * 10) / 10,
         detail: 'buy dev card',
+        missing: can ? null : _missing(hand, COSTS.dev_card),
     };
 }
 
@@ -405,7 +416,7 @@ export function recommendActions(state, opts = {}) {
     recs.push(..._settleRecs(state, hand, opts));
     recs.push(..._roadRecs(state, hand, opts));
     recs.push(..._bankTradeRecs(state, hand, opts));
-    recs.push(_devCardRec(state, hand));
+    recs.push(_devCardRec(state, hand, recs));
 
     // Filter out duplicates by (kind, node_id|edge|target).
     const seen = new Set();

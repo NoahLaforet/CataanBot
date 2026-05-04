@@ -427,6 +427,90 @@
                         _bestUsernameFor(st.selfColorId)
                         || (_standaloneNames.recent[0] || null)
                         || _colorName(st.selfColorId);
+                    // afford / next_build — straight from hand vs. costs.
+                    const COSTS = {
+                        settlement: { WOOD: 1, BRICK: 1, SHEEP: 1, WHEAT: 1 },
+                        city: { WHEAT: 2, ORE: 3 },
+                        road: { WOOD: 1, BRICK: 1 },
+                        'dev card': { SHEEP: 1, WHEAT: 1, ORE: 1 },
+                    };
+                    const afford = [];
+                    let nextBuild = null;
+                    let smallestGap = Infinity;
+                    for (const [name, cost] of Object.entries(COSTS)) {
+                        const missing = {};
+                        let gap = 0;
+                        for (const [r, n] of Object.entries(cost)) {
+                            const have = selfHand[r] || 0;
+                            if (have < n) {
+                                missing[r] = n - have;
+                                gap += n - have;
+                            }
+                        }
+                        if (gap === 0) {
+                            afford.push(name);
+                        } else if (gap < smallestGap) {
+                            smallestGap = gap;
+                            nextBuild = { build: name, missing, gap };
+                        }
+                    }
+                    // Production summary — per-roll yield + strongest
+                    // resource. Mirrors bridge's _compute_production.
+                    const myProdMap = { WOOD: 0, BRICK: 0,
+                        SHEEP: 0, WHEAT: 0, ORE: 0 };
+                    let myPorts = [];
+                    if (st.map) {
+                        for (const [nid, b] of Object.entries(st.buildings)) {
+                            if (b.color !== st.selfColor) continue;
+                            const node = st.map.nodes[nid];
+                            if (!node) continue;
+                            const mult = b.kind === 'CITY' ? 2 : 1;
+                            for (const tid of node.tiles) {
+                                const t = st.map.tiles[tid];
+                                if (!t || !t.resource) continue;
+                                myProdMap[t.resource] += (t.pip / 36) * mult;
+                            }
+                            if (node.port) {
+                                myPorts.push(
+                                    node.port.kind === '3:1'
+                                        ? 'GENERIC'
+                                        : node.port.resource);
+                            }
+                        }
+                    }
+                    // Monopoly risk — when self has a 6+ stack of one
+                    // resource AND any opp holds at least one unplayed
+                    // dev card, surface the exposure so the user
+                    // doesn't get drained.
+                    let monopolyRisk = null;
+                    {
+                        const stacks = Object.entries(selfHand)
+                            .filter(([, n]) => n >= 6)
+                            .sort((a, b) => b[1] - a[1]);
+                        let oppHasDev = false;
+                        for (const c of st.colors) {
+                            if (c === st.selfColor) continue;
+                            if ((st.devCardsTotal[c] || 0) > 0) {
+                                oppHasDev = true; break;
+                            }
+                        }
+                        if (stacks.length && oppHasDev) {
+                            monopolyRisk = {
+                                resource: stacks[0][0],
+                                count: stacks[0][1],
+                            };
+                        }
+                    }
+                    const myPerRoll = Object.values(myProdMap)
+                        .reduce((s, v) => s + v, 0);
+                    const myTop = Object.entries(myProdMap)
+                        .reduce((best, kv) =>
+                            kv[1] > (best ? best[1] : 0) ? kv : best, null);
+                    const myProduction = myPerRoll > 0
+                        ? { per_roll: myPerRoll,
+                            top_resource: myTop ? myTop[0] : null,
+                            per_resource: { ...myProdMap } }
+                        : null;
                     selfBlock = {
                         username: selfUser,
                         color: _colorName(st.selfColorId),
@@ -434,17 +518,32 @@
                             || _colorHex(st.selfColorId),
                         hand: { ...selfHand },
                         cards: totalSelf,
-                        afford: null,
-                        next_build: null,
+                        afford,
+                        next_build: nextBuild,
+                        production: myProduction,
+                        ports: myPorts,
                         vp: st.vp[st.selfColor] || 0,
                         hand_drift: false,
                         pieces: myPieces,
-                        vp_breakdown: null,
                         knights_played:
                             st.playedKnights[st.selfColor] || 0,
-                        ports: [],
-                        production: null,
-                        monopoly_risk: null,
+                        monopoly_risk: monopolyRisk,
+                        vp_breakdown: (() => {
+                            let s = 0, ci = 0;
+                            for (const b of Object.values(st.buildings)) {
+                                if (b.color !== st.selfColor) continue;
+                                if (b.kind === 'CITY') ci += 1;
+                                else s += 1;
+                            }
+                            const vpc = st.vpCardsInHand[st.selfColor] || 0;
+                            const lr = st.hasRoad === st.selfColor ? 2 : 0;
+                            const la = st.hasArmy === st.selfColor ? 2 : 0;
+                            const total = s + ci * 2 + vpc + lr + la;
+                            return {
+                                settle: s, city: ci, vp_cards: vpc,
+                                longest_road: lr, largest_army: la, total,
+                            };
+                        })(),
                         dev_cards: st.devCardsByType[st.selfColor]
                             || lib.newDevCardCounts(),
                         dev_total: st.devCardsTotal[st.selfColor] || 0,
