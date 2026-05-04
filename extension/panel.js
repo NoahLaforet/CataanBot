@@ -547,8 +547,14 @@
                 localStorage.setItem(
                     'catanbot.streamer', on ? '1' : '0');
             } catch (_) {}
-            // Force a render with the new flag
-            if (lastSnap) renderOverlay(ui, lastSnap, true);
+            // Force a render with the new flag — but only after the
+            // poll loop has populated latestAdvisorSnap. At init time
+            // (before the first tick) latestAdvisorSnap is null and
+            // we just let the next ~1s poll re-render naturally.
+            if (typeof latestAdvisorSnap !== 'undefined'
+                    && latestAdvisorSnap) {
+                renderOverlay(ui, latestAdvisorSnap, true);
+            }
         }
         try {
             const savedStreamer =
