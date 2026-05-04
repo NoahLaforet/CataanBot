@@ -71,6 +71,32 @@
     ];
     const _name_to_anon = new Map();   // real → assigned label
     let _anonSeq = 0;
+    // Debounced sync of _name_to_anon to the bridge so the side panel
+    // pills agree with what colonist's chat / banners show. Without
+    // this the panel maintains its own counter and diverges (panel
+    // showed Elin/Dara/Fynn while chat showed Aria/Bran/Cyrus on
+    // 2026-05-04 — same set of usernames, different counter state).
+    let _anonSyncPending = false;
+    function _scheduleAnonSync() {
+        if (_anonSyncPending) return;
+        _anonSyncPending = true;
+        setTimeout(() => {
+            _anonSyncPending = false;
+            const names = {};
+            for (const [k, v] of _name_to_anon.entries()) {
+                names[k] = v;
+            }
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'streamer-anon',
+                    payload: { self: _anonSelfName, names },
+                }).catch(() => {});
+            } catch (_) {
+                // Extension context may be invalidated (post-reload);
+                // already handled by the ws-frame relay's flag.
+            }
+        }, 50);
+    }
     function anonLabelFor(name) {
         if (!name) return name;
         if (_anonSelfName && name === _anonSelfName) return 'You';
@@ -80,6 +106,7 @@
             _name_to_anon.set(name,
                 ordinal === 0 ? slot : `${slot} ${ordinal + 1}`);
             _anonSeq += 1;
+            _scheduleAnonSync();
         }
         return _name_to_anon.get(name);
     }
@@ -239,7 +266,11 @@
             const raw = localStorage.getItem('userState');
             if (!raw) return;
             const obj = JSON.parse(raw);
-            _anonSelfName = obj && obj.username ? obj.username : null;
+            const next = obj && obj.username ? obj.username : null;
+            if (next !== _anonSelfName) {
+                _anonSelfName = next;
+                _scheduleAnonSync();
+            }
         } catch (_) { /* ignore */ }
     }
     // Pull the toggle state from chrome.storage.local + listen for

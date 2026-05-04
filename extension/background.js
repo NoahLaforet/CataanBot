@@ -98,6 +98,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         postJson(`${BRIDGE_BASE}/feedback`, msg.payload);
         return false;
     }
+    if (msg.type === 'streamer-anon') {
+        // Sync content.js's username→fantasy-name map to the bridge so
+        // the side panel can read the same labels and stop diverging
+        // (panel previously had its own counter — see 2026-05-04
+        // Elin/Dara/Fynn vs chat's Aria/Bran/Cyrus regression).
+        postJson(`${BRIDGE_BASE}/streamer-anon`, msg.payload);
+        return false;
+    }
     if (msg.type === 'reset-bridge') {
         postJson(`${BRIDGE_BASE}/reset`, {})
             .then(ok => sendResponse({ ok }));

@@ -4,6 +4,30 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.10 — 2026-05-04
+
+Fix the panel-vs-chat name desync. content.js (colonist tab) and
+panel.js (side panel) each maintained their own
+`_FANTASY_NAMES` counter, so when both saw the same set of real
+usernames in different orders the panel ended up labelling
+opps as "Elin / Dara / Fynn" while colonist chat / banners
+showed "Aria / Bran / Cyrus". Also explained the orange-pill
+confusion from v0.33.9: the bridge had latched a transparent
+color, AND the player labelled "Cyrus" in chat was actually
+labelled "Fynn" in the panel — same root cause for both halves.
+
+- **`POST /streamer-anon`** new bridge endpoint takes
+  `{self, names: {real → anon}}` and stores it on bridge state.
+  Cleared on the new-game reboot path alongside `display_colors`.
+- **content.js** schedules a debounced sync to the bridge every
+  time `_name_to_anon` grows or `_anonSelfName` flips. Background
+  service worker forwards `streamer-anon` messages to the bridge.
+- **panel.js** `anonName()` now consults `snap.streamer_anon`
+  first; the local counter only fires as a pre-content-POST
+  fallback. Self detection also honours
+  `snap.streamer_self_username` so the "You" pill works even
+  before catanatron has booted self_color.
+
 ## v0.33.9 — 2026-05-04
 
 Fix the orange-pill regression introduced by v0.33.8's hard-blank

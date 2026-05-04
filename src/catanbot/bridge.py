@@ -181,6 +181,15 @@ def _build_app(jsonl_path: Path | None = None,
         # don't map onto catanatron's 4-color enum), so the chat log is
         # our source of truth for what color the user actually sees.
         "display_colors": {},
+        # Streamer-mode anonymization map: real username → fantasy label
+        # ("Aria" / "Bran" / ...). content.js owns assignment and POSTs
+        # the map here whenever it grows; the panel reads it back via
+        # the snap so its pills agree with what colonist chat/banners
+        # show. Without this, content.js and panel.js maintained their
+        # own counters and diverged (panel showed Elin/Dara/Fynn while
+        # chat showed Aria/Bran/Cyrus on 2026-05-04).
+        "streamer_anon": {},
+        "streamer_self_username": None,
         # Latest pending player-to-player trade offer from the DOM log.
         # {"player", "give", "want", "ts"} when live; cleared on commit,
         # on any subsequent offer, or on the next dice roll. Evaluated
@@ -289,6 +298,8 @@ def _build_app(jsonl_path: Path | None = None,
             st["pm_timestamps"] = []
             st["pm_written"] = False
             st["display_colors"] = {}
+            st["streamer_anon"] = {}
+            st["streamer_self_username"] = None
             st["pending_trade_offer"] = None
             st["eval_history"] = []
             st["last_recs_for_self"] = []
@@ -323,6 +334,39 @@ def _build_app(jsonl_path: Path | None = None,
             _print_dispatch_results(
                 game, results, st["ws_count"], advisor=advisor)
         return {"ok": True, "results": len(results or [])}
+
+    @app.post("/streamer-anon")
+    def streamer_anon(
+            payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Sync content.js's streamer-mode username→fantasy-name map
+        into bridge state so the side panel can read the same labels.
+
+        content.js (running in the colonist tab) is the only place that
+        sees player names in the chat / banners and assigns fantasy
+        labels. The panel runs in a separate side-panel context with no
+        DOM access to colonist, so before this endpoint the panel had
+        to re-derive names from the catanatron snap and ended up with
+        a different counter, producing labels like Elin/Dara/Fynn while
+        chat showed Aria/Bran/Cyrus.
+
+        Payload: ``{"self": "<self_username>"|null,
+                     "names": {real_username: fantasy_label, ...}}``.
+        Map is merged (assignments are stable within a game), and
+        cleared in the new-game reboot path."""
+        names = payload.get("names")
+        if isinstance(names, dict):
+            for real, anon in names.items():
+                if (isinstance(real, str) and real
+                        and isinstance(anon, str) and anon):
+                    st["streamer_anon"][real] = anon
+        self_username = payload.get("self")
+        if isinstance(self_username, str) and self_username:
+            st["streamer_self_username"] = self_username
+        elif self_username is None:
+            # Explicit null means "self not detected yet" — preserve
+            # the last known value (don't clobber to None).
+            pass
+        return {"ok": True, "size": len(st["streamer_anon"])}
 
     @app.post("/feedback")
     def feedback(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
@@ -2366,6 +2410,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] standings failed: {e!r}", flush=True)
         snap["standings"] = None
+    # Streamer-mode anon map — populated by content.js via
+    # POST /streamer-anon. Panel uses this to align its pill labels
+    # with what colonist's chat / banners show.
+    snap["streamer_anon"] = dict(st.get("streamer_anon") or {})
+    snap["streamer_self_username"] = st.get("streamer_self_username")
     return snap
 
 

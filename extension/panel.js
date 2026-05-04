@@ -221,12 +221,26 @@
     const _name_to_anon = new Map();
     let _anonSeq = 0;
     let _anonSelfUsername = null;
+    // Authoritative map shipped from content.js via the bridge. The
+    // panel and content.js previously each had their own counter, so
+    // when both saw the same usernames in different orders the panel
+    // assigned later fantasy names than chat (Elin/Dara/Fynn vs
+    // Aria/Bran/Cyrus on 2026-05-04). We now prefer the bridge map
+    // and fall back to the local counter only when it's empty (e.g.
+    // the very first render before content.js has POSTed anything).
+    let _bridgeAnonMap = {};
+    let _bridgeSelfUsername = null;
     function _populateAnonColors(snap) {
+        _bridgeAnonMap = (snap && snap.streamer_anon) || {};
+        _bridgeSelfUsername = (snap && snap.streamer_self_username)
+            || null;
         // Re-seed self detection each render. _name_to_anon survives
         // across renders so labels stay stable within a game.
         _anonSelfUsername = (snap && snap.self && snap.self.username)
-            || null;
-        // Pre-walk opps so seat order is deterministic.
+            || _bridgeSelfUsername || null;
+        // Pre-walk opps so seat order is deterministic. Only matters
+        // for the local-fallback counter — the bridge map already
+        // owns assignment when present.
         for (const o of (snap && snap.opps) || []) {
             if (o && o.username) anonName(o.username);
         }
@@ -236,6 +250,15 @@
         if (!username) return '';
         if (opts && opts.isSelf) return 'You';
         if (_anonSelfUsername === username) return 'You';
+        if (_bridgeSelfUsername === username) return 'You';
+        // Bridge-shipped map wins. content.js owns assignment because
+        // it sees colonist's chat / banners directly; panel-side
+        // assignment is only used as a fallback before the first
+        // streamer-anon POST has landed.
+        if (Object.prototype.hasOwnProperty
+                .call(_bridgeAnonMap, username)) {
+            return _bridgeAnonMap[username];
+        }
         if (!_name_to_anon.has(username)) {
             const slot = _FANTASY_NAMES[
                 _anonSeq % _FANTASY_NAMES.length];
@@ -253,6 +276,7 @@
         }
         if (opts && opts.isSelf) return 'Y';
         if (_anonSelfUsername === username) return 'Y';
+        if (_bridgeSelfUsername === username) return 'Y';
         return anonName(username).slice(0, 1).toUpperCase();
     }
     const iconFor = (res) => RES_EMOJI[res]
