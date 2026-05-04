@@ -1410,6 +1410,43 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: var(--s-2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .strategy-ranking .srr-h:hover {
+    color: var(--fg);
+  }
+  .strategy-ranking .srr-caret {
+    display: inline-block;
+    width: 12px;
+    color: var(--fg-dim);
+    margin-right: 2px;
+  }
+  .strategy-ranking .srr-tease {
+    color: var(--fg-dim);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  /* Collapsed by default — body hidden until the user clicks the
+     header. Strategy banner above is still visible at full strength
+     so the active archetype + rationale never disappear. */
+  .strategy-ranking .srr-body {
+    display: none;
+  }
+  .strategy-ranking.open .srr-body {
+    display: block;
+  }
+  .strategy-ranking.open .srr-tease {
+    display: none;
+  }
+  .strategy-ranking:not(.open) {
+    margin-bottom: var(--s-1);
+    padding-top: var(--s-2);
+    padding-bottom: var(--s-2);
+  }
+  .strategy-ranking:not(.open) .srr-h {
+    margin-bottom: 0;
   }
   .strat-rank-row {
     display: grid;
@@ -2571,6 +2608,34 @@ html, body, .panel {
   text-transform: uppercase !important;
   letter-spacing: 0.06em !important;
   margin-bottom: 4px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+.strategy-ranking .srr-h:hover {
+  color: var(--fg) !important;
+}
+.strategy-ranking .srr-caret {
+  display: inline-block !important;
+  width: 12px !important;
+  color: var(--fg-dim) !important;
+  margin-right: 2px !important;
+}
+.strategy-ranking .srr-tease {
+  color: var(--fg-dim) !important;
+  font-weight: 400 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+.strategy-ranking .srr-body { display: none !important; }
+.strategy-ranking.open .srr-body { display: block !important; }
+.strategy-ranking.open .srr-tease { display: none !important; }
+.strategy-ranking:not(.open) {
+  margin-bottom: 4px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+.strategy-ranking:not(.open) .srr-h {
+  margin-bottom: 0 !important;
 }
 .strat-rank-row {
   display: grid !important;

@@ -478,6 +478,30 @@
         panel.addEventListener('click', (e) => {
             const target = e.target;
             if (!(target instanceof Element)) return;
+            // Strategy ranking toggle. Click anywhere on the header
+            // (the data-strat-rank-toggle element); persist the state
+            // in localStorage so it stays expanded/collapsed across
+            // reloads. Default is collapsed — too many vertical
+            // pixels otherwise.
+            const stratHeader = target.closest(
+                '[data-strat-rank-toggle]');
+            if (stratHeader) {
+                const wrap = stratHeader.closest('[data-strat-rank]');
+                if (wrap) {
+                    const isOpen = wrap.classList.toggle('open');
+                    try {
+                        localStorage.setItem(
+                            'cataan-strat-rank-open',
+                            isOpen ? '1' : '0');
+                    } catch (_) { /* localStorage may be blocked */ }
+                    // Update caret immediately so the user sees the
+                    // toggle without waiting for the next /advisor
+                    // tick to re-render.
+                    const caret = wrap.querySelector('.srr-caret');
+                    if (caret) caret.textContent = isOpen ? '▾' : '▸';
+                }
+                return;
+            }
             if (!target.classList.contains('fb')) return;
             e.stopPropagation();
             const dataAttr = target.getAttribute('data-rec');
@@ -1075,10 +1099,34 @@
                     + (r.score || 0).toFixed(2) + `</span>`
                     + `</div>`;
             }).join('');
+            // Collapsed by default — chalks777 ranking display takes
+            // ~150px of vertical real estate that competes with rec
+            // banners and trade offers below the fold. localStorage
+            // persists the open/closed preference across reloads.
+            // Click the header to toggle.
+            let openByDefault = false;
+            try {
+                openByDefault = localStorage.getItem(
+                    'cataan-strat-rank-open') === '1';
+            } catch (_) { /* localStorage may be blocked */ }
+            const openCls = openByDefault ? ' open' : '';
+            const caret = openByDefault ? '▾' : '▸';
+            // Tease: in the collapsed-header, show the top-3 tag
+            // names so the headline still informs at a glance.
+            const teaseTags = ranking.slice(0, 3)
+                .map(r => STRAT_TAG_LABELS[r.tag] || r.tag)
+                .join(' · ');
             out.push(
-                `<div class="strategy-ranking">`
-                + `<div class="srr-h">strategy ranking</div>`
-                + rows
+                `<div class="strategy-ranking${openCls}" `
+                + `data-strat-rank>`
+                + `<div class="srr-h" data-strat-rank-toggle `
+                + `title="click to ${openByDefault ? 'collapse' : 'expand'} `
+                + `the full per-archetype scoring view">`
+                + `<span class="srr-caret">${caret}</span> `
+                + `strategy ranking`
+                + `<span class="srr-tease"> · ${escapeHtml(teaseTags)}</span>`
+                + `</div>`
+                + `<div class="srr-body">${rows}</div>`
                 + `</div>`);
         }
         // Pivot triggers (mid-game adaptation signals).
