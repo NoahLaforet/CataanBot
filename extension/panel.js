@@ -418,6 +418,12 @@
                             _standalone.bankRemaining = {};
                             _standalone.selfColorId = null;
                             _standalone.currentTurnPlayerColor = null;
+                            // Drop chat-inferred hands too —
+                            // last game's resources don't carry
+                            // over to the new game.
+                            for (const k of Object.keys(_chatHands)) {
+                                delete _chatHands[k];
+                            }
                         }
                         _standalone.state.map = _standalone.board;
                     }
@@ -1992,6 +1998,9 @@
                 _standalone.bankRemaining = {};
                 if (_standalone._lib) {
                     _standalone.state = _standalone._lib.newGameState();
+                }
+                for (const k of Object.keys(_chatHands)) {
+                    delete _chatHands[k];
                 }
             } catch (_) {}
             try {
