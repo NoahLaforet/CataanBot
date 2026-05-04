@@ -304,7 +304,15 @@
                         0, 4 - (b.cities || 4));
                 }
                 const expectedOpeningSettles = 2 * playersTotal;
-                const inOpeningPhase = playersTotal > 0
+                // Setup-phase detection: bank-derived count says
+                // "openings still happening" UNTIL we see the first
+                // dice roll, at which point we're definitively in
+                // mid-game regardless of what the bank counts say
+                // (joined mid-game, missed a setup frame, etc.).
+                const totalRollsSoFar = (_standalone.state
+                    && _standalone.state.totalRolls) || 0;
+                const inOpeningPhase = totalRollsSoFar === 0
+                    && playersTotal > 0
                     && settlesPlaced < expectedOpeningSettles;
                 const ranked = lib.scoreOpeningNodes(_standalone.board);
                 // Self bank info — drives a "your turn / wait"
@@ -548,7 +556,13 @@
                             || lib.newDevCardCounts(),
                         dev_total: st.devCardsTotal[st.selfColor] || 0,
                     };
-                    for (const c of st.colors) {
+                    // Stable seat order: sort colors by colonist
+                    // color id (numeric). Matches the order colonist
+                    // shows player rows in its own UI so the panel's
+                    // opp cards line up visually with the game.
+                    const sortedColors = st.colors.slice().sort(
+                        (a, b) => Number(a) - Number(b));
+                    for (const c of sortedColors) {
                         if (c === st.selfColor) continue;
                         const ob = banks[c] || {};
                         const oppPieces = {
