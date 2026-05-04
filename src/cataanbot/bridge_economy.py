@@ -338,10 +338,45 @@ def _compute_dev_deck_remaining(game) -> dict[str, Any] | None:
     # Clamp — if tracking drift somehow outputs drawn > 25 we don't
     # want to surface a negative number.
     remaining = max(0, 25 - drawn)
+    # Per-type breakdown: subtract total-played-across-all-players from
+    # base deck composition (14 knights, 2 each of monopoly/YoP/road-
+    # building). VP cards (5) sit hidden in hands and never log a
+    # "played" action, so we can't infer remaining from plays — drop
+    # VP from the breakdown to avoid showing a misleading number.
+    # Reddit 36k-game finding #8 says LA is left on the table 29% of
+    # games — Noah's request 2026-05-02 for a counter so he can spot
+    # an under-contested LA push by knight scarcity.
+    BASE_BY_TYPE = {
+        "KNIGHT": 14,
+        "MONOPOLY": 2,
+        "YEAR_OF_PLENTY": 2,
+        "ROAD_BUILDING": 2,
+    }
+    KEY_BY_TYPE = {
+        "KNIGHT": "PLAYED_KNIGHT",
+        "MONOPOLY": "PLAYED_MONOPOLY",
+        "YEAR_OF_PLENTY": "PLAYED_YEAR_OF_PLENTY",
+        "ROAD_BUILDING": "PLAYED_ROAD_BUILDING",
+    }
+    by_type: dict[str, dict[str, int]] = {}
+    for type_name, base in BASE_BY_TYPE.items():
+        played = 0
+        key = KEY_BY_TYPE[type_name]
+        for _c, idx in state.color_to_index.items():
+            played += int(state.player_state.get(
+                f"P{idx}_{key}", 0))
+        by_type[type_name] = {
+            "base": base,
+            "played": played,
+            # remaining = base - played (in deck OR held). We can't
+            # split "in deck" from "held" without seeing opp hands.
+            "remaining": max(0, base - played),
+        }
     return {
         "remaining": remaining,
         "drawn": drawn,
         "low": remaining <= 2,
+        "by_type": by_type,
     }
 
 
