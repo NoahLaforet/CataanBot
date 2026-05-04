@@ -5156,6 +5156,61 @@ def test_strategic_options_surfaces_longest_road_push():
     assert lr["pieces"] == 1
 
 
+def test_strategic_options_surfaces_lr_push_two_roads_out():
+    """Reddit 36k-game finding #5: LR wins 56-61% of games and is
+    sticky. LR push should fire 2 roads out, not just 1, so the
+    player can plan ahead instead of only seeing the option on the
+    victory lap."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_LONGEST_ROAD_LENGTH"] = 3
+    cat.state.player_state["P0_HAS_ROAD"] = False
+    for i in range(1, 4):
+        cat.state.player_state[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
+        cat.state.player_state[f"P{i}_HAS_ROAD"] = False
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {"WOOD": 0, "BRICK": 0})
+    assert opts is not None
+    lr = next((o for o in opts if o["kind"] == "longest_road_push"),
+              None)
+    assert lr is not None, (
+        "LR push should surface at 3 roads (2 away from qualifying)")
+    assert lr["pieces"] == 2
+
+
+def test_strategic_options_skips_lr_push_three_roads_out():
+    """Past 2 roads away the LR push gets too speculative against
+    other strategic options; should stay quiet to avoid noise."""
+    from catanatron import Color, Game, RandomPlayer
+    from cataanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_LONGEST_ROAD_LENGTH"] = 2
+    cat.state.player_state["P0_HAS_ROAD"] = False
+    for i in range(1, 4):
+        cat.state.player_state[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
+        cat.state.player_state[f"P{i}_HAS_ROAD"] = False
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {"WOOD": 0, "BRICK": 0}) or []
+    kinds = {o["kind"] for o in opts}
+    assert "longest_road_push" not in kinds, (
+        "LR push 3+ roads out is too speculative — should not surface")
+
+
 def test_strategic_options_surfaces_largest_army_push():
     """Self with 1 played knight + 2 held (total 3, LA threshold) and
     nobody holding LA → push-LA option with +2VP."""

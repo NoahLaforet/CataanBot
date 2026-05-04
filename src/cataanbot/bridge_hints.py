@@ -1131,20 +1131,26 @@ def _compute_strategic_options(
             opp_lr_max = ol
         if oh:
             opp_lr_holder = True
-    if (self_len >= 3 and not self_has_lr
-            and self_len + 1 >= max(5, opp_lr_max + 1)):
-        # 1 more segment qualifies us (5+) and beats the current opp.
-        roads_needed = max(1, max(5, opp_lr_max + 1) - self_len)
-        vp_swing = 2 if not opp_lr_holder else 4  # take + denial
-        options.append({
-            "kind": "longest_road_push",
-            "label": "LR push",
-            "detail": (f"+{roads_needed} road"
-                       f"{'s' if roads_needed > 1 else ''}"
-                       + (" · denies opp" if opp_lr_holder else "")),
-            "vp_swing": vp_swing,
-            "pieces": roads_needed,
-        })
+    if self_len >= 3 and not self_has_lr:
+        target_len = max(5, opp_lr_max + 1)
+        roads_needed = target_len - self_len
+        # Reddit 36k-game finding #5: LR wins 56-61% of games and is
+        # sticky (85% of 3p games never see LR change hands once
+        # claimed). Surface the push when within 2 roads of qualifying
+        # so the player can plan ahead, not just on the 1-road victory
+        # lap. Past 2 roads it dilutes — too speculative against the
+        # other strategic options on the strip.
+        if 1 <= roads_needed <= 2:
+            vp_swing = 2 if not opp_lr_holder else 4  # take + denial
+            options.append({
+                "kind": "longest_road_push",
+                "label": "LR push",
+                "detail": (f"+{roads_needed} road"
+                           f"{'s' if roads_needed > 1 else ''}"
+                           + (" · denies opp" if opp_lr_holder else "")),
+                "vp_swing": vp_swing,
+                "pieces": roads_needed,
+            })
 
     # ---- Largest army push -------------------------------------------
     knights_played = int(ps.get(f"P{my_idx}_PLAYED_KNIGHT", 0))
