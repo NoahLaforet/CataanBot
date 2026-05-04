@@ -42,15 +42,27 @@ def _find_node_with_two_resources(g, *resources, min_pip: int = 3):
     return None
 
 
-def test_returns_none_during_setup():
-    """Before two settlements are placed, the selector must stay silent
-    so the bridge can keep rendering the opening flow."""
+def test_returns_preview_during_setup():
+    """Pre-placement (fewer than 2 settlements down), the selector
+    returns a *preview* StrategyTag with empty primary/active but
+    populated `scores` from the board-affinity scorer. The HUD
+    uses this to guide the user's first settle decision."""
     from catanbot.strategy_select import select_strategy
 
     g = _fresh_game()
-    assert select_strategy(g, "RED") is None
+    preview = select_strategy(g, "RED")
+    assert preview is not None
+    # Active/primary fall through as falsy → HUD renders preview banner.
+    assert not preview.primary
+    assert preview.scores, "preview should populate per-archetype scores"
+    # Same after one settlement — still preview mode.
     _settle(g, "RED", 0)
-    assert select_strategy(g, "RED") is None
+    preview2 = select_strategy(g, "RED")
+    assert preview2 is not None
+    assert not preview2.primary
+    # Once 2 settlements are placed, falls through to live selection
+    # (primary populated). That transition is exercised by the
+    # archetype-firing tests below.
 
 
 def test_balanced_is_the_default_floor():

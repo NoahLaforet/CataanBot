@@ -938,6 +938,170 @@
     // not defined" — the call site at the rec-hint placement is
     // outside the if(my_turn || isSetup) block where the local
     // tilesToHtml used to live. (Bug Noah saw on 2026-05-01.)
+    // Strategy banner — renders snap.strategy as a top-of-HUD frame:
+    // active archetype + rationale, the full ranked list of all 5
+    // archetypes with score bars, and any pivot triggers that fired
+    // mid-game. Returns '' when snap.strategy is missing so the
+    // caller can unconditionally push it.
+    const STRAT_TAG_LABELS = {
+        OWS: 'Ore-Wheat-Sheep',
+        LR_RUSH: 'Longest Road rush',
+        PORT_TRADE: 'Port trader',
+        RB_CARVED_TILES: 'Road Builder',
+        BALANCED: 'Balanced',
+    };
+    const STRAT_TAG_TOOLTIPS = {
+        OWS: 'Cities + dev cards. Hold dev cards for flexibility, '
+            + 'not just knights — they conceal your real VP and let '
+            + 'you pivot.',
+        LR_RUSH: 'Wood + brick footprint with expansion room. Set up '
+            + 'via placements, then rush the last roads in 1-2 turns '
+            + 'to claim Longest Road.',
+        PORT_TRADE: 'Settle near a relevant 2:1 port (not on it), '
+            + 'route a road to reach it on settle #2. Trade your '
+            + 'surplus down for what you need.',
+        RB_CARVED_TILES: 'Carved-out cluster of 4-5 tiles. Build '
+            + 'settlements / cities normally; use roads to block '
+            + 'opponents inside your zone, claim LR in the last 2 '
+            + 'rounds.',
+        BALANCED: 'No dominant archetype — keep options open. The '
+            + 'default when nothing else fits.',
+    };
+    const STRAT_TAG_ICONS = {
+        OWS: '🏛',
+        LR_RUSH: '🛣',
+        PORT_TRADE: '⛵',
+        RB_CARVED_TILES: '🛤',
+        BALANCED: '⚖️',
+    };
+
+    function renderStrategyBanner(snap) {
+        const st = snap && snap.strategy;
+        if (!st) return '';
+        const ranking = Array.isArray(st.ranking) ? st.ranking : [];
+        // Pre-placement / board-affinity mode: backend ships ranking
+        // but no `active` tag (placements aren't down yet). Render the
+        // ranking as the headline so the user can pick their first
+        // settle to align with the strongest archetype.
+        const previewMode = !st.active && ranking.length;
+        if (!st.active && !previewMode) return '';
+
+        const out = [];
+        if (previewMode) {
+            // No banner row in preview mode — just a header explaining
+            // what the ranking means before settlements land.
+            out.push(
+                `<div class="strategy-banner preview" `
+                + `title="Board affinity scoring — these are how `
+                + `well each archetype fits THIS board's tile / `
+                + `port / number layout. Pick your first settle to `
+                + `align with one of the strong contenders.">`
+                + `<div class="sb-head">`
+                + `<span class="b-ico">🧭</span> `
+                + `<span class="strat-tag">board affinity</span>`
+                + (st.phase
+                    ? `<span class="strat-phase">`
+                        + escapeHtml(st.phase) + `</span>` : '')
+                + `</div>`
+                + `<div class="strat-why">`
+                + `pick your first settle to align with a strong `
+                + `archetype below`
+                + `</div>`
+                + `</div>`);
+        } else {
+            const tag = String(st.active);
+            const label = STRAT_TAG_LABELS[tag] || tag;
+            const tooltip = STRAT_TAG_TOOLTIPS[tag] || '';
+            const icon = STRAT_TAG_ICONS[tag] || '🎯';
+            const overridden = st.override_tag
+                && st.override_tag !== st.primary;
+            const phaseTag = st.phase
+                ? `<span class="strat-phase">`
+                    + escapeHtml(st.phase) + `</span>` : '';
+            const fallbackTag = (st.fallback && st.fallback !== tag)
+                ? `<span class="strat-fb">→ fallback: `
+                    + escapeHtml(STRAT_TAG_LABELS[st.fallback]
+                                 || st.fallback)
+                    + `</span>`
+                : '';
+            const overrideTag = overridden
+                ? `<span class="strat-ov">↺ pivoted from `
+                    + escapeHtml(STRAT_TAG_LABELS[st.primary]
+                                 || st.primary)
+                    + `</span>`
+                : '';
+            out.push(
+                `<div class="strategy-banner ${tag.toLowerCase()}`
+                    + (overridden ? ' overridden' : '') + '"'
+                    + (tooltip ? ` title="${escapeHtml(tooltip)}"` : '')
+                    + '>'
+                + `<div class="sb-head">`
+                + `<span class="b-ico">${icon}</span> `
+                + `<span class="strat-tag">${escapeHtml(label)}</span>`
+                + phaseTag + fallbackTag + overrideTag
+                + `</div>`
+                + (st.rationale
+                   ? `<div class="strat-why">`
+                       + escapeHtml(st.rationale) + `</div>` : '')
+                + '</div>');
+        }
+        // Strategy ranking — every archetype as a row with a mini
+        // bar. Active row pops; ineligible rows dim.
+        if (ranking.length) {
+            const activeTag = st.active;
+            const rows = ranking.map(r => {
+                const rowLabel = STRAT_TAG_LABELS[r.tag] || r.tag;
+                const rowIcon = STRAT_TAG_ICONS[r.tag] || '·';
+                const rowTip = STRAT_TAG_TOOLTIPS[r.tag] || '';
+                const isActive = r.tag === activeTag;
+                const elig = r.eligible;
+                const pct = Math.min(100, Math.max(
+                    0, Math.round((r.score || 0) * 100)));
+                const cls = ['strat-rank-row',
+                             isActive ? 'active' : '',
+                             elig ? 'eligible' : 'ineligible'
+                            ].filter(Boolean).join(' ');
+                return `<div class="${cls}"`
+                    + (rowTip ? ` title="${escapeHtml(rowTip)}"` : '')
+                    + `>`
+                    + `<span class="srr-ico">${rowIcon}</span>`
+                    + `<span class="srr-label">`
+                    + escapeHtml(rowLabel) + `</span>`
+                    + `<span class="srr-bar">`
+                    + `<span class="srr-bar-fill" `
+                    + `style="width: ${pct}%"></span>`
+                    + `</span>`
+                    + `<span class="srr-score">`
+                    + (r.score || 0).toFixed(2) + `</span>`
+                    + `</div>`;
+            }).join('');
+            out.push(
+                `<div class="strategy-ranking">`
+                + `<div class="srr-h">strategy ranking</div>`
+                + rows
+                + `</div>`);
+        }
+        // Pivot triggers (mid-game adaptation signals).
+        const triggerNames = Array.isArray(st.pivot_triggers)
+            ? st.pivot_triggers : [];
+        const triggerDetails = Array.isArray(st.pivot_details)
+            ? st.pivot_details : [];
+        if (triggerNames.length) {
+            const lines = triggerNames.map((name, i) => {
+                const detail = triggerDetails[i] || name;
+                return `<div class="strat-trigger">`
+                    + `<span class="strat-trigger-dot">●</span> `
+                    + escapeHtml(detail)
+                    + `</div>`;
+            });
+            out.push(
+                `<div class="strategy-triggers">`
+                + lines.join('')
+                + `</div>`);
+        }
+        return out.join('');
+    }
+
     function tilesToHtml(arr) {
         return (arr || [])
             .filter(t => t && t[0] !== 'DESERT')
@@ -1229,6 +1393,32 @@
                 '<div class="off-turn-ribbon">'
                 + '<span class="b-ico">⏳</span> '
                 + `${escapeHtml(turnUser)}'s turn — watching</div>`);
+        }
+        // Game-over frame — when the session flagged a winner, the
+        // post-game stats screen is up on colonist's side. Surface a
+        // single "waiting for next game" banner at the top so the
+        // HUD doesn't keep showing stale mid-game data. Pure status
+        // banner; once the next GameStart fires, the bridge clears
+        // the state and normal rendering resumes.
+        if (snap.game_over && snap.game_over.message) {
+            const go = snap.game_over;
+            const cls = go.is_self
+                ? 'game-over self-won'
+                : 'game-over';
+            parts.push(`<div class="${cls}">`
+                + `<span class="b-ico">${go.is_self ? '🏆' : '🏁'}</span> `
+                + escapeHtml(go.message)
+                + '</div>');
+        }
+        // Strategy banner — top of the HUD so it frames every other
+        // section (opening picks, recs, threat, etc.). Renders during
+        // setup AND mid-game; the backend ships board-affinity scores
+        // even before placements so the user sees what archetypes the
+        // board favors and can pick their first settle to align.
+        // Skipped while game-over is showing — the post-game frame
+        // doesn't need the strategy ranking competing for attention.
+        if (!(snap.game_over && snap.game_over.message)) {
+            parts.push(renderStrategyBanner(snap));
         }
         // Recommendations — only shown when it's my turn (mid-game) or
         // during setup (always useful). Split into:
@@ -2095,143 +2285,9 @@
         // plus pivot triggers. Surfaces as a one-line frame so the
         // user understands what archetype the bot is biasing toward
         // and why. Skipped during setup (snap.strategy is null).
-        if (snap.strategy && snap.strategy.active) {
-            const st = snap.strategy;
-            const tag = String(st.active);
-            // Plain-English labels and a one-line "what this means"
-            // tooltip — the bare tag identifiers (OWS, LR_RUSH) read
-            // as insider jargon to anyone who hasn't read the strategy
-            // v2 plan. Order matches strategy_select._TAGS so the
-            // primary always wins in the rare case of a duplicate.
-            const TAG_LABELS = {
-                OWS: 'Ore-Wheat-Sheep',
-                LR_RUSH: 'Longest Road rush',
-                PORT_TRADE: 'Port trader',
-                RB_CARVED_TILES: 'Road Builder',
-                BALANCED: 'Balanced',
-            };
-            const TAG_TOOLTIPS = {
-                OWS: 'Cities + dev cards. Hold dev cards for '
-                    + 'flexibility, not just knights — they conceal '
-                    + 'your real VP and let you pivot.',
-                LR_RUSH: 'Wood + brick footprint with expansion room. '
-                    + 'Set up via placements, then rush the last '
-                    + 'roads in 1-2 turns to claim Longest Road.',
-                PORT_TRADE: 'Settle near a relevant 2:1 port (not on '
-                    + 'it), route a road to reach it on settle #2. '
-                    + 'Trade your surplus down for what you need.',
-                RB_CARVED_TILES: 'Carved-out cluster of 4-5 tiles. '
-                    + 'Build settlements / cities normally; use roads '
-                    + 'to block opponents inside your zone, claim LR '
-                    + 'in the last 2 rounds.',
-                BALANCED: 'No dominant archetype — keep options '
-                    + 'open. The default when nothing else fits.',
-            };
-            const TAG_ICONS = {
-                OWS: '🏛',
-                LR_RUSH: '🛣',
-                PORT_TRADE: '⛵',
-                RB_CARVED_TILES: '🛤',
-                BALANCED: '⚖️',
-            };
-            const label = TAG_LABELS[tag] || tag;
-            const tooltip = TAG_TOOLTIPS[tag] || '';
-            const icon = TAG_ICONS[tag] || '🎯';
-            // Override styling: when a pivot trigger forced the
-            // active tag away from primary, lean visual on the
-            // override so the user sees the swap.
-            const overridden = st.override_tag
-                && st.override_tag !== st.primary;
-            const phaseTag = st.phase
-                ? `<span class="strat-phase">${escapeHtml(st.phase)}</span>`
-                : '';
-            const fallbackTag = (st.fallback && st.fallback !== tag)
-                ? `<span class="strat-fb">→ fb: `
-                    + escapeHtml(TAG_LABELS[st.fallback] || st.fallback)
-                    + `</span>`
-                : '';
-            const overrideTag = overridden
-                ? `<span class="strat-ov">↺ pivoted from `
-                    + escapeHtml(TAG_LABELS[st.primary] || st.primary)
-                    + `</span>`
-                : '';
-            parts.push(
-                `<div class="strategy-banner ${tag.toLowerCase()}`
-                    + (overridden ? ' overridden' : '') + '"'
-                    + (tooltip ? ` title="${escapeHtml(tooltip)}"` : '')
-                    + '>'
-                + `<div class="sb-head">`
-                + `<span class="b-ico">${icon}</span> `
-                + `<span class="strat-tag">${escapeHtml(label)}</span>`
-                + phaseTag + fallbackTag + overrideTag
-                + `</div>`
-                + (st.rationale
-                   ? `<div class="strat-why">`
-                       + escapeHtml(st.rationale) + `</div>`
-                   : '')
-                + '</div>');
-            // Strategy ranking — show the bot's full assessment so
-            // the user sees not just the pick but how close the
-            // runners-up came. Each row: archetype label, score bar,
-            // numeric score. Eligible rows render full-strength;
-            // ineligible (didn't clear threshold) dim out.
-            const ranking = Array.isArray(st.ranking) ? st.ranking : [];
-            if (ranking.length) {
-                const rows = ranking.map(r => {
-                    const rowLabel = TAG_LABELS[r.tag] || r.tag;
-                    const rowIcon = TAG_ICONS[r.tag] || '·';
-                    const rowTip = TAG_TOOLTIPS[r.tag] || '';
-                    const isActive = r.tag === tag;
-                    const elig = r.eligible;
-                    // Bar fills to score (0-1 → 0-100%). Cap the bar
-                    // visually at 100% even if scoring ever overshoots.
-                    const pct = Math.min(100, Math.max(
-                        0, Math.round((r.score || 0) * 100)));
-                    const cls = ['strat-rank-row',
-                                 isActive ? 'active' : '',
-                                 elig ? 'eligible' : 'ineligible'
-                                ].filter(Boolean).join(' ');
-                    return `<div class="${cls}"`
-                        + (rowTip ? ` title="${escapeHtml(rowTip)}"` : '')
-                        + `>`
-                        + `<span class="srr-ico">${rowIcon}</span>`
-                        + `<span class="srr-label">`
-                        + escapeHtml(rowLabel) + `</span>`
-                        + `<span class="srr-bar">`
-                        + `<span class="srr-bar-fill" `
-                        + `style="width: ${pct}%"></span>`
-                        + `</span>`
-                        + `<span class="srr-score">`
-                        + (r.score || 0).toFixed(2) + `</span>`
-                        + `</div>`;
-                }).join('');
-                parts.push(
-                    `<div class="strategy-ranking">`
-                    + `<div class="srr-h">strategy ranking</div>`
-                    + rows
-                    + `</div>`);
-            }
-            // Pivot triggers (when fired): one-line list under the
-            // banner. pivot_details aligns with pivot_triggers by
-            // index, so prefer the human-readable detail when present.
-            const triggerNames = Array.isArray(st.pivot_triggers)
-                ? st.pivot_triggers : [];
-            const triggerDetails = Array.isArray(st.pivot_details)
-                ? st.pivot_details : [];
-            if (triggerNames.length) {
-                const lines = triggerNames.map((name, i) => {
-                    const detail = triggerDetails[i] || name;
-                    return `<div class="strat-trigger">`
-                        + `<span class="strat-trigger-dot">●</span> `
-                        + escapeHtml(detail)
-                        + `</div>`;
-                });
-                parts.push(
-                    `<div class="strategy-triggers">`
-                    + lines.join('')
-                    + `</div>`);
-            }
-        }
+        // Strategy banner moved to top of snap (renderStrategyBanner
+        // helper, called above the recs flow). Block intentionally
+        // empty here so the rest of the layout stays put.
 
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';

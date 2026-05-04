@@ -1419,7 +1419,44 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "game_plan": None,
         "strategic_options": None,
         "winning_move": None,
+        # Game-over state. Populated when the session has flagged a
+        # winner (either via a DOM-log GameOverEvent or the WS-side
+        # VP-target detection). HUD reads this to show a "waiting for
+        # next game" frame instead of stale in-game banners.
+        "game_over": None,
     }
+    # Game-over banner data — winner username + signal that the
+    # post-game stats screen is up. Stays populated through the
+    # post-game lobby; cleared on the next GameStart. ``sess`` isn't
+    # bound yet at this point in the snapshot builder, so we read
+    # game.session directly.
+    try:
+        _go_sess = getattr(game, "session", None)
+        if (_go_sess is not None
+                and getattr(_go_sess, "game_over_emitted", False)):
+            winner_name = None
+            from catanbot.config import get_vp_target
+            target = get_vp_target()
+            for cid in _go_sess.player_names:
+                try:
+                    if _go_sess.vp_total(cid) >= target:
+                        winner_name = _go_sess.player_names.get(cid)
+                        break
+                except Exception:  # noqa: BLE001
+                    continue
+            snap["game_over"] = {
+                "winner": winner_name,
+                "is_self": (winner_name is not None
+                            and winner_name
+                            == _go_sess.player_names.get(
+                                _go_sess.self_color_id)),
+                "message": (f"GAME OVER · {winner_name} won — "
+                            f"waiting for next game"
+                            if winner_name
+                            else "GAME OVER — waiting for next game"),
+            }
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] game_over snap failed: {e!r}", flush=True)
     if not game.started:
         return snap
     sess = game.session

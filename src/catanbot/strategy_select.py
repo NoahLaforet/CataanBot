@@ -119,17 +119,19 @@ class StrategyTag:
                     "eligible": (score
                                  >= _TAG_MIN_SCORE.get(tag, 0.0)),
                 })
+        # Preview mode (pre-placement, scores populated but no chosen
+        # primary): snap.active stays falsy so the HUD renders the
+        # board-affinity headline instead of an archetype banner.
+        active_tag = (self.override_tag or self.primary) or None
         return {
-            "primary": self.primary,
+            "primary": self.primary or None,
             "fallback": self.fallback,
             "rationale": self.rationale,
             "phase": self.phase,
             "set_at_rolls": self.set_at_rolls,
             "pivot_triggers": list(self.pivot_triggers),
             "override_tag": self.override_tag,
-            # ``active`` is what downstream weighting should use — the
-            # override wins when set, else primary.
-            "active": self.override_tag or self.primary,
+            "active": active_tag,
             "scores": dict(self.scores),
             "ranking": ranking,
         }
@@ -456,6 +458,78 @@ def _score_balanced(prod: dict[str, float]) -> float:
 
 # --- public API ------------------------------------------------------
 
+def compute_board_affinity(game: "Game") -> dict[str, float]:
+    """Pre-placement archetype scoring — "what does this board favor?"
+
+    Without committed settlements, the standard scoring functions
+    (which need owned nodes to compute combined production) all return
+    zero. To guide the user's *first* settle decision, this function
+    asks a different question: for each archetype, what's the BEST 2-
+    node pair on this board that fits it? It uses the existing
+    opening scorer to find candidate top nodes, then for each
+    archetype it locates the best-fitting pair and scores the
+    archetype against that hypothetical placement.
+
+    Returns the same {tag → 0..1 score} shape as the post-placement
+    selector, so the snap layer can render the ranking identically.
+    """
+    from catanatron import Color
+    from catanbot.advisor import (
+        _build_node_neighbors, score_opening_nodes,
+    )
+
+    try:
+        m = game.state.board.map
+    except Exception:  # noqa: BLE001
+        return {}
+    # Top-15 opening candidates is a wide enough net to find a good
+    # archetype-aligned pair without scoring every land node.
+    try:
+        top_nodes = [s.node_id for s in
+                     score_opening_nodes(game)[:15]]
+    except Exception:  # noqa: BLE001
+        return {}
+    if not top_nodes:
+        return {}
+    neighbors = _build_node_neighbors(m)
+
+    # Generate non-conflicting pairs from the top candidates.
+    pairs: list[tuple[int, int]] = []
+    for i, a in enumerate(top_nodes):
+        a_block = {a} | set(neighbors.get(a, set()))
+        for b in top_nodes[i + 1:]:
+            if b in a_block:
+                continue
+            pairs.append((a, b))
+    if not pairs:
+        return {}
+
+    # For each pair, score each archetype as if those were the
+    # committed settlements. Take the max per archetype across all
+    # pairs — that's the "best-case board affinity."
+    best: dict[str, float] = {t: 0.0 for t in _TAGS}
+    color_for_scoring = next(iter(game.state.colors))
+    for a, b in pairs:
+        node_ids = [a, b]
+        prod = _combined_production(game, node_ids)
+        scores = {
+            "OWS": _score_ows(prod),
+            "LR_RUSH": _score_lr_rush(prod, node_ids, game),
+            "PORT_TRADE": _score_port_trade(
+                game, color_for_scoring, node_ids, prod),
+            # RB_CARVED_TILES is gated on real opponent placements
+            # AND a natural anchor; pre-placement it's noisy. Skip
+            # for board affinity — it'll surface post-placement when
+            # it actually matters.
+            "RB_CARVED_TILES": 0.0,
+            "BALANCED": _score_balanced(prod),
+        }
+        for tag, score in scores.items():
+            if score > best[tag]:
+                best[tag] = score
+    return best
+
+
 def select_strategy(
     game: "Game",
     my_color,
@@ -465,10 +539,13 @@ def select_strategy(
 ) -> StrategyTag | None:
     """Pick the active strategy tag from the current placements.
 
-    Returns ``None`` during the opening setup phase (before both
-    settlements are placed). Once both are down, scores every tag and
-    picks the highest-scoring eligible tag as primary, second-highest
-    as fallback.
+    During setup (fewer than 2 settlements placed), returns a "preview"
+    StrategyTag with ``primary=None`` but populated ``scores`` from
+    ``compute_board_affinity`` — the HUD uses this to guide the
+    user's first settle. Once both opening settlements are down,
+    scores every tag against the actual placements and picks the
+    highest-scoring eligible tag as primary, second-highest as
+    fallback.
 
     ``previous`` is the last-emitted tag; the selector is mostly
     monotonic — primary won't flip unless the new top tag's score is
@@ -487,7 +564,18 @@ def select_strategy(
 
     nodes = _self_settlement_nodes(game, my_enum)
     if len(nodes) < 2:
-        return None
+        # Pre-placement preview — board-affinity ranking only.
+        affinity = compute_board_affinity(game)
+        if not affinity:
+            return None
+        return StrategyTag(
+            primary="",  # empty string signals preview mode to the snap
+            fallback=None,
+            rationale="",
+            phase=_phase_for(rolls_so_far),
+            set_at_rolls=rolls_so_far,
+            scores=affinity,
+        )
 
     prod = _combined_production(game, nodes)
     scores: dict[str, float] = {

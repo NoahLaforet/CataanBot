@@ -1293,6 +1293,33 @@
      OWS reads city-blue, LR rush reads road-red, etc. The pivot
      triggers stack underneath as a tighter sub-list. */
   .strategy-banner { border-left-color: var(--info); }
+  .strategy-banner.preview {
+    border-left-color: var(--accent);
+  }
+  .strategy-banner.preview .strat-tag {
+    color: var(--accent);
+  }
+
+  /* Game-over frame — quiet "waiting for next game" banner that
+     replaces the in-game strategy frame. Self-win gets a positive
+     accent; opp-win is neutral so the post-game read isn't punishing. */
+  .game-over {
+    position: relative;
+    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+    margin: var(--s-2) 0;
+    border-radius: var(--radius);
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--fg-dim);
+    font-size: calc(14px * var(--font-scale));
+    font-weight: 600;
+    color: var(--fg-mute);
+    letter-spacing: 0.01em;
+  }
+  .game-over.self-won {
+    border-left-color: var(--pos);
+    color: var(--pos);
+  }
   .strategy-banner .sb-head { display: flex; align-items: baseline;
     gap: var(--s-2); flex-wrap: wrap; }
   .strategy-banner .strat-tag {
@@ -2454,7 +2481,8 @@ html, body, .panel {
 .trade-offer, .knight-hint, .dev-hint,
 .banner, .winning-move, .opps-h, .progression,
 .off-turn-ribbon, .milestone, .engine-deficit,
-.strategy-banner, .strategy-triggers, .strategy-ranking {
+.strategy-banner, .strategy-triggers, .strategy-ranking,
+.game-over {
   background: transparent !important;
   border: 0 !important;
   border-left: 2px solid var(--line-strong) !important;
@@ -2581,6 +2609,18 @@ html, body, .panel {
   color: var(--fg-mute) !important;
 }
 .strat-rank-row.active .srr-score { color: var(--fg) !important; }
+
+/* Game-over frame — minimal mode keeps it quiet, self-win gets the
+   positive accent. */
+.game-over {
+  border-left-color: var(--fg-dim) !important;
+  color: var(--fg-mute) !important;
+  font-weight: 600 !important;
+}
+.game-over.self-won {
+  border-left-color: var(--pos) !important;
+  color: var(--pos) !important;
+}
 
 /* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
    threats, or knight-asap plays. The flat redesign zeroes out box-
