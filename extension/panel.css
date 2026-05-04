@@ -1297,6 +1297,17 @@
     letter-spacing: 0.02em;
     background: linear-gradient(90deg,
       rgba(248, 113, 113, 0.18), var(--bg-1) 60%);
+    animation: cataanbot-imminent-pulse 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes cataanbot-imminent-pulse {
+    from {
+      box-shadow: inset 2px 0 0 0 var(--alert),
+                  0 0 0 0 rgba(248, 113, 113, 0.0);
+    }
+    to {
+      box-shadow: inset 2px 0 0 0 var(--alert),
+                  0 0 14px 2px rgba(248, 113, 113, 0.45);
+    }
   }
   .threat.win   {
     border-left-color: var(--alert);
@@ -1325,7 +1336,7 @@
   /* WIN THIS TURN — the loudest element in the HUD, full stop. When
      a single action closes the game we want it readable across the
      room at a glance: oversized all-caps header, chunky accent bar,
-     strong background wash. Everything else can go small. */
+     strong background wash, gentle pulse to draw the eye in. */
   .winning-move {
     border-left-width: 6px;
     border-left-color: var(--pos);
@@ -1334,6 +1345,17 @@
     padding: var(--s-4) var(--s-5);
     background: linear-gradient(90deg,
       rgba(74, 222, 128, 0.26), var(--bg-1) 70%);
+    animation: cataanbot-win-pulse 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes cataanbot-win-pulse {
+    from {
+      box-shadow: inset 4px 0 0 0 var(--pos),
+                  0 0 0 0 rgba(74, 222, 128, 0.0);
+    }
+    to {
+      box-shadow: inset 4px 0 0 0 var(--pos),
+                  0 0 16px 2px rgba(74, 222, 128, 0.45);
+    }
   }
   .winning-move.hedge {
     border-left-color: var(--accent);
@@ -1608,12 +1630,26 @@
   .knight-hint .kh-verdict.hold { background: rgba(255, 255, 255, 0.08); color: var(--fg-mute); }
   /* should-play pops with a green gradient background so Noah sees it
      on first scan without parsing text. The verdict chip gets a darker
-     solid background (no translucency) so the label reads at distance. */
+     solid background (no translucency) so the label reads at distance.
+     Soft pulse draws the eye when the play is time-sensitive (knight
+     to take LA, RB to claim LR, etc.) — slow and gentle so it doesn't
+     compete with the WIN THIS TURN banner above. */
   .knight-hint.should-play,
   .dev-hint.should-play {
     background: linear-gradient(90deg,
       rgba(74, 222, 128, 0.14), var(--bg-1) 70%);
     border-left-color: var(--pos);
+    animation: cataanbot-play-pulse 2.0s ease-in-out infinite alternate;
+  }
+  @keyframes cataanbot-play-pulse {
+    from {
+      box-shadow: inset 2px 0 0 0 var(--pos),
+                  0 0 0 0 rgba(74, 222, 128, 0.0);
+    }
+    to {
+      box-shadow: inset 2px 0 0 0 var(--pos),
+                  0 0 10px 1px rgba(74, 222, 128, 0.30);
+    }
   }
   .knight-hint.should-play .kh-h,
   .dev-hint.should-play .dv-h {
@@ -2302,6 +2338,46 @@ html, body, .panel {
 }
 .plan { border-left-color: var(--info) !important; }
 .plan.ready { border-left-color: var(--pos) !important; }
+
+/* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
+   threats, or knight-asap plays. The flat redesign zeroes out box-
+   shadow so these animations have to override that with their own
+   !important box-shadow. Border-left stays the colored anchor; the
+   shadow is the breathing motion. */
+.winning-move {
+  animation: cataanbot-win-pulse-flat 1.6s ease-in-out infinite alternate
+    !important;
+  border-left-color: var(--pos) !important;
+  border-left-width: 4px !important;
+  color: var(--pos) !important;
+  font-weight: 800 !important;
+}
+@keyframes cataanbot-win-pulse-flat {
+  from { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important; }
+  to   { box-shadow: 0 0 14px 2px rgba(74, 222, 128, 0.45) !important; }
+}
+.threat.imminent {
+  animation: cataanbot-imminent-pulse-flat 1.6s ease-in-out
+    infinite alternate !important;
+  border-left-color: var(--alert) !important;
+  border-left-width: 3px !important;
+  color: var(--alert) !important;
+  font-weight: 800 !important;
+}
+@keyframes cataanbot-imminent-pulse-flat {
+  from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important; }
+  to   { box-shadow: 0 0 12px 2px rgba(248, 113, 113, 0.45) !important; }
+}
+.knight-hint.should-play,
+.dev-hint.should-play {
+  animation: cataanbot-play-pulse-flat 2.0s ease-in-out infinite alternate
+    !important;
+  border-left-color: var(--pos) !important;
+}
+@keyframes cataanbot-play-pulse-flat {
+  from { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important; }
+  to   { box-shadow: 0 0 8px 1px rgba(74, 222, 128, 0.30) !important; }
+}
 .milestone { border-left-color: var(--info) !important; color: var(--fg) !important; }
 .milestone .ms-head { font-weight: 700; }
 .milestone .ms-tail { color: var(--fg-mute); margin-left: 4px; }

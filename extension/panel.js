@@ -1496,10 +1496,20 @@
                 + `<div class="dv-body">${body}</div>`
                 + '</div>');
         }
-        if (snap.rb_hint && snap.rb_hint.have > 0) {
+        if (snap.rb_hint && (snap.rb_hint.have > 0
+                || (snap.rb_hint.free_roads_pending || 0) > 0)) {
             const rh = snap.rb_hint;
-            const verdictLbl = rh.should_play ? 'PLAY' : 'HOLD';
-            const verdictCls = rh.should_play ? 'play' : 'hold';
+            // Mid-RB (card played, free roads pending) gets a "PLACE"
+            // verdict so the banner reads as a follow-through cue, not
+            // a pre-play decision. PLAY/HOLD is the pre-play binary.
+            const midRb = (rh.have <= 0
+                && (rh.free_roads_pending || 0) > 0);
+            const verdictLbl = midRb
+                ? 'PLACE'
+                : (rh.should_play ? 'PLAY' : 'HOLD');
+            const verdictCls = midRb
+                ? 'play'
+                : (rh.should_play ? 'play' : 'hold');
             let body = `<div class="dv-body">`
                 + `<span class="kh-verdict ${verdictCls}">${verdictLbl}</span>`
                 + escapeHtml(rh.reason || '');
@@ -1545,8 +1555,18 @@
             body += '</div>';
             const hintCls = rh.should_play
                 ? 'dev-hint should-play' : 'dev-hint';
-            const hdr = showCount
-                ? `road building ×${rh.have}` : 'road building';
+            // Header reads "road building (1 left)" mid-RB so it's
+            // obvious the placement guidance is for the remaining
+            // free road, not a pre-play hint.
+            let hdr;
+            if (midRb) {
+                hdr = (rh.free_roads_pending > 1)
+                    ? `road building (${rh.free_roads_pending} left)`
+                    : 'road building (1 left)';
+            } else {
+                hdr = showCount
+                    ? `road building ×${rh.have}` : 'road building';
+            }
             devBlocks.push('<div class="' + hintCls + '">'
                 + `<div class="dv-h">${hdr}</div>`
                 + body

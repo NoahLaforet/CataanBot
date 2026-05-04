@@ -515,7 +515,7 @@ def _compute_yop_hint(
 
 
 def _suggest_rb_placement(
-    game, self_color_enum,
+    game, self_color_enum, *, max_edges: int = 2,
 ) -> dict[str, Any] | None:
     """Pick the best pair of free roads to lay when Road Building plays.
 
@@ -688,7 +688,7 @@ def _suggest_rb_placement(
     second_edges: list[tuple[int, int]] = []
     second_reason: str | None = None
     second_toward: int | None = None
-    if len(edges) == 1:
+    if len(edges) == 1 and max_edges >= 2:
         # Hypothetically place the primary edge, then re-evaluate
         # the best follow-up edge from the expanded network.
         primary = edges[0]
@@ -786,7 +786,14 @@ def _compute_rb_hint(game, self_color: str,
         f"P{idx}_ROAD_BUILDING_IN_HAND", 0))
     if held <= 0:
         held = int(playable_count or 0)
-    if held <= 0:
+    # Free roads pending mid-RB: catanatron decrements
+    # state.free_roads_available from 2 → 1 → 0 as the player lays
+    # each road. While > 0 we should keep the hint up so the player
+    # can see WHERE to place the remaining free road(s) — without
+    # this, the banner vanishes the instant they place road #1 and
+    # the "road #2" suggestion drops on the floor mid-play.
+    free_pending = int(getattr(state, "free_roads_available", 0) or 0)
+    if held <= 0 and free_pending <= 0:
         return None
     # Need at least 1 road piece left to get any value. (The card
     # still plays with 0 roads available but grants nothing — treat
@@ -834,9 +841,27 @@ def _compute_rb_hint(game, self_color: str,
         "reason": reason,
         "self_len": self_len,
         "opp_len": opp_max,
+        # Free roads still pending after the card was played. Drives
+        # the HUD's "PLACE — N free road(s) left" copy so Noah knows
+        # the recs apply mid-RB, not just the pre-play hint.
+        "free_roads_pending": free_pending,
     }
+    # Mid-play override: card already played, just need placement
+    # guidance for the remaining free road(s). Override should/reason
+    # so the HUD reads PLACE rather than PLAY.
+    if held <= 0 and free_pending > 0:
+        out["should_play"] = True
+        out["reason"] = (
+            f"place {free_pending} free road"
+            + ("s" if free_pending > 1 else ""))
     try:
-        placement = _suggest_rb_placement(game.tracker.game, my_enum)
+        # Limit the placement suggestion to the number of roads still
+        # pending — when only one is left, returning a 2-edge plan
+        # would mis-describe the situation.
+        placement = _suggest_rb_placement(
+            game.tracker.game, my_enum,
+            max_edges=(free_pending if free_pending > 0 else 2),
+        )
         if placement is not None:
             out["placement"] = placement
     except Exception as e:  # noqa: BLE001
