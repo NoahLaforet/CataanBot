@@ -717,6 +717,29 @@ def _hand_can_afford(hand: dict[str, int], cost: dict[str, int]) -> bool:
     return all(hand.get(r, 0) >= n for r, n in cost.items())
 
 
+def _board_produces(game) -> set[str]:
+    """Return the set of resources whose tiles physically exist on this
+    board (i.e. some land tile yields the resource). On variant maps
+    (Pond, etc.) a full resource can be absent from the board, in
+    which case no opponent can ever hold it — propose_trade asking
+    for it is dead on arrival regardless of bank state. Used as a
+    hard floor on outgoing trade recommendations.
+
+    Defensive on lookup errors — returns the conservative "everything
+    is producible" set so a temporary inspection failure doesn't
+    silence legitimate trades.
+    """
+    try:
+        m = game.state.board.map
+        out: set[str] = set()
+        for tile in m.land_tiles.values():
+            if tile.resource:
+                out.add(str(tile.resource))
+        return out
+    except Exception:  # noqa: BLE001
+        return {"WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"}
+
+
 _SETTLEMENT_COST = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1}
 _CITY_COST = {"WHEAT": 2, "ORE": 3}
 _ROAD_COST = {"WOOD": 1, "BRICK": 1}
@@ -1529,6 +1552,12 @@ def recommend_actions(
     # and 2:2 (even swap when we need two of a thing). Skipped when no
     # opponent is known to hold the resource we'd be asking for — a
     # proposal for a wheat nobody has is dead on arrival.
+    # Board-level guard: resources that don't appear on any tile of
+    # this board can never be produced, so no opponent will ever
+    # hold them. Hard floor on every outgoing trade recommendation
+    # below — independent of bank_supply (which can be None when
+    # session inference hasn't latched).
+    board_resources = _board_produces(game)
     opp_resource_total: dict[str, int] = {}
     opp_has_unknown = False
     if opp_hands is not None:
@@ -1591,6 +1620,13 @@ def recommend_actions(
         emitted_for_kind = 0
         bank_remaining = (bank_supply or {}).get
         for need_res, need_n in need_pairs:
+            # Board-level hard skip: variant maps (Pond, etc.) can
+            # omit a whole resource. Trading for a resource that has
+            # zero tiles on this board can never land — no opponent
+            # will ever hold it. Independent of bank_supply (which
+            # may be None pre-inference). Strongest possible guard.
+            if need_res not in board_resources:
+                continue
             # Bank-derived hard skip: if the bank still holds all 19 of
             # the resource we'd be asking for, nobody can have it
             # (known or unknown). 19 - bank == sum across all hands; if
@@ -1741,9 +1777,19 @@ def recommend_actions(
             if n >= 4 and n > surplus_count:
                 surplus_res, surplus_count = r, n
         # Find the most-needed resource (the one we have least of).
+        # Skip resources that don't physically exist on this board
+        # AND resources where the bank still holds all 19 (no opp
+        # could possibly have any). Both guards mirror the propose_
+        # trade path above.
+        bank_remaining_rb = (bank_supply or {}).get
         needed_res, needed_count = None, 99
         for r, n in hand.items():
             if r == surplus_res:
+                continue
+            if r not in board_resources:
+                continue
+            if (bank_supply is not None
+                    and bank_remaining_rb(r, 0) >= 19):
                 continue
             if n < needed_count and opp_holdings.get(r, 0) > 0:
                 needed_res, needed_count = r, n

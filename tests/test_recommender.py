@@ -2001,6 +2001,67 @@ def test_rebalance_trade_silent_when_propose_trade_already_emitted():
         "rebalance shouldn't double up when a targeted trade exists")
 
 
+def test_propose_trade_silent_for_resource_absent_from_board():
+    """Strategy v2 P1-6 follow-up: a propose_trade asking for a
+    resource that has zero tiles on this board can never land,
+    independent of bank_supply state. Variant maps (e.g. Pond) can
+    omit a whole resource — silence the rec rather than waste the
+    user's turn on a dead proposal."""
+    from catanbot.recommender import recommend_actions, _board_produces
+
+    g = _setup_for_full_hand_bias()
+    real = _board_produces(g)
+    fake_resources = real - {"BRICK"}
+    import catanbot.recommender as recmod
+    orig = recmod._board_produces
+    recmod._board_produces = lambda _g: fake_resources
+    try:
+        # Hand is 1 short of settle — missing BRICK. Propose-trade
+        # path normally fires here. With BRICK absent, it should not.
+        hand = {"WOOD": 1, "BRICK": 0, "SHEEP": 5, "WHEAT": 1, "ORE": 0}
+        opp_hands = {"BLUE": {"BRICK": 3}}
+        out = recommend_actions(
+            g, "RED", hand, top=10, opp_hands=opp_hands)
+        proposals = [r for r in out
+                     if r.get("kind") == "propose_trade"]
+        for p in proposals:
+            get_keys = list((p.get("get") or {}).keys())
+            assert "BRICK" not in get_keys, (
+                f"propose_trade asked for BRICK on a board with no "
+                f"brick tiles: {p}")
+    finally:
+        recmod._board_produces = orig
+
+
+def test_rebalance_trade_silent_for_resource_absent_from_board():
+    """Same guard for the rebalance path — must not fire on a
+    resource the board doesn't produce."""
+    from catanbot.recommender import recommend_actions, _board_produces
+
+    g = _setup_for_full_hand_bias()
+    real = _board_produces(g)
+    fake_resources = real - {"BRICK"}
+    import catanbot.recommender as recmod
+    orig = recmod._board_produces
+    recmod._board_produces = lambda _g: fake_resources
+    try:
+        hand = {"SHEEP": 5, "WOOD": 0, "BRICK": 0,
+                "WHEAT": 0, "ORE": 0}
+        # Pretend BLUE holds BRICK — irrelevant, BRICK can't exist.
+        opp_hands = {"BLUE": {"BRICK": 3}}
+        out = recommend_actions(
+            g, "RED", hand, top=10, opp_hands=opp_hands)
+        rebalances = [r for r in out
+                      if r.get("kind") == "propose_trade"
+                      and r.get("variant") == "rebalance"]
+        for p in rebalances:
+            assert "BRICK" not in (p.get("get") or {}), (
+                f"rebalance asked for BRICK on a board with no "
+                f"brick tiles: {p}")
+    finally:
+        recmod._board_produces = orig
+
+
 def test_rebalance_trade_silent_when_only_leader_holds_resource():
     """Don't feed the leader. If the only opp holding our needed
     resource is at close_to_win VP, skip the rebalance."""
