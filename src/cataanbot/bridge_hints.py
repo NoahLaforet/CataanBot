@@ -678,12 +678,80 @@ def _suggest_rb_placement(
         return None
     candidates.sort(key=lambda c: c[0], reverse=True)
     _, tag, edges, toward = candidates[0]
+
+    # Always show both Road Building placements when the primary plan
+    # is a single-edge unlock — the player is paying for two free
+    # roads, not one, and the second placement still matters (LR
+    # extension, 2-hop reach, or reserving a corridor). Without this,
+    # the hint shows the unlock road and silently leaves the second
+    # placement up to the player to figure out from scratch.
+    second_edges: list[tuple[int, int]] = []
+    second_reason: str | None = None
+    second_toward: int | None = None
+    if len(edges) == 1:
+        # Hypothetically place the primary edge, then re-evaluate
+        # the best follow-up edge from the expanded network.
+        primary = edges[0]
+        primary_set = {frozenset((int(primary[0]), int(primary[1])))}
+        followups: list[tuple[float, str, tuple[int, int]]] = []
+        # Out-edges from the just-placed primary's far node.
+        for (a2, b2) in step2_edges_from(int(primary[1]),
+                                         (int(primary[0]),
+                                          int(primary[1]))):
+            edge = frozenset((int(a2), int(b2)))
+            if edge in primary_set:
+                continue
+            # Prefer landing on a buildable corner ("setup the next
+            # settle"); fall back to chain extension.
+            if node_is_buildable(int(b2)):
+                sc = float(scored[int(b2)].score)
+                followups.append(
+                    (sc * 10.0, f"sets up settle at {int(b2)}",
+                     (int(a2), int(b2))))
+            chain = longest_path_from(primary_set
+                                      | {edge})
+            followups.append(
+                (0.05 * float(chain),
+                 f"extends chain to {chain}",
+                 (int(a2), int(b2))))
+        # Out-edges from elsewhere in the network (in case the best
+        # second placement isn't adjacent to the primary).
+        try:
+            other_edges = list(board.buildable_edges(self_color_enum))
+        except Exception:  # noqa: BLE001
+            other_edges = []
+        for (a2, b2) in other_edges:
+            edge = frozenset((int(a2), int(b2)))
+            if edge in primary_set:
+                continue
+            if node_is_buildable(int(b2)):
+                sc = float(scored[int(b2)].score)
+                followups.append(
+                    (sc * 10.0, f"unlocks settle at {int(b2)}",
+                     (int(a2), int(b2))))
+            chain = longest_path_from(primary_set | {edge})
+            followups.append(
+                (0.04 * float(chain),
+                 f"extends chain to {chain}",
+                 (int(a2), int(b2))))
+        if followups:
+            followups.sort(key=lambda c: c[0], reverse=True)
+            _, second_reason, e2 = followups[0]
+            second_edges = [e2]
+            second_toward = int(e2[1])
+
+    full_edges = list(edges) + second_edges
     out: dict[str, Any] = {
-        "edges": [list(e) for e in edges],
+        "edges": [list(e) for e in full_edges],
         "toward_node": int(toward),
         "toward_tiles": _tile_label(m, int(toward)),
         "placement_reason": tag,
     }
+    if second_reason:
+        out["second_placement_reason"] = second_reason
+    if second_toward is not None:
+        out["second_toward_node"] = second_toward
+        out["second_toward_tiles"] = _tile_label(m, second_toward)
     return out
 
 

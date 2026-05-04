@@ -1509,15 +1509,38 @@
                         && pl.toward_tiles.length)
                     ? ` toward ${tilesToHtml(pl.toward_tiles)}`
                     : '';
+                const labelPrefix = (pl.edges && pl.edges.length > 1)
+                    ? 'road #1' : 'lay road';
                 let sub = `<div class="dv-sub">`
                     + `<span class="dv-arrow">→</span>`
-                    + 'lay road' + towardHtml;
+                    + labelPrefix + towardHtml;
                 if (pl.placement_reason) {
                     sub += `<span class="dv-unlock">`
                         + escapeHtml(pl.placement_reason) + '</span>';
                 }
                 sub += '</div>';
                 body += sub;
+                // Road Building lays TWO free roads. Show the second
+                // placement when the suggester picked one — without
+                // this, the player sees "lay road toward 8 wheat" and
+                // has to figure out the second placement themselves
+                // even though the bot already evaluated it.
+                if (pl.edges && pl.edges.length > 1) {
+                    const secondToward = (pl.second_toward_tiles
+                            && pl.second_toward_tiles.length)
+                        ? ` toward ${tilesToHtml(pl.second_toward_tiles)}`
+                        : '';
+                    let sub2 = `<div class="dv-sub">`
+                        + `<span class="dv-arrow">→</span>`
+                        + 'road #2' + secondToward;
+                    if (pl.second_placement_reason) {
+                        sub2 += `<span class="dv-unlock">`
+                            + escapeHtml(pl.second_placement_reason)
+                            + '</span>';
+                    }
+                    sub2 += '</div>';
+                    body += sub2;
+                }
             }
             body += '</div>';
             const hintCls = rh.should_play

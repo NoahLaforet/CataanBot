@@ -2243,6 +2243,16 @@ def test_suggest_rb_placement_prefers_single_edge_unlock():
     assert out["placement_reason"] in {
         "unlocks settlement", "unlocks 2-hop settle",
     } or out["placement_reason"].startswith("extends chain to")
+    # Road Building always lays TWO free roads — the suggester must
+    # surface both, even when the primary plan is a 1-edge unlock.
+    # Without this, the HUD shows only the unlock road and silently
+    # leaves the second placement up to the player.
+    assert len(out["edges"]) == 2, (
+        f"expected 2 edges in RB placement; got {out['edges']}")
+    if out["placement_reason"] == "unlocks settlement":
+        # Single-edge unlock case must carry a follow-up reason for
+        # the second free road.
+        assert "second_placement_reason" in out
 
 
 def test_reconnect_replays_pre_existing_buildings_into_tracker():
