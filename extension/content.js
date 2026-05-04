@@ -35,6 +35,10 @@
     let streamerOn = false;
     const STREAMER_DATA_FLAG = 'cataanonymized';
     let _anonSelfName = null;
+    // Once we see a username in a colored chat span we remember its
+    // color → use the same color label for the banner / aside / any
+    // unstyled position that holds the same username.
+    const _name_to_color = new Map();
     // Map RGB tuples to canonical color names. Colonist's player
     // colors don't always land on exact palette values (CSS module
     // hashes, theme adjustments) — match by closest squared
@@ -55,8 +59,8 @@
     }
     function classifyColor(rgbStr) {
         const rgb = _parseRgb(rgbStr);
-        if (!rgb) return 'Player';
-        let best = 'Player', bestD = Infinity;
+        if (!rgb) return null;
+        let best = null, bestD = Infinity;
         for (const [name, [pr, pg, pb]] of _COLOR_PALETTE) {
             const d = (rgb[0] - pr) ** 2 + (rgb[1] - pg) ** 2
                 + (rgb[2] - pb) ** 2;
@@ -64,54 +68,99 @@
         }
         return best;
     }
-    function anonLabelFor(name, el) {
-        if (!name) return name;
-        // Detect color from the element's inline style — color: or
-        // background-color:. The same span that carries the player
-        // name carries the player's color.
-        let colorStr = el && el.style && el.style.color;
-        if (!colorStr || colorStr === 'inherit') {
+    // Walk up the DOM looking for a colored ancestor (an element with
+    // inline color or background-color set). Used when the immediate
+    // node holding the username text doesn't have its own style —
+    // banner rows in particular nest the colored backdrop on a
+    // parent and the username text on a plain inner div.
+    function _findColorOnAncestor(el) {
+        let cur = el;
+        for (let i = 0; cur && i < 5; i++, cur = cur.parentElement) {
+            const s = cur.style;
+            if (s && s.color && s.color !== 'inherit') {
+                return s.color;
+            }
+            if (s && s.backgroundColor) return s.backgroundColor;
             try {
-                colorStr = window.getComputedStyle(el).color;
+                const cs = window.getComputedStyle(cur);
+                if (cs.color && cs.color !== 'rgba(0, 0, 0, 0)'
+                        && cs.color !== 'inherit') {
+                    // Skip near-black defaults.
+                    const rgb = _parseRgb(cs.color);
+                    if (rgb && (rgb[0] + rgb[1] + rgb[2]) > 60) {
+                        return cs.color;
+                    }
+                }
             } catch (_) {}
         }
-        // Try background if color is generic (fallback).
-        if (!colorStr) {
-            colorStr = el && el.style && el.style.backgroundColor;
+        return null;
+    }
+    function anonLabelFor(name, el) {
+        if (!name) return name;
+        let colorName = _name_to_color.get(name);
+        if (!colorName) {
+            const colorStr = _findColorOnAncestor(el);
+            const cls = classifyColor(colorStr);
+            if (cls) {
+                colorName = cls;
+                _name_to_color.set(name, cls);
+            }
         }
-        const colorName = classifyColor(colorStr);
+        const label = colorName || 'Player';
         if (_anonSelfName && name === _anonSelfName) {
-            return `${colorName} (You)`;
+            return `${label} (You)`;
         }
-        return colorName;
+        return label;
+    }
+    function _looksLikeUsername(txt) {
+        if (!txt) return false;
+        if (txt.length > 30) return false;
+        // Multi-word sentences are rarely usernames.
+        if (txt.includes(' ') && txt.length > 16) return false;
+        return true;
+    }
+    function _rewriteUsername(el, txt) {
+        if (el.dataset[STREAMER_DATA_FLAG] === txt) return;
+        const anon = anonLabelFor(txt, el);
+        if (anon === txt) return;
+        // Trailing space prevents "Red placed" from collapsing into
+        // "Redplaced" when the next sibling text node starts directly.
+        // Cheap and harmless when there's already a separator.
+        el.textContent = anon + ' ';
+        el.dataset[STREAMER_DATA_FLAG] = anon;
     }
     function anonymizeColonistDOM() {
         if (!streamerOn) return;
-        // Player-name spans always use inline color: or background-
-        // color: — same signature serializeEntry already detects.
-        // querySelectorAll for both forms; we'll filter in the loop.
-        const candidates = document.querySelectorAll(
-            'span[style*="color"], span[style*="background"]');
-        for (const el of candidates) {
-            // Skip elements that don't directly contain text
-            // (player-name spans hold a single text child).
+        // Pass 1 — chat / pill spans with their own inline color
+        // signature. Same shape serializeEntry already matches.
+        const colored = document.querySelectorAll(
+            'span[style*="color"], span[style*="background"], '
+            + 'div[style*="color"], div[style*="background"]');
+        for (const el of colored) {
+            // Only rewrite leaves so we don't blow away nested structure.
+            if (el.children.length > 0) continue;
             const txt = (el.innerText || '').trim();
-            if (!txt) continue;
-            // Skip non-name spans — vp-text, system messages, etc.
-            // The dedup attribute also short-circuits already-anon'd
-            // elements unless the text changed under us.
-            if (el.dataset[STREAMER_DATA_FLAG] === txt) continue;
-            // Heuristic: real names are short (< 30 chars), no spaces
-            // at the start, look like usernames. Skip multi-word
-            // sentences (system messages with inline-styled text).
-            if (txt.length > 30 || txt.includes(' ') && txt.length > 16) {
-                continue;
-            }
-            const anon = anonLabelFor(txt, el);
-            if (anon !== txt) {
-                el.textContent = anon;
-                el.dataset[STREAMER_DATA_FLAG] = anon;
-            }
+            if (!_looksLikeUsername(txt)) continue;
+            _rewriteUsername(el, txt);
+        }
+        // Pass 2 — banner / aside / any plain element whose text is
+        // a username we've already remembered. Banner rows often
+        // hold the colored backdrop on a parent and the username
+        // text on a plain inner div, so the inline-style filter in
+        // pass 1 misses them. We sweep all leaves and rewrite any
+        // that match a known name; _findColorOnAncestor inside
+        // anonLabelFor walks up to find the colored parent.
+        if (_name_to_color.size === 0 && !_anonSelfName) return;
+        const all = document.querySelectorAll(
+            'div, span, p, a, button, label');
+        for (const el of all) {
+            if (el.children.length > 0) continue;
+            const txt = (el.innerText || '').trim();
+            if (!_looksLikeUsername(txt)) continue;
+            // Match if we know this name, or if it's the self name.
+            if (!_name_to_color.has(txt)
+                    && _anonSelfName !== txt) continue;
+            _rewriteUsername(el, txt);
         }
     }
     // Detect self username from colonist's localStorage userState —
