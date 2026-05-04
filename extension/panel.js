@@ -934,6 +934,27 @@
                     }
                 }
 
+                // Dev-deck remaining strip. Standalone tracks knight
+                // plays authoritatively (mechanicKnightState ships
+                // per-color knightsPlayed). Other types ship "played"
+                // only when colonist logs the play, which we don't
+                // observe in standalone — leave them with the deck
+                // floor so the renderer hides them.
+                let devDeck = null;
+                if (st && st.colors.length) {
+                    const knightsPlayedTotal = st.colors.reduce(
+                        (s, c) => s + (st.playedKnights[c] || 0), 0);
+                    devDeck = {
+                        by_type: {
+                            KNIGHT: {
+                                remaining: Math.max(0, 14 - knightsPlayedTotal),
+                            },
+                        },
+                        knights_remaining: Math.max(
+                            0, 14 - knightsPlayedTotal),
+                    };
+                }
+
                 // Engine-deficit alarm: leader produces 1.5×+ self.
                 let engineDeficit = null;
                 if (st && st.map && (st.totalRolls >= 8)) {
@@ -1047,11 +1068,18 @@
                     vp_target: st ? st.vpTarget : 10,
                     discard_limit: st ? st.discardLimit : 7,
                     game_over: gameOverObj,
+                    current_turn_color: st && st.currentTurn != null
+                        ? _colorName(st.currentTurn) : null,
+                    current_turn_username: st && st.currentTurn != null
+                        ? (_bestUsernameFor(st.currentTurn)
+                            || _colorName(st.currentTurn))
+                        : null,
                     standings,
                     longest_road_race: lrRace,
                     largest_army_race: laRace,
                     engine_deficit: engineDeficit,
                     robber_on_me: robberOnMe,
+                    dev_deck: devDeck,
                     threat,
                     win_proximity: winProx,
                     winning_move: winningMove,
