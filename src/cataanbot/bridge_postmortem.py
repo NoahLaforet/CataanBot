@@ -318,11 +318,18 @@ def _compute_board_fingerprint(game) -> dict[str, object] | None:
         fp["port_count"] = len(getattr(m, "port_nodes", set()) or set())
     except Exception:  # noqa: BLE001
         pass
-    label = (fp.get("tile_count") == 19
-             and fp.get("corner_count") == 54
-             and "classic")
-    if label:
+    # tile + corner counts are enough to uniquely identify the
+    # layouts we know — catanatron's CatanMap doesn't ship a
+    # `land_edges` attribute, so the edge_count slot collected
+    # above is 0 on a stock board and an exact 4-tuple match
+    # would label every classic game "variant".
+    counts2 = (fp.get("tile_count"), fp.get("corner_count"))
+    if counts2 == (19, 54):
         fp["label"] = "classic"
+    elif counts2 == (24, 76):
+        fp["label"] = "pond"
+    elif counts2 == (42, 126):
+        fp["label"] = "twirl"
     else:
         fp["label"] = "variant"
     return fp or None
