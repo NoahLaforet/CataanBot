@@ -271,6 +271,7 @@
                 let knightH = null, monoH = null, yopH = null, rbH = null;
                 let robberTargets = [];
                 let selfBlock = null, oppsBlock = [];
+                let strategy = null;
                 if (st && st.selfColor) {
                     try { recs = lib.recommendActions(st); } catch (_) {}
                     try { knightH = lib.knightHint(st); } catch (_) {}
@@ -281,6 +282,11 @@
                         robberTargets = lib.recommendRobberTargets
                             ? lib.recommendRobberTargets(st)
                             : [];
+                    } catch (_) {}
+                    try {
+                        strategy = lib.computeStrategy
+                            ? lib.computeStrategy(st)
+                            : null;
                     } catch (_) {}
                     // Self/opps blocks for the panel's status cards.
                     const selfHand = st.hands[st.selfColor]
@@ -328,6 +334,7 @@
                     monopoly_hint: monoH,
                     yop_hint: yopH,
                     rb_hint: rbH,
+                    strategy,
                     robber_targets: robberTargets,
                     last_roll: lastRoll,
                     roll_history: st ? st.rollHistory.slice() : [],

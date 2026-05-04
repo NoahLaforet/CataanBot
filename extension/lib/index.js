@@ -29,6 +29,7 @@ export { recommendActions, recommendRobberTargets,
     from './recommender.js';
 export { knightHint, monopolyHint, yopHint, rbHint }
     from './hints.js';
+export { computeStrategy } from './strategy.js';
 export { planBankTrades, evaluateIncomingTrade }
     from './trades.js';
 
