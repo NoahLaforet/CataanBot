@@ -93,22 +93,20 @@ def test_port_bonus_does_not_tier_flip_against_three_tile_corner():
     ~0.06 raw-production gap between a 2-tile and 3-tile corner with
     similar pip totals.
     """
-    from cataanbot.advisor import _port_bonus
+    from cataanbot.advisor import _DIVERSITY_BY_COUNT, _port_bonus
     # Approximate cards-per-roll for the screenshot's two-tile pick.
     # 8 (5 pips) ≈ 0.139, 10 (3 pips) ≈ 0.083 → ~0.222 raw across two
     # distinct resources. Plus a 3:1 port:
     coastal_two_tile_raw = 0.222
-    coastal_two_tile_diversity = 1.05  # 2 distinct resources
     coastal_two_tile_port = _port_bonus("3:1", {"WHEAT": 0.139,
                                                 "WOOD": 0.083})
-    coastal_score = (coastal_two_tile_raw * coastal_two_tile_diversity
+    coastal_score = (coastal_two_tile_raw * _DIVERSITY_BY_COUNT[2]
                      + coastal_two_tile_port)
 
     # Three-tile interior: 9 (4 pips) ≈ 0.111, 2 (1 pip) ≈ 0.028,
     # 6 (5 pips) ≈ 0.139 → ~0.278 raw across 3 resources.
     interior_three_tile_raw = 0.278
-    interior_three_tile_diversity = 1.15  # 3 distinct resources
-    interior_score = (interior_three_tile_raw * interior_three_tile_diversity
+    interior_score = (interior_three_tile_raw * _DIVERSITY_BY_COUNT[3]
                       + 0.0)
 
     assert interior_score > coastal_score, (
@@ -299,3 +297,19 @@ def test_weighted_raw_production_boosts_wheat():
     assert diff < 0.05, (
         f"wheat bias is too aggressive: {diff:.4f} cards/roll over "
         f"the equal-pip baseline")
+
+
+def test_diversity_multiplier_reflects_composition_over_pips():
+    """Reddit 36k-game finding #3: composition beats raw pips. The
+    3-distinct boost should clear a roughly equal-pip 1-distinct
+    stack, since the data shows 3-resource corners dominating even
+    at lower pip counts (highest-win-rate placement was 16 pips).
+    """
+    from cataanbot.advisor import _DIVERSITY_BY_COUNT
+    # 3-distinct boost > 2-distinct boost > flat.
+    assert _DIVERSITY_BY_COUNT[3] > _DIVERSITY_BY_COUNT[2] > _DIVERSITY_BY_COUNT[1]
+    # Spread between 1-distinct and 3-distinct must clear ~20% so a
+    # 0.20-raw 3-distinct corner reads above an equal-raw single-
+    # resource stack. Below ~1.18 the boost stops clearing the gap
+    # against ports + denial in real games.
+    assert _DIVERSITY_BY_COUNT[3] >= 1.18

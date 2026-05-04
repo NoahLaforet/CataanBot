@@ -39,9 +39,16 @@ class NodeScore:
         return self.raw_production
 
 
-# Diversity multiplier: 1 resource = 1.0 (no bonus), 2 = 1.05, 3 = 1.15.
+# Diversity multiplier: 1 resource = 1.0 (no bonus), 2 = 1.08, 3 = 1.22.
 # Encourages spots that give you flexibility, not just volume.
-_DIVERSITY_BY_COUNT = {0: 1.0, 1: 1.0, 2: 1.05, 3: 1.15}
+# Reddit 36k-game finding #3: raw pip count barely predicts wins —
+# the highest-win-rate placement in the data (56.4%) had only 16 pips.
+# Composition trumps volume, so the 3-distinct boost was bumped from
+# 1.15 to 1.22 (a 3-resource node now reads about a third of a tile
+# stronger than a same-pip 2-resource one). Still calibrated to leave
+# a clear lower-pip 3-distinct vs higher-pip 1-distinct boundary
+# rather than steamroll it.
+_DIVERSITY_BY_COUNT = {0: 1.0, 1: 1.0, 2: 1.08, 3: 1.22}
 
 
 # Per-resource weight applied to ``node_production`` cards-per-roll
