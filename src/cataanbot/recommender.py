@@ -1837,7 +1837,8 @@ def _suggest_counter_offer(
 def evaluate_incoming_trade(
     game, self_color, self_hand: dict[str, int],
     give: dict[str, int], want: dict[str, int],
-    *, opp_vp: int = 0, _allow_counter: bool = True,
+    *, opp_vp: int = 0, opp_imminent: bool = False,
+    _allow_counter: bool = True,
 ) -> dict[str, Any]:
     """Rate an incoming player-to-player offer.
 
@@ -1882,6 +1883,17 @@ def evaluate_incoming_trade(
     if not give:
         return {"verdict": "decline", "score": -10.0,
                 "reason": "they give nothing in return",
+                "before": None, "after": None, "counter": None}
+
+    # Imminent opp short-circuit: don't even score the swap. When
+    # the leader-threat detector flagged this opp as one move from
+    # winning, every card we give them is a card on their win path.
+    # Decline outright with a clear reason so the HUD doesn't paint
+    # the offer as "consider — neutral swap" while the banner above
+    # screams WIN NEXT TURN.
+    if opp_imminent:
+        return {"verdict": "decline", "score": -10.0,
+                "reason": f"opp can win NEXT TURN — don't feed",
                 "before": None, "after": None, "counter": None}
 
     new_hand = dict(self_hand)

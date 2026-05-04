@@ -2326,16 +2326,42 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
     give = pending.get("give") or {}
     want = pending.get("want") or {}
     opp_vp = 0
+    opp_imminent = False
     try:
         opp_color = game.color_map.get(offerer)
         opp_vp = _get_vp(game, opp_color)
     except Exception:  # noqa: BLE001
         opp_color = None
+    # Imminent check piggybacks on the leader-threat detector — same
+    # logic, scoped to whoever is offering the trade. The threat
+    # banner gets computed later in the snap pipeline so we can't
+    # just read snap["threat"]; recompute against a synthetic snap
+    # carrying just this offerer.
+    try:
+        from cataanbot.bridge_strategy import _compute_leader_threat
+        opp_entry = next(
+            (o for o in (st.get("opps_cache") or [])
+             if o.get("username") == offerer), None)
+        # Walk current snap.opps when cache miss — opps_cache is a
+        # bridge-side optimization; trade eval may run before it
+        # populates on a fresh frame.
+        if opp_entry is None:
+            for o in (st.get("opps") or []):
+                if o.get("username") == offerer:
+                    opp_entry = o
+                    break
+        if opp_entry is not None:
+            t = _compute_leader_threat(
+                {"opps": [opp_entry], "self": {"vp": 0}}, game=game)
+            if t and t.get("level") == "imminent":
+                opp_imminent = True
+    except Exception:  # noqa: BLE001
+        opp_imminent = False
 
     try:
         verdict = evaluate_incoming_trade(
             game.tracker.game, self_color, self_hand,
-            give, want, opp_vp=opp_vp,
+            give, want, opp_vp=opp_vp, opp_imminent=opp_imminent,
         )
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] evaluate_incoming_trade failed: {e!r}",
