@@ -462,9 +462,21 @@ export function recommendRobberTargets(state, opts = {}) {
             pieceValue += a.kind === 'CITY' ? 2 : 1;
             oppByColor[a.color] = (oppByColor[a.color] || 0) + 1;
         }
-        // Steal candidate: opp w/ most cards adj to this tile.
+        // Build the victims array — each adjacent opp w/ vp + card count
+        // + suggested flag set on the highest-card holder. Mirrors the
+        // bridge's bridge_robber.score_robber_targets output so the
+        // panel's robber-target table renders unchanged.
+        const COLONIST_COLOR_NAME = {
+            '1': 'RED', '2': 'BLUE', '3': 'ORANGE',
+            '4': 'WHITE', '5': 'GREEN', '6': 'BROWN',
+        };
+        const COLONIST_COLOR_HEX = {
+            '1': '#e8715f', '2': '#4aa7d4',
+            '3': '#e29a4a', '4': '#f0f0f0',
+            '5': '#7ac74f', '6': '#a07045',
+        };
         let bestVictim = null;
-        let bestVictimCards = 0;
+        let bestVictimCards = -1;
         for (const c of Object.keys(oppByColor)) {
             const cards = state.handTotal[c] || 0;
             if (cards > bestVictimCards) {
@@ -472,6 +484,15 @@ export function recommendRobberTargets(state, opts = {}) {
                 bestVictim = c;
             }
         }
+        const victims = Object.keys(oppByColor).map((c) => ({
+            username: COLONIST_COLOR_NAME[String(c)] || `P${c}`,
+            color: COLONIST_COLOR_NAME[String(c)] || `P${c}`,
+            color_css: COLONIST_COLOR_HEX[String(c)] || '#888',
+            pips: oppByColor[c] * pip,
+            vp: state.vp[c] || 0,
+            cards: state.handTotal[c] || 0,
+            suggested: c === bestVictim,
+        }));
         const score = pip * pieceValue + (bestVictimCards || 0) * 1.5;
         targets.push({
             tile_id: tid,
@@ -481,7 +502,8 @@ export function recommendRobberTargets(state, opts = {}) {
             score,
             opp_pieces: oppAdj.length,
             steal_from_color: bestVictim,
-            victim_hand_size: bestVictimCards,
+            victim_hand_size: bestVictimCards >= 0 ? bestVictimCards : 0,
+            victims,
         });
     }
     targets.sort((a, b) => b.score - a.score);
