@@ -147,7 +147,19 @@
         if (_isInputLike(el)) return;
         if (el.dataset[STREAMER_DATA_FLAG] === txt) return;
         const anon = anonLabelFor(txt);
-        if (anon === txt) return;
+        // Even when no rewrite is needed (anon === txt), mark the
+        // span as anonymized so the streamer-mode CSS lets it
+        // render. Without this the CSS keeps inline-colored spans
+        // transparent forever — Noah hit this on self chat rows
+        // where colonist already renders "You" with inline color
+        // and our anonymizer would short-circuit, leaving the
+        // span permanently blanked. (Bug fix 2026-05-04 after
+        // capturing the literal HTML: colonist's own "You" text
+        // was getting hidden by our universal blank rule.)
+        if (anon === txt) {
+            el.dataset[STREAMER_DATA_FLAG] = txt;
+            return;
+        }
         // Trailing space prevents "Aria placed" from collapsing into
         // "Ariaplaced" when the next sibling text node starts
         // directly. Cheap and harmless when there's already a
@@ -164,6 +176,37 @@
     }
     function anonymizeColonistDOM() {
         if (!streamerOn) return;
+        // Pass 0 — self chat rows. Colonist renders self's name
+        // as a literal "You" inside a multi-child span (text
+        // "You" + nested ":" sub-span):
+        //   <span class="username-..." style="color:#3d3d3d">
+        //     You<span class="colon-...">: </span>
+        //   </span>
+        // Pass 1 below skips multi-child spans, so these never
+        // get marked anonymized and the streamer blank CSS leaves
+        // them permanently transparent. Walk username-classed
+        // spans whose FIRST text node is "You" and mark them
+        // dedup'd. Restricted to "You" so opponent username spans
+        // (which need real rewriting) still flow through pass 1
+        // / pass 3 unchanged.
+        // Bug fix 2026-05-04 — captured the literal HTML when
+        // self-chat rendered as ": hi" with no name.
+        const usernameSpans = document.querySelectorAll(
+            '[class*="username-"]');
+        for (const el of usernameSpans) {
+            if (el.dataset[STREAMER_DATA_FLAG]) continue;
+            // First text node, trimmed.
+            let firstText = '';
+            for (const ch of el.childNodes) {
+                if (ch.nodeType === Node.TEXT_NODE) {
+                    firstText = (ch.textContent || '').trim();
+                    if (firstText) break;
+                }
+            }
+            if (firstText === 'You') {
+                el.dataset[STREAMER_DATA_FLAG] = 'You';
+            }
+        }
         // Pass 1 — chat / pill spans with their own inline color
         // signature. Discovers usernames as we go, so subsequent
         // banner sweeps can match them.
