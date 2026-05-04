@@ -424,11 +424,48 @@
                     });
                     outRecs = openingRecs;
                 }
+                // Phase derivation for the dataset hook + renderer's
+                // game_progress block. Mirrors strategy.js phase
+                // boundaries (opening / early / mid / late / endgame)
+                // so the standard renderer's phase-aware demotion
+                // (production stall, late-game robber priority,
+                // etc.) gets a sensible value to read.
+                const totalRolls = st ? st.totalRolls : 0;
+                let phaseTag = 'opening';
+                if (totalRolls >= 50) phaseTag = 'endgame';
+                else if (totalRolls >= 30) phaseTag = 'late';
+                else if (totalRolls >= 15) phaseTag = 'mid';
+                else if (totalRolls >= 5) phaseTag = 'early';
+                const gameProgress = {
+                    phase: phaseTag,
+                    round: 0,
+                    total_rolls: totalRolls,
+                };
+                // Game-over message — stamp a one-line readable
+                // banner when the state's gameOver tag is set.
+                let gameOverObj = null;
+                if (st && st.gameOver) {
+                    const wc = st.gameOver.winnerColor;
+                    const winnerName =
+                        ({ '1': 'RED', '2': 'BLUE', '3': 'ORANGE',
+                           '4': 'WHITE', '5': 'GREEN', '6': 'BROWN'
+                        }[String(wc)]) || `P${wc}`;
+                    const isSelf = String(wc) === String(st.selfColor);
+                    gameOverObj = {
+                        winnerColor: wc,
+                        winnerUsername: winnerName,
+                        is_self: isSelf,
+                        message: isSelf
+                            ? `${winnerName} wins — that's you!`
+                            : `${winnerName} wins`,
+                    };
+                }
                 return {
                     seq: -2,
                     _source: 'standalone',
                     game_started: true,
                     setup_phase: inOpeningPhase,
+                    game_progress: gameProgress,
                     self: selfBlock,
                     opps: oppsBlock,
                     my_turn: myTurn,
@@ -452,7 +489,7 @@
                         ? { ...st.rollHistogram } : null,
                     vp_target: st ? st.vpTarget : 10,
                     discard_limit: st ? st.discardLimit : 7,
-                    game_over: st ? st.gameOver : null,
+                    game_over: gameOverObj,
                     latest_postmortem: {
                         seq: 0, available: false, written_at: 0,
                     },
