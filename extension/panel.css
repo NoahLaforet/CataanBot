@@ -2378,6 +2378,54 @@ html, body, .panel {
   from { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important; }
   to   { box-shadow: 0 0 8px 1px rgba(74, 222, 128, 0.30) !important; }
 }
+/* Robber-on-me — every roll the robber sits on a self tile is a
+   tax on Noah's economy. Pulse so it stays visible when the panel
+   is dense with rec rows; same red as imminent-threat but a touch
+   slower so two simultaneous reds don't look like a strobe. */
+.robber-on-me {
+  animation: cataanbot-robber-pulse-flat 2.0s ease-in-out infinite alternate
+    !important;
+  border-left-color: var(--alert) !important;
+  border-left-width: 3px !important;
+  color: var(--alert) !important;
+  font-weight: 700 !important;
+}
+@keyframes cataanbot-robber-pulse-flat {
+  from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important; }
+  to   { box-shadow: 0 0 11px 2px rgba(248, 113, 113, 0.40) !important; }
+}
+/* Robber-targets section pulses when the placement decision is
+   active — self rolled a 7 (robber_pending) or just played a
+   knight. Header glows amber-yellow; the ranked-targets table
+   gets a subtle outline so the eye lands on the call-to-action
+   even when the rec strip above is dense. The 'placed' state
+   (post-decision review) stays unanimated. */
+.robber-h.robber-urgent {
+  animation: cataanbot-robber-action-pulse 1.4s ease-in-out infinite alternate
+    !important;
+  color: var(--alert) !important;
+  font-weight: 800 !important;
+}
+@keyframes cataanbot-robber-action-pulse {
+  from {
+    text-shadow: 0 0 0 rgba(255, 211, 110, 0.0) !important;
+    box-shadow: 0 0 0 0 rgba(255, 211, 110, 0.0) !important;
+  }
+  to {
+    text-shadow: 0 0 8px rgba(255, 211, 110, 0.7) !important;
+    box-shadow: 0 0 10px 1px rgba(255, 211, 110, 0.35) !important;
+  }
+}
+table.robber.robber-urgent {
+  outline: 1px solid rgba(255, 211, 110, 0.45) !important;
+  outline-offset: 2px;
+  animation: cataanbot-robber-table-pulse 1.4s ease-in-out infinite alternate
+    !important;
+}
+@keyframes cataanbot-robber-table-pulse {
+  from { outline-color: rgba(255, 211, 110, 0.20) !important; }
+  to   { outline-color: rgba(255, 211, 110, 0.65) !important; }
+}
 .milestone { border-left-color: var(--info) !important; color: var(--fg) !important; }
 .milestone .ms-head { font-weight: 700; }
 .milestone .ms-tail { color: var(--fg-mute); margin-left: 4px; }

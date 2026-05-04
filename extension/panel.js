@@ -1595,8 +1595,18 @@
                 : snap.robber_reason === 'placed'
                     ? 'robber placed · ranking'
                     : 'robber targets';
-            parts.push(`<div class="robber-h">${rhTxt}</div>`);
-            parts.push('<table class="robber">');
+            // Pulse-class when the robber decision is RIGHT NOW —
+            // self rolled a 7 (robber_pending) or just played a knight
+            // and needs to pick a tile. The 'placed' case is post-
+            // decision review, so it stays calm.
+            const robberUrgent = (snap.robber_pending
+                || snap.robber_reason === 'knight');
+            const headerCls = robberUrgent
+                ? 'robber-h robber-urgent' : 'robber-h';
+            const tableCls = robberUrgent
+                ? 'robber robber-urgent' : 'robber';
+            parts.push(`<div class="${headerCls}">${rhTxt}</div>`);
+            parts.push(`<table class="${tableCls}">`);
             for (let i = 0; i < snap.robber_targets.length; i++) {
                 const t = snap.robber_targets[i];
                 const tile = t.resource
