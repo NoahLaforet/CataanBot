@@ -25,26 +25,54 @@
     const LOG_PREFIX = '[cataanbot]';
 
     // ---- Relay page-world WS frames to background ----
+    // chrome.runtime.sendMessage throws SYNCHRONOUSLY when the
+    // extension's context has been invalidated (e.g. after Noah hits
+    // "reload" on chrome://extensions while the colonist tab stays
+    // open). The promise .catch() doesn't help with a sync throw, so
+    // wrap the whole call. Once invalidated, the listener can't
+    // recover anyway — set a flag to short-circuit subsequent
+    // messages instead of spamming the console.
+    let extensionDead = false;
     window.addEventListener('message', (ev) => {
+        if (extensionDead) return;
         if (ev.source !== window) return;
         const data = ev.data;
         if (!data || data.source !== 'cataanbot-ws') return;
-        chrome.runtime.sendMessage({
-            type: 'ws-frame',
-            frame: data.frame,
-        }).catch(() => {
-            // Service worker may have been suspended; drop quietly.
-        });
+        try {
+            chrome.runtime.sendMessage({
+                type: 'ws-frame',
+                frame: data.frame,
+            }).catch(() => {
+                // Service worker may have been suspended; drop quietly.
+            });
+        } catch (err) {
+            if (String(err).includes('Extension context invalidated')) {
+                extensionDead = true;
+                console.warn(LOG_PREFIX,
+                    'extension context invalidated — '
+                    + 'reload the colonist tab to reconnect');
+            }
+        }
     });
 
     // ---- Step 3: DOM /log scraper (full userscript port) ----
     // Selectors captured from DOM recon (docs/colonist_recon.md).
     // Class hashes are fragile across deploys — fall back defensively
     // if the primary selector misses.
+    // Class hashes shift on every colonist deploy. The exact
+    // selector here is the one that worked at last DOM-recon time;
+    // ``ENTRY_SELECTOR_FALLBACK`` is a unioned matcher that tries
+    // the prefix form too. Keeping the exact one first helps us
+    // notice when colonist redeploys (the prefix path will hit a
+    // different element first the next time).
     const SEL = {
         scroller: 'div.virtualScroller-lSkdkGJi',
         entry:    'div.scrollItemContainer-WXX2rkzf',
     };
+    const ENTRY_SELECTOR_FALLBACK = (
+        SEL.entry
+        + ', [class^="scrollItemContainer-"]'
+        + ', [class*=" scrollItemContainer-"]');
     const NODE_KEY_ATTR = 'cataanbotKey';
     const RECENT_TTL_MS = 60000;
     const AT_BOTTOM_PX = 50;
@@ -168,7 +196,7 @@
 
     function processEntry(el) {
         if (!el || !(el instanceof Element)) return;
-        if (!el.matches(SEL.entry)) return;
+        if (!el.matches(ENTRY_SELECTOR_FALLBACK)) return;
         const payload = serializeEntry(el);
         if (!payload.text && payload.icons.length === 0) return;
         if (el.dataset[NODE_KEY_ATTR] === payload.key) return;
@@ -184,15 +212,22 @@
             }
         }
 
-        chrome.runtime.sendMessage({
-            type: 'log-entry',
-            payload,
-        }).catch(() => {});
+        if (extensionDead) return;
+        try {
+            chrome.runtime.sendMessage({
+                type: 'log-entry',
+                payload,
+            }).catch(() => {});
+        } catch (err) {
+            if (String(err).includes('Extension context invalidated')) {
+                extensionDead = true;
+            }
+        }
     }
 
     function attach(scroller) {
         console.log(LOG_PREFIX, 'attached to log scroller');
-        scroller.querySelectorAll(SEL.entry).forEach(processEntry);
+        scroller.querySelectorAll(ENTRY_SELECTOR_FALLBACK).forEach(processEntry);
 
         const observer = new MutationObserver((mutations) => {
             // No isAtBottom gate — when Noah scrolled up to read chat
@@ -204,10 +239,11 @@
             for (const m of mutations) {
                 m.addedNodes.forEach((n) => {
                     if (!(n instanceof Element)) return;
-                    if (n.matches(SEL.entry)) {
+                    if (n.matches(ENTRY_SELECTOR_FALLBACK)) {
                         processEntry(n);
                     } else if (n.querySelectorAll) {
-                        n.querySelectorAll(SEL.entry).forEach(processEntry);
+                        n.querySelectorAll(ENTRY_SELECTOR_FALLBACK)
+                            .forEach(processEntry);
                     }
                 });
             }
@@ -221,8 +257,39 @@
         // cheap and idempotent. Same no-isAtBottom-gate reasoning as
         // the observer above.
         setInterval(() => {
-            scroller.querySelectorAll(SEL.entry).forEach(processEntry);
+            scroller.querySelectorAll(ENTRY_SELECTOR_FALLBACK).forEach(processEntry);
         }, 500);
+    }
+
+    // Find the chat-log scroller. CSS-module class hashes
+    // (virtualScroller-lSkdkGJi etc.) change on every colonist
+    // deploy — so falling back to a class-prefix match keeps the
+    // scraper alive across redeploys. Final fallback: any element
+    // that contains an entry that looks like a colonist chat row
+    // (an element matching SEL.entry or its prefix variant).
+    function findScroller() {
+        const exact = document.querySelector(SEL.scroller);
+        if (exact) return exact;
+        // Prefix match — class hashes shift but the human-readable
+        // prefix usually doesn't.
+        const prefix = document.querySelector(
+            '[class^="virtualScroller-"], [class*=" virtualScroller-"]');
+        if (prefix) return prefix;
+        // Last resort: walk up from any entry-like row to find the
+        // closest scrollable ancestor.
+        const entry = document.querySelector(SEL.entry)
+            || document.querySelector(
+                '[class^="scrollItemContainer-"], '
+                + '[class*=" scrollItemContainer-"]');
+        if (entry) {
+            let cur = entry.parentElement;
+            while (cur) {
+                const ov = getComputedStyle(cur).overflowY;
+                if (ov === 'auto' || ov === 'scroll') return cur;
+                cur = cur.parentElement;
+            }
+        }
+        return null;
     }
 
     function waitForScroller() {
@@ -230,9 +297,12 @@
         const maxTries = 600;
         const iv = setInterval(() => {
             tries += 1;
-            const scroller = document.querySelector(SEL.scroller);
+            const scroller = findScroller();
             if (scroller) {
                 clearInterval(iv);
+                console.info(
+                    LOG_PREFIX, 'scroller found',
+                    scroller.className.slice(0, 80));
                 attach(scroller);
                 return;
             }

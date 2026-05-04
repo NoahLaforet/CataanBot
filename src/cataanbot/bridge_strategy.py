@@ -171,17 +171,22 @@ def _compute_leader_threat(
     # Threat vector: what tools does the leader have right now?
     # 'vp_build' = can afford city or settlement (+1 VP next turn).
     # 'dev_vp' = holds dev cards, any of which could be a hidden VP.
+    # 'dev_storm' = >= 3 unplayed dev cards, which is "engine push"
+    #   independent of VP — they're either racing for LA or sitting
+    #   on a VP-card stack that can flip in one big reveal. Fires
+    #   regardless of VP because the BUILD-UP itself is the signal:
+    #   by the time vp catches up to close_vp, the cards are already
+    #   in their hand and there's nothing Noah can do about it.
     vector: list[str] = []
     can_afford = leader.get("can_afford") or []
     vp_builds = [b for b in can_afford if b in ("city", "settlement")]
     if vp_builds:
         vector.append("vp_build")
-    # Dev cards are only urgent when leader is genuinely close — at
-    # mid_late VP they might be knights, and a knight is less scary
-    # than a hidden VP at 9 VP.
     dev_cards = int(leader.get("dev_cards", 0) or 0)
     if dev_cards > 0 and leader_vp >= close_vp:
         vector.append("dev_vp")
+    if dev_cards >= 3:
+        vector.append("dev_storm")
 
     # Max VP the leader could plausibly add THIS TURN from what we
     # can see. Cities (+2) outrank settlements (+1); ties broken by
@@ -278,11 +283,15 @@ def _compute_leader_threat(
     gap = leader_vp - my_vp
 
     # Build a means-tag for the message. Order: vp_build first (most
-    # concrete), dev_vp second. Empty string when no vector present.
+    # concrete), dev_vp / dev_storm second. dev_storm wins over dev_vp
+    # when both fire (they overlap at high dev counts) — "storm" is
+    # the louder framing.
     means_parts = []
     if "vp_build" in vector:
         means_parts.append(f"can {'/'.join(vp_builds)}")
-    if "dev_vp" in vector:
+    if "dev_storm" in vector:
+        means_parts.append(f"{dev_cards} dev — storm")
+    elif "dev_vp" in vector:
         means_parts.append(f"{dev_cards} dev")
     means = f" ({', '.join(means_parts)})" if means_parts else ""
 

@@ -4,6 +4,76 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.0 — 2026-05-03 (later same day)
+
+Reactive layer over the v0.32 strategy work. Mostly: imminent-tier
+threat detection, stronger pulses, and a content-script reliability
+pass after Noah caught Chrome surfacing "Extension context
+invalidated" + "gave up waiting for scroller" errors.
+
+### Threat / win detection
+- **Imminent threat tier** — new "WIN NEXT TURN" banner for
+  leader-threat + a louder pulse animation. Fires when leader.vp +
+  visible-VP path (city/settle build, dev stash, LR/LA flip)
+  ≥ VP_TARGET. Reads catanatron player_state directly so LR/LA
+  flips are caught even when the build-VP path alone wouldn't get
+  there.
+- **Dev-card storm vector** in threat_vector — fires when an opp
+  has ≥3 unplayed dev cards regardless of VP. The build-up itself
+  is the signal; by the time vp catches up to close_vp, the cards
+  are already in their hand.
+- **Trade evaluator** auto-declines when offerer is imminent (was
+  only checking opp_vp >= close_to_win_vp threshold).
+- **Win-this-turn claim path** — fires when self.vp ≥ target with
+  held VP cards covering the gap and it's self's turn. Came out of
+  the 2026-05-03 vs Plunder101 loss where Noah was at 8 visible +
+  2 held VP cards but never claimed.
+- **Knight-hint LA-deny** widened — fires when any opp has played
+  ≥3 knights, regardless of their visible VP (was: ≥2 played AND
+  vp ≥ largest_army_threat_vp). Earlier trigger gives Noah the
+  knight-asap nudge before it's too late.
+
+### Robber
+- **Robber-target ranker** gets a 2× weight multiplier on tiles
+  adjacent to an imminent opp. Captures lower-VP imminent threats
+  (e.g. 7 VP + can-city = imminent at vp=7 — currently linear-VP
+  weighting alone was too soft).
+- **Robber pulses** — `.robber-on-me` and the robber-targets
+  section pulse while the placement decision is active.
+
+### HUD polish
+- **Pulses bumped** from 8-14px / 0.30-0.45 opacity glow to
+  18-22px / 0.65-0.75 with background-color swing — the original
+  pulses were too subtle to register as "blinking" against the
+  dim panel.
+- **Robber-target pill** shows the player's username initial
+  ("P" for Piane5462) instead of catanatron's internal color
+  letter ("R" when Piane was remapped to RED internally).
+- **Road Building** keeps both placements visible while
+  free_roads_available > 0 (was: hint vanished after the card
+  played, leaving the second free-road suggestion on the floor).
+- **Engine-deficit alarm** — banner when an opp's per-roll
+  production is ≥1.5× self's mid/late game.
+
+### Postmortem
+- **Per-player glyph tally** on the Move Annotations header
+  ("BrickdDaddy (BLUE): !!:1 !:2 ?!:1") for at-a-glance read
+  before scanning per-move detail.
+- **Loser had-enough-VP flag** — non-winner whose tracker VP at
+  game-end ≥ VP_TARGET gets "← had enough VP, opp closed first"
+  inline on the score line.
+- **Fingerprint** sources edge + port counts from session.mapping
+  (catanatron's CatanMap reads them as 0 / 6).
+
+### Reliability
+- **content.js**: wrapped `chrome.runtime.sendMessage` in try/catch
+  so the synchronous "Extension context invalidated" throw after
+  an extension reload doesn't spam Chrome's error log.
+- **Scroller selector** now falls back to `[class^="virtualScroller-"]`
+  prefix matching when the exact CSS-module hash misses (colonist
+  redeploys reshuffle hashes; the prefix is stable). Same fallback
+  on the entry selector for log-row matching.
+
 ## v0.32.0 — 2026-05-03
 
 Twirl variant support, Reddit-36k-game-finding tunings, and a real

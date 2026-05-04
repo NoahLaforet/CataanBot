@@ -190,8 +190,14 @@ def render_dice_histogram(
     draw.text((legend_x + 22, row_y), "Expected (2d6)",
               font=legend_font, fill=PIECE_OUTLINE)
 
+    # "Highest-prob" not "Hot" — 6 / 8 are always the highest-
+    # probability non-7 rolls structurally (5 pips each in 2d6),
+    # so coloring them red is a permanent visual cue. Calling them
+    # "Hot" implies a runtime detection that the chart doesn't do —
+    # this game's 6 may have rolled cold even though the bar is
+    # still red.
     row_y += 30
-    draw.text((legend_x, row_y), "Hot:", font=legend_font,
+    draw.text((legend_x, row_y), "5-pip:", font=legend_font,
               fill=PIECE_OUTLINE)
     row_y += 18
     draw.rectangle(
