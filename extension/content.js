@@ -24,6 +24,104 @@
 (function bootCataanbotContent() {
     const LOG_PREFIX = '[catanbot]';
 
+    // ---- Streamer mode: anonymize colonist's own DOM -------------
+    // Panel.js writes the toggle state to chrome.storage.local;
+    // content.js reads it on init + listens for changes. When on,
+    // we walk colonist's chat log + player banners and rewrite
+    // every player-name text node to a stable generic label
+    // ("You" / "Opp 1" / "Opp 2" / ...). React re-renders may
+    // overwrite us; the MutationObserver below re-applies on every
+    // DOM change so the rewrite usually sticks within a frame.
+    let streamerOn = false;
+    const STREAMER_DATA_FLAG = 'cataanonymized';
+    const _anonMap = new Map();        // real-name → "Opp N"
+    let _anonSelfName = null;          // detected from localStorage userState
+    let _anonSeq = 0;
+    function anonLabelFor(name) {
+        if (!name) return name;
+        if (_anonSelfName && name === _anonSelfName) return 'You';
+        if (!_anonMap.has(name)) {
+            _anonSeq += 1;
+            _anonMap.set(name, `Opp ${_anonSeq}`);
+        }
+        return _anonMap.get(name);
+    }
+    function anonymizeColonistDOM() {
+        if (!streamerOn) return;
+        // Player-name spans always use inline color: or background-
+        // color: — same signature serializeEntry already detects.
+        // querySelectorAll for both forms; we'll filter in the loop.
+        const candidates = document.querySelectorAll(
+            'span[style*="color"], span[style*="background"]');
+        for (const el of candidates) {
+            // Skip elements that don't directly contain text
+            // (player-name spans hold a single text child).
+            const txt = (el.innerText || '').trim();
+            if (!txt) continue;
+            // Skip non-name spans — vp-text, system messages, etc.
+            // The dedup attribute also short-circuits already-anon'd
+            // elements unless the text changed under us.
+            if (el.dataset[STREAMER_DATA_FLAG] === txt) continue;
+            // Heuristic: real names are short (< 30 chars), no spaces
+            // at the start, look like usernames. Skip multi-word
+            // sentences (system messages with inline-styled text).
+            if (txt.length > 30 || txt.includes(' ') && txt.length > 16) {
+                continue;
+            }
+            const anon = anonLabelFor(txt);
+            if (anon !== txt) {
+                el.textContent = anon;
+                el.dataset[STREAMER_DATA_FLAG] = anon;
+            }
+        }
+    }
+    // Detect self username from colonist's localStorage userState —
+    // same source the existing detectSelf() uses below.
+    function _refreshSelfName() {
+        try {
+            const raw = localStorage.getItem('userState');
+            if (!raw) return;
+            const obj = JSON.parse(raw);
+            _anonSelfName = obj && obj.username ? obj.username : null;
+        } catch (_) { /* ignore */ }
+    }
+    // Pull the toggle state from chrome.storage.local + listen for
+    // changes. localStorage on the colonist page is a different
+    // origin than the panel's; chrome.storage.local is shared
+    // across extension contexts.
+    try {
+        chrome.storage.local.get(['streamer'], (res) => {
+            streamerOn = !!(res && res.streamer);
+            if (streamerOn) {
+                _refreshSelfName();
+                anonymizeColonistDOM();
+            }
+        });
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area !== 'local' || !changes.streamer) return;
+            streamerOn = !!changes.streamer.newValue;
+            if (streamerOn) {
+                _refreshSelfName();
+                anonymizeColonistDOM();
+            } else {
+                // Toggle off: clear the dedup flag so a future
+                // toggle-on re-applies. Real names stay where
+                // React last wrote them.
+                document.querySelectorAll(
+                    `[data-${STREAMER_DATA_FLAG.replace(/([A-Z])/g, '-$1').toLowerCase()}]`
+                ).forEach(el => delete el.dataset[STREAMER_DATA_FLAG]);
+                _anonMap.clear();
+                _anonSeq = 0;
+            }
+        });
+    } catch (_) { /* extension context may be invalidated */ }
+    // Re-apply on every DOM mutation so React re-renders don't win.
+    // Cheap because anonymizeColonistDOM is idempotent on dedup.
+    new MutationObserver(() => {
+        if (streamerOn) anonymizeColonistDOM();
+    }).observe(document.documentElement,
+        { childList: true, subtree: true, characterData: true });
+
     // ---- Relay page-world WS frames to background ----
     // chrome.runtime.sendMessage throws SYNCHRONOUSLY when the
     // extension's context has been invalidated (e.g. after Noah hits

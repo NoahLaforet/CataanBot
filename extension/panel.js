@@ -547,6 +547,13 @@
                 localStorage.setItem(
                     'catanbot.streamer', on ? '1' : '0');
             } catch (_) {}
+            // Mirror to chrome.storage.local so content.js (running
+            // on the colonist tab origin) sees the toggle and
+            // anonymizes the colonist DOM — chat log, player
+            // banners, etc.
+            try {
+                chrome.storage.local.set({ streamer: !!on });
+            } catch (_) {}
             // Cross-closure dirty flag — the polling tick reads this
             // and forces a re-render even when snap.seq hasn't moved.
             // Lets the toggle take effect on the next poll (≤1s)
