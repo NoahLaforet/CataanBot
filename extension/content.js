@@ -123,7 +123,7 @@
         // text on a plain inner div, so pass 1 misses them.
         if (_name_to_anon.size === 0 && !_anonSelfName) return;
         const all = document.querySelectorAll(
-            'div, span, p, a, button, label');
+            'div, span, p, a, button, label, h1, h2, h3, h4');
         for (const el of all) {
             if (el.children.length > 0) continue;
             const txt = (el.innerText || '').trim();
@@ -132,6 +132,65 @@
                 continue;
             }
             _rewriteUsername(el, txt);
+        }
+        // Pass 3 — text-node walk. Catches usernames embedded in
+        // arbitrary text content like "Roehm's Turn", "BrickdDaddy:
+        // hi", or any other live string colonist composes from
+        // template + username. Pass 2 only matches elements whose
+        // ENTIRE text is a username; pass 3 matches anywhere a
+        // known name appears with word boundaries.
+        _rewriteTextNodes();
+    }
+    function _rewriteTextNodes() {
+        const knownNames = [..._name_to_anon.keys()];
+        if (_anonSelfName && !knownNames.includes(_anonSelfName)) {
+            knownNames.push(_anonSelfName);
+        }
+        if (knownNames.length === 0) return;
+        // Sort by length descending — avoids partial matches when
+        // one username is a prefix of another.
+        knownNames.sort((a, b) => b.length - a.length);
+        const escaped = knownNames.map(n =>
+            n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        // Word boundary on both sides — colonist's "Roehm's Turn"
+        // text node should match Roehm exactly, not partial.
+        const re = new RegExp('\\b(' + escaped.join('|') + ')\\b', 'g');
+        const walker = document.createTreeWalker(
+            document.body, NodeFilter.SHOW_TEXT, {
+                acceptNode: (node) => {
+                    if (!node.textContent
+                            || node.textContent.length < 2) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    const parent = node.parentElement;
+                    if (!parent) return NodeFilter.FILTER_REJECT;
+                    if (_isInputLike(parent)) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    // Skip script/style nodes outright.
+                    const tag = parent.tagName;
+                    if (tag === 'SCRIPT' || tag === 'STYLE'
+                            || tag === 'NOSCRIPT') {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                },
+            });
+        const updates = [];
+        let node;
+        while ((node = walker.nextNode())) {
+            if (!re.test(node.textContent)) continue;
+            // Reset lastIndex since regex has global flag.
+            re.lastIndex = 0;
+            updates.push(node);
+        }
+        for (const node of updates) {
+            re.lastIndex = 0;
+            const newText = node.textContent.replace(re,
+                (_, name) => anonLabelFor(name));
+            if (newText !== node.textContent) {
+                node.textContent = newText;
+            }
         }
     }
     // Detect self username from colonist's localStorage userState —
