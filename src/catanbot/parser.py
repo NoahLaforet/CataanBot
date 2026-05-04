@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from cataanbot.events import (
+from catanbot.events import (
     COLONIST_TO_CATAN_RESOURCE,
     BuildEvent,
     DevCardBuyEvent,

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cataanbot.report import _DICE_PROBABILITY
+from catanbot.report import _DICE_PROBABILITY
 
 
 # Per-value bar color. 6/8 hot red; 7 neutral grey; rest steel blue.
@@ -52,7 +52,7 @@ def render_dice_histogram(
     whole 2-12 range is always visible.
     """
     from PIL import Image, ImageDraw
-    from cataanbot.render import PIECE_OUTLINE, _load_font
+    from catanbot.render import PIECE_OUTLINE, _load_font
 
     out_path = Path(out_path)
     title_font = _load_font(18)

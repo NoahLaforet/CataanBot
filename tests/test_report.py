@@ -1,14 +1,14 @@
 """Tests for the offline replay postmortem report."""
 from __future__ import annotations
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
     GameOverEvent, InfoEvent, MonopolyStealEvent, NoStealEvent,
     ProduceEvent, RobberMoveEvent, RollEvent, StealEvent,
     TradeCommitEvent, VPEvent,
 )
-from cataanbot.live import ColorMap, DispatchResult
-from cataanbot.report import build_report, format_report
+from catanbot.live import ColorMap, DispatchResult
+from catanbot.report import build_report, format_report
 
 
 def _result(event, status="applied", message=""):
@@ -194,7 +194,7 @@ def test_format_report_renders_without_crashing():
         jsonl_path="/tmp/sample.jsonl",
     )
     out = format_report(rep)
-    assert "CataanBot replay" in out
+    assert "CatanBot replay" in out
     assert "/tmp/sample.jsonl" in out
     assert "Alice" in out and "Bob" in out
     assert "Winner: Alice (RED) at 10 VP" in out
@@ -348,7 +348,7 @@ def test_known_flow_sources_and_sinks():
     rep = build_report(events, [_result(e) for e in events], cm,
                        final_vp={"RED": 0, "BLUE": 0})
     # Pull the private helper via the module to assert the math.
-    from cataanbot.report import _known_flow
+    from catanbot.report import _known_flow
     alice = rep.players["RED"]
     sources, sinks, net = _known_flow(alice)
     # Sources: WOOD 3 from produce, BRICK 2 from produce + 1 from steal,
@@ -938,7 +938,7 @@ def test_longest_road_transfer_strips_previous_holder():
 
     Regression for the BrickdDaddy game where the postmortem credited
     both RED and BLUE with longest_road simultaneously."""
-    from cataanbot.events import VPEvent
+    from catanbot.events import VPEvent
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [
         # Alice gets longest road first.
@@ -959,7 +959,7 @@ def test_longest_road_transfer_strips_previous_holder():
 def test_first_time_award_does_not_strip():
     """A first-time LA/LR award has no previous_holder — should not
     accidentally strip from anyone."""
-    from cataanbot.events import VPEvent
+    from catanbot.events import VPEvent
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [
         VPEvent(player="Alice", reason="largest_army", vp_delta=2,
@@ -982,7 +982,7 @@ def test_longest_road_transfer_strips_without_previous_holder():
     Regression for the 2026-04-30 opp postmortem where the
     parser missed previous_holder on the LR transfer and both players
     rendered with longest_road in the final scoreboard."""
-    from cataanbot.events import VPEvent
+    from catanbot.events import VPEvent
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [
         VPEvent(player="Alice", reason="longest_road", vp_delta=2),
@@ -1006,9 +1006,9 @@ def test_scoreboard_flags_loser_who_had_enough_vp():
     loss: he ended at 12 effective VP (target 10) but opp crossed
     on their own turn first.
     """
-    from cataanbot.report import build_report, format_report
-    from cataanbot.live import ColorMap
-    from cataanbot.events import GameOverEvent
+    from catanbot.report import build_report, format_report
+    from catanbot.live import ColorMap
+    from catanbot.events import GameOverEvent
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [GameOverEvent(winner="Bob")]
     rep = build_report(
@@ -1027,9 +1027,9 @@ def test_scoreboard_flags_loser_who_had_enough_vp():
 def test_scoreboard_no_flag_when_loser_under_target():
     """Normal loss case (loser ended below target) — no flag, just
     the regular score line."""
-    from cataanbot.report import build_report, format_report
-    from cataanbot.live import ColorMap
-    from cataanbot.events import GameOverEvent
+    from catanbot.report import build_report, format_report
+    from catanbot.live import ColorMap
+    from catanbot.events import GameOverEvent
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     events = [GameOverEvent(winner="Bob")]
     rep = build_report(

@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cataanbot"
+name = "catanbot"
 version = "0.24.2"
 description = "Live Settlers of Catan advisor for colonist.io — DOM/WS bridge + Tampermonkey HUD with handcrafted heuristics over catanatron."
 readme = "README.md"
@@ -35,7 +35,7 @@ bridge = [
 ]
 
 [project.scripts]
-cataanbot = "cataanbot.cli:main"
+catanbot = "catanbot.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

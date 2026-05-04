@@ -15,13 +15,13 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
     Event, GameOverEvent, InfoEvent, MonopolyStealEvent, NoStealEvent,
     ProduceEvent, RobberMoveEvent, RollEvent, StealEvent,
     TradeCommitEvent, VPEvent,
 )
-from cataanbot.live import ColorMap, DispatchResult
+from catanbot.live import ColorMap, DispatchResult
 
 
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
@@ -491,7 +491,7 @@ def _score_trade_delta(
 # call time from the live config so a mid-session change to a custom
 # discard limit (e.g., Cities & Knights' 9-card rule) propagates here.
 def _discard_threshold() -> int:
-    from cataanbot.config import get_discard_limit
+    from catanbot.config import get_discard_limit
     return get_discard_limit() + 1
 
 
@@ -506,7 +506,7 @@ def _walk_hands_with_dynamics(
     samples where the total was ≥ 8 (the real discard threshold) — it's
     a loose proxy for "how often did the player sit on a big hand".
     """
-    from cataanbot.hand_tracker import apply_event, init_hands
+    from catanbot.hand_tracker import apply_event, init_hands
     hands = init_hands(color_map)
     dynamics = {c: HandDynamics() for c in hands}
     threshold = _discard_threshold()
@@ -579,7 +579,7 @@ def _knight_outcome(
         if isinstance(ev, NoStealEvent):
             return "?!", "robber moved but nothing to steal"
         if isinstance(ev, StealEvent):
-            from cataanbot.config import get_discard_limit
+            from catanbot.config import get_discard_limit
             fat_threshold = get_discard_limit() + 1
             victim_color = color_map.get(ev.victim) or ""
             victim_size = (
@@ -606,7 +606,7 @@ def _collect_move_annotations(
     play can be scored against the actual observable state at that
     moment — no catanatron state reconstruction required.
     """
-    from cataanbot.hand_tracker import apply_event, init_hands
+    from catanbot.hand_tracker import apply_event, init_hands
     hands = init_hands(color_map)
     out: list[MoveAnnotation] = []
     trade_by_idx = {t.event_index: t for t in trade_impacts}
@@ -648,7 +648,7 @@ def _collect_move_annotations(
                 note=note,
             ))
         elif isinstance(event, RollEvent) and event.total == 7:
-            from cataanbot.config import get_discard_limit
+            from catanbot.config import get_discard_limit
             fat_threshold = get_discard_limit() + 1
             color = color_map.get(event.player) or ""
             my_total = hands[color].total if color in hands else 0
@@ -736,7 +736,7 @@ def format_report(report: ReplayReport) -> str:
     lines: list[str] = []
     bar = "=" * 64
     lines.append(bar)
-    title = "CataanBot replay"
+    title = "CatanBot replay"
     if report.jsonl_path:
         title += f" — {report.jsonl_path}"
     lines.append(title)
@@ -879,7 +879,7 @@ def _format_move_annotations(report: ReplayReport) -> list[str]:
 def _format_reconstructed_hands(report: ReplayReport) -> list[str]:
     if report.reconstructed_hands is None or report.color_map is None:
         return []
-    from cataanbot.hand_tracker import format_hands_table
+    from catanbot.hand_tracker import format_hands_table
     return format_hands_table(report.reconstructed_hands, report.color_map)
 
 
@@ -1077,7 +1077,7 @@ def _format_scoreboard(report: ReplayReport) -> list[str]:
         reverse=True,
     )
     winner_color = report.winner_color
-    from cataanbot.config import VP_TARGET
+    from catanbot.config import VP_TARGET
     for color, stats in ranking:
         vp = report.final_vp.get(color, 0)
         tag = ""

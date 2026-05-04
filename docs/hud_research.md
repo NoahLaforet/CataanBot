@@ -24,7 +24,7 @@ counting**, not advice.
 
 **Takeaway:** the existing Colonist tooling is _resource trackers_.
 There is no real "advisor that tells you what to do" overlay in the
-Catan scene. CataanBot is unique in trying to render `recommend` /
+Catan scene. CatanBot is unique in trying to render `recommend` /
 winning-move output live. There's no Catan advisor UI to crib from
 directly — the prior art is in adjacent scenes.
 
@@ -52,7 +52,7 @@ else is layers underneath, expandable on demand.
 ## Hearthstone Deck Tracker (HDT)
 
 Closest tech analogue: in-game overlay on a live video game, parsed
-from a log stream. (Same architectural shape as CataanBot.)
+from a log stream. (Same architectural shape as CatanBot.)
 
 * **Two main panels**: your deck (cards remaining, draw probabilities)
   and opp's hand (cards seen, where they came from).

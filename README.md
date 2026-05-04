@@ -1,6 +1,6 @@
-# CataanBot
+# CatanBot
 
-[![tests](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml/badge.svg)](https://github.com/NoahLaforet/CataanBot/actions/workflows/tests.yml)
+[![tests](https://github.com/NoahLaforet/CatanBot/actions/workflows/tests.yml/badge.svg)](https://github.com/NoahLaforet/CatanBot/actions/workflows/tests.yml)
 
 A live Settlers of Catan advisor for [colonist.io](https://colonist.io).
 A Chrome extension streams the in-browser game (DOM log + raw
@@ -111,20 +111,20 @@ machine. The Chrome extension's only network destination is
 Requires Python 3.11+ (catanatron constraint). macOS / Linux.
 
 ```bash
-git clone https://github.com/NoahLaforet/CataanBot.git
-cd CataanBot
+git clone https://github.com/NoahLaforet/CatanBot.git
+cd CatanBot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[bridge]'
-./bin/cataanbot --help
+./bin/catanbot --help
 ```
 
 The `[bridge]` extras pull in FastAPI + uvicorn for the live bridge.
 Skip if you only want the offline replay / advisor CLIs.
 
-> On macOS the packaged `.venv/bin/cataanbot` entry point can flake
+> On macOS the packaged `.venv/bin/catanbot` entry point can flake
 > when the editable-install `.pth` file picks up an `UF_HIDDEN` flag
-> from APFS. The repo-local `./bin/cataanbot` launcher sidesteps
+> from APFS. The repo-local `./bin/catanbot` launcher sidesteps
 > that by setting `PYTHONPATH=src/` explicitly — use it instead of
 > the packaged entry point.
 
@@ -132,10 +132,10 @@ Skip if you only want the offline replay / advisor CLIs.
 
 ```bash
 # Start the bridge with the live advisor on
-./bin/cataanbot live
+./bin/catanbot live
 
 # Or the lower-level bridge command, with custom WS mirror path
-./bin/cataanbot bridge --advisor --ws-jsonl ws_captures/$(date +%Y-%m-%d).jsonl
+./bin/catanbot bridge --advisor --ws-jsonl ws_captures/$(date +%Y-%m-%d).jsonl
 ```
 
 ### Install the Chrome extension (recommended)
@@ -148,13 +148,13 @@ board, no draggable pop-out window to manage.
 2. Toggle **Developer mode** (top-right).
 3. Click **Load unpacked** and pick the `extension/` folder in this
    repo.
-4. Pin the green CataanBot icon to the toolbar (puzzle-piece menu →
+4. Pin the green CatanBot icon to the toolbar (puzzle-piece menu →
    pin) and click it — the side panel opens on the right.
 5. Open colonist.io and start a game. The bridge terminal logs each
    event; the panel shows the HUD live.
 
 To pull updates: `git pull`, then click the reload ⟳ icon on the
-CataanBot card in `chrome://extensions`.
+CatanBot card in `chrome://extensions`.
 
 When the extension is ready for the Chrome Web Store, listing it
 there ($5 one-time developer fee) gives users automatic updates
@@ -168,22 +168,22 @@ within ~24h of each push, no manual reload needed.
 
 ```bash
 # Render a fresh random board
-./bin/cataanbot render -o board.png
+./bin/catanbot render -o board.png
 
 # Rank opening settlement spots
-./bin/cataanbot openings --top 10 --render openings.png
+./bin/catanbot openings --top 10 --render openings.png
 
 # Manual-tracker REPL
-./bin/cataanbot play
+./bin/catanbot play
 
 # Replay a captured WS jsonl
-./bin/cataanbot replay capture.jsonl --report --postmortem game.html
+./bin/catanbot replay capture.jsonl --report --postmortem game.html
 ```
 
 ## Repo layout
 
 ```
-src/cataanbot/        bridge, recommender, tracker, render, advisor
+src/catanbot/        bridge, recommender, tracker, render, advisor
 extension/            Chrome side-panel extension (Manifest V3)
 tests/                pytest, ~650 tests covering parsing, dispatch,
                       tracker arithmetic, recommender heuristics,
@@ -207,7 +207,7 @@ CI runs `pytest` on every push (see `.github/workflows/tests.yml`).
 
 ## What this project is — and isn't
 
-CataanBot is a **decision support tool** for live colonist.io games.
+CatanBot is a **decision support tool** for live colonist.io games.
 It reads the page (DOM log + WebSocket frames) and renders
 recommendations into a side panel. It does not click for you, it
 does not interact with colonist's game state, it does not bypass
@@ -232,5 +232,5 @@ of objective truth.
 
 ## License
 
-GPL-3.0. catanatron is GPL-3.0; CataanBot depends on it, so the
+GPL-3.0. catanatron is GPL-3.0; CatanBot depends on it, so the
 derivative license applies. See [LICENSE](LICENSE).

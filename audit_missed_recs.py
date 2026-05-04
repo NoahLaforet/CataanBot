@@ -27,12 +27,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from cataanbot.colonist_diff import events_from_frame_payload
-from cataanbot.colonist_proto import load_capture
-from cataanbot.events import BuildEvent
-from cataanbot.live import apply_event
-from cataanbot.live_game import LiveGame
-from cataanbot.move_quality import (
+from catanbot.colonist_diff import events_from_frame_payload
+from catanbot.colonist_proto import load_capture
+from catanbot.events import BuildEvent
+from catanbot.live import apply_event
+from catanbot.live_game import LiveGame
+from catanbot.move_quality import (
     classify_rank as _classify,
     rec_matches_build as _rec_match,
 )
@@ -64,7 +64,7 @@ def _rec_summary(rec: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def audit(capture_path: Path) -> dict[str, Any]:
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     game = LiveGame()
     decisions: list[dict[str, Any]] = []

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent,
     DevCardBuyEvent,
     DevCardPlayEvent,
@@ -44,7 +44,7 @@ from cataanbot.events import (
     UnknownEvent,
     VPEvent,
 )
-from cataanbot.tracker import DEFAULT_COLORS, Tracker, TrackerError
+from catanbot.tracker import DEFAULT_COLORS, Tracker, TrackerError
 
 
 class ColorMapError(ValueError):

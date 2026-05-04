@@ -24,10 +24,10 @@ Tampermonkey script.
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or
    Violentmonkey) in your browser.
-2. Open `colonist_cataanbot.user.js` in this folder, copy the
+2. Open `colonist_catanbot.user.js` in this folder, copy the
    contents, paste into a new Tampermonkey script. Save.
 3. Confirm it's enabled on `colonist.io/*`.
-4. Run the bridge as usual: `./bin/cataanbot bridge --advisor`.
+4. Run the bridge as usual: `./bin/catanbot bridge --advisor`.
 5. Open colonist, start a game.
 
 The userscript talks to the same bridge as the extension does (POST
@@ -36,7 +36,7 @@ in `main` will still work — only the HUD rendering layer is frozen.
 
 ## Files
 
-- `colonist_cataanbot.user.js` — the user script itself (frozen).
+- `colonist_catanbot.user.js` — the user script itself (frozen).
 - `board_probe.js` — diagnostic snippet for tile/edge inspection in
   the colonist DOM. Pasted into the Chrome devtools console; not
   loaded as a userscript.

@@ -1,4 +1,4 @@
-"""Tests for game-mode threshold derivation in cataanbot.config.
+"""Tests for game-mode threshold derivation in catanbot.config.
 
 The heuristics used to hardcode 8 / 7 / 6 / 3 VP thresholds for a 10-VP
 game. We refactored those into ratio-based helpers so non-standard
@@ -6,7 +6,7 @@ targets (12 VP, 13 VP, etc.) scale cleanly. These tests pin the
 default-10 behavior to the old hardcoded values and spot-check larger
 targets.
 """
-from cataanbot.config import (
+from catanbot.config import (
     close_to_win_vp,
     early_game_baseline_vp,
     largest_army_threat_vp,
@@ -70,7 +70,7 @@ def test_module_defaults_present():
     """The module-level VP_TARGET / DISCARD_LIMIT constants must exist
     and be positive ints — they're imported by callers that don't want
     to pass a target each call."""
-    from cataanbot import config
+    from catanbot import config
 
     assert isinstance(config.VP_TARGET, int)
     assert config.VP_TARGET > 0
@@ -81,7 +81,7 @@ def test_module_defaults_present():
 def test_helpers_default_to_module_target():
     """Calling the helpers without an argument must use the module
     VP_TARGET default."""
-    from cataanbot import config
+    from catanbot import config
 
     assert close_to_win_vp() == close_to_win_vp(config.VP_TARGET)
     assert largest_army_threat_vp() == largest_army_threat_vp(config.VP_TARGET)
@@ -94,7 +94,7 @@ def test_runtime_vp_mutation_propagates():
     no-arg behavior of the scaling helpers — that's the whole point of
     the runtime-mutable refactor (the userscript drawer flips a 14-VP
     game on without restarting the bridge)."""
-    from cataanbot import config
+    from catanbot import config
 
     original = config.get_vp_target()
     try:
@@ -116,7 +116,7 @@ def test_runtime_vp_mutation_propagates():
 def test_runtime_discard_limit_mutation_propagates():
     """``set_discard_limit`` must update both the module attribute and
     the eval / report lazy reads."""
-    from cataanbot import config
+    from catanbot import config
 
     original = config.get_discard_limit()
     try:
@@ -132,7 +132,7 @@ def test_set_vp_target_rejects_invalid():
     raise rather than silently zeroing the live target."""
     import pytest
 
-    from cataanbot import config
+    from catanbot import config
 
     original = config.get_vp_target()
     try:

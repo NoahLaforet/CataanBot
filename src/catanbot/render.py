@@ -504,7 +504,7 @@ def _draw_vp_callout(draw, state, colors_seated, w: int, board_h: int,
     some player is within two VP of the win line. Returns the banner height
     in pixels (0 when silent, so the caller can shift per-color columns
     down accordingly)."""
-    from cataanbot.config import VP_TARGET
+    from catanbot.config import VP_TARGET
     per_color: dict[str, int] = {}
     for cname in colors_seated:
         idx = _find_player_index(state, cname)

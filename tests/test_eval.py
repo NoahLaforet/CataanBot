@@ -71,7 +71,7 @@ def test_fresh_game_evaluation_is_near_zero():
     """A brand new game with no buildings for anyone — each player scores
     0 on every component, so own - 0.8*max_opp is 0.0. Acts as the
     "zero baseline" regression for the evaluator's normalization."""
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g = _fresh_game()
     score = evaluate_state(g, "RED")
@@ -83,7 +83,7 @@ def test_winner_returns_positive_sentinel():
     +1000 — a terminal dominates everything else so downstream search
     never "forgets" a winning line. Simulated by monkeypatching."""
     from catanatron import Color
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g = _fresh_game()
     g.winning_color = lambda: Color.RED  # type: ignore[method-assign]
@@ -95,7 +95,7 @@ def test_loser_returns_negative_sentinel():
     The 1000 vs -1000 spread keeps winning/losing terminals cleanly
     separated in the search's sort order."""
     from catanatron import Color
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g = _fresh_game()
     g.winning_color = lambda: Color.BLUE  # type: ignore[method-assign]
@@ -107,7 +107,7 @@ def test_settlement_beats_nothing():
     strictly higher for RED than an empty board. This is the minimum
     behavior the evaluator needs — a build improves your position."""
     from catanatron import Color
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g = _fresh_game()
     pre = evaluate_state(g, "RED")
@@ -122,7 +122,7 @@ def test_city_beats_settlement_on_same_spot():
     settlement eval at the same node — the upgrade is unambiguously
     better in every component."""
     from catanatron import Color
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g_settle = _fresh_game()
     g_settle.state.board.build_settlement(
@@ -144,7 +144,7 @@ def test_high_pip_settlement_outscores_low_pip():
     evaluate above a lower-pip corner — production matters, not just
     piece count. Picks two real catanatron nodes and compares."""
     from catanatron import Color
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g_a = _fresh_game()
     g_b = _fresh_game()
@@ -166,7 +166,7 @@ def test_opponent_buildings_subtract_from_own_score():
     lower RED's eval (max_opp goes up, own stays flat). Mirrors the
     0.8 opp-weighting — a move that helps the opp hurts us."""
     from catanatron import Color
-    from cataanbot.eval import evaluate_state
+    from catanbot.eval import evaluate_state
 
     g = _fresh_game()
     g.state.board.build_settlement(Color.RED, 0, initial_build_phase=True)
@@ -179,7 +179,7 @@ def test_opponent_buildings_subtract_from_own_score():
 def test_search_rerank_empty_list_is_noop():
     """Empty recs list should sort/return cleanly — no crashes, no
     mutation surprises."""
-    from cataanbot.eval import search_rerank
+    from catanbot.eval import search_rerank
 
     g = _game_with_red_road_net()
     recs: list = []
@@ -195,7 +195,7 @@ def test_search_rerank_attaches_delta_and_promotes_city_over_road():
     ordering is stable across runs (unlike dev_card's random draw)."""
     from catanatron import Color
     from catanatron.models.actions import Action, ActionType
-    from cataanbot.eval import search_rerank
+    from catanbot.eval import search_rerank
 
     g = _red_mid_game({"WOOD": 1, "BRICK": 1, "WHEAT": 2, "ORE": 3})
     red_settle = next(
@@ -225,7 +225,7 @@ def test_search_rerank_puts_unsimulatable_at_tail():
     """A propose_trade rec can't be simulated directly (not a catanatron
     Action) — it must end up with search_delta=None and fall below any
     real simulated move in the ordering."""
-    from cataanbot.eval import search_rerank
+    from catanbot.eval import search_rerank
 
     g = _red_mid_game({"SHEEP": 1, "WHEAT": 1, "ORE": 1})
     recs = [
@@ -249,7 +249,7 @@ def test_search_rerank_sorts_soon_plans_below_now_recs():
     evaluator can't simulate unaffordable actions, so those fall to
     bucket 2 behind simulated bucket-0 and unsimulatable-now bucket-1."""
     from catanatron import Color
-    from cataanbot.eval import search_rerank
+    from catanbot.eval import search_rerank
 
     g = _red_mid_game({"SHEEP": 1, "WHEAT": 1, "ORE": 1})
     red_settle = next(
@@ -272,7 +272,7 @@ def test_recommend_actions_still_obeys_1_to_10_score_range():
     """Regression: wiring search_rerank in must not break the 1-10
     score contract with the UI — search_delta is a separate field, not
     a replacement for score."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _game_with_red_road_net()
     hand = {"WOOD": 2, "BRICK": 2, "SHEEP": 2, "WHEAT": 3, "ORE": 3}
@@ -287,7 +287,7 @@ def test_recommend_actions_top_pick_has_search_delta():
     signal that the 1-ply rerank actually engaged. Propose-trade
     fallbacks may land at the tail without it, but at least one
     now-rec must have it."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _red_mid_game({"WHEAT": 3, "ORE": 3})
     out = recommend_actions(g, "RED", {"WHEAT": 3, "ORE": 3}, top=6)

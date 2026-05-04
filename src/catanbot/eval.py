@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cataanbot import config
+from catanbot import config
 
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 _DEV_PLAYABLE = ("KNIGHT", "MONOPOLY", "YEAR_OF_PLENTY", "ROAD_BUILDING")

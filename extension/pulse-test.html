@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>CataanBot pulse self-test</title>
+<title>CatanBot pulse self-test</title>
 <style>
   /* Mirrors the v0.27 redesign-override pulse rules in panel.css.
      If a pulse breathes here but not in the live extension, the
@@ -61,14 +61,14 @@
   /* === PULSE RULES (mirror panel.css v0.27 block — brighter v2) */
 
   .winning-move {
-    animation: cataanbot-win-pulse-flat 1.0s ease-in-out infinite alternate
+    animation: catanbot-win-pulse-flat 1.0s ease-in-out infinite alternate
       !important;
     border-left-color: var(--pos) !important;
     border-left-width: 4px !important;
     color: var(--pos) !important;
     font-weight: 800 !important;
   }
-  @keyframes cataanbot-win-pulse-flat {
+  @keyframes catanbot-win-pulse-flat {
     from {
       box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
       background: linear-gradient(90deg,
@@ -85,14 +85,14 @@
   }
 
   .threat.imminent {
-    animation: cataanbot-imminent-pulse-flat 1.0s ease-in-out
+    animation: catanbot-imminent-pulse-flat 1.0s ease-in-out
       infinite alternate !important;
     border-left-color: var(--alert) !important;
     border-left-width: 3px !important;
     color: var(--alert) !important;
     font-weight: 800 !important;
   }
-  @keyframes cataanbot-imminent-pulse-flat {
+  @keyframes catanbot-imminent-pulse-flat {
     from {
       box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important;
       background: linear-gradient(90deg,
@@ -110,12 +110,12 @@
 
   .knight-hint.should-play,
   .dev-hint.should-play {
-    animation: cataanbot-play-pulse-flat 0.9s ease-in-out infinite alternate
+    animation: catanbot-play-pulse-flat 0.9s ease-in-out infinite alternate
       !important;
     border-left-color: var(--pos) !important;
     border-left-width: 4px !important;
   }
-  @keyframes cataanbot-play-pulse-flat {
+  @keyframes catanbot-play-pulse-flat {
     from {
       box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
       background: linear-gradient(90deg,
@@ -132,14 +132,14 @@
   }
 
   .robber-on-me {
-    animation: cataanbot-robber-pulse-flat 1.2s ease-in-out infinite alternate
+    animation: catanbot-robber-pulse-flat 1.2s ease-in-out infinite alternate
       !important;
     border-left-color: var(--alert) !important;
     border-left-width: 3px !important;
     color: var(--alert) !important;
     font-weight: 700 !important;
   }
-  @keyframes cataanbot-robber-pulse-flat {
+  @keyframes catanbot-robber-pulse-flat {
     from {
       box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important;
       background: linear-gradient(90deg,
@@ -156,7 +156,7 @@
   }
 
   .robber-h.robber-urgent {
-    animation: cataanbot-robber-action-pulse 0.9s ease-in-out infinite alternate
+    animation: catanbot-robber-action-pulse 0.9s ease-in-out infinite alternate
       !important;
     color: var(--alert) !important;
     font-weight: 800 !important;
@@ -165,7 +165,7 @@
     text-transform: uppercase;
     padding: 4px 8px;
   }
-  @keyframes cataanbot-robber-action-pulse {
+  @keyframes catanbot-robber-action-pulse {
     from {
       text-shadow: 0 0 0 rgba(255, 211, 110, 0.0) !important;
       box-shadow: 0 0 0 0 rgba(255, 211, 110, 0.0) !important;
@@ -181,7 +181,7 @@
 </style>
 </head>
 <body>
-  <h1>CataanBot pulse self-test (v2 — brighter + faster)</h1>
+  <h1>CatanBot pulse self-test (v2 — brighter + faster)</h1>
   <p class="lede">
     Five animated banners below cycle every 0.9–1.2s.
     Each pulse: glow halo grows from 0 → 28-32px, background

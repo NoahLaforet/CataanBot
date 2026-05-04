@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from cataanbot.colonist_proto import (
+from catanbot.colonist_proto import (
     DecodedFrame, MsgpackError, decode_frame, decode_msgpack, load_capture,
 )
 

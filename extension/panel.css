@@ -1,4 +1,4 @@
-/* CataanBot HUD — port of userscript v0.25.4 styles into the
+/* CatanBot HUD — port of userscript v0.25.4 styles into the
    Chrome extension's side panel. Same visual language: slate-blue
    dashboard, JetBrains Mono for numerics, signal palette of
    green/red/amber. The original was scoped under :host (shadow DOM);
@@ -16,7 +16,7 @@
 
 <style>
   /* --------------------------------------------------------------
-     CataanBot HUD — v0.17 redesign.
+     CatanBot HUD — v0.17 redesign.
 
      Principles:
      - ONE font family (JetBrains Mono) used across the HUD. Hierarchy
@@ -1297,9 +1297,9 @@
     letter-spacing: 0.02em;
     background: linear-gradient(90deg,
       rgba(248, 113, 113, 0.18), var(--bg-1) 60%);
-    animation: cataanbot-imminent-pulse 1.6s ease-in-out infinite alternate;
+    animation: catanbot-imminent-pulse 1.6s ease-in-out infinite alternate;
   }
-  @keyframes cataanbot-imminent-pulse {
+  @keyframes catanbot-imminent-pulse {
     from {
       box-shadow: inset 2px 0 0 0 var(--alert),
                   0 0 0 0 rgba(248, 113, 113, 0.0);
@@ -1345,9 +1345,9 @@
     padding: var(--s-4) var(--s-5);
     background: linear-gradient(90deg,
       rgba(74, 222, 128, 0.26), var(--bg-1) 70%);
-    animation: cataanbot-win-pulse 1.6s ease-in-out infinite alternate;
+    animation: catanbot-win-pulse 1.6s ease-in-out infinite alternate;
   }
-  @keyframes cataanbot-win-pulse {
+  @keyframes catanbot-win-pulse {
     from {
       box-shadow: inset 4px 0 0 0 var(--pos),
                   0 0 0 0 rgba(74, 222, 128, 0.0);
@@ -1639,9 +1639,9 @@
     background: linear-gradient(90deg,
       rgba(74, 222, 128, 0.14), var(--bg-1) 70%);
     border-left-color: var(--pos);
-    animation: cataanbot-play-pulse 2.0s ease-in-out infinite alternate;
+    animation: catanbot-play-pulse 2.0s ease-in-out infinite alternate;
   }
-  @keyframes cataanbot-play-pulse {
+  @keyframes catanbot-play-pulse {
     from {
       box-shadow: inset 2px 0 0 0 var(--pos),
                   0 0 0 0 rgba(74, 222, 128, 0.0);
@@ -1910,9 +1910,9 @@
     color: #111;
     border-color: var(--alert);
     font-weight: 800;
-    animation: cataanbot-armed-pulse 0.7s ease-in-out infinite alternate;
+    animation: catanbot-armed-pulse 0.7s ease-in-out infinite alternate;
   }
-  @keyframes cataanbot-armed-pulse {
+  @keyframes catanbot-armed-pulse {
     from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55); }
     to   { box-shadow: 0 0 0 5px rgba(248, 113, 113, 0); }
   }
@@ -2345,14 +2345,14 @@ html, body, .panel {
    !important box-shadow. Border-left stays the colored anchor; the
    shadow is the breathing motion. */
 .winning-move {
-  animation: cataanbot-win-pulse-flat 1.0s ease-in-out infinite alternate
+  animation: catanbot-win-pulse-flat 1.0s ease-in-out infinite alternate
     !important;
   border-left-color: var(--pos) !important;
   border-left-width: 4px !important;
   color: var(--pos) !important;
   font-weight: 800 !important;
 }
-@keyframes cataanbot-win-pulse-flat {
+@keyframes catanbot-win-pulse-flat {
   from {
     box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
     background: linear-gradient(90deg,
@@ -2368,14 +2368,14 @@ html, body, .panel {
   }
 }
 .threat.imminent {
-  animation: cataanbot-imminent-pulse-flat 1.0s ease-in-out
+  animation: catanbot-imminent-pulse-flat 1.0s ease-in-out
     infinite alternate !important;
   border-left-color: var(--alert) !important;
   border-left-width: 3px !important;
   color: var(--alert) !important;
   font-weight: 800 !important;
 }
-@keyframes cataanbot-imminent-pulse-flat {
+@keyframes catanbot-imminent-pulse-flat {
   from {
     box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important;
     background: linear-gradient(90deg,
@@ -2392,7 +2392,7 @@ html, body, .panel {
 }
 .knight-hint.should-play,
 .dev-hint.should-play {
-  animation: cataanbot-play-pulse-flat 0.9s ease-in-out infinite alternate
+  animation: catanbot-play-pulse-flat 0.9s ease-in-out infinite alternate
     !important;
   border-left-color: var(--pos) !important;
   border-left-width: 4px !important;
@@ -2405,7 +2405,7 @@ html, body, .panel {
   color: #0a1810 !important;
   font-weight: 900 !important;
 }
-@keyframes cataanbot-play-pulse-flat {
+@keyframes catanbot-play-pulse-flat {
   from {
     box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
     background: linear-gradient(90deg,
@@ -2425,14 +2425,14 @@ html, body, .panel {
    is dense with rec rows; same red as imminent-threat but a touch
    slower so two simultaneous reds don't look like a strobe. */
 .robber-on-me {
-  animation: cataanbot-robber-pulse-flat 1.2s ease-in-out infinite alternate
+  animation: catanbot-robber-pulse-flat 1.2s ease-in-out infinite alternate
     !important;
   border-left-color: var(--alert) !important;
   border-left-width: 3px !important;
   color: var(--alert) !important;
   font-weight: 700 !important;
 }
-@keyframes cataanbot-robber-pulse-flat {
+@keyframes catanbot-robber-pulse-flat {
   from {
     box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important;
     background: linear-gradient(90deg,
@@ -2454,12 +2454,12 @@ html, body, .panel {
    even when the rec strip above is dense. The 'placed' state
    (post-decision review) stays unanimated. */
 .robber-h.robber-urgent {
-  animation: cataanbot-robber-action-pulse 0.9s ease-in-out infinite alternate
+  animation: catanbot-robber-action-pulse 0.9s ease-in-out infinite alternate
     !important;
   color: var(--alert) !important;
   font-weight: 800 !important;
 }
-@keyframes cataanbot-robber-action-pulse {
+@keyframes catanbot-robber-action-pulse {
   from {
     text-shadow: 0 0 0 rgba(255, 211, 110, 0.0) !important;
     box-shadow: 0 0 0 0 rgba(255, 211, 110, 0.0) !important;
@@ -2475,10 +2475,10 @@ html, body, .panel {
 table.robber.robber-urgent {
   outline: 2px solid rgba(255, 211, 110, 0.55) !important;
   outline-offset: 2px;
-  animation: cataanbot-robber-table-pulse 0.9s ease-in-out infinite alternate
+  animation: catanbot-robber-table-pulse 0.9s ease-in-out infinite alternate
     !important;
 }
-@keyframes cataanbot-robber-table-pulse {
+@keyframes catanbot-robber-table-pulse {
   from {
     outline-color: rgba(255, 211, 110, 0.20) !important;
     box-shadow: 0 0 0 0 rgba(255, 211, 110, 0.0) !important;

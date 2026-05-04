@@ -19,14 +19,14 @@ import pytest
 
 CAPTURE_EARLY = (Path(__file__).parent.parent
                  / "ws_captures"
-                 / "cataanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
+                 / "catanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
 CAPTURE_MIDGAME = (Path(__file__).parent.parent
                    / "ws_captures"
-                   / "cataanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
+                   / "catanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
 
 
 def _iter_payloads(path: Path):
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_proto import load_capture
     for frame in load_capture(path):
         if frame.error:
             continue
@@ -41,8 +41,8 @@ def _make_st(game):
     Mirrors the shape inside bridge._build_app. Tests can poke at the
     fields they care about and let the bridge helpers initialize the
     rest as they would in production."""
-    from cataanbot.live import ColorMap
-    from cataanbot.tracker import Tracker
+    from catanbot.live import ColorMap
+    from catanbot.tracker import Tracker
     return {
         "seq": 0, "game": game,
         "ws_count": 0, "log_count": 0,
@@ -64,8 +64,8 @@ def test_full_capture_replay_does_not_crash_advisor():
     error on opp state, etc.) shows up as a real-world bridge crash."""
     if not CAPTURE_MIDGAME.exists():
         pytest.skip("midgame capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_MIDGAME):
@@ -88,8 +88,8 @@ def test_full_capture_drives_robber_snapshot_without_failure():
     color_map / hand_card_counts / vp state alignment."""
     if not CAPTURE_MIDGAME.exists():
         pytest.skip("midgame capture not present")
-    from cataanbot.bridge_robber import _compute_robber_snapshot
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge_robber import _compute_robber_snapshot
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_MIDGAME):
@@ -116,15 +116,15 @@ def test_postmortem_renders_with_enrichment_on_real_capture(tmp_path):
     """
     if not CAPTURE_MIDGAME.exists():
         pytest.skip("midgame capture not present")
-    from cataanbot.bridge_postmortem import _compute_board_fingerprint
-    from cataanbot.events import (
+    from catanbot.bridge_postmortem import _compute_board_fingerprint
+    from catanbot.events import (
         DevCardBuyEvent, DevCardPlayEvent, GameOverEvent, RollEvent,
     )
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.postmortem import render_postmortem_html
-    from cataanbot.report import build_report
-    from cataanbot.tracker import Tracker
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.postmortem import render_postmortem_html
+    from catanbot.report import build_report
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_MIDGAME):
@@ -195,8 +195,8 @@ def test_full_capture_advisor_snapshot_idempotent():
     but drifts the HUD between polls."""
     if not CAPTURE_MIDGAME.exists():
         pytest.skip("midgame capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_MIDGAME):
@@ -226,7 +226,7 @@ def test_resolve_final_vp_prefers_colonist_session_over_pm_tracker():
     victoryPointsState. We mock a session reporting 12/14 and verify
     the resolver returns those, not the pm_tracker's stale 2/2.
     """
-    from cataanbot.bridge_postmortem import _resolve_final_vp
+    from catanbot.bridge_postmortem import _resolve_final_vp
 
     class _FakeColorMap:
         def __init__(self, mapping):
@@ -264,7 +264,7 @@ def test_resolve_final_vp_falls_back_to_live_tracker_without_session():
     """If colonist's session never populated victoryPointsState (rare
     edge: bridge attached too late), use the live tracker. Better than
     falling all the way to pm_tracker, which we know is stale."""
-    from cataanbot.bridge_postmortem import _resolve_final_vp
+    from catanbot.bridge_postmortem import _resolve_final_vp
 
     class _FakeTrackerLive:
         def vp_status(self):
@@ -291,7 +291,7 @@ def test_active_plan_locks_and_persists_across_polls():
     appears or the target becomes affordable. Without this, the HUD's
     'plan' banner would flip-flop on every minor score wobble.
     """
-    from cataanbot.bridge import _track_active_plan
+    from catanbot.bridge import _track_active_plan
 
     st = {"active_plan": None, "seq": 0}
     # First poll: a settlement plan locks in.

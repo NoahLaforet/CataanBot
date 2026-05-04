@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cataanbot.events import BuildEvent
+from catanbot.events import BuildEvent
 
 CLASSIFICATIONS = ("!!", "!", "?!", "?", "??")
 

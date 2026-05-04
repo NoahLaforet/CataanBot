@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         cataanbot — colonist.io log bridge
-// @namespace    https://github.com/NoahLaforet/CataanBot
+// @name         catanbot — colonist.io log bridge
+// @namespace    https://github.com/NoahLaforet/CatanBot
 // @version      0.25.4
-// @description  Streams colonist.io game-log events + WebSocket frames to the cataanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
+// @description  Streams colonist.io game-log events + WebSocket frames to the catanbot FastAPI bridge on localhost:8765. v0.25.0 adds a HUD pop-out (Document Picture-in-Picture) so the panel can live in its own browser window instead of covering the colonist board. Click the ⇱ button in the header (or alt+o) to pop out; close the PiP window or click again to dock. Plus the bug fixes from b8d1e6b/a0aac6a/b6f7fa8: port-bonus rescale, bank-19 trade guard, in-game road alignment with starter direction.
 // @author       Noah Laforet
 // @match        https://colonist.io/*
 // @run-at       document-start
@@ -10,8 +10,8 @@
 // @grant        unsafeWindow
 // @connect      127.0.0.1
 // @connect      localhost
-// @updateURL    https://raw.githubusercontent.com/NoahLaforet/CataanBot/main/userscript/colonist_cataanbot.user.js
-// @downloadURL  https://raw.githubusercontent.com/NoahLaforet/CataanBot/main/userscript/colonist_cataanbot.user.js
+// @updateURL    https://raw.githubusercontent.com/NoahLaforet/CatanBot/main/userscript/colonist_catanbot.user.js
+// @downloadURL  https://raw.githubusercontent.com/NoahLaforet/CatanBot/main/userscript/colonist_catanbot.user.js
 // ==/UserScript==
 
 /* eslint-disable no-console */
@@ -27,7 +27,7 @@
     // landing in the game and the HUD reflecting it. The advisor endpoint
     // is a cheap dict serialization; doubling the rate is a non-issue.
     const ADVISOR_POLL_MS = 500;
-    const LOG_PREFIX = '[cataanbot]';
+    const LOG_PREFIX = '[catanbot]';
 
     // Push-style refresh hook. Set by ``startAdvisorPoll`` to a function
     // that schedules a near-immediate /advisor poll. The /ws forwarder
@@ -195,7 +195,7 @@
 
     function mountOverlay() {
         if (!document.body) return null;
-        let host = document.getElementById('cataanbot-overlay-host');
+        let host = document.getElementById('catanbot-overlay-host');
         if (host && host.shadowRoot) {
             // Already mounted (e.g. via a re-entry path). Rewire the
             // ui handle so callers can still drive renders.
@@ -212,14 +212,14 @@
             };
         }
         host = document.createElement('div');
-        host.id = 'cataanbot-overlay-host';
+        host.id = 'catanbot-overlay-host';
         host.style.cssText = 'position:fixed;top:12px;right:12px;'
             + 'z-index:2147483647;pointer-events:auto;';
         const root = host.attachShadow({ mode: 'open' });
         root.innerHTML = `
 <style>
   /* --------------------------------------------------------------
-     CataanBot HUD — v0.17 redesign.
+     CatanBot HUD — v0.17 redesign.
 
      Principles:
      - ONE font family (JetBrains Mono) used across the HUD. Hierarchy
@@ -1997,9 +1997,9 @@
     color: #111;
     border-color: var(--alert);
     font-weight: 800;
-    animation: cataanbot-armed-pulse 0.7s ease-in-out infinite alternate;
+    animation: catanbot-armed-pulse 0.7s ease-in-out infinite alternate;
   }
-  @keyframes cataanbot-armed-pulse {
+  @keyframes catanbot-armed-pulse {
     from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55); }
     to   { box-shadow: 0 0 0 5px rgba(248, 113, 113, 0); }
   }
@@ -2152,7 +2152,7 @@
 <div class="panel" id="panel">
   <div class="header" id="header">
     <span class="dot" id="dot"></span>
-    <span class="title">CataanBot</span>
+    <span class="title">CatanBot</span>
     <span class="variant-badge" id="variant-badge"></span>
     <span class="friendly-robber-badge" id="friendly-robber-badge" title="Friendly Robber rule is on — players at or below 2 VP are protected; targets ranking has filtered them out.">friendly robber</span>
     <span class="paused-badge" id="paused-badge">paused</span>
@@ -2264,7 +2264,7 @@
             const w = unsafeWindow || window;
             if (!w.documentPictureInPicture
                 || !w.documentPictureInPicture.requestWindow) {
-                console.warn('[cataanbot] documentPictureInPicture not '
+                console.warn('[catanbot] documentPictureInPicture not '
                     + 'available — pop-out needs Chrome 116+ or Edge.');
                 popoutBtn.title = 'Pop-out unavailable in this browser';
                 popoutBtn.disabled = true;
@@ -2294,7 +2294,7 @@
                 // panel state) into the PiP document. We hold a sentinel
                 // span so we can put it back when the PiP closes.
                 const placeholder = document.createElement('span');
-                placeholder.id = 'cataanbot-popout-placeholder';
+                placeholder.id = 'catanbot-popout-placeholder';
                 host.parentNode.insertBefore(placeholder, host);
                 // Strip the fixed-positioning so the panel fills the
                 // PiP window naturally; cache the original style to
@@ -2319,7 +2319,7 @@
                     pipWindowRef = null;
                 }, { once: true });
             } catch (err) {
-                console.warn('[cataanbot] pop-out failed:', err);
+                console.warn('[catanbot] pop-out failed:', err);
             }
         }
         popoutBtn.addEventListener('click', (e) => {
@@ -2348,7 +2348,7 @@
             try {
                 recDict = JSON.parse(dataAttr);
             } catch (err) {
-                console.warn('[cataanbot] bad fb data:', err);
+                console.warn('[catanbot] bad fb data:', err);
                 return;
             }
             // Only thumbs-down exists — playing the rec is the implicit
@@ -2439,12 +2439,12 @@
             panel.dataset.paused = paused ? '1' : '0';
             try {
                 localStorage.setItem(
-                    'cataanbot.paused', paused ? '1' : '0');
+                    'catanbot.paused', paused ? '1' : '0');
             } catch (_) { /* storage blocked — fine */ }
         }
         try {
             const savedPause =
-                localStorage.getItem('cataanbot.paused') === '1';
+                localStorage.getItem('catanbot.paused') === '1';
             pauseInput.checked = savedPause;
             applyPaused(savedPause);
         } catch (_) { applyPaused(false); }
@@ -2462,12 +2462,12 @@
             host.style.opacity = (clamped / 100).toFixed(2);
             opacityVal.textContent = clamped + '%';
             try {
-                localStorage.setItem('cataanbot.opacity', String(clamped));
+                localStorage.setItem('catanbot.opacity', String(clamped));
             } catch (_) { /* storage blocked */ }
         }
         try {
             const savedOp = parseInt(
-                localStorage.getItem('cataanbot.opacity') || '', 10);
+                localStorage.getItem('catanbot.opacity') || '', 10);
             if (Number.isFinite(savedOp)) {
                 opacityInput.value = String(savedOp);
                 applyOpacity(savedOp);
@@ -2515,11 +2515,11 @@
         function persistCfgLocal(vp, dl) {
             try {
                 if (Number.isFinite(vp)) {
-                    localStorage.setItem('cataanbot.vp_target', String(vp));
+                    localStorage.setItem('catanbot.vp_target', String(vp));
                 }
                 if (Number.isFinite(dl)) {
                     localStorage.setItem(
-                        'cataanbot.discard_limit', String(dl));
+                        'catanbot.discard_limit', String(dl));
                 }
             } catch (_) { /* storage blocked */ }
         }
@@ -2564,9 +2564,9 @@
         // empty if the bridge hasn't responded yet.
         try {
             const lvp = parseInt(
-                localStorage.getItem('cataanbot.vp_target') || '', 10);
+                localStorage.getItem('catanbot.vp_target') || '', 10);
             const ldl = parseInt(
-                localStorage.getItem('cataanbot.discard_limit') || '', 10);
+                localStorage.getItem('catanbot.discard_limit') || '', 10);
             if (Number.isFinite(lvp)) vpInput.value = String(lvp);
             if (Number.isFinite(ldl)) discardInput.value = String(ldl);
         } catch (_) { /* storage blocked */ }
@@ -2684,13 +2684,13 @@
             panel.style.setProperty('--panel-w', clamped + 'px');
             panel.style.setProperty('--font-scale',
                                     scaleForWidth(clamped).toFixed(3));
-            try { localStorage.setItem('cataanbot.hudWidth', String(clamped)); }
+            try { localStorage.setItem('catanbot.hudWidth', String(clamped)); }
             catch (_) { /* private mode, storage blocked — fine */ }
         }
         // Restore saved width on boot.
         try {
             const saved = parseInt(
-                localStorage.getItem('cataanbot.hudWidth') || '', 10);
+                localStorage.getItem('catanbot.hudWidth') || '', 10);
             if (Number.isFinite(saved)) applySize(saved);
         } catch (_) { /* storage unavailable */ }
 
@@ -4268,7 +4268,7 @@
     // protocol directly. We patch the WebSocket constructor before any
     // colonist code runs (hence @run-at document-start), wrap send and
     // message events on every instance, and stash frames to a rolling
-    // buffer on unsafeWindow.__cataanbotWS for offline inspection.
+    // buffer on unsafeWindow.__catanbotWS for offline inspection.
     //
     // unsafeWindow is required because Tampermonkey runs userscripts in
     // Chrome's isolated content-script world. Patching `window.WebSocket`
@@ -4284,17 +4284,17 @@
     // (channel id "136", ~33 bytes) so long capture sessions don't
     // evict the important frames at the head of the buffer.
     //
-    // Expose __cataanbotWSDump() as a one-shot "save capture to disk"
+    // Expose __catanbotWSDump() as a one-shot "save capture to disk"
     // helper so we can grab the buffer from the DevTools console without
     // pasting a scrape every time.
     const WS_BUFFER_MAX = 2000;
     (function installWSInterceptor() {
         const tgt = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-        if (tgt.__cataanbotWS) return;
+        if (tgt.__catanbotWS) return;
         const buffer = [];
         const summary = { opened: 0, sent: 0, recv: 0,
             pings: 0, errors: 0 };
-        tgt.__cataanbotWS = { buffer, summary };
+        tgt.__catanbotWS = { buffer, summary };
 
         const NativeWebSocket = tgt.WebSocket;
         if (!NativeWebSocket) return;
@@ -4425,7 +4425,7 @@
         PatchedWebSocket.CLOSED = NativeWebSocket.CLOSED;
         tgt.WebSocket = PatchedWebSocket;
 
-        tgt.__cataanbotWSDump = function dumpWS(label) {
+        tgt.__catanbotWSDump = function dumpWS(label) {
             const payload = {
                 schema: 1, capturedAt: Date.now() / 1000,
                 url: location.href, summary,
@@ -4439,7 +4439,7 @@
             a.href = url;
             const ts = new Date().toISOString()
                 .replace(/[:.]/g, '-').slice(0, 19);
-            a.download = `cataanbot-ws-${label ? label + '-' : ''}${ts}.json`;
+            a.download = `catanbot-ws-${label ? label + '-' : ''}${ts}.json`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -4482,7 +4482,7 @@
     // 4-player game, so 60s is comfortably below the "two of the same
     // roll outcome actually repeat" floor. game5 had ~90 duplicated
     // keys at the 5s setting because setup spans longer than 5s.
-    const NODE_KEY_ATTR = 'cataanbotKey';
+    const NODE_KEY_ATTR = 'catanbotKey';
     const RECENT_TTL_MS = 60000;
     const AT_BOTTOM_PX = 50;
     const recentSeen = new Map();

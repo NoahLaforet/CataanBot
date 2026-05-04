@@ -1,6 +1,6 @@
-# CataanBot — Chrome Extension
+# CatanBot — Chrome Extension
 
-The Chrome side-panel version of the CataanBot HUD. Same backend (the
+The Chrome side-panel version of the CatanBot HUD. Same backend (the
 local Python bridge on `localhost:8765`); difference is purely UX:
 the HUD lives in Chrome's right-side panel instead of as an overlay
 on top of the colonist board.
@@ -12,12 +12,12 @@ on top of the colonist board.
 3. Click **Load unpacked**.
 4. Pick the `extension/` folder in this repo.
 5. Pin the extension to the toolbar (puzzle-piece icon → pin).
-6. Click the green CataanBot icon — the side panel opens on the right.
+6. Click the green CatanBot icon — the side panel opens on the right.
 7. Start the bridge from a terminal:
 
    ```bash
-   cd path/to/CataanBot
-   ./bin/cataanbot bridge
+   cd path/to/CatanBot
+   ./bin/catanbot bridge
    ```
 
 8. Open a colonist.io game. The panel will show recommendations,

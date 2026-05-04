@@ -5,7 +5,7 @@ plus simple args and return advisor-snapshot fragments. Kept here so
 bridge.py stays focused on app construction and snapshot orchestration.
 
 Re-exported by bridge.py for backwards compat with tests that import
-from `cataanbot.bridge` directly.
+from `catanbot.bridge` directly.
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def _owned_ports(game, color: str) -> list[str] | None:
     overlay can skip the render instead of guessing.
     """
     try:
-        from cataanbot.advisor import player_ports
+        from catanbot.advisor import player_ports
         ports = player_ports(game.tracker.game, color)
     except Exception:  # noqa: BLE001
         return None
@@ -182,7 +182,7 @@ def _is_dev_stash_risk(
     holding onto them stops looking like a knight race and starts
     looking like a hidden-VP play.
     """
-    from cataanbot.config import VP_TARGET
+    from catanbot.config import VP_TARGET
     target = vp_target if vp_target is not None else VP_TARGET
     return dev_cards >= 2 and (vp + dev_cards) >= (target - 1)
 

@@ -26,7 +26,7 @@ def _fresh_game_with_red_settle():
 
 
 def test_recommend_empty_hand_returns_nothing():
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     out = recommend_actions(g, "RED", {}, top=4)
@@ -34,7 +34,7 @@ def test_recommend_empty_hand_returns_nothing():
 
 
 def test_dev_card_alone_when_only_ywo_ore_sheep_wheat():
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     out = recommend_actions(
@@ -48,7 +48,7 @@ def test_dev_card_alone_when_only_ywo_ore_sheep_wheat():
 
 
 def test_road_affordable_surfaces_edge_suggestion():
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     out = recommend_actions(
@@ -69,7 +69,7 @@ def test_in_game_road_sealed_fallback_still_emits_rec():
     ``sealed=True`` so the HUD still says *something*. Mirror of the
     opening-road sealed fallback."""
     from catanatron import Color
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     b = g.state.board
@@ -95,7 +95,7 @@ def test_in_game_road_sealed_fallback_still_emits_rec():
 
 
 def test_full_settlement_hand_picks_settlement_over_dev():
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # Also extend RED's road net so buildable_node_ids has somewhere
@@ -118,7 +118,7 @@ def test_full_settlement_hand_picks_settlement_over_dev():
 
 
 def test_city_upgrade_appears_for_wheat_ore_heavy_hand():
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     out = recommend_actions(
@@ -132,7 +132,7 @@ def test_city_upgrade_appears_for_wheat_ore_heavy_hand():
 def test_scores_are_in_one_to_ten_range():
     """Every recommendation score must be in [1, 10] regardless of
     board layout — the 1-10 scale is the contract with the UI."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -146,7 +146,7 @@ def test_scores_are_in_one_to_ten_range():
 
 
 def test_dev_card_score_is_fixed_three():
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     out = recommend_actions(
@@ -160,7 +160,7 @@ def test_dev_card_score_is_fixed_three():
 def test_save_for_settlement_plan_surfaces_when_two_cards_short():
     """Road-only hand should also surface a "save for settlement" plan,
     so Noah sees both the now-option and the near-term better option."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -184,7 +184,7 @@ def test_save_for_settlement_plan_surfaces_when_two_cards_short():
 def test_plan_skipped_when_missing_more_than_two():
     """Hand 3+ cards from any upgrade shouldn't generate a plan — the
     noise isn't actionable."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # Empty hand → 4 cards off settlement, 5 off city, 3 off dev.
@@ -195,7 +195,7 @@ def test_plan_skipped_when_missing_more_than_two():
 def test_now_ranks_above_equal_score_soon():
     """A now-rec and a soon-rec with equal score: the now-rec must
     appear first so the overlay's top pick is always actionable today."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # dev_card affordable (3.0, now), dev_card plan not applicable
@@ -209,7 +209,7 @@ def test_propose_trade_suggested_when_one_card_short():
     """{WOOD:5, BRICK:1, SHEEP:0, WHEAT:1} is 1 Sheep short of a
     settlement and has a Wood surplus. Propose 1 Wood → 1 Sheep should
     be suggested (cheaper than the 4:1 bank fallback)."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -236,7 +236,7 @@ def test_no_propose_trade_when_bank_holds_all_of_resource():
 
     Regression for the live game where Noah saw a propose-trade for
     SHEEP while every sheep card was still in the bank."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -268,7 +268,7 @@ def test_propose_trade_still_fires_when_bank_low_and_unknowns_present():
     SHEEP cards have been distributed (bank < 19) and an opp has unknowns,
     the recommender should still propose a trade — the unknowns *could*
     be sheep."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -297,7 +297,7 @@ def test_no_trade_when_no_spare_surplus():
     """When every card we hold is already reserved by the blocked
     build's cost, there's nothing spare to propose. Bank-trade fallback
     is gone (propose strictly dominates), so no trade rec fires."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # Settlement needs WOOD+BRICK+SHEEP+WHEAT. Hand has exactly one of
@@ -312,7 +312,7 @@ def test_no_trade_when_no_spare_surplus():
 def test_no_bank_trade_when_two_cards_short():
     """Two missing cards → bank trade would require 2×4 = 8 cards for
     a 1-card-cost building. Not worth it; no trade rec."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     hand = {"WOOD": 8, "BRICK": 0, "SHEEP": 0, "WHEAT": 1}
@@ -326,7 +326,7 @@ def test_propose_trade_dominates_port_rate_when_spare_exists():
     surplus, the propose rec must fire rather than the 2:1 port trade
     (which would waste a card). Keeps the old port path as a fallback
     for no-surplus situations."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
     from catanatron import Color
 
     g = _fresh_game_with_red_settle()
@@ -357,7 +357,7 @@ def test_dev_card_trade_has_no_node_id():
     """Trade to unlock a dev card shouldn't leak a misleading node_id
     (dev cards don't go on the board). Applies to both propose and bank
     variants."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # 1 short of dev card (need ORE), excess WOOD to trade with.
@@ -376,7 +376,7 @@ def test_trade_protects_resources_still_needed():
     """If we're 1 Sheep short of a settlement but only have exactly
     1 Wheat (also needed for the settlement), we must NOT trade away
     that Wheat — it'd leave us blocked on Wheat after the trade."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     # WOOD 1 + BRICK 1 + WHEAT 1 + no SHEEP. We have no stockpile of
@@ -392,7 +392,7 @@ def test_city_scores_higher_than_dev_card():
     """Upgrading a settlement to a city is strictly better than a
     random dev card at the same affordable-turn, so it should always
     outrank when both are options."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     hand = {"WHEAT": 2, "ORE": 3, "SHEEP": 1}
@@ -409,7 +409,7 @@ def test_recommend_opening_on_fresh_game_returns_top_picks():
     advisor should return exactly ``top`` suggestions, all in the
     opening_settlement shape."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -434,7 +434,7 @@ def test_recommend_opening_is_adaptive_to_placements():
     neighbors from the next call's legal set — the ranking shifts as
     the board fills."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -457,7 +457,7 @@ def test_recommend_opening_is_adaptive_to_placements():
     for e in g.state.board.map.land_nodes:
         pass  # placeholder; actual neighbor check via buildable filter
     # Re-derive via the advisor's helper for a stricter invariant.
-    from cataanbot.advisor import legal_nodes_after_picks
+    from catanbot.advisor import legal_nodes_after_picks
     legal = legal_nodes_after_picks(g, [top_pick])
     assert node_ids_after.issubset(legal)
 
@@ -467,7 +467,7 @@ def test_recommend_opening_attaches_road_direction():
     pointing at the best adjacent edge (the direction to lay the
     opening road toward future expansion)."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -504,7 +504,7 @@ def test_first_ingame_road_aligns_with_starter_road_direction():
     keeps the bot committed to the same corridor.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_actions, recommend_opening
+    from catanbot.recommender import recommend_actions, recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -556,7 +556,7 @@ def test_opening_road_not_contested_by_self_buffer():
     when no opponent was anywhere near it. Regression for Noah's
     "says contested but isn't" report."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -589,8 +589,8 @@ def test_recommend_opening_road_skips_distance_blocked_expansions():
     is permanently off the table, so pointing a road at it is wasted
     advice. Regression for the dangerous-road complaint."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import recommend_opening
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -636,8 +636,8 @@ def test_recommend_opening_road_skips_opp_sealed_edge():
     expansion path is sealed — the road hint must not recommend going
     through that edge."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import recommend_opening
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -681,7 +681,7 @@ def test_recommend_opening_tolerates_none_color():
     after real resource cards land). Must not crash; must skip the
     "2nd pick" hint gracefully."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -703,7 +703,7 @@ def test_recommend_opening_short_circuits_to_road_when_all_settlements_placed():
     ``recommend_opening`` short-circuits straight to the road-followup
     and returns a rec whose ``detail`` mentions the road."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -743,10 +743,10 @@ def test_opening_road_followup_targets_red_settlement_without_road():
     matching road, then verifies the followup helper picks the un-roaded
     settlement and hands back a road hint (edge + toward_node)."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import (
+    from catanbot.advisor import (
         _build_node_neighbors, score_opening_nodes,
     )
-    from cataanbot.recommender import _opening_road_followup
+    from catanbot.recommender import _opening_road_followup
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -786,8 +786,8 @@ def test_recommend_opening_flags_second_pick_context():
     """When RED has placed settlement+road, the detail string should
     signal "2nd pick" so Noah knows to weigh resource-complement."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import recommend_opening
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -814,7 +814,7 @@ def test_recommend_opening_holds_on_settle_before_road():
     hint instead of flickering forward to the round-2 settle choice —
     that would wipe the F-card mid-placement."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -849,7 +849,7 @@ def test_recommend_opening_infers_self_color_when_unlatched():
     generic round-1 settle picks the moment the user dropped their 1st
     settlement, leaving them no road hint for the 1st road."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -878,8 +878,8 @@ def test_recommend_opening_round2_holds_on_2nd_settle_before_2nd_road():
     action='road' so the HUD doesn't flicker to the already-placed
     settle's old context."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import recommend_opening
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -913,7 +913,7 @@ def test_recommend_opening_round_one_attaches_plan_second():
     plan.second with the best hypothetical 2nd-settlement pick so Noah
     reads each F pick as a coordinated 2-settle plan, not a one-off."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -940,7 +940,7 @@ def test_recommend_opening_round_one_plan_reflects_joint_coverage():
     Keeps the overlay's coverage claim (e.g. "cov 5/5") honest."""
     from catanatron import Color, Game, RandomPlayer
     from catanatron.state import RESOURCES
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -966,8 +966,8 @@ def test_recommend_opening_round_one_road_respects_planned_n():
     of the planned 2nd-settlement — that spot becomes illegal once N
     lands, so pointing a road at it is wasted commitment."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import recommend_opening
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -995,7 +995,7 @@ def test_archetype_ore_city_when_two_ore_plus_wheat():
     """Two ore tiles + at least one wheat → ore-city archetype. This is
     the classic city-first opening and should override more generic
     labels like 'balanced'."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("ORE", 6), ("WHEAT", 8), ("SHEEP", 3)]
     tiles_n = [("ORE", 9), ("BRICK", 4), ("DESERT", None)]
@@ -1005,7 +1005,7 @@ def test_archetype_ore_city_when_two_ore_plus_wheat():
 def test_archetype_wood_first_when_heavy_wood_brick():
     """2+ wood AND 1+ brick → wood-first archetype (road/settlement
     expansion strategy)."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("WOOD", 6), ("BRICK", 8), ("SHEEP", 3)]
     tiles_n = [("WOOD", 9), ("WHEAT", 4), ("DESERT", None)]
@@ -1014,7 +1014,7 @@ def test_archetype_wood_first_when_heavy_wood_brick():
 
 def test_archetype_balanced_when_five_resources_no_dominance():
     """5/5 resource coverage with no resource repeated → balanced."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("WOOD", 6), ("BRICK", 8), ("WHEAT", 5)]
     tiles_n = [("SHEEP", 9), ("ORE", 10), ("DESERT", None)]
@@ -1025,7 +1025,7 @@ def test_archetype_port_trumps_other_labels():
     """A 2:1 port on a produced resource is distinctive enough to flip
     archetype regardless of tile distribution — the port reshapes the
     whole trade economy."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("WOOD", 6), ("BRICK", 8), ("SHEEP", 3)]
     tiles_n = [("WOOD", 9), ("WHEAT", 4), ("DESERT", None)]
@@ -1038,7 +1038,7 @@ def test_archetype_port_trumps_other_labels():
 def test_archetype_port_requires_resource_on_board():
     """A 2:1 port without any matching production doesn't trigger the
     port label — you can't convert surplus you don't have."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("WOOD", 6), ("BRICK", 8), ("WHEAT", 5)]
     tiles_n = [("SHEEP", 9), ("ORE", 10), ("DESERT", None)]
@@ -1056,7 +1056,7 @@ def test_archetype_port_requires_resource_on_board():
 
 def test_archetype_none_when_uninteresting():
     """Sparse / irregular combos return None rather than forcing a label."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     # 2 resources total, neither dominant enough to label.
     tiles_f = [("SHEEP", 6), ("DESERT", None)]
@@ -1068,7 +1068,7 @@ def test_recommend_opening_attaches_archetype_to_plan():
     """Round-1 picks should carry plan.archetype where applicable so the
     overlay can surface strategy framing alongside the paired plan."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_opening
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -1094,7 +1094,7 @@ def test_archetype_dev_card_when_sheep_wheat_ore_but_light_on_wood():
     road-spam, not enough ore to city-rush, and coverage too narrow
     for balanced — the pivot to dev cards is the best path. This
     scenario used to return None; now it flags dev-card."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     # Exactly 3 resources: SHEEP, WHEAT, ORE. Missing wood AND brick.
     # 1 ore (can't city-rush), 0 wood+brick (can't road-spam), 3 distinct
@@ -1107,7 +1107,7 @@ def test_archetype_dev_card_when_sheep_wheat_ore_but_light_on_wood():
 def test_archetype_dev_card_loses_to_ore_city_when_two_ore():
     """Two ore + wheat → ore-city wins over dev-card (dev-card is the
     fallback when city rush isn't available)."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("ORE", 6), ("WHEAT", 8), ("SHEEP", 3)]
     tiles_n = [("ORE", 9), ("BRICK", 4), ("DESERT", None)]
@@ -1118,7 +1118,7 @@ def test_archetype_dev_card_loses_to_wood_first_on_heavy_wood():
     """Wood-first still wins when wood/brick is heavy, even if the
     dev-card ingredients are also present (road-spam + settlements is
     usually stronger than a pure dev-card pivot)."""
-    from cataanbot.recommender import _label_archetype
+    from catanbot.recommender import _label_archetype
 
     tiles_f = [("WOOD", 6), ("BRICK", 8), ("SHEEP", 3)]
     tiles_n = [("WOOD", 9), ("WHEAT", 4), ("ORE", 10)]
@@ -1132,8 +1132,8 @@ def test_recommend_opening_round_two_uses_complement_ranking():
     by contributing at least one resource F doesn't already produce."""
     from catanatron import Color, Game, RandomPlayer
     from catanatron.state import RESOURCES
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import recommend_opening
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import recommend_opening
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -1178,7 +1178,7 @@ def test_live_game_resyncs_hand_on_reconnect_type4():
     """A second type=4 frame on an already-booted LiveGame should
     re-sync the self-hand from the replay's playerStates rather than
     being ignored. Fixes disconnect/reconnect drift."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
 
     lg = LiveGame()
     # Bootstrap a minimal gameState that LiveSession.from_game_start
@@ -1205,8 +1205,8 @@ def test_live_game_resyncs_hand_on_reconnect_type4():
 def test_colonist_diff_latches_current_turn_color():
     """current_turn_color_id should cache the last seen turn-color so a
     roll frame that omits currentTurnPlayerColor still attributes right."""
-    from cataanbot.colonist_diff import LiveSession, events_from_diff
-    from cataanbot.colonist_map import MapMapping
+    from catanbot.colonist_diff import LiveSession, events_from_diff
+    from catanbot.colonist_map import MapMapping
 
     sess = LiveSession(mapping=MapMapping(), player_names={3: "Alice"})
     # First frame sets the turn color.
@@ -1226,7 +1226,7 @@ def test_colonist_diff_latches_current_turn_color():
 
 def test_trade_decline_when_cant_spare_want():
     """Offer that demands resources we don't have → auto-decline."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     # We have 1 ORE; offer asks for 2. Can't afford.
@@ -1243,7 +1243,7 @@ def test_trade_accept_unlocks_affordable_build():
     """Swap should accept when it unlocks a buildable settlement."""
     from catanatron import Color
 
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     b = g.state.board
@@ -1266,7 +1266,7 @@ def test_trade_decline_when_opponent_close_to_win():
     the offerer is close enough to closing out the game."""
     from catanatron import Color
 
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     b = g.state.board
@@ -1285,7 +1285,7 @@ def test_trade_decline_when_opponent_close_to_win():
 def test_trade_decline_when_lopsided_neutral():
     """1-for-2 swap with no build unlock → decline on fairness, not
     because it blocks anything."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     # Hand can't build anything; swap leaves us in the same state.
@@ -1300,7 +1300,7 @@ def test_trade_decline_when_lopsided_neutral():
 
 def test_trade_consider_neutral_swap():
     """Same-count swap with no build change → consider (not a reject)."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     hand = {"SHEEP": 1}
@@ -1313,7 +1313,7 @@ def test_trade_consider_neutral_swap():
 
 def test_trade_decline_when_give_is_empty():
     """Degenerate offer (they give nothing) → decline."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     verdict = evaluate_incoming_trade(
@@ -1327,7 +1327,7 @@ def test_trade_counter_suggested_on_lopsided_decline():
     """Opp asks 1 Sheep for 2 Ore. Paying 2 Ore leaves us with 0 Ore — no
     dev card. Paying 1 Ore (the counter) still lets us buy the dev card
     AND adds a Sheep, so the counter should tip from decline to accept."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     # No buildable structures on current road net — only dev card matters.
@@ -1348,7 +1348,7 @@ def test_trade_counter_suggested_on_lopsided_decline():
 def test_trade_no_counter_when_opp_close_to_win():
     """Don't offer a counter-trade when the opp is at 8+ VP — even a
     balanced 1-for-1 feeds them toward the win."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     # Same dev-card setup as the lopsided-decline test, just with opp_vp=9.
@@ -1367,7 +1367,7 @@ def test_trade_no_counter_when_accept_already():
     returns counter=None so the overlay doesn't show a redundant pill."""
     from catanatron import Color
 
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     b = g.state.board
@@ -1386,7 +1386,7 @@ def test_trade_no_counter_when_trimmed_still_bad():
     """Counter only fires when the trimmed version flips to accept. A
     swap where the trimmed version still unlocks nothing (same kind
     before/after, same score) should come back with no counter."""
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     g = _fresh_game_with_red_settle()
     # Hand with exactly 2 SHEEP and nothing else. Before/full/counter
@@ -1407,7 +1407,7 @@ def test_bank_trade_detail_reads_as_english_sentence():
     """Bank trade rec detail should read as a clean sentence:
     '4 sheep → 1 ore · unlocks settlement', not the old
     '4xSHEEP→1xORE · settlement' wall."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -1430,7 +1430,7 @@ def test_propose_trade_detail_is_verb_first():
     """Propose-trade detail should start with a verb ('offer …') and
     end with what it unlocks. Old format was '1:1 fair · 1Sheep→1Ore
     · settlement' — readable as code, not as instruction."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -1463,7 +1463,7 @@ def test_dev_card_recs_suppressed_when_deck_empty():
     save-for-soon path, not the bank-trade path, not the propose-trade
     path. Otherwise the user clicks 'buy dev' and nothing happens —
     classic confidence-eroding misfire."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     from catanatron import Color
@@ -1507,8 +1507,8 @@ def test_endgame_urgency_bumps_vp_advancing_recs():
     longer games and not hardcode the threshold to 8.
     """
     from catanatron import Color
-    from cataanbot.config import VP_TARGET, set_vp_target
-    from cataanbot.recommender import recommend_actions
+    from catanbot.config import VP_TARGET, set_vp_target
+    from catanbot.recommender import recommend_actions
 
     g = _fresh_game_with_red_settle()
     b = g.state.board
@@ -1562,7 +1562,7 @@ def test_no_one_for_two_longshot_trade_proposals():
     his 2026-04-30 feedback log — opps essentially never accept that
     ratio, so the rec is just clutter at the bottom of the list. The
     longshot variant was dropped; this guards against re-adding it."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
     g = _fresh_game_with_red_settle()
     from catanatron import Color
     b = g.state.board
@@ -1583,12 +1583,12 @@ def test_dev_card_dropped_at_one_vp_from_win():
     """When self can win this turn (gap == 1 to VP_TARGET), 'draw a card'
     is wrong — the right move is the affordable city/settle that grants
     the same-turn VP. Dev card recs are dropped entirely at gap == 1."""
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
     from catanatron import Color
     g = _fresh_game_with_red_settle()
     # Push RED to VP_TARGET - 1.
     idx = g.state.color_to_index[Color.RED]
-    from cataanbot.config import VP_TARGET
+    from catanbot.config import VP_TARGET
     g.state.player_state[f"P{idx}_VICTORY_POINTS"] = VP_TARGET - 1
     # Hand can afford a dev card AND a city (both buildable).
     hand = {"WHEAT": 4, "ORE": 4, "SHEEP": 1}
@@ -1607,8 +1607,8 @@ def test_opening_road_followup_skips_self_owned_edge():
     failed in colonist. The opening-road logic skipped opp-owned edges
     but not self-owned ones."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.advisor import _build_node_neighbors
-    from cataanbot.recommender import _best_opening_road
+    from catanbot.advisor import _build_node_neighbors
+    from catanbot.recommender import _best_opening_road
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
                                     Color.WHITE, Color.ORANGE)],
@@ -1652,7 +1652,7 @@ def test_road_port_match_bonus_surfaces_brick_port():
     higher-pip interior plays.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     # Seed=1 classic board: BRICK tile (0,1,-1) covers node 19;
     # node 48 is BRICK 2:1 port; 19 → 46 → 48 is a valid 2-hop path.
@@ -1683,7 +1683,7 @@ def test_road_no_port_bonus_for_unmatched_resource():
     the bonus is intentionally narrow.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE)], seed=1)
@@ -1715,7 +1715,7 @@ def test_road_rec_marked_supports_plan_when_tiles_overlap():
     Without this, Noah's HUD shows the soon-plan pointing one direction
     and the 'now' road pointing another with no visual link between them.
     """
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
     from catanatron import Color
 
     g = _fresh_game_with_red_settle()
@@ -1762,7 +1762,7 @@ def test_settlement_score_bumped_when_only_two_footprints():
     detail as '· settle #3' so the user reads why it's prioritized.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     # Two-footprint state: RED has 2 settlements with road network
     # extended one hop past the opening so distance-2 leaves at
@@ -1795,7 +1795,7 @@ def test_settlement_score_unbumped_after_third_footprint():
     """The 3rd-settle bump must clear once a 3rd footprint lands so
     the bias doesn't bleed into mid- and late-game settlement recs."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.recommender import recommend_actions
+    from catanbot.recommender import recommend_actions
 
     # Three-footprint state: 2 settles + 1 city.
     g = Game(
@@ -1827,7 +1827,7 @@ def test_recommender_settlement_picks_wheat_over_equal_pip_ore():
     bearing one. Tested at the helper level — _node_pip_production
     returns the honest raw, _node_pip_production_weighted returns the
     wheat-biased value used for ranking."""
-    from cataanbot.recommender import (
+    from catanbot.recommender import (
         _node_pip_production, _node_pip_production_weighted,
     )
 

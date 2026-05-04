@@ -1,4 +1,4 @@
-"""A live colonist.io game wired through the full CataanBot pipeline.
+"""A live colonist.io game wired through the full CatanBot pipeline.
 
 Ties together the three moving parts we've built piecemeal:
 
@@ -21,13 +21,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cataanbot.colonist_diff import (
+from catanbot.colonist_diff import (
     LiveSession, LiveSessionError, events_from_frame_payload,
 )
-from cataanbot.colonist_map import build_catanatron_map_from_colonist
-from cataanbot.events import BuildEvent
-from cataanbot.live import ColorMap, DispatchResult, apply_event
-from cataanbot.tracker import Tracker, TrackerError
+from catanbot.colonist_map import build_catanatron_map_from_colonist
+from catanbot.events import BuildEvent
+from catanbot.live import ColorMap, DispatchResult, apply_event
+from catanbot.tracker import Tracker, TrackerError
 
 # Standard Catan build costs. WS diffs don't carry the resource deltas
 # that accompany a build (only the board state changed), so LiveGame
@@ -55,7 +55,7 @@ def _apply_game_settings(body: dict[str, Any]) -> None:
     gs = body.get("gameSettings")
     if not isinstance(gs, dict):
         return
-    from cataanbot import config
+    from catanbot import config
     vp = gs.get("victoryPointsToWin")
     if isinstance(vp, int) and vp >= 1:
         try:
@@ -366,7 +366,7 @@ class LiveGame:
         mapState snapshot in a reconnect frame matches what we already
         have, so there's nothing to replay there.
         """
-        from cataanbot.colonist_diff import _hand_sync_events
+        from catanbot.colonist_diff import _hand_sync_events
         game_state = body.get("gameState") if "gameState" in body else body
         if not isinstance(game_state, dict):
             return

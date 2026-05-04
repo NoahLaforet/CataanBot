@@ -18,12 +18,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from cataanbot.bridge import (
+from catanbot.bridge import (
     _feed_postmortem,
     _maybe_clear_dev_just_bought,
 )
-from cataanbot.live import ColorMap
-from cataanbot.tracker import Tracker
+from catanbot.live import ColorMap
+from catanbot.tracker import Tracker
 
 
 def _payload(parts, ts=0.0):
@@ -213,8 +213,8 @@ def test_rb_hint_fires_on_playable_count_when_in_hand_zero():
     covers the contract.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_rb_hint
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _compute_rb_hint
+    from catanbot.tracker import Tracker
 
     g = Game([RandomPlayer(c) for c in (
         Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)], seed=1)
@@ -236,8 +236,8 @@ def test_rb_hint_returns_none_when_neither_signal_says_held():
     # (overlay) say 0 → hint silent. The previous-behaviour
     # contract: a player who doesn't hold the card sees nothing.
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_rb_hint
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _compute_rb_hint
+    from catanbot.tracker import Tracker
 
     g = Game([RandomPlayer(c) for c in (
         Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE)], seed=1)
@@ -257,8 +257,8 @@ def test_snap_breaks_out_vp_vs_non_vp_held(tmp_path: Path):
     toward the displayed VP total). The bridge subtracts that from
     total holdings so the play hints only fire when self holds at
     least one non-VP card. All-VP holdings → hints silent."""
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live_game import LiveGame
 
     # Build a minimal st with a session that has VP state set up.
     sess = SimpleNamespace(
@@ -347,15 +347,15 @@ def test_self_play_decrements_live_tracker_in_hand(tmp_path: Path):
     instance — the SimpleNamespace stub in earlier tests doesn't
     exercise the live-apply path.
     """
-    from cataanbot.bridge import _feed_postmortem
-    from cataanbot.live_game import LiveGame
-    from cataanbot.events import DevCardSelfBuyTypedEvent
-    from cataanbot.live import apply_event
+    from catanbot.bridge import _feed_postmortem
+    from catanbot.live_game import LiveGame
+    from catanbot.events import DevCardSelfBuyTypedEvent
+    from catanbot.live import apply_event
     from catanatron import Color
 
     # Boot a real LiveGame from a synthetic 7-tile flower so we have
     # a working catanatron tracker.
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
     positions = [(0, 0), (1, -1), (-1, 1),
@@ -435,7 +435,7 @@ def test_friendly_robber_info_event_sets_session_flag(tmp_path: Path):
     start must flip session.friendly_robber_active=True. The bridge's
     snapshot reads this flag; the robber-target ranker then filters
     protected ≤2 VP victims."""
-    from cataanbot.bridge import _feed_postmortem
+    from catanbot.bridge import _feed_postmortem
 
     st = _make_state(tmp_path=tmp_path)
     sess = st["game"].session

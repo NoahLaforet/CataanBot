@@ -16,13 +16,13 @@ Two ingestion paths, both POST from the userscript running in-page:
   stdout in the same format as ws-replay's ``--verbose``.
 
 Run:
-    ./bin/cataanbot bridge                 # default :8765
-    ./bin/cataanbot bridge --port 9000
-    ./bin/cataanbot bridge --jsonl path    # mirror /log events to disk
-    ./bin/cataanbot bridge --ws-jsonl path # mirror /ws frames to disk
-    ./bin/cataanbot live                   # bridge + advisor output on
+    ./bin/catanbot bridge                 # default :8765
+    ./bin/catanbot bridge --port 9000
+    ./bin/catanbot bridge --jsonl path    # mirror /log events to disk
+    ./bin/catanbot bridge --ws-jsonl path # mirror /ws frames to disk
+    ./bin/catanbot live                   # bridge + advisor output on
 
-DOM log payload shape (see userscript/colonist_cataanbot.user.js):
+DOM log payload shape (see userscript/colonist_catanbot.user.js):
 
     {
       "ts": 1713640000.123,
@@ -52,7 +52,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from cataanbot.bridge_economy import (
+from catanbot.bridge_economy import (
     _compute_production,
     _owned_ports,
     _knights_played,
@@ -68,11 +68,11 @@ from cataanbot.bridge_economy import (
     _vp_breakdown,
     _get_vp,
 )
-from cataanbot.bridge_robber import (
+from catanbot.bridge_robber import (
     _compute_robber_snapshot,
     _compute_robber_on_me,
 )
-from cataanbot.bridge_hints import (
+from catanbot.bridge_hints import (
     _compute_discard_plan,
     _compute_discard_hint,
     _compute_seven_prep_hint,
@@ -84,13 +84,13 @@ from cataanbot.bridge_hints import (
     _compute_strategic_options,
     _compute_knight_hint,
 )
-from cataanbot.bridge_strategy import (
+from catanbot.bridge_strategy import (
     _compute_longest_road_race,
     _compute_leader_threat,
     _compute_win_proximity,
     _compute_winning_move,
 )
-from cataanbot.bridge_postmortem import (
+from catanbot.bridge_postmortem import (
     _feed_postmortem,
     _write_postmortem,
 )
@@ -113,11 +113,11 @@ def _build_app(jsonl_path: Path | None = None,
     from fastapi import Body, FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
-    app = FastAPI(title="cataanbot bridge", version="0.2")
+    app = FastAPI(title="catanbot bridge", version="0.2")
 
     app.add_middleware(
         CORSMiddleware,
@@ -165,7 +165,7 @@ def _build_app(jsonl_path: Path | None = None,
         # Keyed by int cid so the same shape survives color-swap resets.
         "opp_card_hist": {},
         # Auto-postmortem buffers. Fed from the /log path so the output
-        # shape matches `cataanbot replay --postmortem`. Independent from
+        # shape matches `catanbot replay --postmortem`. Independent from
         # LiveGame's WS tracker — the two pipelines never cross.
         "pm_tracker": Tracker(),
         "pm_color_map": ColorMap(),
@@ -228,7 +228,7 @@ def _build_app(jsonl_path: Path | None = None,
     def root() -> dict[str, Any]:
         g = st["game"]
         return {
-            "service": "cataanbot bridge",
+            "service": "catanbot bridge",
             "version": "0.2",
             "log_events": st["log_count"],
             "ws_frames": st["ws_count"],
@@ -369,7 +369,7 @@ def _build_app(jsonl_path: Path | None = None,
     def get_config() -> dict[str, Any]:
         """Current VP target + discard limit. Userscript drawer reads
         this on init to reflect server-side state in its inputs."""
-        from cataanbot import config
+        from catanbot import config
         return {
             "vp_target": config.get_vp_target(),
             "discard_limit": config.get_discard_limit(),
@@ -386,7 +386,7 @@ def _build_app(jsonl_path: Path | None = None,
         missed (e.g., bridge started after game booted). Routes onto
         the live session's flag so the robber-target ranker filters
         protected victims for the rest of the game."""
-        from cataanbot import config
+        from catanbot import config
         errors: list[str] = []
         if "vp_target" in payload and payload["vp_target"] is not None:
             try:
@@ -557,7 +557,7 @@ def _feed_ws_payload(game, payload: dict[str, Any]):
     import base64
     import json as _json
 
-    from cataanbot.colonist_proto import decode_frame
+    from catanbot.colonist_proto import decode_frame
 
     direction = payload.get("dir")
     if direction not in ("in", "out"):
@@ -607,7 +607,7 @@ def _apply_colonist_game_settings(game) -> None:
     if sess is None:
         return
     gs = getattr(sess, "game_settings", None) or {}
-    from cataanbot import config
+    from catanbot import config
     vp = gs.get("victoryPointsToWin")
     if vp is not None:
         try:
@@ -691,7 +691,7 @@ def _track_overlay_state(st, results) -> None:
       moment a RobberMoveEvent lands. While pending, /advisor ships the
       top-N robber target ranking so the overlay can surface it inline.
     """
-    from cataanbot.events import (
+    from catanbot.events import (
         BuildEvent, RobberMoveEvent, RollEvent,
         TradeCloseEvent, TradeCommitEvent, TradeOfferEvent,
     )
@@ -789,7 +789,7 @@ def _track_overlay_state(st, results) -> None:
                     uname2 = sess2.player_names.get(sess2.self_color_id)
                     if uname2 and game.color_map.has(uname2):
                         sc2 = game.color_map.get(uname2)
-                        from cataanbot.eval import evaluate_state
+                        from catanbot.eval import evaluate_state
                         ev_val = float(evaluate_state(
                             game.tracker.game, sc2))
                         eh = list(st.get("eval_history") or [])
@@ -1056,7 +1056,7 @@ def _record_self_build_quality(st, ev) -> None:
     served to the userscript; they reflect what the bot was suggesting
     at decision time even if the per-snap recs change after the build.
     """
-    from cataanbot.move_quality import (
+    from catanbot.move_quality import (
         classify_build_against_recs, find_rank,
     )
 
@@ -1218,7 +1218,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     unconditionally re-render if they prefer. All fields are safe to
     render even before a game has booted — `self` is None until then."""
     game = st["game"]
-    from cataanbot import config
+    from catanbot import config
 
     # Late-retry the robber snapshot any time self owes a placement
     # but the snapshot is empty. Catches both the knight-play case
@@ -1388,7 +1388,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     else:
         snap["game_progress"] = None
     if is_setup:
-        from cataanbot.recommender import recommend_opening
+        from catanbot.recommender import recommend_opening
         # self_color_id latches after self's 2nd settlement ships its
         # first resourceCards frame. Pass it in when we have it so the
         # "finish your opening road" followup can fire — without a
@@ -1667,7 +1667,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # up via natural rolls.
     snap["engine_deficit"] = None
     try:
-        from cataanbot.config import mid_late_vp
+        from catanbot.config import mid_late_vp
         self_pr = float(((snap.get("self") or {}).get("production")
                          or {}).get("per_roll", 0.0))
         leader_opp = None
@@ -1749,7 +1749,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # opening picks were already populated above, so skip here.
     if not is_setup and snap["my_turn"]:
         try:
-            from cataanbot.recommender import recommend_actions
+            from catanbot.recommender import recommend_actions
             # Feed the bank_supply we already computed into the rec
             # planner so port/4:1 trades + propose-trade get skipped
             # when the bank is dry / full on the needed resource.
@@ -2028,7 +2028,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     if sess is not None and sess.self_dev_used:
         from collections import Counter
         c = Counter(sess.self_dev_used)
-        from cataanbot.colonist_diff import _DEV_CARD_TYPE
+        from catanbot.colonist_diff import _DEV_CARD_TYPE
         played_by_type: dict[str, int] = {}
         for type_int, n in c.items():
             name = _DEV_CARD_TYPE.get(int(type_int))
@@ -2221,7 +2221,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # returns the nearest-miss for any build; we filter to
             # settlement specifically so the milestone doesn't say
             # "build settle #3" while pointing at a city deficit.
-            from cataanbot.recommender import _SETTLEMENT_COST
+            from catanbot.recommender import _SETTLEMENT_COST
             missing: dict[str, int] = {}
             for r, n in _SETTLEMENT_COST.items():
                 d = n - hand.get(r, 0)
@@ -2354,7 +2354,7 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
     don't need an accept/decline recommendation. Returns None in that
     case so the overlay hides the panel.
     """
-    from cataanbot.recommender import evaluate_incoming_trade
+    from catanbot.recommender import evaluate_incoming_trade
 
     offerer = pending.get("player") or ""
     sess = game.session
@@ -2378,7 +2378,7 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
     # just read snap["threat"]; recompute against a synthetic snap
     # carrying just this offerer.
     try:
-        from cataanbot.bridge_strategy import _compute_leader_threat
+        from catanbot.bridge_strategy import _compute_leader_threat
         opp_entry = None
         if snap is not None:
             for o in (snap.get("opps") or []):
@@ -2418,7 +2418,7 @@ def _evaluate_pending_trade(st, game, self_color, self_hand,
 
 def _print_dispatch_results(game, results, seq: int,
                             advisor: bool = False) -> None:
-    from cataanbot.events import (
+    from catanbot.events import (
         BuildEvent, DevCardBuyEvent, HandSyncEvent, ProduceEvent,
         RobberMoveEvent, RollEvent,
     )
@@ -2485,7 +2485,7 @@ def _is_self_player(game, username: str | None) -> bool:
 
 def _print_robber_targets(game, top: int = 5) -> None:
     """Compact top-N robber ranking for when the self-player rolls a 7."""
-    from cataanbot.advisor import score_robber_targets
+    from catanbot.advisor import score_robber_targets
 
     sess = game.session
     if sess is None or sess.self_color_id is None:
@@ -2597,8 +2597,8 @@ def _print_event(payload: dict[str, Any], n: int) -> None:
     we can't classify yet) the raw payload on a second line so we can
     add rules for the misses.
     """
-    from cataanbot.events import UnknownEvent
-    from cataanbot.parser import parse_event
+    from catanbot.events import UnknownEvent
+    from catanbot.parser import parse_event
 
     ts = payload.get("ts")
     if ts is None:
@@ -2616,7 +2616,7 @@ def _print_event(payload: dict[str, Any], n: int) -> None:
 
 def _event_oneliner(event: Any) -> str:
     """Compact human-readable summary of a parsed Event."""
-    from cataanbot.events import (
+    from catanbot.events import (
         BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
         DisconnectEvent, GameOverEvent, InfoEvent, MonopolyStealEvent,
         NoStealEvent, ProduceEvent, RobberMoveEvent, RollBlockedEvent,
@@ -2754,7 +2754,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765,
 
     app = _build_app(jsonl_path=jsonl_path, ws_jsonl_path=ws_jsonl_path,
                      advisor=advisor, postmortem_dir=pm_dir)
-    print(f"cataanbot bridge listening on http://{host}:{port}")
+    print(f"catanbot bridge listening on http://{host}:{port}")
     print("POST  /log      — userscript DOM log events")
     print("POST  /ws       — userscript WebSocket frames")
     print("GET   /         — health + counters + game state")

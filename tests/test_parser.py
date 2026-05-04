@@ -1,7 +1,7 @@
 """Parser tests driven by real log payloads from a colonist.io bot game."""
 from __future__ import annotations
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent,
     DevCardBuyEvent,
     DevCardPlayEvent,
@@ -20,7 +20,7 @@ from cataanbot.events import (
     TradeOfferEvent,
     VPEvent,
 )
-from cataanbot.parser import parse_event
+from catanbot.parser import parse_event
 
 
 def _make(parts, self_name=None):

@@ -25,7 +25,7 @@ def _detect_imminent_opp_color(game) -> str | None:
     """
     try:
         from catanatron import Color  # noqa: F401
-        from cataanbot.config import VP_TARGET
+        from catanbot.config import VP_TARGET
         sess = game.session
         if sess is None or sess.self_color_id is None:
             return None
@@ -92,7 +92,7 @@ def _compute_robber_snapshot(
     opponent (VP ≥ ``mid_late_vp()``) gets boosted priority to deny them
     resources.
     """
-    from cataanbot.advisor import score_robber_targets
+    from catanbot.advisor import score_robber_targets
 
     sess = game.session
     if sess is None or sess.self_color_id is None:
@@ -127,8 +127,8 @@ def _compute_robber_snapshot(
     # matches colonist's behaviour — newly-placed players have 2 VP
     # from their two opening settlements; the rule protects them so
     # opps can't gang-robber a leader's first build attempt).
-    # House-rules can override via CATAANBOT_FRIENDLY_ROBBER_PROTECTED_VP.
-    from cataanbot.config import get_friendly_robber_protected_vp
+    # House-rules can override via CATANBOT_FRIENDLY_ROBBER_PROTECTED_VP.
+    from catanbot.config import get_friendly_robber_protected_vp
     fr_min = (get_friendly_robber_protected_vp()
               if sess.friendly_robber_active else None)
     # Auto-detect imminent opp from game state when caller didn't
@@ -151,7 +151,7 @@ def _compute_robber_snapshot(
     for s in scores[:top]:
         # Pick the best victim: card count dominates (best steal EV), VP
         # pressure boosts near-winners, pip contribution is a small nudge.
-        from cataanbot.config import close_to_win_vp, mid_late_vp
+        from catanbot.config import close_to_win_vp, mid_late_vp
         close_vp = close_to_win_vp()
         mid_vp = mid_late_vp()
         def _victim_priority(vcolor: str) -> float:
@@ -230,7 +230,7 @@ def _compute_robber_on_me(game) -> dict[str, Any] | None:
         # Desert or uninit — robber parked here costs nothing.
         return None
 
-    from cataanbot.advisor import PIP_DOTS_BY_NUMBER
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER
     robber_node_ids = set(robber_tile.nodes.values())
     pips = 0
     building_count = 0

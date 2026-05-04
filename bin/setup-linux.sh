@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-shot setup for a fresh Linux box (incl. WSL Ubuntu).
 # Idempotent: safe to re-run. Installs apt prereqs, creates .venv,
-# editable-installs cataanbot with dev+bridge extras, runs --help to verify.
+# editable-installs catanbot with dev+bridge extras, runs --help to verify.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -78,6 +78,6 @@ python -m pip install -U pip wheel
 pip install -e '.[dev,bridge]'
 
 echo ">> verifying"
-./bin/cataanbot --help >/dev/null
+./bin/catanbot --help >/dev/null
 echo "ok — activate with: source .venv/bin/activate"
-echo "run with:           ./bin/cataanbot --help"
+echo "run with:           ./bin/catanbot --help"

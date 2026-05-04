@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from cataanbot.tracker import Tracker, TrackerError
+from catanbot.tracker import Tracker, TrackerError
 
 
 @pytest.fixture

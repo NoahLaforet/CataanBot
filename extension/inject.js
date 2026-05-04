@@ -11,16 +11,16 @@
 // where content.js can pick them up.
 //
 // Lifecycle:
-//   inject.js (page world) — patches WebSocket, posts {type: 'cataanbot-ws', frame}
+//   inject.js (page world) — patches WebSocket, posts {type: 'catanbot-ws', frame}
 //   content.js (isolated)  — listens to window.message, forwards to background.js
 //   background.js (sw)     — POSTs to http://127.0.0.1:8765/ws
 
 (function installCataanbotWSHook() {
-    if (window.__cataanbotWS) return;
+    if (window.__catanbotWS) return;
     const buffer = [];
     const summary = { opened: 0, sent: 0, recv: 0,
         pings: 0, errors: 0 };
-    window.__cataanbotWS = { buffer, summary };
+    window.__catanbotWS = { buffer, summary };
 
     const NativeWebSocket = window.WebSocket;
     if (!NativeWebSocket) return;
@@ -75,7 +75,7 @@
         // Page-world cannot talk to chrome.* APIs. Hand off via
         // postMessage; content.js listens for the same source-origin
         // message and forwards to the extension's service worker.
-        window.postMessage({ source: 'cataanbot-ws', frame }, '*');
+        window.postMessage({ source: 'catanbot-ws', frame }, '*');
     }
 
     function recordFrame(dir, data, wsId) {
@@ -132,5 +132,5 @@
     PatchedWebSocket.CLOSED = NativeWebSocket.CLOSED;
     window.WebSocket = PatchedWebSocket;
 
-    console.log('[cataanbot] WS interceptor (extension) installed');
+    console.log('[catanbot] WS interceptor (extension) installed');
 })();

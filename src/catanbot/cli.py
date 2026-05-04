@@ -1,4 +1,4 @@
-"""CataanBot CLI — entry point."""
+"""CatanBot CLI — entry point."""
 from __future__ import annotations
 
 import argparse
@@ -51,7 +51,7 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
     the node itself and its distance-rule neighbors get removed). Makes
     the denial/blocking math visible as a side-by-side."""
     try:
-        from cataanbot.advisor import (
+        from catanbot.advisor import (
             score_opening_nodes, format_opening_ranking,
             legal_nodes_after_picks,
         )
@@ -68,7 +68,7 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
         tracker = _load_tracker(save_path)
         if tracker is None:
             return 1
-        from cataanbot.tracker import TrackerError
+        from catanbot.tracker import TrackerError
         try:
             c = tracker._color(color)
         except TrackerError as e:
@@ -106,7 +106,7 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
             render_scores = after_scores
 
     if render_to:
-        from cataanbot.render import render_board
+        from catanbot.render import render_board
         top_nodes = [s.node_id for s in render_scores[:top]]
         path = render_board(game, render_to, hex_size=hex_size,
                             highlight_nodes=top_nodes,
@@ -120,7 +120,7 @@ def cmd_openings(top: int, render_to: str | None, hex_size: int,
 def cmd_play() -> int:
     """Launch the manual-tracker REPL."""
     try:
-        from cataanbot.repl import run
+        from catanbot.repl import run
     except ImportError as e:
         print(f"tracker deps missing: {e}", file=sys.stderr)
         return 1
@@ -129,7 +129,7 @@ def cmd_play() -> int:
 
 def _load_tracker(save_path: str):
     """Load a tracker save file, print errors to stderr, return None on failure."""
-    from cataanbot.tracker import Tracker, TrackerError
+    from catanbot.tracker import Tracker, TrackerError
     try:
         return Tracker.load(save_path)
     except FileNotFoundError:
@@ -145,8 +145,8 @@ def cmd_robberadvice(save_path: str, color: str, top: int) -> int:
     tracker = _load_tracker(save_path)
     if tracker is None:
         return 1
-    from cataanbot.advisor import score_robber_targets, format_robber_ranking
-    from cataanbot.tracker import TrackerError
+    from catanbot.advisor import score_robber_targets, format_robber_ranking
+    from catanbot.tracker import TrackerError
     try:
         tracker._color(color)
     except TrackerError as e:
@@ -163,8 +163,8 @@ def cmd_tradeeval(save_path: str, color: str, n_out: int, res_out: str,
     tracker = _load_tracker(save_path)
     if tracker is None:
         return 1
-    from cataanbot.advisor import evaluate_trade, format_trade_eval
-    from cataanbot.tracker import TrackerError
+    from catanbot.advisor import evaluate_trade, format_trade_eval
+    from catanbot.tracker import TrackerError
     try:
         tracker._color(color)
     except TrackerError as e:
@@ -184,7 +184,7 @@ def cmd_stats(save_path: str, histogram_path: str | None) -> int:
     tracker = _load_tracker(save_path)
     if tracker is None:
         return 1
-    from cataanbot.stats import compute_stats, format_stats, render_histogram
+    from catanbot.stats import compute_stats, format_stats, render_histogram
     stats = compute_stats(tracker)
     print(format_stats(stats))
     if histogram_path:
@@ -200,10 +200,10 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
     tracker = _load_tracker(save_path)
     if tracker is None:
         return 1
-    from cataanbot.advisor import (
+    from catanbot.advisor import (
         score_second_settlements, format_second_settlement_ranking,
     )
-    from cataanbot.tracker import TrackerError
+    from catanbot.tracker import TrackerError
     try:
         c = tracker._color(color)
     except TrackerError as e:
@@ -232,7 +232,7 @@ def cmd_secondadvice(save_path: str, color: str, first_node: int | None,
         return 1
     print(format_second_settlement_ranking(scores, first_node, top=top))
     if render_to:
-        from cataanbot.render import render_board
+        from catanbot.render import render_board
         top_nodes = [s.node_id for s in scores[:top]]
         path = render_board(tracker.game, render_to, hex_size=hex_size,
                             highlight_nodes=top_nodes)
@@ -245,7 +245,7 @@ def cmd_bridge(host: str, port: int, jsonl: str | None,
                postmortem_dir: str | None = None) -> int:
     """Run the FastAPI bridge that receives colonist.io log events and
     WebSocket frames from the Tampermonkey userscript."""
-    from cataanbot.bridge import serve
+    from catanbot.bridge import serve
     return serve(host=host, port=port, jsonl=jsonl,
                  ws_jsonl=ws_jsonl, advisor=advisor,
                  postmortem_dir=postmortem_dir)
@@ -268,9 +268,9 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
     live colonist session needed."""
     import json
 
-    from cataanbot.live import ColorMap, ColorMapError, apply_event
-    from cataanbot.parser import parse_event
-    from cataanbot.tracker import Tracker
+    from catanbot.live import ColorMap, ColorMapError, apply_event
+    from catanbot.parser import parse_event
+    from catanbot.tracker import Tracker
 
     color_map = ColorMap()
     if player_args:
@@ -377,7 +377,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
     print(tracker.summary())
 
     if report or report_out:
-        from cataanbot.report import build_report, format_report
+        from catanbot.report import build_report, format_report
         final_vp = tracker.vp_status()["per_color"]
         rep = build_report(
             events=events_for_report,
@@ -404,7 +404,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
         path = tracker.render(render_to)
         print(f"board rendered to {path}")
     if vp_chart:
-        from cataanbot.timeline import build_vp_timeline, render_vp_chart
+        from catanbot.timeline import build_vp_timeline, render_vp_chart
         samples = build_vp_timeline(
             events_for_report, timestamps_for_report, color_map,
         )
@@ -414,7 +414,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
         )
         print(f"wrote VP timeline to {path}")
     if production_chart:
-        from cataanbot.timeline import (
+        from catanbot.timeline import (
             build_production_timeline, render_production_chart,
         )
         prod_samples = build_production_timeline(
@@ -427,8 +427,8 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
         print(f"wrote production timeline to {path}")
     if dice_chart:
         from collections import Counter
-        from cataanbot.dice_chart import render_dice_histogram
-        from cataanbot.events import RollEvent
+        from catanbot.dice_chart import render_dice_histogram
+        from catanbot.events import RollEvent
         hist: Counter = Counter()
         for e in events_for_report:
             if isinstance(e, RollEvent):
@@ -439,7 +439,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
         )
         print(f"wrote dice histogram to {path}")
     if hand_chart:
-        from cataanbot.timeline import (
+        from catanbot.timeline import (
             build_hand_timeline, render_hand_chart,
         )
         hand_samples = build_hand_timeline(
@@ -451,7 +451,7 @@ def cmd_replay(jsonl_path: str, player_args: list[str] | None,
         )
         print(f"wrote hand timeline to {path}")
     if postmortem:
-        from cataanbot.postmortem import render_postmortem_html
+        from catanbot.postmortem import render_postmortem_html
         final_vp = tracker.vp_status()["per_color"]
         path = render_postmortem_html(
             events=events_for_report,
@@ -477,8 +477,8 @@ def cmd_ws_replay(capture_path: str, verbose: bool,
     and actually apply, not just get echoed as 'unhandled'."""
     from pathlib import Path
 
-    from cataanbot.colonist_proto import load_capture
-    from cataanbot.live_game import LiveGame
+    from catanbot.colonist_proto import load_capture
+    from catanbot.live_game import LiveGame
 
     path = Path(capture_path).expanduser()
     if not path.exists():
@@ -517,7 +517,7 @@ def cmd_ws_replay(capture_path: str, verbose: bool,
         print(f"\nwrote tracker save to {out}")
     if render_to:
         try:
-            from cataanbot.render import render_board
+            from catanbot.render import render_board
         except ImportError as e:
             print(f"render deps missing: {e}", file=sys.stderr)
             return 1
@@ -533,7 +533,7 @@ def cmd_hands(save_path: str) -> int:
     tracker = _load_tracker(save_path)
     if tracker is None:
         return 1
-    from cataanbot.hands import estimate_hands, format_hands
+    from catanbot.hands import estimate_hands, format_hands
     print(format_hands(estimate_hands(tracker)))
     return 0
 
@@ -544,7 +544,7 @@ def cmd_render(output: str, hex_size: int, ticks: int,
     """Render a fresh random board to a PNG, optionally after N simulated ticks
     so settlements/roads/cities show up on the output."""
     try:
-        from cataanbot.render import render_board
+        from catanbot.render import render_board
     except ImportError as e:
         print(f"render deps missing: {e}", file=sys.stderr)
         print("run: pip install -e .", file=sys.stderr)
@@ -569,18 +569,18 @@ def _package_version() -> str:
     we're running from a source tree without setuptools metadata."""
     from importlib.metadata import PackageNotFoundError, version
     try:
-        return version("cataanbot")
+        return version("catanbot")
     except PackageNotFoundError:
         return "unknown"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="cataanbot",
+        prog="catanbot",
         description="Settlers of Catan advisor.",
     )
     parser.add_argument("--version", action="version",
-                        version=f"cataanbot {_package_version()}")
+                        version=f"catanbot {_package_version()}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor", help="Verify catanatron integration works.")
 

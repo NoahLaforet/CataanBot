@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from cataanbot.stats import compute_stats, format_stats
-from cataanbot.tracker import Tracker
+from catanbot.stats import compute_stats, format_stats
+from catanbot.tracker import Tracker
 
 
 @pytest.fixture

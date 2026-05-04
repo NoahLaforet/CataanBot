@@ -1,4 +1,4 @@
-// cataanbot — one-shot colonist.io board DOM probe (v2).
+// catanbot — one-shot colonist.io board DOM probe (v2).
 //
 // Run this from the devtools Console while you're in an active game.
 // It dumps a wide capture of the page DOM to a downloadable JSON file
@@ -133,14 +133,14 @@
             },
             elements,
         };
-        console.log(`[cataanbot-probe v2] captured ${elements.length} elements `
+        console.log(`[catanbot-probe v2] captured ${elements.length} elements `
             + `(${canvases.length} canvas, ${svgs.length} svg, `
             + `${imgs.length} img)`);
-        console.log('[cataanbot-probe v2] top class prefixes:');
+        console.log('[catanbot-probe v2] top class prefixes:');
         const summary = summarizeByPrefix(elements).slice(0, 30);
         console.table(summary.map(([k, n]) => ({ prefix: k, count: n })));
         if (canvases.length > 0) {
-            console.log('[cataanbot-probe v2] canvas bboxes:');
+            console.log('[catanbot-probe v2] canvas bboxes:');
             console.table(canvases.map(c => ({
                 id: c.id, class: c.className,
                 x: Math.round(c.bbox.x), y: Math.round(c.bbox.y),
@@ -156,12 +156,12 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'cataanbot-board-probe.json';
+        a.download = 'catanbot-board-probe.json';
         document.body.appendChild(a);
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        console.log('[cataanbot-probe v2] saved cataanbot-board-probe.json');
+        console.log('[catanbot-probe v2] saved catanbot-board-probe.json');
     }
 
     const payload = probe();

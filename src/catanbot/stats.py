@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from cataanbot.tracker import Tracker
+    from catanbot.tracker import Tracker
 
 
 # Probability of each dice sum with two fair six-sided dice. Multiplying by
@@ -35,7 +35,7 @@ def compute_stats(tracker: "Tracker") -> dict[str, Any]:
     dice rolls (trades/gives excluded), and per-tile production counts.
     """
     from catanatron.state import yield_resources, RESOURCES
-    from cataanbot.tracker import Tracker
+    from catanbot.tracker import Tracker
 
     replay = Tracker(seed=tracker.seed)
     m = replay.game.state.board.map
@@ -249,7 +249,7 @@ def render_histogram(stats: dict[str, Any], out_path) -> "Path":
     from pathlib import Path
     from PIL import Image, ImageDraw
 
-    from cataanbot.render import _load_font, PIECE_OUTLINE, OCEAN
+    from catanbot.render import _load_font, PIECE_OUTLINE, OCEAN
 
     out_path = Path(out_path)
     histogram = stats["histogram"]

@@ -32,11 +32,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cataanbot.colonist_map import (
+from catanbot.colonist_map import (
     KNOWN_CLASSIC_TILE_TYPES, MapMapping, build_mapping,
     corner_tile_signature, tile_resource,
 )
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
     Event, HandSyncEvent, ProduceEvent,
     DevCardPlayEvent, RobberMoveEvent, RollEvent, TradeCloseEvent,
@@ -564,8 +564,8 @@ def events_from_diff(
     # hits the configured VP target wins. Emit ONCE; the per-session
     # gate prevents duplicate emissions on later diffs.
     if not sess.game_over_emitted:
-        from cataanbot.config import get_vp_target
-        from cataanbot.events import GameOverEvent as _GameOverEvent
+        from catanbot.config import get_vp_target
+        from catanbot.events import GameOverEvent as _GameOverEvent
         try:
             vp_target = int(get_vp_target())
         except Exception:  # noqa: BLE001

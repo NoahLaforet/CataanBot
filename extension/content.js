@@ -22,7 +22,7 @@
 // flatter payload misses those.
 
 (function bootCataanbotContent() {
-    const LOG_PREFIX = '[cataanbot]';
+    const LOG_PREFIX = '[catanbot]';
 
     // ---- Relay page-world WS frames to background ----
     // chrome.runtime.sendMessage throws SYNCHRONOUSLY when the
@@ -37,7 +37,7 @@
         if (extensionDead) return;
         if (ev.source !== window) return;
         const data = ev.data;
-        if (!data || data.source !== 'cataanbot-ws') return;
+        if (!data || data.source !== 'catanbot-ws') return;
         try {
             chrome.runtime.sendMessage({
                 type: 'ws-frame',
@@ -73,7 +73,7 @@
         SEL.entry
         + ', [class^="scrollItemContainer-"]'
         + ', [class*=" scrollItemContainer-"]');
-    const NODE_KEY_ATTR = 'cataanbotKey';
+    const NODE_KEY_ATTR = 'catanbotKey';
     const RECENT_TTL_MS = 60000;
     const AT_BOTTOM_PX = 50;
     const recentSeen = new Map();

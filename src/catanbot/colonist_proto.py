@@ -23,7 +23,7 @@ This module exposes:
     load_capture(path) -> iter[DecodedFrame]
 
 The MessagePack decoder is a minimal hand-rolled implementation — we
-want zero third-party deps in the cataanbot package, and the subset
+want zero third-party deps in the catanbot package, and the subset
 colonist uses is small (fixmap/fixarray/fixstr, str8/16, uint8-64,
 int8-64, float32/64, bool, nil, bin, positive/negative fixint).
 

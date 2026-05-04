@@ -3,8 +3,8 @@
 `_feed_postmortem` mirrors each /log payload into the postmortem
 collector pipeline; `_write_postmortem` renders the HTML at game end.
 
-Lazy imports of `cataanbot.bridge._is_self_player` and
-`cataanbot.bridge_robber._compute_robber_snapshot` to avoid a circular
+Lazy imports of `catanbot.bridge._is_self_player` and
+`catanbot.bridge_robber._compute_robber_snapshot` to avoid a circular
 import (bridge.py imports from this module at module load time).
 
 Re-exported by bridge.py for backwards compat.
@@ -23,15 +23,15 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
     and flip ``pm_written`` so reruns (log virtualization echoes) don't
     stomp the file.
     """
-    from cataanbot.bridge import _is_self_player
-    from cataanbot.bridge_robber import _compute_robber_snapshot
-    from cataanbot.events import (
+    from catanbot.bridge import _is_self_player
+    from catanbot.bridge_robber import _compute_robber_snapshot
+    from catanbot.events import (
         DevCardBuyEvent, DevCardPlayEvent, GameOverEvent, InfoEvent,
         RobberMoveEvent, RollEvent,
         TradeCommitEvent, TradeOfferEvent,
     )
-    from cataanbot.live import apply_event
-    from cataanbot.parser import parse_event
+    from catanbot.live import apply_event
+    from catanbot.parser import parse_event
 
     try:
         event = parse_event(payload)
@@ -96,7 +96,7 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         # Without this, the hint sticks in the HUD after play because
         # MONOPOLY_IN_HAND stays at 1 forever.
         try:
-            from cataanbot.live import apply_event as _apply
+            from catanbot.live import apply_event as _apply
             _apply(game.tracker, game.color_map, event)
         except Exception as e:  # noqa: BLE001
             print(f"[overlay] live devplay apply failed: {e!r}",
@@ -242,7 +242,7 @@ def _vp_from_pm_events(st) -> dict[str, int]:
     to fall through to the next source.
     """
     try:
-        from cataanbot.events import BuildEvent, VPEvent
+        from catanbot.events import BuildEvent, VPEvent
     except Exception:  # noqa: BLE001
         return {}
     pm_events = st.get("pm_events") or []
@@ -355,7 +355,7 @@ def _write_postmortem(st, game_over) -> None:
     import time as _time
     from pathlib import Path as _Path
 
-    from cataanbot.postmortem import render_postmortem_html
+    from catanbot.postmortem import render_postmortem_html
 
     out_dir = st.get("pm_dir")
     if out_dir is None:

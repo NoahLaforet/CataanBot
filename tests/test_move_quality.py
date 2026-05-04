@@ -6,8 +6,8 @@ the live overlay grades the current game. Hence: explicit test per band
 (unordered road edges, mismatched piece kinds, missing fields)."""
 from __future__ import annotations
 
-from cataanbot.events import BuildEvent
-from cataanbot.move_quality import (
+from catanbot.events import BuildEvent
+from catanbot.move_quality import (
     classify_build_against_recs,
     classify_rank,
     find_rank,

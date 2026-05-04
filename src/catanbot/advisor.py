@@ -290,7 +290,7 @@ def _vp_weight(vp: int, vp_target: int | None = None) -> float:
     the baseline shifts to 4 VP, so 4 → 1.0, 7 → 2.2, etc. Linear
     above baseline is simple and matches the intuition that each extra
     VP past the opening phase makes the player more urgent to stop."""
-    from cataanbot.config import early_game_baseline_vp
+    from catanbot.config import early_game_baseline_vp
     baseline = early_game_baseline_vp(vp_target) if vp_target else \
         early_game_baseline_vp()
     return 1.0 + 0.4 * max(0, vp - baseline)

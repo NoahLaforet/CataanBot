@@ -28,11 +28,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent, Event,
     MonopolyStealEvent, ProduceEvent, StealEvent, TradeCommitEvent,
 )
-from cataanbot.live import ColorMap
+from catanbot.live import ColorMap
 
 
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")

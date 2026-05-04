@@ -1,14 +1,14 @@
 """Tests for the event-stream hand tracker."""
 from __future__ import annotations
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent, DiscardEvent,
     MonopolyStealEvent, ProduceEvent, StealEvent, TradeCommitEvent,
 )
-from cataanbot.hand_tracker import (
+from catanbot.hand_tracker import (
     apply_event, init_hands, reconstruct_hands,
 )
-from cataanbot.live import ColorMap
+from catanbot.live import ColorMap
 
 
 def test_init_hands_seats_zero_cards_for_each_color():

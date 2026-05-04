@@ -6,25 +6,25 @@ from pathlib import Path
 
 import pytest
 
-from cataanbot.colonist_diff import (
+from catanbot.colonist_diff import (
     LiveSession, LiveSessionError,
     events_from_diff, events_from_frame_payload, produce_events_for_roll,
 )
-from cataanbot.colonist_proto import load_capture
-from cataanbot.events import (
+from catanbot.colonist_proto import load_capture
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
     ProduceEvent, RobberMoveEvent, RollEvent, VPEvent,
 )
-from cataanbot.live import ColorMap, apply_event
-from cataanbot.tracker import Tracker
+from catanbot.live import ColorMap, apply_event
+from catanbot.tracker import Tracker
 
 
 CAPTURE_EARLY = (Path(__file__).parent.parent
                  / "ws_captures"
-                 / "cataanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
+                 / "catanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
 CAPTURE_MID = (Path(__file__).parent.parent
                / "ws_captures"
-               / "cataanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
+               / "catanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
 
 
 def _game_start_body(path: Path) -> dict:
@@ -858,7 +858,7 @@ def test_trade_offer_event_from_active_offers():
     ``tradeState.activeOffers``. Each new id is a TradeOfferEvent for
     the HUD's incoming-trade banner; partial updates (just
     playerResponses change) and self-created offers are filtered out."""
-    from cataanbot.events import TradeOfferEvent
+    from catanbot.events import TradeOfferEvent
     if not CAPTURE_EARLY.exists():
         pytest.skip("capture not present")
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
@@ -884,7 +884,7 @@ def test_trade_offer_event_from_active_offers():
 def test_trade_offer_event_dedupped_on_partial_update():
     """A second diff for the same offer id (e.g. partial response
     update) must not re-emit a TradeOfferEvent."""
-    from cataanbot.events import TradeOfferEvent
+    from catanbot.events import TradeOfferEvent
     if not CAPTURE_EARLY.exists():
         pytest.skip("capture not present")
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
@@ -910,7 +910,7 @@ def test_trade_offer_event_dedupped_on_partial_update():
 def test_trade_offer_event_skips_self_created_offers():
     """When self created the offer (creator == self_color_id), no
     incoming-trade banner — it's an outgoing send, not a decision."""
-    from cataanbot.events import TradeOfferEvent
+    from catanbot.events import TradeOfferEvent
     if not CAPTURE_EARLY.exists():
         pytest.skip("capture not present")
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
@@ -934,7 +934,7 @@ def test_trade_offer_event_skips_self_created_offers():
 def test_trade_offer_id_evicts_on_close():
     """A closed offer's id must drop from active_offer_ids so the next
     incoming offer with a fresh id can fire its event."""
-    from cataanbot.events import TradeOfferEvent
+    from catanbot.events import TradeOfferEvent
     if not CAPTURE_EARLY.exists():
         pytest.skip("capture not present")
     sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
@@ -954,9 +954,9 @@ def test_ws_game_over_emitted_when_player_hits_vp_target():
     the postmortem path fires even when the DOM-log "X won the game"
     line is missing (e.g. when the chat scraper is dark).
     """
-    from cataanbot.colonist_diff import LiveSession, events_from_frame_payload
-    from cataanbot.events import GameOverEvent
-    from cataanbot.config import set_vp_target
+    from catanbot.colonist_diff import LiveSession, events_from_frame_payload
+    from catanbot.events import GameOverEvent
+    from catanbot.config import set_vp_target
 
     set_vp_target(10)
 

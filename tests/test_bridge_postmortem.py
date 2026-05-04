@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cataanbot.bridge import _feed_postmortem
-from cataanbot.live import ColorMap
-from cataanbot.tracker import Tracker
+from catanbot.bridge import _feed_postmortem
+from catanbot.live import ColorMap
+from catanbot.tracker import Tracker
 
 
 def _payload(parts, ts=0.0):
@@ -94,8 +94,8 @@ def test_resolve_final_vp_falls_back_to_build_events():
     to have 10+ VP). Build-derived fallback uses pm_events to compute
     settles + 2*cities + LR/LA flags, which works whenever the DOM log
     captured the BuildEvents (always true for a completed game)."""
-    from cataanbot.bridge_postmortem import _resolve_final_vp
-    from cataanbot.events import BuildEvent, VPEvent
+    from catanbot.bridge_postmortem import _resolve_final_vp
+    from catanbot.events import BuildEvent, VPEvent
     cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
     pm_events = [
         BuildEvent(player="Alice", piece="settlement"),
@@ -124,7 +124,7 @@ def test_resolve_final_vp_falls_back_to_build_events():
 
 
 def test_harvest_display_colors_latches_first_css_color():
-    from cataanbot.bridge import _harvest_display_colors
+    from catanbot.bridge import _harvest_display_colors
 
     st = {"display_colors": {}}
     _harvest_display_colors(st, {
@@ -160,8 +160,8 @@ def test_apply_colonist_game_settings_syncs_vp_target():
     wrong threshold. Auto-detect on game boot now syncs from
     game.session.game_settings."""
     from types import SimpleNamespace
-    from cataanbot.bridge import _apply_colonist_game_settings
-    from cataanbot import config
+    from catanbot.bridge import _apply_colonist_game_settings
+    from catanbot import config
     original_vp = config.get_vp_target()
     original_dl = config.get_discard_limit()
     try:
@@ -185,8 +185,8 @@ def test_apply_colonist_game_settings_silent_on_missing_keys():
     victoryPointsToWin / cardDiscardLimit. Don't crash; don't change
     config; just leave the defaults alone."""
     from types import SimpleNamespace
-    from cataanbot.bridge import _apply_colonist_game_settings
-    from cataanbot import config
+    from catanbot.bridge import _apply_colonist_game_settings
+    from catanbot import config
     original_vp = config.get_vp_target()
     original_dl = config.get_discard_limit()
     try:

@@ -182,7 +182,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     """
     from catanatron import Color
     from catanatron.state import RESOURCES
-    from cataanbot.advisor import (
+    from catanbot.advisor import (
         _build_node_neighbors, legal_nodes_after_picks,
         score_opening_nodes, score_second_settlements,
     )
@@ -790,7 +790,7 @@ def _node_pip_production_weighted(m, node_id: int) -> float:
     bearing corner outranks an equal-pip non-wheat one. The unweighted
     value is what we still surface as "+0.42/roll" so the hint reads
     as cards-per-roll, not a fudged number."""
-    from cataanbot.advisor import _RESOURCE_WEIGHT
+    from catanbot.advisor import _RESOURCE_WEIGHT
     return float(sum(
         v * _RESOURCE_WEIGHT.get(r, 1.0)
         for r, v in m.node_production.get(node_id, {}).items()))
@@ -1066,7 +1066,7 @@ def recommend_actions(
         land = set(m.land_nodes)
         existing_buildings = set(game.state.board.buildings.keys())
         # Distance-2 neighbors of any existing building are blocked.
-        from cataanbot.advisor import _build_node_neighbors
+        from catanbot.advisor import _build_node_neighbors
         neighbors = _build_node_neighbors(m)
         blocked = set(existing_buildings)
         for b in existing_buildings:
@@ -1095,7 +1095,7 @@ def recommend_actions(
                     owned_resources.add(r)
         # Port-label index — used to detect when a candidate landing
         # node lands on a 2:1 of a resource self already produces.
-        from cataanbot.advisor import _build_node_port_labels
+        from catanbot.advisor import _build_node_port_labels
         node_to_port = _build_node_port_labels(m)
         # (edge, raw_prod, landing_node, rank). raw_prod feeds
         # _score_road for the displayed UI value; rank is the
@@ -1682,7 +1682,7 @@ def recommend_actions(
     # the per-kind heuristic. Falls back to heuristic score for recs that
     # can't be simulated (propose_trade, soon-plans) or if the engine
     # state is malformed. See eval.py for the state evaluator.
-    from cataanbot.eval import search_rerank
+    from catanbot.eval import search_rerank
     search_rerank(game, c, recs)
 
     # Endgame urgency bias. Once self crosses close_to_win_vp() (10 VP
@@ -1697,7 +1697,7 @@ def recommend_actions(
     # directly part of a same-turn LR/LA flip — those flips are
     # already handled by the dedicated winning_move banner.
     try:
-        from cataanbot.config import VP_TARGET, close_to_win_vp
+        from catanbot.config import VP_TARGET, close_to_win_vp
         idx = game.state.color_to_index.get(c)
         if idx is not None:
             self_vp = int(game.state.player_state.get(
@@ -1922,7 +1922,7 @@ def evaluate_incoming_trade(
     after_kind = after.get("kind") if after else None
     give_total = sum(int(n) for n in give.values())
     want_total = sum(int(n) for n in want.values())
-    from cataanbot.config import close_to_win_vp
+    from catanbot.config import close_to_win_vp
     _CLOSE_TO_WIN_VP = close_to_win_vp()
     # Rank of build types so we can detect a kind upgrade. Score deltas
     # alone undersell e.g. "road → settlement" (raw gap is only ~0.5)

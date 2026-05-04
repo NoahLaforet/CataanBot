@@ -1,4 +1,4 @@
-// CataanBot side-panel render. Ported from userscript v0.25.4 with
+// CatanBot side-panel render. Ported from userscript v0.25.4 with
 // the WebSocket hook and DOM-log scraper removed (those live in
 // inject.js / content.js inside the extension). Adapted to:
 //
@@ -32,7 +32,7 @@
     // landing in the game and the HUD reflecting it. The advisor endpoint
     // is a cheap dict serialization; doubling the rate is a non-issue.
     const ADVISOR_POLL_MS = 500;
-    const LOG_PREFIX = '[cataanbot]';
+    const LOG_PREFIX = '[catanbot]';
 
     // Push-style refresh hook. Set by ``startAdvisorPoll`` to a function
     // that schedules a near-immediate /advisor poll. The /ws forwarder
@@ -311,7 +311,7 @@
             const w = window || window;
             if (!w.documentPictureInPicture
                 || !w.documentPictureInPicture.requestWindow) {
-                console.warn('[cataanbot] documentPictureInPicture not '
+                console.warn('[catanbot] documentPictureInPicture not '
                     + 'available — pop-out needs Chrome 116+ or Edge.');
                 popoutBtn.title = 'Pop-out unavailable in this browser';
                 popoutBtn.disabled = true;
@@ -341,7 +341,7 @@
                 // panel state) into the PiP document. We hold a sentinel
                 // span so we can put it back when the PiP closes.
                 const placeholder = document.createElement('span');
-                placeholder.id = 'cataanbot-popout-placeholder';
+                placeholder.id = 'catanbot-popout-placeholder';
                 host.parentNode.insertBefore(placeholder, host);
                 // Strip the fixed-positioning so the panel fills the
                 // PiP window naturally; cache the original style to
@@ -366,7 +366,7 @@
                     pipWindowRef = null;
                 }, { once: true });
             } catch (err) {
-                console.warn('[cataanbot] pop-out failed:', err);
+                console.warn('[catanbot] pop-out failed:', err);
             }
         }
         popoutBtn.addEventListener('click', (e) => {
@@ -395,7 +395,7 @@
             try {
                 recDict = JSON.parse(dataAttr);
             } catch (err) {
-                console.warn('[cataanbot] bad fb data:', err);
+                console.warn('[catanbot] bad fb data:', err);
                 return;
             }
             // Only thumbs-down exists — playing the rec is the implicit
@@ -488,12 +488,12 @@
             panel.dataset.paused = paused ? '1' : '0';
             try {
                 localStorage.setItem(
-                    'cataanbot.paused', paused ? '1' : '0');
+                    'catanbot.paused', paused ? '1' : '0');
             } catch (_) { /* storage blocked — fine */ }
         }
         try {
             const savedPause =
-                localStorage.getItem('cataanbot.paused') === '1';
+                localStorage.getItem('catanbot.paused') === '1';
             pauseInput.checked = savedPause;
             applyPaused(savedPause);
         } catch (_) { applyPaused(false); }
@@ -511,12 +511,12 @@
             host.style.opacity = (clamped / 100).toFixed(2);
             opacityVal.textContent = clamped + '%';
             try {
-                localStorage.setItem('cataanbot.opacity', String(clamped));
+                localStorage.setItem('catanbot.opacity', String(clamped));
             } catch (_) { /* storage blocked */ }
         }
         try {
             const savedOp = parseInt(
-                localStorage.getItem('cataanbot.opacity') || '', 10);
+                localStorage.getItem('catanbot.opacity') || '', 10);
             if (Number.isFinite(savedOp)) {
                 opacityInput.value = String(savedOp);
                 applyOpacity(savedOp);
@@ -564,11 +564,11 @@
         function persistCfgLocal(vp, dl) {
             try {
                 if (Number.isFinite(vp)) {
-                    localStorage.setItem('cataanbot.vp_target', String(vp));
+                    localStorage.setItem('catanbot.vp_target', String(vp));
                 }
                 if (Number.isFinite(dl)) {
                     localStorage.setItem(
-                        'cataanbot.discard_limit', String(dl));
+                        'catanbot.discard_limit', String(dl));
                 }
             } catch (_) { /* storage blocked */ }
         }
@@ -613,9 +613,9 @@
         // empty if the bridge hasn't responded yet.
         try {
             const lvp = parseInt(
-                localStorage.getItem('cataanbot.vp_target') || '', 10);
+                localStorage.getItem('catanbot.vp_target') || '', 10);
             const ldl = parseInt(
-                localStorage.getItem('cataanbot.discard_limit') || '', 10);
+                localStorage.getItem('catanbot.discard_limit') || '', 10);
             if (Number.isFinite(lvp)) vpInput.value = String(lvp);
             if (Number.isFinite(ldl)) discardInput.value = String(ldl);
         } catch (_) { /* storage blocked */ }
@@ -733,13 +733,13 @@
             panel.style.setProperty('--panel-w', clamped + 'px');
             panel.style.setProperty('--font-scale',
                                     scaleForWidth(clamped).toFixed(3));
-            try { localStorage.setItem('cataanbot.hudWidth', String(clamped)); }
+            try { localStorage.setItem('catanbot.hudWidth', String(clamped)); }
             catch (_) { /* private mode, storage blocked — fine */ }
         }
         // Restore saved width on boot.
         try {
             const saved = parseInt(
-                localStorage.getItem('cataanbot.hudWidth') || '', 10);
+                localStorage.getItem('catanbot.hudWidth') || '', 10);
             if (Number.isFinite(saved)) applySize(saved);
         } catch (_) { /* storage unavailable */ }
 

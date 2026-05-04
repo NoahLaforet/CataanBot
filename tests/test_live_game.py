@@ -13,17 +13,17 @@ import pytest
 
 CAPTURE_EARLY = (Path(__file__).parent.parent
                  / "ws_captures"
-                 / "cataanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
+                 / "catanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
 CAPTURE_MIDGAME = (Path(__file__).parent.parent
                    / "ws_captures"
-                   / "cataanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
+                   / "catanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
 CAPTURE_TWIRL_WIN = (Path(__file__).parent.parent
                      / "ws_captures"
                      / "twirl-win-2026-05-03.json")
 
 
 def _iter_payloads(path: Path):
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_proto import load_capture
     for frame in load_capture(path):
         if frame.error:
             continue
@@ -49,10 +49,10 @@ def test_variant_map_road_placement_works():
     This test pins both: a settlement+road sequence on a variant
     map must apply without error.
     """
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     positions = [
@@ -142,13 +142,13 @@ def test_robber_move_works_on_variant_shape():
     state.board.robber_coordinate = that cube — needs to land on a
     coord that actually exists in the variant CatanMap's tiles dict.
     """
-    from cataanbot.colonist_diff import events_from_diff
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_diff import events_from_diff
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
-    from cataanbot.events import RobberMoveEvent
-    from cataanbot.live import apply_event
-    from cataanbot.live_game import LiveGame
+    from catanbot.events import RobberMoveEvent
+    from catanbot.live import apply_event
+    from catanbot.live_game import LiveGame
 
     positions = [(0, 0), (1, -1), (-1, 1),
                  (1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -227,11 +227,11 @@ def test_recommender_works_on_variant_shape():
 
     Without working geometry this would crash or return empty.
     """
-    from cataanbot.advisor import score_opening_nodes
-    from cataanbot.colonist_map import (
+    from catanbot.advisor import score_opening_nodes
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
 
     positions = [
         (0, 0), (1, -1), (-1, 1),
@@ -316,10 +316,10 @@ def test_live_game_boots_on_variant_shape():
     captures land — but if the flower works, the parser is generic
     over shape and the recommender's geometry math has the right
     inputs."""
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
 
     positions = [
         (0, 0), (1, -1), (-1, 1),
@@ -405,7 +405,7 @@ def test_live_game_boots_on_variant_shape():
 def test_feed_game_start_boots_everything():
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     game = LiveGame()
     assert not game.started
 
@@ -432,7 +432,7 @@ def test_feed_midgame_capture_builds_and_rolls_apply():
     pipeline regresses, we start seeing ``error`` status."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
 
@@ -475,8 +475,8 @@ def test_dev_card_buys_emit_for_opponents_only():
     must not fire a second time."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.events import DevCardBuyEvent
-    from cataanbot.live_game import LiveGame
+    from catanbot.events import DevCardBuyEvent
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -507,7 +507,7 @@ def test_second_settlement_credits_opponent_starting_resources():
     not zeros."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     # Replay only the early capture — its tail covers the 2nd-settlement
@@ -553,8 +553,8 @@ def test_self_player_hand_syncs_from_ws_cards():
     says — no inference, no drift."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.colonist_proto import load_capture
-    from cataanbot.live_game import LiveGame
+    from catanbot.colonist_proto import load_capture
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -615,10 +615,10 @@ def test_advisor_snapshot_surfaces_opp_hand_breakdown():
     """
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -662,11 +662,11 @@ def test_advisor_snapshot_dev_cards_e2e_from_colonist_diffs():
     """
     if not CAPTURE_EARLY.exists():
         pytest.skip("capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.colonist_diff import events_from_diff
-    from cataanbot.live import ColorMap, apply_event
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.colonist_diff import events_from_diff
+    from catanbot.live import ColorMap, apply_event
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     # Boot a live game from the early capture so session + map are real.
     game = LiveGame()
@@ -724,10 +724,10 @@ def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
     unknown-steal heuristic committed to the wrong resource."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     # Replay both captures — self_color_id only latches after colonist
@@ -786,10 +786,10 @@ def test_advisor_snapshot_clips_inferred_to_physical_supply():
     as ``unknown`` rather than displaying an impossible count."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -845,10 +845,10 @@ def test_advisor_snapshot_surfaces_incoming_trade_verdict():
     must not surface — we don't accept-or-decline our own proposals."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -911,10 +911,10 @@ def test_feed_postmortem_tracks_and_clears_trade_offer():
     `pending_trade_offer` and drop it on the next dice roll. This gates
     the overlay's accept/decline panel — a stale offer after the turn
     advanced is worse than no panel at all."""
-    from cataanbot.bridge import _feed_postmortem
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _feed_postmortem
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     def _offer_payload(offerer: str, give_alt: str, want_alt: str):
         return {
@@ -971,10 +971,10 @@ def test_feed_postmortem_triggers_robber_on_self_knight():
     their own tile."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _feed_postmortem
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _feed_postmortem
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -1040,8 +1040,8 @@ def test_compute_robber_snapshot_marks_suggested_victim():
     (steal EV), VP pressure boosts near-winners, pips break ties."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_robber_snapshot
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_robber_snapshot
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -1070,8 +1070,8 @@ def test_compute_knight_hint_none_when_no_knight():
     hide the panel entirely."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_knight_hint
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_knight_hint
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     # Midgame capture is needed for self_color_id to latch (setup-only
@@ -1098,8 +1098,8 @@ def test_compute_knight_hint_play_when_robber_blocks_self():
     play, with reason mentioning the block."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_knight_hint
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_knight_hint
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -1135,7 +1135,7 @@ def test_compute_discard_plan_preserves_city_over_lesser_builds():
     """With 10 cards including 2+ WHEAT and 3+ ORE, we must drop 5.
     The planner should hold the city cost (2W 3O = 5 cards) and dump
     5 non-reserved cards (SHEEP first, then WOOD/BRICK)."""
-    from cataanbot.bridge import _compute_discard_plan
+    from catanbot.bridge import _compute_discard_plan
     hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 3, "WHEAT": 2, "ORE": 3}
     drops, preserve = _compute_discard_plan(hand, 5)
     assert preserve == "city"
@@ -1149,7 +1149,7 @@ def test_compute_discard_plan_preserves_city_over_lesser_builds():
 def test_compute_discard_plan_falls_back_when_no_build_affordable():
     """A pure-sheep hand can't preserve any build; drops all from SHEEP
     without claiming a preserve rationale."""
-    from cataanbot.bridge import _compute_discard_plan
+    from catanbot.bridge import _compute_discard_plan
     hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 10, "WHEAT": 0, "ORE": 0}
     drops, preserve = _compute_discard_plan(hand, 5)
     assert preserve is None
@@ -1160,7 +1160,7 @@ def test_compute_discard_plan_breaks_reserve_when_no_slack():
     """When non-reserved cards are insufficient to reach the discard
     target, the planner dips into the preserved build — and drops the
     preserve rationale since we can't hold it together."""
-    from cataanbot.bridge import _compute_discard_plan
+    from catanbot.bridge import _compute_discard_plan
     # 8 cards. Best preserve: settlement (1W+1B+1S+1Wh = 4). Need to
     # drop 4, so 4 remain. SHEEP has 1 non-reserved. All other non-
     # reserved are 0. We have to dip in.
@@ -1179,14 +1179,14 @@ def test_compute_discard_plan_breaks_reserve_when_no_slack():
 
 def test_compute_discard_hint_bails_under_limit():
     """7-card hand doesn't trigger discard on a 7-roll; hint is None."""
-    from cataanbot.bridge import _compute_discard_hint
+    from catanbot.bridge import _compute_discard_hint
     hand = {"WOOD": 2, "BRICK": 2, "SHEEP": 1, "WHEAT": 1, "ORE": 1}
     assert _compute_discard_hint(hand, 7) is None
 
 
 def test_compute_discard_hint_returns_plan_over_limit():
     """10-card hand → must drop 5; hint surfaces drops + rationale."""
-    from cataanbot.bridge import _compute_discard_hint
+    from catanbot.bridge import _compute_discard_hint
     hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 3, "WHEAT": 2, "ORE": 3}
     hint = _compute_discard_hint(hand, 10)
     assert hint is not None
@@ -1196,7 +1196,7 @@ def test_compute_discard_hint_returns_plan_over_limit():
 
 
 def test_compute_leader_threat_bails_when_nobody_leads():
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {"opps": [{"username": "A", "vp": 3}, {"username": "B", "vp": 2}],
             "self": {"vp": 4}}
     assert _compute_leader_threat(snap) is None
@@ -1204,7 +1204,7 @@ def test_compute_leader_threat_bails_when_nobody_leads():
 
 def test_compute_leader_threat_fires_at_mid_late():
     """A 6 VP opp should trigger a mid-level warning."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {"opps": [{"username": "A", "vp": 6, "color": "RED"}],
             "self": {"vp": 4}}
     t = _compute_leader_threat(snap)
@@ -1218,7 +1218,7 @@ def test_compute_leader_threat_fires_at_mid_late():
 def test_compute_leader_threat_close_level_at_8_vp():
     """At 8 VP (close_to_win for target=10), level escalates to
     ``close``. Messaging should call out "one build from winning"."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {"opps": [{"username": "X", "vp": 8, "color": "BLUE"}],
             "self": {"vp": 5}}
     t = _compute_leader_threat(snap)
@@ -1228,7 +1228,7 @@ def test_compute_leader_threat_close_level_at_8_vp():
 
 
 def test_compute_leader_threat_win_level_at_10_vp():
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {"opps": [{"username": "X", "vp": 10, "color": "BLUE"}],
             "self": {"vp": 5}}
     t = _compute_leader_threat(snap)
@@ -1241,7 +1241,7 @@ def test_leader_threat_vector_flags_vp_build():
     'vp_build' in threat_vector AND include 'can city' in the
     message. This is the qualitative jump that makes the banner
     actionable — Noah can robber ore instead of just reading VP."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {
         "opps": [{
             "username": "X", "vp": 8, "color": "BLUE",
@@ -1264,7 +1264,7 @@ def test_leader_threat_imminent_when_settle_plus_dev_stash_closes_gap():
     flagged as VP-risk (+1) hits target=10 next turn. The two-source
     win path is the strictest case the imminent banner covers — no
     single build closes it, but the visible+hidden combo does."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {
         "opps": [{
             "username": "X", "vp": 8, "color": "BLUE",
@@ -1283,7 +1283,7 @@ def test_leader_threat_close_not_imminent_when_no_vp_path():
     """Leader at 8 VP with no affordable VP-build and no dev stash
     can't realistically close to 10 next turn — stays at 'close'
     (still loud, but not the imminent alarm)."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {
         "opps": [{
             "username": "X", "vp": 8, "color": "BLUE",
@@ -1327,7 +1327,7 @@ def test_leader_threat_imminent_when_la_one_play_away():
     checked. 8 VP leader with 2 played knights + 1 in hand → playing
     that knight makes 3, the LA threshold (no opp at 3 yet), +2 VP →
     10. Banner should fire 'imminent' even without a city in hand."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {
         "opps": [{
             "username": "X", "vp": 8, "color": "BLUE",
@@ -1357,7 +1357,7 @@ def test_leader_threat_imminent_when_la_one_play_away():
 def test_leader_threat_imminent_when_lr_one_road_away():
     """Leader at 8 VP, 4 roads in chain, no opp threatening the
     title → +1 road claims LR (+2 VP) → 10. Same imminent path."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {
         "opps": [{
             "username": "X", "vp": 8, "color": "BLUE",
@@ -1390,7 +1390,7 @@ def test_leader_threat_vector_bumps_mid_to_close_on_vp_build():
     The 2-VP gap they'd close with city puts them at 8 next turn, same
     as the normal close threshold. This is exactly when Noah needs
     the urgent-banner styling to kick in."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     snap = {
         "opps": [{
             "username": "X", "vp": 7, "color": "BLUE",
@@ -1408,7 +1408,7 @@ def test_leader_threat_vector_flags_dev_vp_only_when_close():
     """Dev cards at mid-game (6 VP) don't warrant dev_vp flagging —
     they're probably knights. Same dev cards at close (8 VP) = hidden
     VP risk worth highlighting."""
-    from cataanbot.bridge import _compute_leader_threat
+    from catanbot.bridge import _compute_leader_threat
     # 6 VP leader with dev card: vector should NOT include dev_vp.
     snap_mid = {
         "opps": [{
@@ -1437,7 +1437,7 @@ def test_win_proximity_silent_below_threshold():
     """Self at 7 VP (one below close_to_win=8 in default 10-VP config)
     should not produce a banner. The banner is decision-shifting — it
     fires when self hits close-out range and stays dark otherwise."""
-    from cataanbot.bridge import _compute_win_proximity
+    from catanbot.bridge import _compute_win_proximity
     snap = {"self": {"vp": 7, "afford": ["settlement", "road"]}}
     assert _compute_win_proximity(snap) is None
 
@@ -1446,7 +1446,7 @@ def test_win_proximity_close_level_at_8_vp():
     """At 8 VP (close_to_win for target=10) the banner fires at level
     ``close`` with gap_to_win=2. If a VP build is affordable, message
     calls it out so Noah spends on the VP lane rather than dev/road."""
-    from cataanbot.bridge import _compute_win_proximity
+    from catanbot.bridge import _compute_win_proximity
     snap = {"self": {"vp": 8, "afford": ["city", "road"]}}
     w = _compute_win_proximity(snap)
     assert w is not None
@@ -1461,7 +1461,7 @@ def test_win_proximity_close_1_level_at_9_vp():
     """At 9 VP the banner escalates to ``close-1`` — exactly one VP
     from winning. Any settle/city affordable here closes the game this
     turn; message should mirror that urgency."""
-    from cataanbot.bridge import _compute_win_proximity
+    from catanbot.bridge import _compute_win_proximity
     snap = {"self": {"vp": 9, "afford": ["settlement"]}}
     w = _compute_win_proximity(snap)
     assert w is not None
@@ -1474,7 +1474,7 @@ def test_win_proximity_close_1_level_at_9_vp():
 def test_win_proximity_win_level_at_10_vp():
     """Self at 10 VP with target=10 — game is effectively over.
     Banner flips to ``win`` and stops framing it as a push."""
-    from cataanbot.bridge import _compute_win_proximity
+    from catanbot.bridge import _compute_win_proximity
     snap = {"self": {"vp": 10, "afford": []}}
     w = _compute_win_proximity(snap)
     assert w is not None
@@ -1488,7 +1488,7 @@ def test_win_proximity_dev_card_hint_only_when_no_builds_at_close_1():
     path. Held dev cards at close-1 might be hidden VPs (the reason
     to surface them), but when a settle/city is already affordable
     the build line is more actionable."""
-    from cataanbot.bridge import _compute_win_proximity
+    from catanbot.bridge import _compute_win_proximity
     # No builds, dev in hand → message mentions dev.
     snap_dev = {"self": {"vp": 9, "afford": []}}
     w_dev = _compute_win_proximity(snap_dev, dev_cards_held=2)
@@ -1508,7 +1508,7 @@ def test_win_proximity_filters_non_vp_builds_from_afford():
     """Self's ``afford`` can contain road/dev_card — neither flips VP
     same-turn. ``vp_builds_affordable`` must filter to only the builds
     that actually move VP, so the banner message doesn't mislead."""
-    from cataanbot.bridge import _compute_win_proximity
+    from catanbot.bridge import _compute_win_proximity
     snap = {"self": {"vp": 8, "afford": ["road", "dev card"]}}
     w = _compute_win_proximity(snap)
     assert w is not None
@@ -1533,7 +1533,7 @@ def _winning_move_fixture():
     """Common setup: replay the live captures to get a real game/board/
     state, then hand the test the color + indices it needs to script VP
     and player_state values synthetically."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -1558,7 +1558,7 @@ def test_winning_move_silent_when_gap_too_wide():
     winning-move is specifically for the 1–2 VP killshot."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, *_ = _winning_move_fixture()
     # Gap=3 (VP=7, target=10 default) — no single action wins.
     snap = {"self": {"vp": 7}}
@@ -1572,7 +1572,7 @@ def test_winning_move_silent_when_already_won():
     self's turn are a separate path covered below."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, *_ = _winning_move_fixture()
     snap = {"self": {"vp": 10}, "dev_cards_vp_held": 0, "my_turn": True}
     hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 1}
@@ -1587,7 +1587,7 @@ def test_winning_move_fires_when_vp_cards_already_close_the_gap():
     you to 10'."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, *_ = _winning_move_fixture()
     # Visible 8 + 2 held VP cards = 10 total. The vp_total includes
     # held cards already, so self.vp = 10 here.
@@ -1606,7 +1606,7 @@ def test_winning_move_silent_with_vp_cards_off_turn():
     the banner should stay quiet (claiming requires being on turn)."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, *_ = _winning_move_fixture()
     snap = {"self": {"vp": 10}, "dev_cards_vp_held": 2, "my_turn": False}
     hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
@@ -1619,7 +1619,7 @@ def test_winning_move_fires_settle_at_9_vp():
     (the build is unconditional)."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, *_ = _winning_move_fixture()
     snap = {"self": {"vp": 9}}
     hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 0}
@@ -1650,7 +1650,7 @@ def test_winning_move_fires_city_at_9_vp():
     path (distinct from settle's buildable_node_ids path)."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     from catanatron import Color
     game, self_color, *_ = _winning_move_fixture()
     board = game.tracker.game.state.board
@@ -1678,7 +1678,7 @@ def test_winning_move_fires_road_to_lr_at_8_vp():
     the chain). Banner uses the hedge framing."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
     ps = game.tracker.game.state.player_state
     # Script LR state: self at 4 segs (→ 5 after build, qualifies),
@@ -1703,7 +1703,7 @@ def test_winning_move_silent_when_already_holds_lr():
     math looks superficially like a +2 path."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
     ps = game.tracker.game.state.player_state
     for i in (my_idx, *opp_indices):
@@ -1723,7 +1723,7 @@ def test_winning_move_fires_knight_to_la_at_8_vp():
     → knight→LA closes +2 VP."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
     ps = game.tracker.game.state.player_state
     # Self at 2 played knights → 3 after play (qualifies). Opps at 1.
@@ -1750,7 +1750,7 @@ def test_winning_move_silent_when_knight_already_played_this_turn():
     even if every other gate passes."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_winning_move
+    from catanbot.bridge import _compute_winning_move
     game, self_color, my_enum, my_idx, opp_indices = _winning_move_fixture()
     ps = game.tracker.game.state.player_state
     for i in (my_idx, *opp_indices):
@@ -1771,7 +1771,7 @@ def test_closest_missing_build_points_at_smallest_gap():
     1 sheep away (gap=1), road is already affordable (gap=0, skipped),
     city is 2 WHEAT+3 ORE = 5 away. Closest pick should be settlement
     with missing={SHEEP:1}."""
-    from cataanbot.bridge import _closest_missing_build
+    from catanbot.bridge import _closest_missing_build
     hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 0, "WHEAT": 1, "ORE": 0}
     n = _closest_missing_build(hand)
     assert n is not None
@@ -1784,7 +1784,7 @@ def test_closest_missing_build_vp_tiebreak_prefers_city():
     """When both city and settlement are 1 card away, city wins on
     the VP-impact tie-break — upgrading a settle to a city is +1 VP
     for less board-space cost, so the HUD should point there first."""
-    from cataanbot.bridge import _closest_missing_build
+    from catanbot.bridge import _closest_missing_build
     # hand covers everything except ORE (need 3 for city), but also
     # missing BRICK for settle. Set it up so both gaps = 1.
     hand = {"WOOD": 1, "BRICK": 0, "SHEEP": 1,
@@ -1802,7 +1802,7 @@ def test_closest_missing_build_returns_none_when_all_affordable():
     """If every build can be paid for from ``hand``, the helper has
     nothing to point at — must return None so the HUD renders the
     normal affordable list instead of a misleading gap."""
-    from cataanbot.bridge import _closest_missing_build
+    from catanbot.bridge import _closest_missing_build
     hand = {"WOOD": 2, "BRICK": 2, "SHEEP": 2, "WHEAT": 3, "ORE": 3}
     assert _closest_missing_build(hand) is None
 
@@ -1810,7 +1810,7 @@ def test_closest_missing_build_returns_none_when_all_affordable():
 def test_closest_missing_build_handles_empty_hand():
     """Empty hand — cheapest build is road (gap=2) vs settle (gap=4)
     vs dev (gap=3) vs city (gap=5). Road wins."""
-    from cataanbot.bridge import _closest_missing_build
+    from catanbot.bridge import _closest_missing_build
     hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
     n = _closest_missing_build(hand)
     assert n is not None
@@ -1824,7 +1824,7 @@ def test_dev_stash_risk_requires_both_count_and_vp_sum():
     VP_TARGET-1. Both have to be true — 1 dev at 9 VP is not a stash;
     4 devs at 3 VP aren't close enough to matter. 2 devs at 7 VP hits
     both gates simultaneously, so it's the canonical flagged state."""
-    from cataanbot.bridge import _is_dev_stash_risk
+    from catanbot.bridge import _is_dev_stash_risk
     # Flagged: 2 devs at 7 VP (sum=9 >= 9 = target-1).
     assert _is_dev_stash_risk(vp=7, dev_cards=2) is True
     # Flagged: 3 devs at 6 VP (sum=9).
@@ -1845,7 +1845,7 @@ def test_dev_stash_risk_scales_with_vp_target():
     holding 2 devs (sum=9) would have fired in a 10 VP game but must
     stay silent in a 12 VP game — they're still 3 VP from winning even
     under the worst-case all-VP flip."""
-    from cataanbot.bridge import _is_dev_stash_risk
+    from catanbot.bridge import _is_dev_stash_risk
     # 10 VP: fires.
     assert _is_dev_stash_risk(vp=7, dev_cards=2, vp_target=10) is True
     # 12 VP: silent. Sum=9 < 11.
@@ -1861,8 +1861,8 @@ def test_robber_on_me_expected_per_roll_matches_pips():
     doubling wrapper being removed)."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _compute_robber_on_me
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_robber_on_me
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -1908,7 +1908,7 @@ def test_robber_on_me_expected_per_roll_matches_pips():
         result["pips_blocked"] / 36.0, 3)
     # With a single settlement (not city), pips_blocked should equal
     # the raw PIP_DOTS for the tile number — no doubling.
-    from cataanbot.advisor import PIP_DOTS_BY_NUMBER
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER
     tile_number = board.map.land_tiles[target_coord].number
     assert result["pips_blocked"] == PIP_DOTS_BY_NUMBER.get(
         tile_number, 0)
@@ -1920,10 +1920,10 @@ def test_robber_on_me_expected_lost_total_scales_with_rolls():
     snapshot, so the unit check is against a realistic state dict."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -1981,10 +1981,10 @@ def test_advisor_snapshot_flags_opp_dev_stash_risk():
     a flagged state and assert the field on the snap mirrors it."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -2029,8 +2029,8 @@ def test_compute_monopoly_hint_picks_resource_with_largest_total():
     with the highest inferred total across opps."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_monopoly_hint
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_monopoly_hint
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -2064,7 +2064,7 @@ def test_compute_monopoly_hint_picks_resource_with_largest_total():
 
 def test_compute_yop_hint_suggests_pair_to_unlock_build():
     """YoP should identify a 2-card pickup that unlocks a build."""
-    from cataanbot.bridge import _compute_yop_hint
+    from catanbot.bridge import _compute_yop_hint
 
     class _FakeGame:
         class _Tracker:
@@ -2101,7 +2101,7 @@ def test_compute_yop_hint_holds_when_no_unlock_in_reach():
     behavior returned None, which meant the overlay silently hid the
     card; Noah wanted "when to play" coverage, so the hint now stays
     visible with should_play=False."""
-    from cataanbot.bridge import _compute_yop_hint
+    from catanbot.bridge import _compute_yop_hint
 
     class _FakeGame:
         class _Tracker:
@@ -2139,7 +2139,7 @@ def test_compute_yop_hint_flags_bank_out_of_resource():
     """If the bank is empty of one of the chosen pair resources, YoP
     can't actually grant it — flip should_play to False and surface a
     bank-short reason."""
-    from cataanbot.bridge import _compute_yop_hint
+    from catanbot.bridge import _compute_yop_hint
 
     class _FakeGame:
         class _Tracker:
@@ -2173,8 +2173,8 @@ def test_compute_monopoly_hint_attaches_verdict_and_top_holder():
     the chosen resource."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_monopoly_hint
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_monopoly_hint
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -2213,8 +2213,8 @@ def test_compute_rb_hint_fires_when_longest_road_in_reach():
     should_play=secures; card + opp ahead → should_play=catches; card
     + no swing → should_play=False. Uses a fake game with a monkey-
     patched _pieces_for_color so we don't need a live capture."""
-    import cataanbot.bridge_hints as bridge
-    from cataanbot.bridge import _compute_rb_hint
+    import catanbot.bridge_hints as bridge
+    from catanbot.bridge import _compute_rb_hint
     from catanatron import Color
 
     class _FakeGame:
@@ -2317,7 +2317,7 @@ def test_suggest_rb_placement_returns_edges():
     and that the chosen first edge starts at one of RED's network nodes.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _suggest_rb_placement
+    from catanbot.bridge import _suggest_rb_placement
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -2349,7 +2349,7 @@ def test_suggest_rb_placement_prefers_single_edge_unlock():
     target has a higher raw opening score.
     """
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _suggest_rb_placement
+    from catanbot.bridge import _suggest_rb_placement
 
     g = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -2399,8 +2399,8 @@ def test_reconnect_replays_pre_existing_buildings_into_tracker():
         pytest.skip("live captures not present")
     from copy import deepcopy
 
-    from cataanbot.colonist_proto import load_capture
-    from cataanbot.live_game import LiveGame
+    from catanbot.colonist_proto import load_capture
+    from catanbot.live_game import LiveGame
 
     # Drive the original game as a reference.
     ref_game = LiveGame()
@@ -2488,8 +2488,8 @@ def test_paid_builds_debit_costs_and_setup_is_free():
     settlements/cities/roads should debit the standard build cost."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.events import BuildEvent
-    from cataanbot.live_game import LiveGame
+    from catanbot.events import BuildEvent
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -2542,10 +2542,10 @@ def test_snapshot_exposes_piece_counts_on_self_and_opps():
     from catanatron's Px_*_AVAILABLE keys so they're authoritative."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -2588,10 +2588,10 @@ def test_snapshot_self_vp_breakdown_sums_to_total():
     to the displayed VP — confusing and worse than showing nothing."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -2634,8 +2634,8 @@ def test_compute_production_scales_settlements_and_cities():
     settlement rate (per-node production doubles). Guards against
     regressions where city multiplier goes missing or double-applies
     to settlements."""
-    from cataanbot.bridge import _compute_production
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _compute_production
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     tr = Tracker(seed=4242)
@@ -2677,10 +2677,10 @@ def test_snapshot_populates_per_opp_production():
     one opp, that row's per_roll must rise (2x settle delta)."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot, _compute_production
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot, _compute_production
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -2728,8 +2728,8 @@ def test_snapshot_populates_self_ports_after_build():
     """`_owned_ports` returns a list based on coastal buildings. With
     no building on a port node, the list is empty; after a build on a
     port terminal, the port's resource (or GENERIC) shows up."""
-    from cataanbot.bridge import _owned_ports
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _owned_ports
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     tr = Tracker(seed=4242)
@@ -2775,10 +2775,10 @@ def test_snapshot_exposes_opp_ports_after_capture():
     partner for X' needs their port set, not just mine."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -2810,10 +2810,10 @@ def test_snapshot_exposes_knights_played_on_self_and_opps():
     a major largest-army signal."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -2855,8 +2855,8 @@ def test_compute_dev_deck_remaining_tracks_draws():
     knights drops remaining to 22 and surfaces the drawn-count tally."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_dev_deck_remaining
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_dev_deck_remaining
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -2908,8 +2908,8 @@ def test_bank_supply_flags_low_resources():
     If every resource has plenty in the bank, low is empty."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_bank_supply
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_bank_supply
+    from catanbot.live_game import LiveGame
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -2946,8 +2946,8 @@ def test_largest_army_race_silent_early_and_alerts_at_2():
     at 3), and settles silent once the holder is 2+ ahead."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_largest_army_race
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_largest_army_race
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -3010,8 +3010,8 @@ def test_longest_road_race_silent_early_and_alerts_at_4():
     when both sides are within 1 of each other at 4+."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _compute_longest_road_race
-    from cataanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_longest_road_race
+    from catanbot.live_game import LiveGame
     from catanatron import Color
 
     game = LiveGame()
@@ -3078,10 +3078,10 @@ def test_robber_on_me_fires_when_robber_sits_on_self_tile():
     moves away (or lands on desert), the banner clears."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -3146,10 +3146,10 @@ def test_snapshot_populates_robber_targets_when_self_holds_knight():
     so Noah can eyeball the block before burning the card."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -3207,7 +3207,7 @@ def test_affordable_builds_covers_all_four_builds():
     """Unit on the bridge helper: every build with exactly its cost
     in-hand should surface. Order is city > settle > dev > road so the
     overlay tag reads worst-first when multiple are affordable."""
-    from cataanbot.bridge import _affordable_builds
+    from catanbot.bridge import _affordable_builds
 
     # Empty hand → no builds.
     assert _affordable_builds({}) == []
@@ -3232,7 +3232,7 @@ def test_affordable_builds_ignores_unknown_cards():
     tag could fire on a hand with 0 ore but 5 unknowns — that's a guess,
     not a warning. The helper gets unknown as a hint but must not bake
     it into the 'definitely affords' decision."""
-    from cataanbot.bridge import _affordable_builds
+    from catanbot.bridge import _affordable_builds
 
     # Hand has no ore, but 10 unknowns. City costs ore → must be absent.
     result = _affordable_builds({"WHEAT": 2, "ORE": 0}, unknown=10)
@@ -3247,7 +3247,7 @@ def test_one_short_vp_build_flags_city_deficit():
     """Prototypical threat: 2 wheat and 2 ore — 1 ore from a city.
     Must surface as city so Noah knows to withhold ORE in trades or
     target an ORE tile with the robber."""
-    from cataanbot.bridge import _one_short_vp_build
+    from catanbot.bridge import _one_short_vp_build
 
     hand = {"WHEAT": 2, "ORE": 2}
     result = _one_short_vp_build(hand, unknown=0, already_affordable=[])
@@ -3261,7 +3261,7 @@ def test_one_short_vp_build_skips_already_affordable():
     """If the opp can already city (can_afford lists it), there's no
     point flagging "1 short" on the same build — it'd double-count
     and clutter the row. The helper must respect already_affordable."""
-    from cataanbot.bridge import _one_short_vp_build
+    from catanbot.bridge import _one_short_vp_build
 
     # Hand that can both city AND be 1-short-of-settle (sort of).
     hand = {"WHEAT": 2, "ORE": 3, "WOOD": 1, "BRICK": 1, "SHEEP": 1}
@@ -3275,7 +3275,7 @@ def test_one_short_vp_build_skips_already_affordable():
 def test_one_short_vp_build_settlement_when_no_city_opening():
     """When the city path isn't close (0 ore) but settlement is 1 short
     (missing one of wood/brick/sheep/wheat), surface settlement."""
-    from cataanbot.bridge import _one_short_vp_build
+    from catanbot.bridge import _one_short_vp_build
 
     # 3 of 4 settlement resources present; missing SHEEP.
     hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "SHEEP": 0, "ORE": 0}
@@ -3289,7 +3289,7 @@ def test_one_short_vp_build_marks_uncertain_under_unknowns():
     """With 1+ unknown cards the opp could already have the missing
     resource — surface the threat but flag uncertainty so the HUD
     can hedge with a '?' and Noah doesn't over-correct off a hunch."""
-    from cataanbot.bridge import _one_short_vp_build
+    from catanbot.bridge import _one_short_vp_build
 
     hand = {"WHEAT": 2, "ORE": 2}
     r = _one_short_vp_build(hand, unknown=1, already_affordable=[])
@@ -3302,7 +3302,7 @@ def test_one_short_vp_build_skips_roads_and_dev():
     don't jump VP on their own (dev can be a VP card, but the public
     signal is muddled; road just gains longest-road potential which
     we surface separately). Scope to city + settlement."""
-    from cataanbot.bridge import _one_short_vp_build
+    from catanbot.bridge import _one_short_vp_build
 
     # 1 short of dev (have 2 of 3 ingredients) — must return None.
     r = _one_short_vp_build(
@@ -3322,10 +3322,10 @@ def test_snapshot_populates_can_afford_on_opps():
     a city's worth, the replay snapshot surfaces 'city' on that row."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -3377,8 +3377,8 @@ def test_compute_roll_yield_sums_settlements_and_cities():
     number, and assert the yield shows +1 of that resource. Upgrade to
     a city and it becomes +2. Moving the robber onto the tile shifts
     that yield from gained to blocked."""
-    from cataanbot.bridge import _compute_roll_yield
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _compute_roll_yield
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     tr = Tracker(seed=4242)
@@ -3438,8 +3438,8 @@ def test_compute_roll_yield_returns_none_on_7():
     """7-rolls don't produce. The helper bails and returns None so the
     overlay suppresses the yield line entirely on a 7 — the discard
     hint and robber-placement flow cover that case separately."""
-    from cataanbot.bridge import _compute_roll_yield
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _compute_roll_yield
+    from catanbot.tracker import Tracker
     tr = Tracker(seed=4242)
     assert _compute_roll_yield(_wrap_game(tr), "RED", 7) is None
 
@@ -3449,9 +3449,9 @@ def _feed_roll(st, total, player=None):
     it through _track_overlay_state the way the bridge would on a real
     WS frame. Keeps the roll_history tests focused on outcome, not on
     event-plumbing glue."""
-    from cataanbot.bridge import _track_overlay_state
-    from cataanbot.events import RollEvent
-    from cataanbot.live import DispatchResult
+    from catanbot.bridge import _track_overlay_state
+    from catanbot.events import RollEvent
+    from catanbot.live import DispatchResult
     # RollEvent takes d1+d2, and .total sums them. Split total into two
     # legal die faces so the event sums to what we want.
     d1 = min(6, max(1, total // 2))
@@ -3465,7 +3465,7 @@ def test_roll_history_accumulates_and_caps_at_ten():
     the buffer never grows past 10. The overlay strip uses this to show
     the last ~10 rolls; an unbounded list would leak memory over a long
     game and blow up the render."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     st: dict = {
         "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
         "last_roll": None, "roll_history": [],
@@ -3487,7 +3487,7 @@ def test_roll_histogram_tallies_every_roll_full_game():
     unbounded — it's the full-game distribution the overlay chart
     plots. Every RollEvent increments the correct bucket; 2..12 stay in
     range, the total matches total_rolls."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     st: dict = {
         "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
         "last_roll": None, "roll_history": [],
@@ -3516,7 +3516,7 @@ def test_eval_history_no_op_without_self_color():
     skips — `eval_history` stays empty, no exception. This is the
     pre-resource frame case the bridge enters between GameStart and
     the first resourceCards latch."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     st: dict = {
         "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
         "last_roll": None, "roll_history": [],
@@ -3535,10 +3535,10 @@ def test_eval_history_populates_per_roll_after_self_latches():
     feed), monotonic `roll` indexes, finite eval values."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _track_overlay_state
-    from cataanbot.live import DispatchResult
-    from cataanbot.live_game import LiveGame
-    from cataanbot.events import RollEvent
+    from catanbot.bridge import _track_overlay_state
+    from catanbot.live import DispatchResult
+    from catanbot.live_game import LiveGame
+    from catanbot.events import RollEvent
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -3580,10 +3580,10 @@ def test_eval_history_caps_at_forty_entries():
     Mirrors the same ring-buffer policy as roll_history's cap of 10."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _track_overlay_state
-    from cataanbot.live import DispatchResult
-    from cataanbot.live_game import LiveGame
-    from cataanbot.events import RollEvent
+    from catanbot.bridge import _track_overlay_state
+    from catanbot.live import DispatchResult
+    from catanbot.live_game import LiveGame
+    from catanbot.events import RollEvent
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -3620,7 +3620,7 @@ def test_roll_history_marks_self_hits_against_own_buildings():
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
     from catanatron import Color
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -3685,7 +3685,7 @@ def test_roll_history_never_flags_seven_as_hit():
     blocked_you must always be False for 7s regardless of board layout.
     Also guards against accidentally calling _compute_roll_yield on a
     7 (which would spam the error log and poison the entry)."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     st: dict = {
         "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
         "last_roll": None, "roll_history": [],
@@ -3708,10 +3708,10 @@ def test_robber_on_me_includes_recent_block_count():
     denominator for "did the robber cost us on this roll")."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -3774,10 +3774,10 @@ def test_robber_on_me_block_counts_default_to_zero_without_history():
     tail so it doesn't render "0/0" noise."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -3819,7 +3819,7 @@ def test_roll_history_entries_carry_gained_and_blocked_totals():
     only tell us whether-hit, not how-many-cards."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -3848,10 +3848,10 @@ def test_yield_summary_aggregates_across_window():
     behind/on-pace verdict is the overlay's concern, not the snap's."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -3892,7 +3892,7 @@ def test_total_rolls_is_monotonic_across_buffer_cap():
     """total_rolls keeps counting past the 10-entry roll_history cap —
     that's the whole point of storing it separately. After 15 rolls,
     history has 10 entries but total_rolls reports 15."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     st: dict = {
         "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
         "last_roll": None, "roll_history": [], "total_rolls": 0,
@@ -3912,10 +3912,10 @@ def test_yield_summary_suppressed_when_no_production():
     to measure against."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -3954,10 +3954,10 @@ def test_snapshot_exposes_total_rolls_field():
     running counter. Defaults to 0 on a fresh session."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -3986,11 +3986,11 @@ def test_snapshot_surfaces_vp_target_and_discard_limit():
     fields to current config.get_* values."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot import config
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot import config
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4016,10 +4016,10 @@ def test_yield_summary_none_on_empty_history():
     overlay's `if (ys && ys.window > 0)` guard depends on this."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4042,10 +4042,10 @@ def test_snapshot_exposes_roll_history_as_list():
     rendering without any test telling us why)."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4069,9 +4069,9 @@ def _feed_robber_move(st, player="someone", tile_label="ore tile"):
     """Push a RobberMoveEvent through _track_overlay_state. Mirrors
     _feed_roll but for robber moves so persist-counter tests can
     exercise the same dispatch path the bridge uses."""
-    from cataanbot.bridge import _track_overlay_state
-    from cataanbot.events import RobberMoveEvent
-    from cataanbot.live import DispatchResult
+    from catanbot.bridge import _track_overlay_state
+    from catanbot.events import RobberMoveEvent
+    from catanbot.live import DispatchResult
     ev = RobberMoveEvent(player=player, tile_label=tile_label, prob=None)
     _track_overlay_state(st, [DispatchResult(event=ev, status="applied")])
 
@@ -4081,7 +4081,7 @@ def test_robber_move_anchors_persist_counter_at_current_roll_count():
     snapshot the current total_rolls value. That's what powers the
     "placed N rolls ago" banner — the snap reads total_rolls -
     robber_moved_at_rolls at render time."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     st: dict = {
         "seq": 0, "game": LiveGame(), "ws_count": 0, "log_count": 0,
         "last_roll": None, "roll_history": [], "total_rolls": 0,
@@ -4108,10 +4108,10 @@ def test_robber_on_me_reports_rolls_since_placed_when_anchored():
     banner can say "placed X rolls ago"."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -4153,10 +4153,10 @@ def test_robber_on_me_rolls_since_placed_zero_on_fresh_move():
     even if some out-of-order bookkeeping ever inverts them."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -4197,10 +4197,10 @@ def test_robber_on_me_omits_rolls_since_placed_before_first_move():
     line that would imply the robber was just placed."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -4241,10 +4241,10 @@ def test_last_roll_includes_opponent_yields_on_productive_roll():
     hits an opp but not self so the shape is unambiguous."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -4302,10 +4302,10 @@ def test_last_roll_opponent_yields_omits_zero_yield_opps():
     the point of the "they:" tail which is to surface who was fed."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     game = LiveGame()
@@ -4344,10 +4344,10 @@ def test_last_roll_opponent_yields_absent_on_seven():
     on 7s (discard logic handles that case separately)."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
 
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -4379,10 +4379,10 @@ def test_production_stall_surfaces_after_three_dry_non_seven_rolls():
     not treated as a "productive roll" breaking the streak."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -4424,10 +4424,10 @@ def test_production_stall_resets_on_any_recent_gain():
     banner. Guards the "last gain anchors the counter" semantic."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -4463,10 +4463,10 @@ def test_production_stall_suppressed_without_production():
     uncluttered."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -4510,10 +4510,10 @@ def test_monopoly_risk_flags_largest_stack_when_opp_has_devs():
     that's the biggest single-play loss."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -4558,10 +4558,10 @@ def test_monopoly_risk_suppressed_when_no_opp_has_devs():
     to it for the real case."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -4594,10 +4594,10 @@ def test_monopoly_risk_threshold_is_five():
     makes a test-breakage explicit instead of silent drift."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     from catanatron import Color
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
@@ -4635,10 +4635,10 @@ def test_sevens_hot_fires_on_three_of_ten_sevens():
     desensitize."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4672,10 +4672,10 @@ def test_sevens_hot_silent_below_threshold():
     Avoids crying wolf on normal dice clustering."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4706,10 +4706,10 @@ def test_sevens_hot_requires_minimum_window():
     to be 7s."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4738,10 +4738,10 @@ def test_hot_numbers_fires_on_over_rolled_productive_number():
     / consider robber)."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4780,10 +4780,10 @@ def test_hot_numbers_silent_on_expected_distribution():
     would show constantly and stop meaning anything."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4812,10 +4812,10 @@ def test_hot_numbers_caps_at_two_entries():
     once) from turning the HUD into a wall of text."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4855,10 +4855,10 @@ def test_hot_numbers_requires_minimum_window():
     sevens_hot (>=4 rolls)."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -4886,10 +4886,10 @@ def test_game_progress_none_during_setup():
     setup decisions dominate the HUD."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     # Boot but don't feed further — board still in opening phase.
     for payload in _iter_payloads(CAPTURE_EARLY):
@@ -4915,10 +4915,10 @@ def test_game_progress_computes_round_and_early_phase():
     in the opening-expansion window."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     # Feed both captures so setup_phase is complete — game_progress
     # only populates once the opening is done.
@@ -4950,10 +4950,10 @@ def test_game_progress_phase_transitions():
     doesn't silently drift the HUD label."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -4981,10 +4981,10 @@ def test_card_delta_surfaces_positive_swing():
     the opp flips affordability."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -5024,10 +5024,10 @@ def test_card_delta_none_without_history():
     the honest signal."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -5054,10 +5054,10 @@ def test_card_hist_ring_buffer_caps_at_five():
     a tight enough window."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot.bridge import _track_overlay_state
-    from cataanbot.live import DispatchResult
-    from cataanbot.live_game import LiveGame
-    from cataanbot.events import RollEvent
+    from catanbot.bridge import _track_overlay_state
+    from catanbot.live import DispatchResult
+    from catanbot.live_game import LiveGame
+    from catanbot.events import RollEvent
     game = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         game.feed(payload)
@@ -5091,10 +5091,10 @@ def test_standings_identify_opp_leader_and_gap():
     at 7 · you at 4" header on the HUD."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -5127,10 +5127,10 @@ def test_standings_self_leader_zero_gap():
     'X leading · you at N' messaging."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -5177,10 +5177,10 @@ def test_standings_ignores_pre_threshold_vp_noise():
     it silently."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
-    from cataanbot.bridge import _build_advisor_snapshot
-    from cataanbot.live import ColorMap
-    from cataanbot.live_game import LiveGame
-    from cataanbot.tracker import Tracker
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
     game = LiveGame()
     for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
         for payload in _iter_payloads(path):
@@ -5222,7 +5222,7 @@ def test_compute_game_plan_returns_none_during_setup():
     mid-setup and the game plan is owned by opening-pick recs, not
     this banner."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_game_plan
+    from catanbot.bridge import _compute_game_plan
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5238,7 +5238,7 @@ def test_compute_game_plan_proposes_settle_path_mid_game():
     surface a settle goal within 2 hops, return sensible tile labels,
     and compose a summary string."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_game_plan
+    from catanbot.bridge import _compute_game_plan
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5271,7 +5271,7 @@ def test_compute_game_plan_surfaces_trade_fallback_when_short():
     of another, the plan should suggest a 4:1 (or cheaper) bank trade
     as a fallback bridge."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_game_plan
+    from catanbot.bridge import _compute_game_plan
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5303,7 +5303,7 @@ def test_strategic_options_surfaces_longest_road_push():
     """Self at 4 roads, nobody else close → a push-LR option should
     appear with +2VP swing and 1 piece needed."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_strategic_options
+    from catanbot.bridge import _compute_strategic_options
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5336,7 +5336,7 @@ def test_strategic_options_surfaces_lr_push_two_roads_out():
     player can plan ahead instead of only seeing the option on the
     victory lap."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_strategic_options
+    from catanbot.bridge import _compute_strategic_options
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5364,7 +5364,7 @@ def test_strategic_options_skips_lr_push_three_roads_out():
     """Past 2 roads away the LR push gets too speculative against
     other strategic options; should stay quiet to avoid noise."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_strategic_options
+    from catanbot.bridge import _compute_strategic_options
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5389,7 +5389,7 @@ def test_strategic_options_surfaces_largest_army_push():
     """Self with 1 played knight + 2 held (total 3, LA threshold) and
     nobody holding LA → push-LA option with +2VP."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_strategic_options
+    from catanbot.bridge import _compute_strategic_options
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5418,7 +5418,7 @@ def test_strategic_options_returns_none_when_nothing_actionable():
     """No LR, no LA threat, sparse hand → nothing to surface, returns
     None so the overlay hides the section."""
     from catanatron import Color, Game, RandomPlayer
-    from cataanbot.bridge import _compute_strategic_options
+    from catanbot.bridge import _compute_strategic_options
 
     cat = Game(
         [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
@@ -5435,8 +5435,8 @@ def test_apply_game_settings_picks_up_variant_targets():
     ``cardDiscardLimit: 10`` (the 14-VP variant Noah played) must drive
     config.set_vp_target / set_discard_limit so the heuristics scale to
     the right game mode."""
-    from cataanbot import config
-    from cataanbot.live_game import _apply_game_settings
+    from catanbot import config
+    from catanbot.live_game import _apply_game_settings
 
     saved_vp = config.get_vp_target()
     saved_dl = config.get_discard_limit()
@@ -5459,8 +5459,8 @@ def test_apply_game_settings_silent_on_missing_keys():
     """Old captures from before the auto-detect work may not carry
     ``gameSettings`` at all. Helper must no-op rather than raise so
     ws-replay still chews through legacy logs."""
-    from cataanbot import config
-    from cataanbot.live_game import _apply_game_settings
+    from catanbot import config
+    from catanbot.live_game import _apply_game_settings
 
     saved_vp = config.get_vp_target()
     saved_dl = config.get_discard_limit()
@@ -5489,8 +5489,8 @@ def test_game_start_capture_applies_standard_10_vp():
     must leave config at 10 / 7 after start_from_game_state runs."""
     if not CAPTURE_EARLY.exists():
         pytest.skip("live capture not present")
-    from cataanbot import config
-    from cataanbot.live_game import LiveGame
+    from catanbot import config
+    from catanbot.live_game import LiveGame
 
     saved_vp = config.get_vp_target()
     saved_dl = config.get_discard_limit()
@@ -5516,7 +5516,7 @@ def test_seven_prep_hint_levels_and_threshold():
     """Pre-roll spend-down warning fires at 9+ cards (DISCARD_LIMIT+2)
     and escalates to 'danger' at 10+ (DISCARD_LIMIT+3). Below 9, the
     hint is silent so the HUD doesn't nag at safe-zone hand sizes."""
-    from cataanbot.bridge import _compute_seven_prep_hint
+    from catanbot.bridge import _compute_seven_prep_hint
 
     assert _compute_seven_prep_hint({"WOOD": 7}, 7) is None
     assert _compute_seven_prep_hint({"WOOD": 8}, 8) is None
@@ -5539,9 +5539,9 @@ def test_track_overlay_routes_ws_trade_offer_into_pending():
     must populate `pending_trade_offer` the same way the DOM-log handler
     does. Without this hook the new WS parser emits the event but the
     HUD's incoming-trade banner stays empty."""
-    from cataanbot.bridge import _track_overlay_state
-    from cataanbot.events import TradeCommitEvent, TradeOfferEvent
-    from cataanbot.live import DispatchResult
+    from catanbot.bridge import _track_overlay_state
+    from catanbot.events import TradeCommitEvent, TradeOfferEvent
+    from catanbot.live import DispatchResult
     st = {"game": None, "pending_trade_offer": None}
     offer = TradeOfferEvent(
         player="Bob", give={"BRICK": 2}, want={"SHEEP": 1})
@@ -5571,7 +5571,7 @@ def test_feed_type4_with_no_game_state_is_silent_noop():
     bubble out of feed() puts the bot in a half-booted state and the
     bridge logs '[ws #N] decode error' instead of accepting the next
     real GameStart. Now a malformed type=4 is a silent no-op."""
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     g = LiveGame()
     # Each of these would have crashed pre-fix.
     g.feed({"type": 4})
@@ -5594,9 +5594,9 @@ def test_feed_isolates_failing_events_from_rest_of_frame():
     apply_event raising (e.g. tracker.road on an invalid placement)
     short-circuited the whole list-comp and silently dropped every
     subsequent event in the same diff."""
-    from cataanbot.live_game import LiveGame
-    from cataanbot.events import BuildEvent
-    from cataanbot.live import DispatchResult, ColorMap, apply_event
+    from catanbot.live_game import LiveGame
+    from catanbot.events import BuildEvent
+    from catanbot.live import DispatchResult, ColorMap, apply_event
     g = LiveGame()
     if not CAPTURE_EARLY.exists():
         pytest.skip("capture not present")
@@ -5616,7 +5616,7 @@ def test_feed_isolates_failing_events_from_rest_of_frame():
     good_settle = BuildEvent(
         player=known_user, piece="settlement", node_id=int(valid_node),
     )
-    import cataanbot.live_game as lg_mod
+    import catanbot.live_game as lg_mod
     original = lg_mod.events_from_frame_payload
     lg_mod.events_from_frame_payload = lambda sess, payload: [
         bad_road, good_settle,
@@ -5650,7 +5650,7 @@ def test_second_gamestart_with_different_shape_reboots_mapping():
     # see overwritten by the Twirl frame.
     if not CAPTURE_EARLY.exists():
         pytest.skip("classic capture not present")
-    from cataanbot.live_game import LiveGame
+    from catanbot.live_game import LiveGame
     g = LiveGame()
     for payload in _iter_payloads(CAPTURE_EARLY):
         if payload.get("type") == 4:
@@ -5686,9 +5686,9 @@ def test_twirl_full_game_replay_clean():
     """
     if not CAPTURE_TWIRL_WIN.exists():
         pytest.skip("twirl win capture not present")
-    from cataanbot import config
-    from cataanbot.events import BuildEvent, GameOverEvent
-    from cataanbot.live_game import LiveGame
+    from catanbot import config
+    from catanbot.events import BuildEvent, GameOverEvent
+    from catanbot.live_game import LiveGame
 
     # Twirl's gameSettings ship VP target 15 + discard limit 10. The
     # bridge applies those globally on GameStart, so save + restore
@@ -5737,9 +5737,9 @@ def test_knight_hint_fires_at_3_played_even_below_la_threat_vp():
     only fired once they hit largest_army_threat_vp (~7 of 10) — by
     which point they often had the title. The pattern came out of
     Noah's 2026-05-03 vs an opp loss (opp played 5 knights total)."""
-    from cataanbot.colonist_proto import load_capture
-    from cataanbot.live_game import LiveGame
-    from cataanbot.bridge import _compute_knight_hint
+    from catanbot.colonist_proto import load_capture
+    from catanbot.live_game import LiveGame
+    from catanbot.bridge import _compute_knight_hint
 
     if not CAPTURE_EARLY.exists():
         pytest.skip("classic capture not present")

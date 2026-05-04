@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, DevCardPlayEvent,
     DevCardSelfBuyTypedEvent, DiscardEvent,
     DisconnectEvent, GameOverEvent, InfoEvent, MonopolyStealEvent,
@@ -11,10 +11,10 @@ from cataanbot.events import (
     RollEvent, StealEvent, TradeCommitEvent, TradeOfferEvent,
     UnknownEvent, VPEvent,
 )
-from cataanbot.live import (
+from catanbot.live import (
     ColorMap, ColorMapError, apply_event,
 )
-from cataanbot.tracker import Tracker
+from catanbot.tracker import Tracker
 
 
 # ---------------------------------------------------------------------------

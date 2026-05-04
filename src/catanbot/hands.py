@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from cataanbot.tracker import Tracker
+    from catanbot.tracker import Tracker
 
 
 _RESOURCES_ORDER = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
@@ -56,7 +56,7 @@ def estimate_hands(tracker: "Tracker") -> dict[str, Any]:
       - `total_current`: sum of the current bucket
     """
     from catanatron.state import yield_resources, RESOURCES
-    from cataanbot.tracker import Tracker, DEFAULT_COLORS
+    from catanbot.tracker import Tracker, DEFAULT_COLORS
 
     replay = Tracker(seed=tracker.seed)
     state = replay.game.state

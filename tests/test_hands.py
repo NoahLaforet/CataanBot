@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from cataanbot.hands import estimate_hands, format_hands
-from cataanbot.tracker import Tracker
+from catanbot.hands import estimate_hands, format_hands
+from catanbot.tracker import Tracker
 
 
 @pytest.fixture

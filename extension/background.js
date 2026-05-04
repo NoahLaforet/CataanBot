@@ -16,7 +16,7 @@ chrome.runtime.onInstalled.addListener(() => {
     // Open the side panel on action-icon click. Chrome's side-panel
     // API requires this opt-in; without it the icon does nothing.
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-        .catch(err => console.warn('[cataanbot] sidePanel setup:', err));
+        .catch(err => console.warn('[catanbot] sidePanel setup:', err));
 });
 
 // Toolbar badge — shows "ON" in green when the active tab is on
@@ -36,13 +36,13 @@ function setColonistBadge(tabId, isColonist) {
             });
             chrome.action.setTitle({
                 tabId,
-                title: 'CataanBot active on this tab — click to open panel',
+                title: 'CatanBot active on this tab — click to open panel',
             });
         } else {
             chrome.action.setBadgeText({ tabId, text: '' });
             chrome.action.setTitle({
                 tabId,
-                title: 'CataanBot — open colonist.io to use',
+                title: 'CatanBot — open colonist.io to use',
             });
         }
     } catch (e) {

@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING
 
-from cataanbot.events import BuildEvent, Event, ProduceEvent, VPEvent
-from cataanbot.live import ColorMap
+from catanbot.events import BuildEvent, Event, ProduceEvent, VPEvent
+from catanbot.live import ColorMap
 
 if TYPE_CHECKING:
     from PIL.Image import Image  # noqa: F401
@@ -187,8 +187,8 @@ def build_hand_timeline(
     the source of truth so the timeline and the report's hand table
     can't drift apart.
     """
-    from cataanbot.hand_tracker import apply_event as _apply_hand
-    from cataanbot.hand_tracker import init_hands
+    from catanbot.hand_tracker import apply_event as _apply_hand
+    from catanbot.hand_tracker import init_hands
 
     if timestamps is None:
         timestamps = [None] * len(events)
@@ -419,7 +419,7 @@ def _render_step_chart(
     out_path: str | Path,
 ) -> Path:
     from PIL import Image, ImageDraw
-    from cataanbot.render import (
+    from catanbot.render import (
         PIECE_OUTLINE, PLAYER_COLORS, _load_font,
     )
 

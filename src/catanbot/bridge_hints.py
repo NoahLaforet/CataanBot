@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from cataanbot.bridge_economy import _pieces_for_color
-from cataanbot.bridge_robber import _compute_robber_snapshot
+from catanbot.bridge_economy import _pieces_for_color
+from catanbot.bridge_robber import _compute_robber_snapshot
 
 
 # Cost tables mirror the build_costs used elsewhere in the bot. Keys
@@ -96,7 +96,7 @@ def _compute_discard_hint(
     per-resource breakdown is trusted for the *shape* but the total is
     ``cards``; a drift between the two surfaces elsewhere already.
     """
-    from cataanbot.config import DISCARD_LIMIT
+    from catanbot.config import DISCARD_LIMIT
     if cards <= DISCARD_LIMIT:
         return None
     need = cards // 2
@@ -141,7 +141,7 @@ def _compute_seven_prep_hint(
     AFTER a 7 lands; this warning is meant to prevent the situation in
     the first place.
     """
-    from cataanbot.config import DISCARD_LIMIT
+    from catanbot.config import DISCARD_LIMIT
     if cards < DISCARD_LIMIT + 2:
         return None
     expected_discard = cards // 2
@@ -531,10 +531,10 @@ def _suggest_rb_placement(
     placement_reason}`` or None when self has no legal road build.
     """
     from catanatron import Color  # noqa: F401 — only for typing clarity
-    from cataanbot.advisor import (
+    from catanbot.advisor import (
         _build_node_neighbors, score_opening_nodes,
     )
-    from cataanbot.recommender import _tile_label
+    from catanbot.recommender import _tile_label
 
     board = game.state.board
     m = board.map
@@ -911,8 +911,8 @@ def _compute_game_plan(
     except Exception:  # noqa: BLE001
         pass
 
-    from cataanbot.advisor import _build_node_neighbors, player_ports
-    from cataanbot.recommender import (
+    from catanbot.advisor import _build_node_neighbors, player_ports
+    from catanbot.recommender import (
         _SETTLEMENT_COST, _CITY_COST, _ROAD_COST,
         _node_pip_production, _tile_label,
     )
@@ -1130,7 +1130,7 @@ def _plan_trade_fallback(
     if not missing:
         return None
     try:
-        from cataanbot.advisor import player_ports
+        from catanbot.advisor import player_ports
         ports = set(player_ports(cat_game, my_enum))
     except Exception:  # noqa: BLE001
         ports = set()
@@ -1370,7 +1370,7 @@ def _compute_knight_hint(
     m = board.map
     robber_tile = m.land_tiles.get(robber) if robber else None
     if robber_tile is not None and robber_tile.number:
-        from cataanbot.advisor import PIP_DOTS_BY_NUMBER
+        from catanbot.advisor import PIP_DOTS_BY_NUMBER
         robber_node_ids = set(robber_tile.nodes.values())
         for nid, (bcol, _bt) in board.buildings.items():
             if bcol != my_enum or int(nid) not in robber_node_ids:
@@ -1386,7 +1386,7 @@ def _compute_knight_hint(
     # Came out of Noah's 2026-05-03 loss vs an opp: opp played 5
     # knights total but the deny-LA hint never fired loudly enough
     # to push Noah's own knights into play.
-    from cataanbot.config import largest_army_threat_vp
+    from catanbot.config import largest_army_threat_vp
     la_threat_vp = largest_army_threat_vp()
     largest_army_threat = False
     for opp_color, opp_idx in state.color_to_index.items():

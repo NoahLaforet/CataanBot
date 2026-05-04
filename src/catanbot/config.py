@@ -8,8 +8,8 @@ single ``VP_TARGET`` + ``DISCARD_LIMIT`` pair.
 
 Initial values read from environment variables at module load:
 
-    CATAANBOT_VP_TARGET    — default 10
-    CATAANBOT_DISCARD_LIMIT — default 7 (discard-on-7 triggers at N+1)
+    CATANBOT_VP_TARGET    — default 10
+    CATANBOT_DISCARD_LIMIT — default 7 (discard-on-7 triggers at N+1)
 
 Values are also runtime-mutable through ``set_vp_target`` /
 ``set_discard_limit`` so the userscript drawer can switch the bridge
@@ -17,7 +17,7 @@ into a 14-VP game mid-session without restart. The module-level
 ``VP_TARGET`` / ``DISCARD_LIMIT`` attributes always reflect the live
 state via ``__getattr__`` — callers reading ``config.VP_TARGET``
 inside a function get a fresh value every time. Top-of-module
-``from cataanbot.config import VP_TARGET`` bindings, however, freeze
+``from catanbot.config import VP_TARGET`` bindings, however, freeze
 the value at import time and will NOT see updates; those callers were
 migrated to lazy reads (see eval._discard_limit, report._discard_threshold).
 
@@ -48,15 +48,15 @@ def _env_int(name: str, default: int) -> int:
 # tracks the live value. Don't read this dict from outside the module —
 # go through the accessors / module attributes.
 _state: dict[str, int] = {
-    "VP_TARGET": _env_int("CATAANBOT_VP_TARGET", 10),
-    "DISCARD_LIMIT": _env_int("CATAANBOT_DISCARD_LIMIT", 7),
+    "VP_TARGET": _env_int("CATANBOT_VP_TARGET", 10),
+    "DISCARD_LIMIT": _env_int("CATANBOT_DISCARD_LIMIT", 7),
     # Friendly Robber protection threshold — colonist's optional rule
     # that prevents robbing players at or below this VP. Default 2
     # matches colonist's standard implementation (newly-placed
     # players have 2 VP from setup; rule shields them). Configurable
     # via env var for house rules that use a different threshold.
     "FRIENDLY_ROBBER_PROTECTED_VP": _env_int(
-        "CATAANBOT_FRIENDLY_ROBBER_PROTECTED_VP", 2),
+        "CATANBOT_FRIENDLY_ROBBER_PROTECTED_VP", 2),
 }
 
 
@@ -67,7 +67,7 @@ def __getattr__(name: str) -> Any:
     the standard AttributeError."""
     if name in _state:
         return _state[name]
-    raise AttributeError(f"module 'cataanbot.config' has no attribute {name!r}")
+    raise AttributeError(f"module 'catanbot.config' has no attribute {name!r}")
 
 
 def get_vp_target() -> int:

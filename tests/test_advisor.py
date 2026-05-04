@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from cataanbot.advisor import (
+from catanbot.advisor import (
     _vp_weight,
     evaluate_trade,
     legal_nodes_after_picks,
@@ -11,7 +11,7 @@ from cataanbot.advisor import (
     score_robber_targets,
     score_second_settlements,
 )
-from cataanbot.tracker import Tracker
+from catanbot.tracker import Tracker
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def test_port_bonus_scales_with_produced_resource():
     (resource-specific future option value > pure flexibility), and a
     richer-production corner on the same port should be valued more
     than a leaner one."""
-    from cataanbot.advisor import _port_bonus
+    from catanbot.advisor import _port_bonus
     # 3:1 generic: tiebreaker only.
     generic = _port_bonus("3:1", {"WHEAT": 0.3, "ORE": 0.3})
     # 2:1 on unproduced: small but strictly above 3:1.
@@ -93,7 +93,7 @@ def test_port_bonus_does_not_tier_flip_against_three_tile_corner():
     ~0.06 raw-production gap between a 2-tile and 3-tile corner with
     similar pip totals.
     """
-    from cataanbot.advisor import _DIVERSITY_BY_COUNT, _port_bonus
+    from catanbot.advisor import _DIVERSITY_BY_COUNT, _port_bonus
     # Approximate cards-per-roll for the screenshot's two-tile pick.
     # 8 (5 pips) ≈ 0.139, 10 (3 pips) ≈ 0.083 → ~0.222 raw across two
     # distinct resources. Plus a 3:1 port:
@@ -130,7 +130,7 @@ def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
     guard: no port bonus may exceed the per-resource cap (0.15 + 0.05
     * combined-pips-on-that-resource), which is what the shared helper
     would return."""
-    from cataanbot.advisor import (
+    from catanbot.advisor import (
         _port_bonus, score_second_settlements)
     top = score_opening_nodes(tracker.game)[0]
     seconds = score_second_settlements(tracker.game, top.node_id, color="RED")
@@ -179,10 +179,10 @@ def test_robber_targets_favor_opponent_builds(tracker):
 
 def test_friendly_robber_threshold_configurable():
     """The Friendly Robber threshold is configurable via
-    cataanbot.config — house rules can use values other than 2.
+    catanbot.config — house rules can use values other than 2.
     Setting it to 0 effectively disables the rule even when the
     flag is on."""
-    from cataanbot import config
+    from catanbot import config
     # Restore default at end so other tests don't see drift.
     original = config.get_friendly_robber_protected_vp()
     try:
@@ -282,7 +282,7 @@ def test_weighted_raw_production_boosts_wheat():
     pip non-wheat node so the opening eval reads wheat as more
     valuable per card.
     """
-    from cataanbot.advisor import _weighted_raw_production
+    from catanbot.advisor import _weighted_raw_production
 
     # Same total cards/roll, different resource composition.
     wheat_node = {"WHEAT": 0.139, "BRICK": 0.083}
@@ -305,7 +305,7 @@ def test_diversity_multiplier_reflects_composition_over_pips():
     stack, since the data shows 3-resource corners dominating even
     at lower pip counts (highest-win-rate placement was 16 pips).
     """
-    from cataanbot.advisor import _DIVERSITY_BY_COUNT
+    from catanbot.advisor import _DIVERSITY_BY_COUNT
     # 3-distinct boost > 2-distinct boost > flat.
     assert _DIVERSITY_BY_COUNT[3] > _DIVERSITY_BY_COUNT[2] > _DIVERSITY_BY_COUNT[1]
     # Spread between 1-distinct and 3-distinct must clear ~20% so a
@@ -324,15 +324,15 @@ def test_robber_imminent_multiplier_boosts_target_color():
     7 VP + can-city → vp+2 = 9, target = 10 → would-fire imminent
     even though 7 is below close_to_win on default 10 target).
     """
-    from cataanbot.advisor import score_robber_targets
-    from cataanbot.tracker import Tracker
+    from catanbot.advisor import score_robber_targets
+    from catanbot.tracker import Tracker
     from catanatron import Color
 
     tracker = Tracker(seed=1234)
     # Place RED on a high-pip spot and BLUE on a similar one so we
     # have two equal-pip tiles to compare. Pick from buildable nodes
     # that have at least two pips on adjacent tiles.
-    from cataanbot.advisor import score_opening_nodes
+    from catanbot.advisor import score_opening_nodes
     top = score_opening_nodes(tracker.game)
     blue_pick = top[0].node_id
     # Find the next pick with comparable pips that doesn't share a

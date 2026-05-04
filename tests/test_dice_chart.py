@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from cataanbot.dice_chart import render_dice_histogram
+from catanbot.dice_chart import render_dice_histogram
 
 
 def _png_header(p: Path) -> bytes:

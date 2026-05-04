@@ -2,7 +2,7 @@
 
 The editable-install .pth file is flaky on this macOS setup (UF_HIDDEN on
 pip-written files), so we inject the import path here the same way the
-`bin/cataanbot` launcher does.
+`bin/catanbot` launcher does.
 """
 import sys
 from pathlib import Path

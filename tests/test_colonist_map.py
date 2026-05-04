@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from cataanbot.colonist_map import (
+from catanbot.colonist_map import (
     COLONIST_PORT_RESOURCE, COLONIST_TILE_RESOURCE,
     MapMapping, MapMappingError, axial_to_cube,
     build_catanatron_map_from_colonist,
@@ -67,7 +67,7 @@ def test_edge_endpoints_rejects_unknown_z():
 
 CAPTURE_PATH = (Path(__file__).parent.parent
                 / "ws_captures"
-                / "cataanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
+                / "catanbot-ws-fort4092-early-2026-04-21T23-23-22.json")
 
 
 def _load_fort4092_map_state() -> dict:
@@ -78,7 +78,7 @@ def _load_fort4092_map_state() -> dict:
     """
     if not CAPTURE_PATH.exists():
         pytest.skip(f"live capture not present at {CAPTURE_PATH}")
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_proto import load_capture
     frames = list(load_capture(CAPTURE_PATH))
     gs = next(f for f in frames if f.raw_length == 5156)
     return gs.payload["payload"]["gameState"]["mapState"]
@@ -172,12 +172,12 @@ def test_tile_resource_distribution_matches_base_catan():
 
 MIDGAME_PATH = (Path(__file__).parent.parent
                 / "ws_captures"
-                / "cataanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
+                / "catanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
 
 
 def _live_session():
-    from cataanbot.colonist_diff import LiveSession
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_diff import LiveSession
+    from catanbot.colonist_proto import load_capture
     body = next(f.payload["payload"] for f in load_capture(CAPTURE_PATH)
                 if isinstance(f.payload, dict)
                 and f.payload.get("type") == 4)
@@ -187,7 +187,7 @@ def _live_session():
 def _iter_diffs(path):
     """Yield each type=91 diff body from a capture, with a running
     snapshot of the previous bank state so callers can compute deltas."""
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_proto import load_capture
     for frame in load_capture(path):
         if frame.error:
             continue
@@ -253,7 +253,7 @@ def test_build_costs_fix_resource_names():
     initial_edges = set(sess.known_edges.keys())
 
     # Seed prev-bank from GameStart.
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_proto import load_capture
     gs_body = next(f.payload["payload"] for f in load_capture(CAPTURE_PATH)
                    if isinstance(f.payload, dict)
                    and f.payload.get("type") == 4)
@@ -363,7 +363,7 @@ def test_build_mapping_handles_variant_shape():
     matches the colonist shape (not catanatron's classic 19/54/72/9).
     Ports are skipped for variants in this first pass.
     """
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
     # 7-tile flower: 1 center + 6 neighbours.
@@ -448,7 +448,7 @@ def test_build_mapping_handles_interior_lake():
 
     Synthetic shape: a 12-tile ring around a single missing center.
     """
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         corner_tile_signature, edge_endpoint_signatures,
     )
     # Ring = 6 tiles distance-1 from origin + 6 more distance-2 in
@@ -629,7 +629,7 @@ def test_tracker_with_colonist_map_uses_ws_node_ids():
     """End-to-end: build the custom map, hand it to the Tracker, then
     run settle/city/road/move_robber at IDs supplied by ``MapMapping``.
     This is the exact path the live dispatcher takes."""
-    from cataanbot.tracker import Tracker
+    from catanbot.tracker import Tracker
     ms = _load_fort4092_map_state()
     mapping = build_mapping(ms)
     cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
@@ -663,7 +663,7 @@ def test_tracker_with_colonist_map_uses_ws_node_ids():
 def test_tracker_with_colonist_map_roll_yields_real_resources():
     """With the real layout loaded, tracker.roll(N) distributes exactly
     what the live colonist game would pay out — no more random-map hack."""
-    from cataanbot.tracker import Tracker
+    from catanbot.tracker import Tracker
     ms = _load_fort4092_map_state()
     mapping = build_mapping(ms)
     cm = build_catanatron_map_from_colonist(ms, mapping=mapping)
@@ -689,7 +689,7 @@ def test_tracker_with_colonist_map_roll_yields_real_resources():
 
 def test_tracker_with_colonist_map_survives_reset():
     """``reset`` should reuse the custom map — same node IDs, same layout."""
-    from cataanbot.tracker import Tracker
+    from catanbot.tracker import Tracker
     ms = _load_fort4092_map_state()
     mapping = build_mapping(ms)
     cm = build_catanatron_map_from_colonist(ms, mapping=mapping)

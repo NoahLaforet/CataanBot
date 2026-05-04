@@ -11,7 +11,7 @@ import cmd
 import shlex
 from pathlib import Path
 
-from cataanbot.tracker import DEFAULT_COLORS, Tracker, TrackerError
+from catanbot.tracker import DEFAULT_COLORS, Tracker, TrackerError
 
 
 AUTO_RENDER_PATH = "tracked_board.png"
@@ -32,7 +32,7 @@ _BUILD_COSTS = {
 
 class TrackerRepl(cmd.Cmd):
     intro = (
-        "cataanbot tracker — mirror a live Catan game.\n"
+        "catanbot tracker — mirror a live Catan game.\n"
         "type `help` for commands, `quit` to exit.\n"
     )
     prompt = "catan> "
@@ -88,7 +88,7 @@ class TrackerRepl(cmd.Cmd):
         if len(own_settlements) != 1:
             return
         try:
-            from cataanbot.advisor import (
+            from catanbot.advisor import (
                 score_second_settlements, format_second_settlement_ranking,
             )
             scores = score_second_settlements(
@@ -486,7 +486,7 @@ class TrackerRepl(cmd.Cmd):
                 return
             first_node = own[0]
 
-        from cataanbot.advisor import (
+        from catanbot.advisor import (
             score_second_settlements, format_second_settlement_ranking,
         )
         try:
@@ -520,7 +520,7 @@ class TrackerRepl(cmd.Cmd):
         except ValueError as e:
             print(f"error: amounts must be integers ({e})")
             return
-        from cataanbot.advisor import evaluate_trade, format_trade_eval
+        from catanbot.advisor import evaluate_trade, format_trade_eval
         try:
             ev = evaluate_trade(self.tracker.game, color,
                                 give_n, res_out, get_n, res_in)
@@ -551,7 +551,7 @@ class TrackerRepl(cmd.Cmd):
         except TrackerError as e:
             print(f"error: {e}")
             return
-        from cataanbot.advisor import score_robber_targets, format_robber_ranking
+        from catanbot.advisor import score_robber_targets, format_robber_ranking
         scores = score_robber_targets(self.tracker.game, color)
         print(format_robber_ranking(scores, color, top=top))
 
@@ -562,7 +562,7 @@ class TrackerRepl(cmd.Cmd):
         actually delivered by dice, and per-tile production counts. If
         an argument is given, also writes a PNG histogram to that path."""
         path = arg.strip()
-        from cataanbot.stats import compute_stats, format_stats, render_histogram
+        from catanbot.stats import compute_stats, format_stats, render_histogram
         stats = compute_stats(self.tracker)
         print(format_stats(stats))
         if path:
@@ -580,7 +580,7 @@ class TrackerRepl(cmd.Cmd):
         totals for dice-produced, observed spends, and observed receives.
         Useful for quickly eyeballing who's sitting on a big hand vs who
         just spent everything."""
-        from cataanbot.hands import estimate_hands, format_hands
+        from catanbot.hands import estimate_hands, format_hands
         print(format_hands(estimate_hands(self.tracker)))
 
     def do_undo(self, _arg: str) -> None:
@@ -632,7 +632,7 @@ class TrackerRepl(cmd.Cmd):
         been recorded, so you can eyeball luck without running `stats`."""
         print(self.tracker.summary())
         if any(op["op"] == "roll" for op in self.tracker.history):
-            from cataanbot.stats import compute_stats, format_mini_histogram
+            from catanbot.stats import compute_stats, format_mini_histogram
             print()
             print(format_mini_histogram(compute_stats(self.tracker)))
 

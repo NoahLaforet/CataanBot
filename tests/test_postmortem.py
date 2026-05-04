@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, GameOverEvent, ProduceEvent, RollEvent, VPEvent,
 )
-from cataanbot.live import ColorMap, DispatchResult
-from cataanbot.postmortem import render_postmortem_html
+from catanbot.live import ColorMap, DispatchResult
+from catanbot.postmortem import render_postmortem_html
 
 
 def _dr(event, status="applied"):

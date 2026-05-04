@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cataanbot.events import (
+from catanbot.events import (
     BuildEvent, DevCardBuyEvent, ProduceEvent, RollEvent, StealEvent, VPEvent,
 )
-from cataanbot.live import ColorMap
-from cataanbot.timeline import (
+from catanbot.live import ColorMap
+from catanbot.timeline import (
     build_hand_timeline,
     build_production_timeline,
     build_vp_timeline,

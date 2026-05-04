@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from cataanbot.bridge import _record_self_build_quality
-from cataanbot.events import BuildEvent
-from cataanbot.live import ColorMap
+from catanbot.bridge import _record_self_build_quality
+from catanbot.events import BuildEvent
+from catanbot.live import ColorMap
 
 
 def _make_state(*, recs, build_counts, self_name="Noah",

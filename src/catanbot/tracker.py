@@ -620,7 +620,7 @@ class Tracker:
 
     # --- output ----------------------------------------------------------
     def render(self, path: str | Path) -> Path:
-        from cataanbot.render import render_board
+        from catanbot.render import render_board
         return render_board(self.game, path)
 
     def vp_status(self) -> dict[str, Any]:
@@ -641,7 +641,7 @@ class Tracker:
             )
         if not per_color:
             return {"per_color": {}, "leaders": [], "top": 0, "callout": None}
-        from cataanbot.config import VP_TARGET, mid_late_vp
+        from catanbot.config import VP_TARGET, mid_late_vp
         top = max(per_color.values())
         leaders = [c for c, v in per_color.items() if v == top]
         if top >= VP_TARGET:

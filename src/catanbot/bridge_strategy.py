@@ -155,7 +155,7 @@ def _compute_leader_threat(
     VP). These add to max_immediate_vp so the imminent tier catches
     "opp at 8 VP with 4 played knights and 1 in hand" too.
     """
-    from cataanbot.config import close_to_win_vp, mid_late_vp, VP_TARGET
+    from catanbot.config import close_to_win_vp, mid_late_vp, VP_TARGET
     opps = snap.get("opps") or []
     if not opps:
         return None
@@ -340,7 +340,7 @@ def _compute_win_proximity(
     of snap because the dev count lives on the session, not the snap
     payload — callers pass it through from the session.
     """
-    from cataanbot.config import close_to_win_vp, VP_TARGET
+    from catanbot.config import close_to_win_vp, VP_TARGET
     self_snap = snap.get("self") or {}
     vp = int(self_snap.get("vp", 0) or 0)
     close_vp = close_to_win_vp()
@@ -402,8 +402,8 @@ def _compute_winning_move(
     reachable. Game_plan/win_proximity stay responsible for multi-step
     narrative; this is the **"press the button now"** banner.
     """
-    from cataanbot.config import VP_TARGET
-    from cataanbot.recommender import (
+    from catanbot.config import VP_TARGET
+    from catanbot.recommender import (
         _SETTLEMENT_COST, _CITY_COST, _ROAD_COST,
         _hand_can_afford,
     )

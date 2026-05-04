@@ -23,7 +23,7 @@ import pytest
 
 CAPTURE_MIDGAME = (Path(__file__).parent.parent
                    / "ws_captures"
-                   / "cataanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
+                   / "catanbot-ws-fort4092-midgame-2026-04-21T23-34-04.json")
 
 
 def _bench(fn, runs: int = 50) -> tuple[float, float]:
@@ -61,8 +61,8 @@ def test_classic_build_mapping_under_100ms_median():
     is a 200x cliff that only fires on a real regression."""
     if not CAPTURE_MIDGAME.exists():
         pytest.skip("midgame capture not present")
-    from cataanbot.colonist_map import build_mapping
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_map import build_mapping
+    from catanbot.colonist_proto import load_capture
 
     map_state = None
     for frame in load_capture(CAPTURE_MIDGAME):
@@ -92,7 +92,7 @@ def test_variant_build_mapping_under_100ms_median():
     yet — the flower exercises the variant code path (non-classic shape
     bypasses the BASE_MAP_TEMPLATE branch). Benchmarks the heavier
     custom CatanMap builder, not the cheaper template path."""
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         build_mapping, corner_tile_signature, edge_endpoint_signatures,
     )
 
@@ -165,10 +165,10 @@ def test_variant_build_no_quadratic_blowup():
     boards (Pond=24, Black-Forest=larger)."""
     if not CAPTURE_MIDGAME.exists():
         pytest.skip("midgame capture not present")
-    from cataanbot.colonist_map import (
+    from catanbot.colonist_map import (
         build_mapping, corner_tile_signature, edge_endpoint_signatures,
     )
-    from cataanbot.colonist_proto import load_capture
+    from catanbot.colonist_proto import load_capture
 
     classic_ms = None
     for frame in load_capture(CAPTURE_MIDGAME):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from cataanbot.cli import (
+from catanbot.cli import (
     cmd_doctor,
     cmd_hands,
     cmd_openings,
@@ -18,7 +18,7 @@ from cataanbot.cli import (
     cmd_stats,
     cmd_tradeeval,
 )
-from cataanbot.tracker import Tracker
+from catanbot.tracker import Tracker
 
 
 @pytest.fixture

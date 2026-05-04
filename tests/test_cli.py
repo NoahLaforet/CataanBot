@@ -1,7 +1,7 @@
 """Smoke tests — confirms the package imports and the doctor command runs."""
 from __future__ import annotations
 
-from cataanbot.cli import cmd_doctor
+from catanbot.cli import cmd_doctor
 
 
 def test_doctor_runs() -> int:
