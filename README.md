@@ -185,9 +185,11 @@ board, no draggable pop-out window to manage.
 To pull updates: `git pull`, then click the reload ⟳ icon on the
 CatanBot card in `chrome://extensions`.
 
-When the extension is ready for the Chrome Web Store, listing it
-there ($5 one-time developer fee) gives users automatic updates
-within ~24h of each push, no manual reload needed.
+A Chrome Web Store listing is in preparation (see
+`docs/STORE_LISTING.md` for the submission checklist; build a
+fresh upload zip with `./bin/build-extension-zip.sh`). Once the
+listing is live, users will get automatic updates within ~24h of
+each tagged release without needing the manual reload step above.
 
 > The Tampermonkey userscript that used to ship alongside the
 > extension is archived under `legacy/userscript/`. It's no longer
