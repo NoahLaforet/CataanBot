@@ -5729,3 +5729,43 @@ def test_twirl_full_game_replay_clean():
     finally:
         config.set_vp_target(saved_vp)
         config.set_discard_limit(saved_discard)
+
+
+def test_knight_hint_fires_at_3_played_even_below_la_threat_vp():
+    """LA-deny trigger widening: an opp with 3+ played knights is
+    explicitly racing for LA, even at low VP. The pre-fix trigger
+    only fired once they hit largest_army_threat_vp (~7 of 10) — by
+    which point they often had the title. The pattern came out of
+    Noah's 2026-05-03 vs Esfahani loss (opp played 5 knights total)."""
+    from cataanbot.colonist_proto import load_capture
+    from cataanbot.live_game import LiveGame
+    from cataanbot.bridge import _compute_knight_hint
+
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("classic capture not present")
+    g = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        g.feed(payload)
+    assert g.started
+
+    sess = g.session
+    self_user = sess.player_names[sess.self_color_id]
+    self_color = g.color_map.get(self_user)
+    cat = g.tracker.game
+
+    from catanatron import Color
+    my_enum = Color[self_color.upper()]
+    my_idx = cat.state.color_to_index[my_enum]
+    opp_indices = [i for c, i in cat.state.color_to_index.items()
+                   if c != my_enum]
+    # Self holds a knight. Opp at 3 played knights, only 4 VP (well
+    # under la_threat_vp=7). Pre-fix this would NOT trigger
+    # largest_army_threat; post-fix it does.
+    cat.state.player_state[f"P{my_idx}_KNIGHT_IN_HAND"] = 1
+    cat.state.player_state[f"P{opp_indices[0]}_PLAYED_KNIGHT"] = 3
+    cat.state.player_state[f"P{opp_indices[0]}_VICTORY_POINTS"] = 4
+
+    hint = _compute_knight_hint(g, playable_count=1)
+    assert hint is not None
+    assert hint["should_play"] is True
+    assert "Largest Army" in hint["reason"]

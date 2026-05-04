@@ -1377,8 +1377,15 @@ def _compute_knight_hint(
                 continue
             self_blocked_pips += PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
 
-    # Opp closing in on largest army? (>= 2 played knights, at/above
-    # largest-army-threat VP threshold)
+    # Opp closing in on largest army? Two trigger paths:
+    #   (a) played >= 2 AND vp >= largest_army_threat_vp — "they're
+    #       racing to close out" (existing condition).
+    #   (b) played >= 3 — "they're explicitly playing for LA" even
+    #       at low VP. By the time the (a) trigger fires the race
+    #       is often already lost; (b) catches the build-up phase.
+    # Came out of Noah's 2026-05-03 loss vs Esfahani: opp played 5
+    # knights total but the deny-LA hint never fired loudly enough
+    # to push Noah's own knights into play.
     from cataanbot.config import largest_army_threat_vp
     la_threat_vp = largest_army_threat_vp()
     largest_army_threat = False
@@ -1389,7 +1396,8 @@ def _compute_knight_hint(
             f"P{opp_idx}_PLAYED_KNIGHT", 0))
         vp = int(state.player_state.get(
             f"P{opp_idx}_VICTORY_POINTS", 0))
-        if played >= 2 and vp >= la_threat_vp:
+        if (played >= 3
+                or (played >= 2 and vp >= la_threat_vp)):
             largest_army_threat = True
             break
 
