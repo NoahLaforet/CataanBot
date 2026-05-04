@@ -137,8 +137,39 @@ machine. The Chrome extension's only network destination is
 
 ## Quick start
 
-Requires Python 3.11+ (catanatron constraint). macOS / Linux / WSL.
-Three commands to get a friend playing:
+Requires Python 3.11+ (catanatron constraint).
+
+### ★ Windows users — read this first
+
+The bridge is bash-only (the auto-bootstrap launcher is a shell
+script), so on Windows you run it inside **WSL2 + Ubuntu**. Chrome
+stays on Windows; it reaches the WSL bridge over `127.0.0.1:8765`
+automatically (Windows 10 build 19041+ or Windows 11 forwards
+localhost from WSL2 back to the host with no extra config).
+
+One-time setup, run from an **admin** PowerShell:
+
+```powershell
+# 1. (after cloning the repo somewhere on Windows OR inside WSL)
+.\bin\setup-windows.ps1
+```
+
+The script:
+
+- Confirms you're on a recent enough Windows build
+- Installs WSL2 if you don't have it
+- Installs Ubuntu if no Linux distro is registered
+- Verifies the default distro can run commands
+- Tells you the next 3 commands to run inside Ubuntu
+
+If the script triggers a reboot or asks you to finish Ubuntu's
+first-run wizard, do that step, then re-run the script to
+verify, then move on to the **macOS / Linux / WSL** block below.
+Once WSL is set up, the daily flow is identical to macOS / Linux.
+
+### macOS / Linux / WSL
+
+Three commands and you're playing:
 
 ```bash
 git clone https://github.com/NoahLaforet/CatanBot.git
@@ -155,9 +186,9 @@ If `./bin/catanbot` complains about Python, install **Python 3.11+**
 first:
 
 - macOS: `brew install python@3.12`
-- Ubuntu/Debian: `sudo apt install python3.12 python3.12-venv`
-- Windows: install from [python.org](https://www.python.org/downloads/)
-  and run from WSL (the launcher is bash-only)
+- Ubuntu / Debian / WSL: `sudo apt install python3.12 python3.12-venv`
+- Windows native: not supported — use the **★ Windows users** path
+  above to run the bridge inside WSL2 / Ubuntu
 
 Then load the Chrome extension:
 
