@@ -1,0 +1,49 @@
+# Deploy the docs/ folder to GitHub Pages.
+#
+# Pages source is set to "GitHub Actions" in repo Settings → Pages,
+# so this workflow is responsible for uploading + deploying. Triggered
+# on every push to main that touches docs/ (and manually via the
+# Actions tab). Once published, files at docs/* are served at:
+#
+#   https://noahlaforet.github.io/CatanBot/<filename>
+#
+# e.g. docs/privacy.html → /CatanBot/privacy.html
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Permissions Pages deploy needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Single deployment at a time; cancel stale ones if a new push lands.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload docs/ as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
