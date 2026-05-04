@@ -157,11 +157,20 @@ def test_postmortem_renders_with_enrichment_on_real_capture(tmp_path):
     html = out_path.read_text()
 
     # Fingerprint surfaced in the rendered text (we know it's a classic
-    # 19-tile capture, so label="classic" and tiles=19).
+    # 19-tile capture, so label="classic" and the full 19/54/72/9 quad).
+    # Edge + port counts come from session.mapping — catanatron's
+    # CatanMap doesn't expose land_edges and port_nodes only carries
+    # 6 entries, so a regression to those fallbacks would render the
+    # postmortem as "0 edges · 6 ports".
     assert fp is not None
     assert fp.get("tile_count") == 19
+    assert fp.get("corner_count") == 54
+    assert fp.get("edge_count") == 72
+    assert fp.get("port_count") == 9
     assert "Board: classic" in html
     assert "19 tiles" in html
+    assert "72 edges" in html
+    assert "9 ports" in html
 
     # Dev card timeline is in the rendered output.
     assert "Dev card timeline" in html

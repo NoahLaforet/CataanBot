@@ -289,11 +289,13 @@ def _vp_from_pm_events(st) -> dict[str, int]:
 def _compute_board_fingerprint(game) -> dict[str, object] | None:
     """Snapshot the board's shape so the postmortem can identify a variant.
 
-    Reads tile/corner/edge/port counts off the live CatanMap. Classic
-    Catan is 19/54/72/9; Pond is 24/76/100/8; other Seafarers / Through-
-    the-Desert / Black-Forest variants each have their own shape, so the
-    quad of counts is a reliable fingerprint without us having to enum
-    every variant.
+    Reads tile/corner/edge/port counts off the live CatanMap (for tiles
+    and corners) and the colonist MapMapping (for edges and ports —
+    catanatron's CatanMap doesn't expose a land_edges attribute and
+    its port_nodes only carries 6 entries on a stock 9-port board, so
+    those would render as ``0 edges · 6 ports`` on every postmortem).
+    Pulling edges + ports off the colonist mapping returns the real
+    layout numbers (72/9 classic, 168/12 twirl, etc.).
     """
     if game is None:
         return None
@@ -310,12 +312,25 @@ def _compute_board_fingerprint(game) -> dict[str, object] | None:
         fp["corner_count"] = len(getattr(m, "land_nodes", set()) or set())
     except Exception:  # noqa: BLE001
         pass
+    # Edges + ports come from the colonist mapping (authoritative for
+    # variant shapes); the CatanMap-derived fields are fallback only.
+    sess_mapping = None
     try:
-        fp["edge_count"] = len(getattr(m, "land_edges", set()) or set())
+        sess_mapping = game.session.mapping
     except Exception:  # noqa: BLE001
         pass
     try:
-        fp["port_count"] = len(getattr(m, "port_nodes", set()) or set())
+        fp["edge_count"] = (len(sess_mapping.edge_nodes)
+                            if sess_mapping is not None
+                            else len(getattr(m, "land_edges", set())
+                                     or set()))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        fp["port_count"] = (len(sess_mapping.port_edges)
+                            if sess_mapping is not None
+                            else len(getattr(m, "port_nodes", set())
+                                     or set()))
     except Exception:  # noqa: BLE001
         pass
     # tile + corner counts are enough to uniquely identify the
