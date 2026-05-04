@@ -1362,32 +1362,33 @@
 
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
-        // Standalone "no bridge" path — synthesized by the poll
-        // loop after N consecutive bridge fetches fail. Shows a
-        // friendly explainer instead of the blank "bridge
-        // unreachable" placeholder. Hides every in-game section
-        // (no real game state to render).
+        // Standalone "no game data yet" path — synthesized by the
+        // poll loop after N consecutive bridge fetches fail AND the
+        // standalone JS recommender hasn't received a GameStart
+        // frame yet (so no board to score against). The most common
+        // case is "extension installed, on github.com or some other
+        // tab, no game open." Tell the user that, not "install the
+        // bridge" — the bridge is optional.
         if (snap && snap._source === 'no_bridge') {
             ui.content.innerHTML =
                 `<div class="no-bridge-frame">`
-                + `<div class="nb-icon">🛜</div>`
-                + `<div class="nb-head">no bridge connected</div>`
+                + `<div class="nb-icon">🎲</div>`
+                + `<div class="nb-head">waiting for a game</div>`
                 + `<div class="nb-body">`
-                + `CatanBot needs a small Python bridge running on `
-                + `your machine to read your colonist.io game and `
-                + `compute recommendations. The bridge is open-source `
-                + `and runs locally — your game state never leaves `
-                + `your computer.`
-                + `</div>`
-                + `<div class="nb-actions">`
-                + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
-                + `target="_blank" rel="noopener" class="nb-btn">`
-                + `install instructions →</a>`
+                + `Open a Catan game on `
+                + `<a href="https://colonist.io" target="_blank" `
+                + `rel="noopener">colonist.io</a> and the panel will `
+                + `start showing opening picks within a second of `
+                + `the game starting.`
                 + `</div>`
                 + `<div class="nb-footnote">`
-                + `Already installed? Run <code>./bin/catanbot live</code> `
-                + `from the repo and the panel will connect within a `
-                + `few seconds.`
+                + `<b>Want the full HUD?</b> Mid-game recs, dev-card `
+                + `play timing, robber targets, and post-game `
+                + `analysis need an optional local Python bridge `
+                + `(open-source, runs on your machine, game state `
+                + `stays local). `
+                + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
+                + `target="_blank" rel="noopener">install the bridge →</a>`
                 + `</div>`
                 + `</div>`;
             if (ui.histHost) ui.histHost.classList.add('hidden');
