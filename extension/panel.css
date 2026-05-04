@@ -1364,6 +1364,66 @@
     margin-right: var(--s-1);
   }
 
+  /* Strategy ranking — full assessment view. Each row is a
+     mini-bar showing how close that archetype came to being
+     picked. The active row gets a stronger left edge and bolder
+     label so the chosen one pops out. Ineligible rows dim down. */
+  .strategy-ranking {
+    margin: var(--s-2) 0;
+    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+    border-radius: var(--radius);
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--fg-dim);
+  }
+  .strategy-ranking .srr-h {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: var(--s-2);
+  }
+  .strat-rank-row {
+    display: grid;
+    grid-template-columns: 18px 1fr 80px 36px;
+    align-items: center;
+    gap: var(--s-2);
+    padding: 2px 0;
+    font-size: calc(12px * var(--font-scale));
+    color: var(--fg-mute);
+  }
+  .strat-rank-row.active {
+    color: var(--fg);
+    font-weight: 700;
+  }
+  .strat-rank-row.ineligible {
+    opacity: 0.45;
+  }
+  .strat-rank-row .srr-ico { text-align: center; }
+  .strat-rank-row .srr-bar {
+    display: inline-block;
+    height: 6px;
+    background: var(--bg-2, var(--bg-1));
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .strat-rank-row .srr-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--fg-dim);
+    transition: width 0.3s ease-out;
+  }
+  .strat-rank-row.active .srr-bar-fill { background: var(--accent); }
+  .strat-rank-row .srr-score {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-mute);
+  }
+  .strat-rank-row.active .srr-score { color: var(--fg); }
+
   .threat.mid   { border-left-color: var(--accent); color: var(--accent); }
   .threat.close { border-left-color: var(--alert); color: var(--alert); }
   .threat.imminent {
@@ -2394,7 +2454,7 @@ html, body, .panel {
 .trade-offer, .knight-hint, .dev-hint,
 .banner, .winning-move, .opps-h, .progression,
 .off-turn-ribbon, .milestone, .engine-deficit,
-.strategy-banner, .strategy-triggers {
+.strategy-banner, .strategy-triggers, .strategy-ranking {
   background: transparent !important;
   border: 0 !important;
   border-left: 2px solid var(--line-strong) !important;
@@ -2468,6 +2528,59 @@ html, body, .panel {
   color: var(--accent) !important;
   margin-right: 4px !important;
 }
+/* Strategy ranking — minimal mode: same grid layout but keep the
+   typography compact and remove the boxed background per the
+   minimal-design ethos. */
+.strategy-ranking {
+  border-left-color: var(--fg-dim) !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+.strategy-ranking .srr-h {
+  color: var(--fg-mute) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  margin-bottom: 4px !important;
+}
+.strat-rank-row {
+  display: grid !important;
+  grid-template-columns: 16px 1fr 70px 32px !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 2px 0 !important;
+  font-size: 11px !important;
+  color: var(--fg-mute) !important;
+}
+.strat-rank-row.active {
+  color: var(--fg) !important;
+  font-weight: 700 !important;
+}
+.strat-rank-row.ineligible { opacity: 0.45 !important; }
+.strat-rank-row .srr-bar {
+  display: inline-block !important;
+  height: 5px !important;
+  background: transparent !important;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 2px !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+.strat-rank-row .srr-bar-fill {
+  display: block !important;
+  height: 100% !important;
+  background: var(--fg-dim) !important;
+}
+.strat-rank-row.active .srr-bar-fill {
+  background: var(--accent) !important;
+}
+.strat-rank-row .srr-score {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums !important;
+  color: var(--fg-mute) !important;
+}
+.strat-rank-row.active .srr-score { color: var(--fg) !important; }
 
 /* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
    threats, or knight-asap plays. The flat redesign zeroes out box-

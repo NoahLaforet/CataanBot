@@ -193,6 +193,66 @@ def test_to_snap_active_picks_override_when_set():
     assert tag.to_snap()["active"] == "LR_RUSH"
 
 
+def test_to_snap_ranking_sorted_by_score_with_eligibility():
+    """The HUD wants to render every archetype sorted by its score
+    so the user can see how close the runners-up came. Each entry
+    carries an `eligible` flag so styling can dim the ones that
+    didn't clear their threshold."""
+    from catanbot.strategy_select import StrategyTag
+
+    tag = StrategyTag(
+        primary="OWS", fallback="LR_RUSH",
+        rationale="x", phase="early",
+        scores={
+            "OWS": 0.7,
+            "LR_RUSH": 0.5,
+            "PORT_TRADE": 0.3,
+            "RB_CARVED_TILES": 0.0,
+            "BALANCED": 0.4,
+        },
+    )
+    snap = tag.to_snap()
+    assert "scores" in snap and snap["scores"]["OWS"] == 0.7
+    ranking = snap["ranking"]
+    # Sorted descending by score.
+    assert [r["tag"] for r in ranking] == [
+        "OWS", "LR_RUSH", "BALANCED", "PORT_TRADE", "RB_CARVED_TILES"]
+    # Eligibility flags reflect _TAG_MIN_SCORE thresholds.
+    by_tag = {r["tag"]: r for r in ranking}
+    assert by_tag["OWS"]["eligible"] is True       # 0.7 >= 0.45
+    assert by_tag["LR_RUSH"]["eligible"] is True   # 0.5 >= 0.45
+    assert by_tag["PORT_TRADE"]["eligible"] is False  # 0.3 < 0.45
+    # Balanced threshold is 0.0 → always eligible.
+    assert by_tag["BALANCED"]["eligible"] is True
+
+
+def test_select_strategy_populates_scores_on_real_placements():
+    """The selector should fill `scores` with all 5 tags scored, not
+    just the winner. Lets the snap downstream render the ranking."""
+    from catanbot.strategy_select import select_strategy
+
+    g = _fresh_game()
+    from catanbot.advisor import _build_node_neighbors
+    m = g.state.board.map
+    neighbors = _build_node_neighbors(m)
+    placed = []
+    for nid in sorted(m.land_nodes):
+        if any(n in neighbors.get(nid, set()) for n in placed):
+            continue
+        placed.append(nid)
+        _settle(g, "RED", nid)
+        if len(placed) == 2:
+            break
+    tag = select_strategy(g, "RED")
+    assert tag is not None
+    assert set(tag.scores.keys()) == {
+        "OWS", "LR_RUSH", "PORT_TRADE",
+        "RB_CARVED_TILES", "BALANCED"}
+    # Every score should be a finite float in [0, 1].
+    for t, v in tag.scores.items():
+        assert 0.0 <= v <= 1.0, f"{t} score out of range: {v}"
+
+
 def test_stickiness_prevents_thrashing_on_close_calls():
     """A 1-2pp wobble in scores shouldn't flip the primary tag — only a
     15%+ uplift should, otherwise the previous primary stays."""

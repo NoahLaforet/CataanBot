@@ -2170,6 +2170,47 @@
                        + escapeHtml(st.rationale) + `</div>`
                    : '')
                 + '</div>');
+            // Strategy ranking — show the bot's full assessment so
+            // the user sees not just the pick but how close the
+            // runners-up came. Each row: archetype label, score bar,
+            // numeric score. Eligible rows render full-strength;
+            // ineligible (didn't clear threshold) dim out.
+            const ranking = Array.isArray(st.ranking) ? st.ranking : [];
+            if (ranking.length) {
+                const rows = ranking.map(r => {
+                    const rowLabel = TAG_LABELS[r.tag] || r.tag;
+                    const rowIcon = TAG_ICONS[r.tag] || '·';
+                    const rowTip = TAG_TOOLTIPS[r.tag] || '';
+                    const isActive = r.tag === tag;
+                    const elig = r.eligible;
+                    // Bar fills to score (0-1 → 0-100%). Cap the bar
+                    // visually at 100% even if scoring ever overshoots.
+                    const pct = Math.min(100, Math.max(
+                        0, Math.round((r.score || 0) * 100)));
+                    const cls = ['strat-rank-row',
+                                 isActive ? 'active' : '',
+                                 elig ? 'eligible' : 'ineligible'
+                                ].filter(Boolean).join(' ');
+                    return `<div class="${cls}"`
+                        + (rowTip ? ` title="${escapeHtml(rowTip)}"` : '')
+                        + `>`
+                        + `<span class="srr-ico">${rowIcon}</span>`
+                        + `<span class="srr-label">`
+                        + escapeHtml(rowLabel) + `</span>`
+                        + `<span class="srr-bar">`
+                        + `<span class="srr-bar-fill" `
+                        + `style="width: ${pct}%"></span>`
+                        + `</span>`
+                        + `<span class="srr-score">`
+                        + (r.score || 0).toFixed(2) + `</span>`
+                        + `</div>`;
+                }).join('');
+                parts.push(
+                    `<div class="strategy-ranking">`
+                    + `<div class="srr-h">strategy ranking</div>`
+                    + rows
+                    + `</div>`);
+            }
             // Pivot triggers (when fired): one-line list under the
             // banner. pivot_details aligns with pivot_triggers by
             // index, so prefer the human-readable detail when present.

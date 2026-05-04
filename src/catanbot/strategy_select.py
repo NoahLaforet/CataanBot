@@ -81,6 +81,11 @@ class StrategyTag:
     is a one-line user-facing description of *why* this tag was picked
     — surfaces on the HUD as the "why this strategy" hint.
 
+    ``scores`` is the full per-tag score map (every archetype's 0-1
+    score from this evaluation pass). The HUD uses this to render a
+    "ranked strategies" view so the user sees not just the pick but
+    how close the runners-up came.
+
     ``pivot_triggers`` is the list of fired trigger names (string
     constants from ``_PIVOT_TRIGGERS``). Empty list means no pivot
     pressure right now. ``override_tag`` is set by the trigger detector
@@ -93,11 +98,27 @@ class StrategyTag:
     set_at_rolls: int = 0
     pivot_triggers: list[str] = field(default_factory=list)
     override_tag: str | None = None
+    scores: dict[str, float] = field(default_factory=dict)
 
     def to_snap(self) -> dict[str, Any]:
         """Serialize for the advisor snap. Keys mirror the names the
         HUD will read; flatten so the front-end doesn't need to know
         about dataclasses."""
+        # Full ranked list (best score first) so the HUD can render
+        # the bot's whole assessment, not just the winner. Each entry
+        # is {tag, score, eligible} where eligible reflects whether
+        # the tag cleared its threshold and was a real contender.
+        ranking = []
+        if self.scores:
+            sorted_tags = sorted(
+                self.scores.items(), key=lambda kv: -kv[1])
+            for tag, score in sorted_tags:
+                ranking.append({
+                    "tag": tag,
+                    "score": round(float(score), 2),
+                    "eligible": (score
+                                 >= _TAG_MIN_SCORE.get(tag, 0.0)),
+                })
         return {
             "primary": self.primary,
             "fallback": self.fallback,
@@ -109,6 +130,8 @@ class StrategyTag:
             # ``active`` is what downstream weighting should use — the
             # override wins when set, else primary.
             "active": self.override_tag or self.primary,
+            "scores": dict(self.scores),
+            "ranking": ranking,
         }
 
 
@@ -512,6 +535,7 @@ def select_strategy(
         rationale=rationale,
         phase=phase,
         set_at_rolls=set_at,
+        scores=dict(scores),
     )
 
 
@@ -756,4 +780,5 @@ def merge_triggers_into_tag(
         set_at_rolls=tag.set_at_rolls,
         pivot_triggers=names,
         override_tag=override,
+        scores=dict(tag.scores),
     )
