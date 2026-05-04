@@ -394,12 +394,32 @@
                     && (hasInlineColor || hasInlineBg)) {
                 const name = (elNode.innerText || '').trim();
                 if (name) {
+                    // Streamer-mode hard-blank rule overrides colonist's
+                    // inline color with `color: transparent !important`,
+                    // so getComputedStyle returns rgba(0,0,0,0) for any
+                    // un-anonymized span. Filter that out — otherwise
+                    // we latch "transparent" as the player's color and
+                    // the panel pill renders white. Inline style.color
+                    // still reads the original author value, so it's
+                    // safe; only the computed-style fallback is poison.
+                    const isTransparent = (s) => {
+                        if (!s) return true;
+                        const t = String(s).trim().toLowerCase();
+                        if (!t) return true;
+                        if (t === 'transparent') return true;
+                        const m = t.match(
+                            /rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*([\d.]+)\s*)?\)/);
+                        if (m && m[1] !== undefined
+                                && parseFloat(m[1]) === 0) return true;
+                        return false;
+                    };
                     let color = elNode.style.color || '';
                     if (!color) {
                         try {
                             color = window.getComputedStyle(elNode).color || '';
                         } catch (_) {}
                     }
+                    if (isTransparent(color)) color = '';
                     let bg = elNode.style.backgroundColor || '';
                     if (!bg && hasInlineBg) {
                         try {
@@ -407,6 +427,7 @@
                                 .backgroundColor || '';
                         } catch (_) {}
                     }
+                    if (isTransparent(bg)) bg = '';
                     parts.push({ kind: 'name', name, color, bg });
                 }
                 return;

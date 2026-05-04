@@ -48,6 +48,7 @@ WS frame payload shape (mirrors the capture-dump buffer entries):
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -657,6 +658,31 @@ def _harvest_display_colors(st, payload: dict[str, Any]) -> None:
     names = payload.get("names")
     if not isinstance(names, list):
         return
+
+    def _is_transparent(s: Any) -> bool:
+        # Streamer-mode CSS rule applies `color: transparent !important`
+        # to un-anonymized colored spans, which makes the harvester's
+        # getComputedStyle fallback return rgba(0,0,0,0). Latching that
+        # as a player's color renders their pill white in the panel.
+        if not isinstance(s, str):
+            return True
+        t = s.strip().lower()
+        if not t:
+            return True
+        if t == "transparent":
+            return True
+        m = re.match(
+            r"rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*([\d.]+)\s*)?\)",
+            t,
+        )
+        if m and m.group(1) is not None:
+            try:
+                if float(m.group(1)) == 0:
+                    return True
+            except ValueError:
+                pass
+        return False
+
     for entry in names:
         if not isinstance(entry, dict):
             continue
@@ -668,9 +694,11 @@ def _harvest_display_colors(st, payload: dict[str, Any]) -> None:
         # uses a colored background.
         bg = entry.get("bg")
         picked = None
-        if isinstance(color, str) and color.strip():
+        if isinstance(color, str) and color.strip() \
+                and not _is_transparent(color):
             picked = color.strip()
-        elif isinstance(bg, str) and bg.strip():
+        elif isinstance(bg, str) and bg.strip() \
+                and not _is_transparent(bg):
             picked = bg.strip()
         if (isinstance(name, str) and name and picked
                 and name not in st["display_colors"]):

@@ -4,6 +4,24 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.9 — 2026-05-04
+
+Fix the orange-pill regression introduced by v0.33.8's hard-blank
+CSS rule. With streamer mode on, `color: transparent !important`
+was overriding the colonist player-name spans, so the harvester's
+`getComputedStyle` fallback was returning `rgba(0, 0, 0, 0)` for
+any seat whose username span lacked an inline `color:` (orange,
+in Noah's game with Cyrus). The bridge then latched "transparent"
+as the player's color and the panel pill rendered white.
+
+- **content.js harvester** filters out `transparent` /
+  `rgba(...,0)` color values before storing on the `name` part —
+  inline `style.color` still reads correctly, only the computed
+  fallback was poisoned.
+- **bridge `_harvest_display_colors`** belt-and-suspenders: rejects
+  transparent strings on both `color` and `bg` so any payload
+  caught mid-flight from older clients can't latch a bad value.
+
 ## v0.33.0 — 2026-05-03 (later same day)
 
 Reactive layer over the v0.32 strategy work. Mostly: imminent-tier
