@@ -70,6 +70,43 @@ def _apply_game_settings(body: dict[str, Any]) -> None:
             pass
 
 
+def _gamestart_player_set_changed(session, body: dict[str, Any]) -> bool:
+    """True if the new GameStart body has a different player roster
+    than the current session.
+
+    Colonist's "quit and start a new match" path doesn't always emit
+    a GameOver frame before the next GameStart. Without that, the
+    session's `game_over_emitted` flag stays False and the GameStart
+    falls into the resync-into-existing-tracker path, which keeps
+    the OLD game's player_names + color_map alive. Downstream the
+    chat-side log scraper sends fresh usernames (Calan/Hamlet/Kara)
+    while catanatron RollEvents still emit stale ones (Vlad/Budd/
+    Wiburg) — display_colors lookup keys never match opps[i].username
+    and pills render with catanatron-enum fallback hex (Wiburg→WHITE
+    → off-white pill for what should be colonist orange).
+
+    Compare the player_username sets — any difference means a new
+    match and a full reboot is the right call.
+    """
+    game_state = body.get("gameState") if "gameState" in body else body
+    if not isinstance(game_state, dict):
+        return False
+    player_states = game_state.get("playerStates")
+    if not isinstance(player_states, dict):
+        return False
+    new_names = set()
+    for entry in player_states.values():
+        if not isinstance(entry, dict):
+            continue
+        username = entry.get("username")
+        if isinstance(username, str) and username:
+            new_names.add(username)
+    if not new_names:
+        return False
+    cur_names = set((getattr(session, "player_names", None) or {}).values())
+    return bool(cur_names) and new_names != cur_names
+
+
 def _gamestart_shape_changed(session, body: dict[str, Any]) -> bool:
     """True if the new GameStart body's mapState shape differs from the
     one the session was booted with.
@@ -308,6 +345,19 @@ class LiveGame:
                 # fails with "Invalid Road Placement".
                 if (self.started and self.session is not None
                         and _gamestart_shape_changed(self.session, body)):
+                    self.session = None
+                    self.tracker = None
+                    rebooted = True
+                # Player-set reboot: colonist's quit-and-start-new path
+                # doesn't emit GameOver, so we never see
+                # game_over_emitted flip. Without it, a fresh GameStart
+                # with different players falls into _resync_from_replay
+                # and keeps the old color_map alive. That mismatch is
+                # what makes display_colors lookup miss in streamer
+                # mode (chat names new, opps[i].username old).
+                if (self.started and self.session is not None
+                        and _gamestart_player_set_changed(
+                            self.session, body)):
                     self.session = None
                     self.tracker = None
                     rebooted = True

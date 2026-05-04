@@ -4,6 +4,35 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.14 — 2026-05-04
+
+LiveGame reboots on player-set change in GameStart.
+
+Why orange-shows-white kept persisting across the v0.33.9–v0.33.13
+fixes: when colonist's "quit and start new" path bypasses the
+GameOver frame, `game_over_emitted` stays False and the next
+GameStart slides into `_resync_from_replay` instead of a fresh
+boot. The OLD game's color_map + player_names live on, so
+catanatron emits stale opponent usernames (Vlad/Budd/Wiburg) for
+events that the chat scraper logs with the new game's real
+usernames (Calan/Hamlet/Kara). `display_colors` lookup keys never
+match `opps[i].username` and the panel falls back to catanatron-
+enum hex (Wiburg → catanatron WHITE → `#f0f0f0` pill).
+
+Confirmed live in the bridge log:
+```
+[01:06:46 #0050] RollEvent: Hamlet rolled 8   ← chat (fresh)
+[ws #00159]      RollEvent: Vlad rolled 8     ← catanatron (stale)
+```
+Same 8-roll, two different usernames.
+
+- **`_gamestart_player_set_changed`** new helper compares the new
+  GameStart body's `playerStates[*].username` set against the
+  current session's `player_names`. Any difference forces the
+  same reboot path that game-over and shape-change use, which
+  rebuilds color_map + tracker + clears display_colors /
+  streamer_anon downstream.
+
 ## v0.33.13 — 2026-05-04
 
 Second half of the orange-pill fix: bridge was storing colors
