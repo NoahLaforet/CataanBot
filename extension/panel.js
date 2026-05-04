@@ -209,50 +209,51 @@
         WHEAT: '🌾', ORE: '⛰️',
     };
 
-    // Streamer mode anonymizer. When the toggle is on, every real
-    // username in the HUD is replaced with the player's color name
-    // ("Blue (You)" for self, "Red" / "Orange" / etc. for opps).
-    // Colors are public game state — visible on the board — so this
-    // hides the username while keeping the label meaningful.
-    // _username_to_color is populated at the top of every render
-    // from snap.self + snap.opps, so anonName can look colors up
-    // without each call site having to thread color through.
-    const _username_to_color = new Map();
+    // Streamer mode anonymizer — fantasy-name labels assigned in
+    // stable seat-encounter order. Self always reads "You";
+    // opponents get "Aria" / "Bran" / "Cyrus" / etc. Color-name
+    // labels were tried in 0.33.3 but colonist's player-color
+    // shuffling made them unreliable, so we dropped that approach.
+    const _FANTASY_NAMES = [
+        'Aria', 'Bran', 'Cyrus', 'Dara',
+        'Elin', 'Fynn', 'Gaia', 'Hugo',
+    ];
+    const _name_to_anon = new Map();
+    let _anonSeq = 0;
+    let _anonSelfUsername = null;
     function _populateAnonColors(snap) {
-        _username_to_color.clear();
-        if (snap && snap.self && snap.self.username) {
-            _username_to_color.set(snap.self.username, snap.self.color);
-        }
+        // Re-seed self detection each render. _name_to_anon survives
+        // across renders so labels stay stable within a game.
+        _anonSelfUsername = (snap && snap.self && snap.self.username)
+            || null;
+        // Pre-walk opps so seat order is deterministic.
         for (const o of (snap && snap.opps) || []) {
-            if (o && o.username) {
-                _username_to_color.set(o.username, o.color);
-            }
+            if (o && o.username) anonName(o.username);
         }
-    }
-    function _colorLabel(color) {
-        if (!color) return 'Player';
-        // RED → Red, etc.
-        return color.charAt(0).toUpperCase()
-            + color.slice(1).toLowerCase();
     }
     function anonName(username, opts) {
         if (!window.__catanbotStreamer) return username || '';
         if (!username) return '';
-        const color = _username_to_color.get(username);
-        const label = _colorLabel(color);
-        if (opts && opts.isSelf) return `${label} (You)`;
-        return label;
+        if (opts && opts.isSelf) return 'You';
+        if (_anonSelfUsername === username) return 'You';
+        if (!_name_to_anon.has(username)) {
+            const slot = _FANTASY_NAMES[
+                _anonSeq % _FANTASY_NAMES.length];
+            const ordinal = Math.floor(
+                _anonSeq / _FANTASY_NAMES.length);
+            _name_to_anon.set(username,
+                ordinal === 0 ? slot : `${slot} ${ordinal + 1}`);
+            _anonSeq += 1;
+        }
+        return _name_to_anon.get(username);
     }
-    // Single-letter for color pills (R/B/W/O — matches catanatron
-    // color first-letter convention but derived from the resolved
-    // color, not the raw username).
     function anonInitial(username, opts) {
         if (!window.__catanbotStreamer) {
             return (username || '?').slice(0, 1).toUpperCase();
         }
-        const color = _username_to_color.get(username);
-        if (color) return color.charAt(0).toUpperCase();
-        return '?';
+        if (opts && opts.isSelf) return 'Y';
+        if (_anonSelfUsername === username) return 'Y';
+        return anonName(username).slice(0, 1).toUpperCase();
     }
     const iconFor = (res) => RES_EMOJI[res]
         || RES_SVG[res]

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CatanBot — Colonist HUD",
   "short_name": "CatanBot",
-  "version": "0.33.4",
+  "version": "0.33.5",
   "description": "Side-panel HUD for colonist.io. Full-feature port of the Tampermonkey userscript v0.25.4 — recommendations, robber targets, knight/monopoly/YoP/RB hints, plan banner, threat banner, win-this-turn callout, eval sparkline, roll histogram, move-quality strip — all in Chrome's side panel.",
   "permissions": [
     "sidePanel",
