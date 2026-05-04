@@ -86,6 +86,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || typeof msg !== 'object') return false;
     if (msg.type === 'ws-frame') {
         postJson(`${BRIDGE_BASE}/ws`, msg.frame);
+        // Also broadcast the frame to all extension contexts (the
+        // side panel listens for these). The panel uses them as
+        // its data source when the local bridge is unreachable —
+        // standalone mode runs the JS recommender directly off
+        // the same colonist WS frames the bridge would have
+        // consumed. When the bridge IS up, the panel ignores
+        // the broadcast and uses /advisor as before.
+        try {
+            chrome.runtime.sendMessage({
+                type: 'ws-frame-broadcast', frame: msg.frame,
+            }).catch(() => {});
+        } catch (_) { /* no listeners; ignore */ }
         // Don't await — service worker shouldn't hold the message
         // channel open just so a fire-and-forget POST can resolve.
         return false;

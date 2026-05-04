@@ -96,6 +96,10 @@
   </div>
   <div class="resize-handle" id="resize-handle" title="drag to resize"></div>
 </div>
-<script src="panel.js"></script>
+<!-- Type=module so panel.js can dynamic-import lib/index.js for
+     the standalone JS recommender path. The non-module path
+     used to work but blocked import() of the lib bundle when
+     the bridge is unreachable. -->
+<script type="module" src="panel.js"></script>
 </body>
 </html>

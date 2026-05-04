@@ -50,14 +50,123 @@
     // see the same value.
     let latestAdvisorSnap = null;
 
+    // Standalone state — populated from broadcast WS frames when
+    // the local bridge is unreachable. Holds the parsed board,
+    // last-known mapState, and a small set of derived buildings
+    // so the panel can render opening picks without the bridge.
+    //
+    // Lazily imports the lib/ modules so the bundle isn't loaded
+    // unless we actually need it (CWS users with no bridge).
+    let _standalone = {
+        board: null,            // parsed board model from board.js
+        mapStateFrame: null,    // raw mapState dict (re-parse safety)
+        gameStarted: false,
+        // Future: mid-game state lives here once events.js lands.
+    };
+    let _standaloneLib = null;  // cached import promise
+    async function _loadStandaloneLib() {
+        if (_standaloneLib) return _standaloneLib;
+        // Use the chrome.runtime.getURL to resolve the lib path
+        // for dynamic import — required because panel.js runs as
+        // a side-panel document, not bundled with content scripts.
+        const libUrl = chrome.runtime.getURL('lib/index.js');
+        _standaloneLib = import(libUrl);
+        return _standaloneLib;
+    }
+
+    // Background broadcasts ws-frame messages on every WS frame
+    // intercepted from colonist. We listen here so the panel can
+    // build standalone state from them when the bridge is down.
+    // When the bridge IS up, /advisor poll wins anyway and these
+    // updates are essentially no-ops.
+    function _findMapState(o, depth = 0) {
+        if (depth > 6) return null;
+        if (o && typeof o === 'object' && !Array.isArray(o)
+                && !ArrayBuffer.isView(o)) {
+            if ('tileHexStates' in o) return o;
+            for (const v of Object.values(o)) {
+                const r = _findMapState(v, depth + 1);
+                if (r) return r;
+            }
+        }
+        if (Array.isArray(o)) {
+            for (const v of o) {
+                const r = _findMapState(v, depth + 1);
+                if (r) return r;
+            }
+        }
+        return null;
+    }
+    chrome.runtime.onMessage.addListener((msg) => {
+        if (!msg || msg.type !== 'ws-frame-broadcast') return false;
+        const frame = msg.frame;
+        if (!frame || frame.dir !== 'in') return false;
+        // Only attempt msgpack decode on arraybuffer frames; text
+        // frames are colonist's lobby/handshake JSON and don't
+        // carry mapState.
+        if (frame.kind !== 'arraybuffer' || !frame.b64) return false;
+        _loadStandaloneLib().then((lib) => {
+            try {
+                const decoded = lib.decodeMsgpack(frame.b64);
+                const ms = _findMapState(decoded);
+                if (ms) {
+                    _standalone.mapStateFrame = ms;
+                    _standalone.board =
+                        lib.buildBoardFromColonistMap(ms);
+                    _standalone.gameStarted = true;
+                    // Force a panel re-render so the new opening
+                    // picks land within ~1 tick instead of waiting
+                    // for the next bridge-poll failure cycle.
+                    window.__catanbotRenderDirty = true;
+                }
+            } catch (_) {
+                // Bad frame; standalone state stays as-is. Bridge
+                // mode (when active) ignores this entirely.
+            }
+        });
+        return false;
+    });
+
     // Synthetic "no bridge connected" snap used by the panel's
     // poll loop when the local bridge has been unreachable for
-    // several ticks. Renders a friendly explainer + install link
-    // instead of leaving the panel blank or showing stale data.
-    // Carries the special _source flag the renderer reads to
-    // hide every in-game section and show only the standalone
-    // banner.
+    // several ticks. When the standalone path has built a board
+    // from incoming WS frames, the snap upgrades to "standalone"
+    // and the panel renders opening picks from the JS recommender
+    // instead of the bare install-instructions placeholder.
     function _makeNoBridgeSnap() {
+        if (_standalone.board && _standaloneLib) {
+            // Synchronous use of the lib import is safe here —
+            // the broadcast handler above only sets _standalone.
+            // board after lib is loaded, so import() has already
+            // resolved.
+            try {
+                // Top-level access to the cached lib via a
+                // synchronous shortcut: we attach helpers to
+                // _standalone itself once loaded so this path
+                // doesn't need an async hop.
+                if (_standalone._lib) {
+                    const lib = _standalone._lib;
+                    const ranked = lib.scoreOpeningNodes(
+                        _standalone.board);
+                    return {
+                        seq: -2,
+                        _source: 'standalone',
+                        game_started: true,
+                        self: null,
+                        opps: [],
+                        recommendations: [],
+                        // Custom field consumed by the renderer's
+                        // standalone branch below.
+                        _standaloneOpenings: ranked.slice(0, 5),
+                        _standaloneBoard: {
+                            tiles: Object.keys(
+                                _standalone.board.tiles).length,
+                            ports: _standalone.board.ports.length,
+                        },
+                    };
+                }
+            } catch (_) { /* fall through to no-bridge */ }
+        }
         return {
             seq: -1,
             _source: 'no_bridge',
@@ -65,10 +174,12 @@
             self: null,
             opps: [],
             recommendations: [],
-            // Every other field falsy so the panel skips its
-            // normal render paths.
         };
     }
+    // Cache the lib on _standalone synchronously after first load.
+    _loadStandaloneLib().then((lib) => {
+        _standalone._lib = lib;
+    }).catch(() => { /* import failed; standalone path silent */ });
 
     // Auto-open postmortem when the bridge reports a new one.
     // `latest_postmortem.seq` increments each time _write_postmortem
@@ -1273,6 +1384,71 @@
                 + `Already installed? Run <code>./bin/catanbot live</code> `
                 + `from the repo and the panel will connect within a `
                 + `few seconds.`
+                + `</div>`
+                + `</div>`;
+            if (ui.histHost) ui.histHost.classList.add('hidden');
+            if (ui.evalHost) ui.evalHost.classList.add('hidden');
+            if (ui.mqHost) ui.mqHost.classList.add('hidden');
+            if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            return;
+        }
+        // Standalone "live without bridge" path — board built from
+        // the GameStart frame's mapState, opening picks scored by
+        // the JS recommender. Phase 3 of the standalone rollout;
+        // mid-game state mutations land later (events.js port).
+        if (snap && snap._source === 'standalone') {
+            const openings = snap._standaloneOpenings || [];
+            const boardInfo = snap._standaloneBoard || {};
+            let openingsHtml = '';
+            if (openings.length) {
+                const rows = openings.map((r, i) => {
+                    const tilesStr = (r.tiles || [])
+                        .map(([res, num]) =>
+                            `<span class="sa-tile">`
+                            + (res === 'DESERT' ? '🏜'
+                                : (iconFor(res) || res.slice(0, 2)))
+                            + (num ? `<b>${num}</b>` : '')
+                            + `</span>`)
+                        .join('');
+                    const portStr = r.port
+                        ? `<span class="sa-port">⚓ ${r.port.kind}`
+                            + (r.port.resource
+                                ? ' ' + r.port.resource.toLowerCase()
+                                : '')
+                            + `</span>`
+                        : '';
+                    return `<div class="sa-rec">`
+                        + `<span class="sa-rank">${i + 1}.</span>`
+                        + `<span class="sa-score">`
+                            + r.score.toFixed(2) + `</span>`
+                        + `<span class="sa-tiles">${tilesStr}</span>`
+                        + portStr
+                        + `</div>`;
+                }).join('');
+                openingsHtml =
+                    `<div class="sa-section-h">opening picks</div>`
+                    + rows;
+            } else {
+                openingsHtml =
+                    `<div class="muted">building board…</div>`;
+            }
+            ui.content.innerHTML =
+                `<div class="standalone-frame">`
+                + `<div class="sa-banner">`
+                + `<span class="sa-pill">standalone</span>`
+                + `<span class="sa-meta">`
+                + `${boardInfo.tiles || '?'} tiles · `
+                + `${boardInfo.ports || '?'} ports · `
+                + `local recommender`
+                + `</span>`
+                + `</div>`
+                + openingsHtml
+                + `<div class="sa-footnote">`
+                + `For the full HUD (mid-game recs, dev-card hints, `
+                + `robber targets, postmortems) install the local `
+                + `Python bridge — see `
+                + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
+                + `target="_blank" rel="noopener">install docs</a>.`
                 + `</div>`
                 + `</div>`;
             if (ui.histHost) ui.histHost.classList.add('hidden');

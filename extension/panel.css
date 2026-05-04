@@ -2767,6 +2767,93 @@ html, body, .panel {
   color: var(--fg-mute);
 }
 
+/* Standalone frame — bridge unreachable but JS recommender has
+   built a board from the GameStart frame and can render opening
+   picks. Phase 3 of the standalone rollout. */
+.standalone-frame {
+  padding: 12px 4px;
+  color: var(--fg);
+}
+.standalone-frame .sa-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.standalone-frame .sa-pill {
+  background: var(--accent);
+  color: var(--bg-0, #0a0e15);
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.standalone-frame .sa-meta {
+  font-size: 10px;
+  color: var(--fg-dim);
+}
+.standalone-frame .sa-section-h {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.standalone-frame .sa-rec {
+  display: grid;
+  grid-template-columns: 18px 38px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.standalone-frame .sa-rec:last-child { border-bottom: 0; }
+.standalone-frame .sa-rank {
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.standalone-frame .sa-score {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.standalone-frame .sa-tiles {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.standalone-frame .sa-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--fg-mute);
+}
+.standalone-frame .sa-port {
+  font-size: 10px;
+  color: var(--fg-dim);
+}
+.standalone-frame .sa-footnote {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--fg-dim);
+  line-height: 1.6;
+}
+.standalone-frame .sa-footnote a {
+  color: var(--pos);
+}
+
 /* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
    threats, or knight-asap plays. The flat redesign zeroes out box-
    shadow so these animations have to override that with their own
