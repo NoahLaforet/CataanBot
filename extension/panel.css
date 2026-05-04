@@ -2317,7 +2317,7 @@ html, body, .panel {
 .discard-hint, .seven-prep, .plan, .gprog,
 .trade-offer, .knight-hint, .dev-hint,
 .banner, .winning-move, .opps-h, .progression,
-.off-turn-ribbon, .milestone {
+.off-turn-ribbon, .milestone, .engine-deficit {
   background: transparent !important;
   border: 0 !important;
   border-left: 2px solid var(--line-strong) !important;
@@ -2429,6 +2429,11 @@ table.robber.robber-urgent {
 .milestone { border-left-color: var(--info) !important; color: var(--fg) !important; }
 .milestone .ms-head { font-weight: 700; }
 .milestone .ms-tail { color: var(--fg-mute); margin-left: 4px; }
+.engine-deficit {
+  border-left-color: var(--watch) !important;
+  color: var(--watch) !important;
+  font-weight: 700 !important;
+}
 .off-turn-ribbon {
   background: var(--bg-1) !important;
   border-radius: 4px !important;

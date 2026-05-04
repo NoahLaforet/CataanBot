@@ -1657,6 +1657,44 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 "per_roll": round(per_roll, 2),
             }
     snap["production_stall"] = stall
+    # Engine-deficit alarm: when a single opp's per-roll production is
+    # significantly higher than self's AND the game is past mid_late
+    # VP, surface "engine gap" so Noah can pivot to trade-aggressive /
+    # spend-down mode. Pattern came directly out of his 2026-05-03 vs
+    # Plunder101 loss: Plunder out-produced 86 → 64, won via the
+    # bigger engine. Threshold of 1.5× is intentionally loud — by the
+    # time the gap is that wide on a settled board, you're not catching
+    # up via natural rolls.
+    snap["engine_deficit"] = None
+    try:
+        from cataanbot.config import mid_late_vp
+        self_pr = float(((snap.get("self") or {}).get("production")
+                         or {}).get("per_roll", 0.0))
+        leader_opp = None
+        leader_pr = 0.0
+        for opp in (snap.get("opps") or []):
+            opp_pr = float((opp.get("production") or {})
+                           .get("per_roll", 0.0))
+            if opp_pr > leader_pr:
+                leader_pr = opp_pr
+                leader_opp = opp
+        max_vp = max(
+            (int(o.get("vp", 0) or 0) for o in (snap.get("opps") or [])),
+            default=0,
+        )
+        if (self_pr > 0.0 and leader_opp is not None
+                and leader_pr >= self_pr * 1.5
+                and max_vp >= mid_late_vp()):
+            snap["engine_deficit"] = {
+                "self_per_roll": round(self_pr, 2),
+                "leader_per_roll": round(leader_pr, 2),
+                "leader_username": leader_opp.get("username"),
+                "leader_color": leader_opp.get("color"),
+                "ratio": round(leader_pr / self_pr, 2),
+            }
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] engine_deficit failed: {e!r}", flush=True)
+        snap["engine_deficit"] = None
     # "My turn" is derived from colonist's currentTurnPlayerColor cache.
     # Recommendations only fire when it's actually my turn — off-turn
     # suggestions would just be noise.

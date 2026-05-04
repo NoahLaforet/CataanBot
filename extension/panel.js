@@ -1980,6 +1980,20 @@
                 + escapeHtml(snap.win_proximity.message)
                 + '</div>');
         }
+        // Engine-deficit alarm: leader's per-roll production has
+        // pulled ≥1.5× ahead of self, mid/late game. Past this point
+        // natural rolls won't close the gap — Noah should pivot
+        // toward dev cards / trades / robber pressure.
+        if (snap.engine_deficit) {
+            const ed = snap.engine_deficit;
+            const leader = escapeHtml(ed.leader_username || 'opp');
+            parts.push(`<div class="engine-deficit">`
+                + `<span class="b-ico">⚙️</span> `
+                + `engine gap — ${leader} `
+                + `${ed.leader_per_roll}/roll vs your ${ed.self_per_roll} `
+                + `(${ed.ratio}× ahead)`
+                + '</div>');
+        }
         if (snap.robber_on_me) {
             const rom = snap.robber_on_me;
             const tileLbl = `${iconFor(rom.resource)}${rom.number || ''}`;
