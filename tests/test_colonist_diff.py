@@ -946,3 +946,47 @@ def test_trade_offer_id_evicts_on_close():
     }}
     events_from_diff(sess, diff)
     assert "abc123" not in sess.active_offer_ids
+
+
+def test_ws_game_over_emitted_when_player_hits_vp_target():
+    """When a diff merges in victoryPointsState that pushes a player
+    to >= the VP target, colonist_diff should emit GameOverEvent so
+    the postmortem path fires even when the DOM-log "X won the game"
+    line is missing (e.g. when the chat scraper is dark).
+    """
+    from cataanbot.colonist_diff import LiveSession, events_from_frame_payload
+    from cataanbot.events import GameOverEvent
+    from cataanbot.config import set_vp_target
+
+    set_vp_target(10)
+
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    # Pick any opp seat already on the board and set under-target VP,
+    # then bump them past target via the diff. Source-id keys: 0=settle,
+    # 1=city, 4=LR-flag (2 VP).
+    target_cid = next(cid for cid in sess.player_names
+                      if cid != sess.self_color_id)
+    target_name = sess.player_names[target_cid]
+    sess.victory_points_state[target_cid] = {0: 4, 1: 1, 4: 0, 5: 0}
+
+    frame = {
+        "type": 91,
+        "payload": {
+            "diff": {
+                "playerStates": {
+                    str(target_cid): {
+                        "victoryPointsState": {"0": 5, "1": 2, "4": 1},
+                    },
+                },
+            },
+        },
+    }
+    events = events_from_frame_payload(sess, frame)
+    over_events = [e for e in events if isinstance(e, GameOverEvent)]
+    assert len(over_events) == 1, f"expected 1 GameOverEvent, got {events}"
+    assert over_events[0].winner == target_name
+    # Re-firing on a later diff must not duplicate the event.
+    events2 = events_from_frame_payload(sess, frame)
+    over_events2 = [e for e in events2 if isinstance(e, GameOverEvent)]
+    assert over_events2 == [], (
+        f"GameOverEvent should fire only once per session: {events2}")
