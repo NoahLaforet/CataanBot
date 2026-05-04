@@ -1275,7 +1275,8 @@
 
   .threat, .win-prox, .robber-on-me, .winning-move,
   .lr-race, .la-race,
-  .trade-offer, .knight-hint, .dev-hint, .discard-hint {
+  .trade-offer, .knight-hint, .dev-hint, .discard-hint,
+  .strategy-banner, .strategy-triggers {
     position: relative;
     padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
     margin: var(--s-2) 0;
@@ -1286,6 +1287,81 @@
     font-size: calc(14px * var(--font-scale));
     font-weight: 500;
     letter-spacing: 0.01em;
+  }
+
+  /* Strategy banner — proactive archetype frame. Coloured by tag so
+     OWS reads city-blue, LR rush reads road-red, etc. The pivot
+     triggers stack underneath as a tighter sub-list. */
+  .strategy-banner { border-left-color: var(--info); }
+  .strategy-banner .sb-head { display: flex; align-items: baseline;
+    gap: var(--s-2); flex-wrap: wrap; }
+  .strategy-banner .strat-tag {
+    text-transform: uppercase; font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .strategy-banner .strat-phase {
+    font-size: calc(11px * var(--font-scale));
+    color: var(--fg-dim); padding: 1px 6px;
+    border: 1px solid var(--line); border-radius: 3px;
+    text-transform: lowercase;
+  }
+  .strategy-banner .strat-fb,
+  .strategy-banner .strat-ov {
+    color: var(--fg-mute);
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 500;
+  }
+  .strategy-banner .strat-why {
+    color: var(--fg-mute);
+    font-weight: 400;
+    margin-top: var(--s-1);
+    font-size: calc(12px * var(--font-scale));
+  }
+  /* Per-tag accent — purely cosmetic so the active archetype is
+     visually distinct at a glance. */
+  .strategy-banner.ows {
+    border-left-color: #f59e0b;
+  }
+  .strategy-banner.ows .strat-tag { color: #f59e0b; }
+  .strategy-banner.lr_rush {
+    border-left-color: #ef4444;
+  }
+  .strategy-banner.lr_rush .strat-tag { color: #ef4444; }
+  .strategy-banner.port_trade {
+    border-left-color: #38bdf8;
+  }
+  .strategy-banner.port_trade .strat-tag { color: #38bdf8; }
+  .strategy-banner.rb_carved_tiles {
+    border-left-color: #a78bfa;
+  }
+  .strategy-banner.rb_carved_tiles .strat-tag { color: #a78bfa; }
+  .strategy-banner.balanced {
+    border-left-color: var(--fg-dim);
+  }
+  .strategy-banner.balanced .strat-tag { color: var(--fg-dim); }
+  /* When a pivot trigger overrode the primary, give the whole banner
+     a subtle stripe so the user notices the swap. */
+  .strategy-banner.overridden {
+    background: linear-gradient(90deg,
+      rgba(167, 139, 250, 0.10), var(--bg-1) 60%);
+  }
+
+  /* Pivot triggers list — tighter than the banner above, single
+     line per trigger with a small dot bullet. */
+  .strategy-triggers {
+    border-left-color: var(--accent);
+    padding-top: var(--s-2);
+    padding-bottom: var(--s-2);
+  }
+  .strategy-triggers .strat-trigger {
+    color: var(--fg-mute);
+    font-size: calc(12px * var(--font-scale));
+    font-weight: 400;
+    line-height: 1.5;
+  }
+  .strategy-triggers .strat-trigger-dot {
+    color: var(--accent);
+    margin-right: var(--s-1);
   }
 
   .threat.mid   { border-left-color: var(--accent); color: var(--accent); }
@@ -2317,7 +2393,8 @@ html, body, .panel {
 .discard-hint, .seven-prep, .plan, .gprog,
 .trade-offer, .knight-hint, .dev-hint,
 .banner, .winning-move, .opps-h, .progression,
-.off-turn-ribbon, .milestone, .engine-deficit {
+.off-turn-ribbon, .milestone, .engine-deficit,
+.strategy-banner, .strategy-triggers {
   background: transparent !important;
   border: 0 !important;
   border-left: 2px solid var(--line-strong) !important;
@@ -2338,6 +2415,59 @@ html, body, .panel {
 }
 .plan { border-left-color: var(--info) !important; }
 .plan.ready { border-left-color: var(--pos) !important; }
+
+/* Strategy banner — minimal mode keeps the per-tag accents from the
+   default scope (so OWS still reads orange-ish, LR_RUSH red, etc.)
+   but removes the gradient backdrop so banners don't compete for
+   attention with the threat/winning-move pulses. */
+.strategy-banner.ows { border-left-color: #f59e0b !important; }
+.strategy-banner.lr_rush { border-left-color: #ef4444 !important; }
+.strategy-banner.port_trade { border-left-color: #38bdf8 !important; }
+.strategy-banner.rb_carved_tiles {
+  border-left-color: #a78bfa !important;
+}
+.strategy-banner.balanced {
+  border-left-color: var(--fg-dim) !important;
+}
+.strategy-banner.overridden { background: transparent !important; }
+.strategy-banner .strat-tag {
+  text-transform: uppercase !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+.strategy-banner .strat-phase {
+  font-size: 10px !important;
+  color: var(--fg-dim) !important;
+  padding: 0 4px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 2px !important;
+  text-transform: lowercase !important;
+  margin-left: 6px !important;
+}
+.strategy-banner .strat-fb,
+.strategy-banner .strat-ov {
+  color: var(--fg-mute) !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  margin-left: 6px !important;
+}
+.strategy-banner .strat-why {
+  color: var(--fg-mute) !important;
+  font-weight: 400 !important;
+  font-size: 11px !important;
+  margin-top: 2px !important;
+}
+.strategy-triggers { border-left-color: var(--accent) !important; }
+.strategy-triggers .strat-trigger {
+  color: var(--fg-mute) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.4 !important;
+}
+.strategy-triggers .strat-trigger-dot {
+  color: var(--accent) !important;
+  margin-right: 4px !important;
+}
 
 /* Attention-grabbing pulses — don't miss WIN THIS TURN, opp imminent
    threats, or knight-asap plays. The flat redesign zeroes out box-

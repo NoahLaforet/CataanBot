@@ -2088,6 +2088,88 @@
         // Bridge still computes the data (snap.production_stall,
         // snap.sevens_hot, snap.hot_numbers); postmortems can surface
         // them. The live HUD just doesn't.
+
+        // Strategy banner — once both opening settlements are placed,
+        // the post-placement selector emits an active archetype tag
+        // (OWS / LR_RUSH / PORT_TRADE / RB_CARVED_TILES / BALANCED)
+        // plus pivot triggers. Surfaces as a one-line frame so the
+        // user understands what archetype the bot is biasing toward
+        // and why. Skipped during setup (snap.strategy is null).
+        if (snap.strategy && snap.strategy.active) {
+            const st = snap.strategy;
+            const tag = String(st.active);
+            // Short labels — the full names are too long for a one-
+            // line banner. Order matches strategy_select._TAGS so the
+            // primary always wins in the rare case of a duplicate.
+            const TAG_LABELS = {
+                OWS: 'OWS',
+                LR_RUSH: 'LR rush',
+                PORT_TRADE: 'port trade',
+                RB_CARVED_TILES: 'road builder',
+                BALANCED: 'balanced',
+            };
+            const TAG_ICONS = {
+                OWS: '🏛',
+                LR_RUSH: '🛣',
+                PORT_TRADE: '⛵',
+                RB_CARVED_TILES: '🛤',
+                BALANCED: '⚖️',
+            };
+            const label = TAG_LABELS[tag] || tag;
+            const icon = TAG_ICONS[tag] || '🎯';
+            // Override styling: when a pivot trigger forced the
+            // active tag away from primary, lean visual on the
+            // override so the user sees the swap.
+            const overridden = st.override_tag
+                && st.override_tag !== st.primary;
+            const phaseTag = st.phase
+                ? `<span class="strat-phase">${escapeHtml(st.phase)}</span>`
+                : '';
+            const fallbackTag = (st.fallback && st.fallback !== tag)
+                ? `<span class="strat-fb">→ fb: `
+                    + escapeHtml(TAG_LABELS[st.fallback] || st.fallback)
+                    + `</span>`
+                : '';
+            const overrideTag = overridden
+                ? `<span class="strat-ov">↺ pivoted from `
+                    + escapeHtml(TAG_LABELS[st.primary] || st.primary)
+                    + `</span>`
+                : '';
+            parts.push(
+                `<div class="strategy-banner ${tag.toLowerCase()}`
+                    + (overridden ? ' overridden' : '') + '">'
+                + `<div class="sb-head">`
+                + `<span class="b-ico">${icon}</span> `
+                + `<span class="strat-tag">${escapeHtml(label)}</span>`
+                + phaseTag + fallbackTag + overrideTag
+                + `</div>`
+                + (st.rationale
+                   ? `<div class="strat-why">`
+                       + escapeHtml(st.rationale) + `</div>`
+                   : '')
+                + '</div>');
+            // Pivot triggers (when fired): one-line list under the
+            // banner. pivot_details aligns with pivot_triggers by
+            // index, so prefer the human-readable detail when present.
+            const triggerNames = Array.isArray(st.pivot_triggers)
+                ? st.pivot_triggers : [];
+            const triggerDetails = Array.isArray(st.pivot_details)
+                ? st.pivot_details : [];
+            if (triggerNames.length) {
+                const lines = triggerNames.map((name, i) => {
+                    const detail = triggerDetails[i] || name;
+                    return `<div class="strat-trigger">`
+                        + `<span class="strat-trigger-dot">●</span> `
+                        + escapeHtml(detail)
+                        + `</div>`;
+                });
+                parts.push(
+                    `<div class="strategy-triggers">`
+                    + lines.join('')
+                    + `</div>`);
+            }
+        }
+
         if (snap.threat && snap.threat.message) {
             const lvl = snap.threat.level || 'mid';
             // Streamer mode: replace the leader's real name in the
