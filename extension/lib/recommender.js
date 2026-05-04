@@ -322,13 +322,14 @@ function _roadRecs(state, hand, opts) {
 }
 
 /** Bank/port trades that unlock a useful build this turn. Returns
- *  up to 2 recs. */
+ *  up to 3 recs. Now handles multi-swap trades (e.g. 2 separate
+ *  port/bank trades to get 2 missing resources). */
 function _bankTradeRecs(state, hand, opts) {
     const board = state.map;
     const recs = [];
     if (!hand) return recs;
-    // What ports do we touch?
-    const ownPorts = new Set();   // resource → '2:1'
+    // What ports do we touch? Pull from owned settlements + cities.
+    const ownPorts = new Set();   // resource set with 2:1 access
     let has31 = false;
     for (const nid of _ownNodes(state)) {
         const port = board.nodes[nid]?.port;
@@ -341,46 +342,79 @@ function _bankTradeRecs(state, hand, opts) {
         if (has31) return 3;
         return 4;
     };
-    // Identify the nearest affordable build target.
+    // Cheapest swaps to satisfy `need` from `hand`. Returns null if
+    // no combination of port/bank trades can cover the missing
+    // resources, or {give, get, totalSpent} when feasible.
+    function planSwaps(hand, need) {
+        const give = {};
+        const get = { ...need };
+        const remaining = { ...hand };
+        for (const [r, n] of Object.entries(need)) {
+            let stillNeed = n;
+            // Each iteration spends `ratio` of some surplus to gain 1.
+            while (stillNeed > 0) {
+                let bestSurplus = null;
+                let bestRatio = Infinity;
+                for (const sr of RESOURCE_NAMES) {
+                    if (sr === r) continue;
+                    const have = remaining[sr] || 0;
+                    const rt = ratioFor(sr);
+                    if (have >= rt && rt < bestRatio) {
+                        bestSurplus = sr;
+                        bestRatio = rt;
+                    }
+                }
+                if (!bestSurplus) return null;
+                give[bestSurplus] = (give[bestSurplus] || 0) + bestRatio;
+                remaining[bestSurplus] -= bestRatio;
+                stillNeed -= 1;
+            }
+        }
+        return { give, get,
+                 totalSpent: Object.values(give)
+                    .reduce((s, v) => s + v, 0) };
+    }
+    // Identify the highest-VP build target reachable via trades.
     const wanted = [
-        ['city', COSTS.city],
-        ['settlement', COSTS.settlement],
-        ['road', COSTS.road],
-        ['dev_card', COSTS.dev_card],
+        ['city', COSTS.city, 7.5],
+        ['settlement', COSTS.settlement, 7.0],
+        ['dev_card', COSTS.dev_card, 5.5],
+        ['road', COSTS.road, 5.0],
     ];
-    for (const [target, cost] of wanted) {
+    for (const [target, cost, baseScore] of wanted) {
         if (handCanAfford(hand, cost)) continue;
         const need = _missing(hand, cost);
-        if (Object.keys(need).length !== 1) continue; // need just one swap
-        const [needRes, needCount] = Object.entries(need)[0];
-        if (needCount > 1) continue;  // single-swap recs only for now
-        // Find a resource we have a surplus of (ratio + 0 buffer).
-        for (const surplus of RESOURCE_NAMES) {
-            if (surplus === needRes) continue;
-            const ratio = ratioFor(surplus);
-            const have = hand[surplus] || 0;
-            if (have < ratio) continue;
-            // Don't trade away resources we still need for the cost.
-            const stillNeed = (cost[surplus] || 0)
-                - (hand[surplus] || 0);
-            if (stillNeed > 0 && have - ratio < (cost[surplus] || 0)) continue;
-            recs.push({
-                kind: 'bank_trade',
-                when: 'now',
-                score: target === 'city' ? 7.5
-                       : (target === 'settlement' ? 7.0
-                       : (target === 'dev_card' ? 5.5 : 5.0)),
-                detail: `trade ${ratio}:1 → unlock ${target}`,
-                give: { [surplus]: ratio },
-                get: { [needRes]: 1 },
-                target_kind: target,
-                ratio,
-            });
-            break;
+        // Verify trading away resources doesn't leave us short on
+        // anything still needed for the build itself.
+        const plan = planSwaps(hand, need);
+        if (!plan) continue;
+        // Confirm post-trade hand can pay the build cost.
+        const postHand = { ...hand };
+        for (const [r, n] of Object.entries(plan.give)) {
+            postHand[r] = (postHand[r] || 0) - n;
         }
+        for (const [r, n] of Object.entries(plan.get)) {
+            postHand[r] = (postHand[r] || 0) + n;
+        }
+        if (!handCanAfford(postHand, cost)) continue;
+        // Score: base − 0.5 per extra trade beyond the first.
+        const swaps = plan.totalSpent;
+        const score = Math.max(2.0,
+            baseScore - 0.5 * (swaps - Object.keys(plan.give).length));
+        recs.push({
+            kind: 'bank_trade',
+            when: 'now',
+            score: Math.round(score * 10) / 10,
+            detail: swaps === Object.keys(plan.give).length
+                ? `trade → unlock ${target}`
+                : `${swaps}-card trade → ${target}`,
+            give: plan.give,
+            get: plan.get,
+            target_kind: target,
+        });
     }
     recs.sort((a, b) => b.score - a.score);
-    return recs.slice(0, 2);
+    return recs.slice(0, 3);
 }
 
 /** Dev-card buy rec. Score scales with how stuck the player is
