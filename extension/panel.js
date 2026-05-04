@@ -123,6 +123,10 @@
                 // Bad frame; standalone state stays as-is. Bridge
                 // mode (when active) ignores this entirely.
             }
+        }).catch(() => {
+            // Lib import failed (extension context invalidated,
+            // chrome.runtime.getURL not available, etc.). Standalone
+            // mode silently disables; bridge path still works.
         });
         return false;
     });
