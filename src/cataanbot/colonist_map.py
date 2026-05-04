@@ -276,26 +276,42 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
     # map's edges. The static graph is built ONCE at import time from
     # BASE_MAP_TEMPLATE; ``Board.buildable_edges`` does
     # ``STATIC_GRAPH.subgraph(self.map.land_nodes)`` to validate road
-    # placements. Without our augmentation the variant edges aren't in
-    # the static graph, so every road placement fails with "Invalid
-    # Road Placement" — observed live on the first Pond game test.
-    # Adding to the global graph is safe: classic-map edges are still
-    # in there (we only ADD, never remove), and node/edge ids are
-    # unique across our variant maps + the classic.
+    # placements, and ``build_settlement`` walks ``STATIC_GRAPH.edges
+    # (node)`` to discard distance-rule neighbors. Without augmentation
+    # variant road placements fail with "Invalid Road Placement"
+    # (observed on the first Pond boot). With the wrong augmentation
+    # left over from a prior variant, settlement placements get false-
+    # positive distance-rule rejections (observed across the Twirl
+    # regression test when a stale 7-tile flower's edges sat on the
+    # same node ids).
     _augment_static_graph_for_map(cat_map)
 
     return cat_map
 
 
 def _augment_static_graph_for_map(cat_map) -> None:
-    """Add this variant CatanMap's nodes and edges to catanatron's
-    module-level STATIC_GRAPH so road-placement validation works.
+    """Replace the variant slice of catanatron's module-level
+    STATIC_GRAPH with this map's nodes and edges.
 
-    Idempotent (NetworkX add_node/add_edge dedupe). Also clears the
-    cached node-distances since the graph topology changed.
+    Variant maps all start node ids at the 1000+ range (kept distinct
+    from classic 0..53), so we can cleanly identify and strip prior
+    variant augmentations before adding the current map's. Without
+    that strip, edges from a previous variant linger at colliding
+    node ids and cause distance-rule false positives — the bug Noah's
+    Twirl regression test surfaced when run after the 7-tile flower
+    test.
+
+    Classic node ids (< 1000) are never touched here — those came
+    from BASE_MAP_TEMPLATE at import time and stay put.
+
+    Also clears the cached node-distances since the graph topology
+    changed.
     """
     from catanatron.models.board import STATIC_GRAPH, get_node_distances
 
+    stale = [n for n in STATIC_GRAPH.nodes() if n >= 1000]
+    if stale:
+        STATIC_GRAPH.remove_nodes_from(stale)
     for tile in cat_map.tiles.values():
         STATIC_GRAPH.add_nodes_from(tile.nodes.values())
         STATIC_GRAPH.add_edges_from(tile.edges.values())

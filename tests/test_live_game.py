@@ -5457,7 +5457,6 @@ def test_twirl_full_game_replay_clean():
     """
     if not CAPTURE_TWIRL_WIN.exists():
         pytest.skip("twirl win capture not present")
-    from catanatron.models.board import STATIC_GRAPH
     from cataanbot import config
     from cataanbot.events import BuildEvent, GameOverEvent
     from cataanbot.live_game import LiveGame
@@ -5468,17 +5467,6 @@ def test_twirl_full_game_replay_clean():
     # (vp=10, discard=7) regresses on a leaked config.
     saved_vp = config.get_vp_target()
     saved_discard = config.get_discard_limit()
-    # Earlier variant-map tests augment catanatron's module-level
-    # STATIC_GRAPH with their own variant nodes/edges (every variant
-    # builder offsets at 1000+, so they collide). Twirl uses node ids
-    # 1000..1125 — if a prior test stamped different edges at the
-    # same ids, the settle-distance discard pulls in stale neighbors
-    # and rejects legitimate Twirl placements as "not connected".
-    # Snapshot the variant slice and restore it around the replay.
-    saved_variant_nodes = [n for n in STATIC_GRAPH.nodes() if n >= 1000]
-    saved_variant_edges = [e for e in STATIC_GRAPH.edges()
-                           if e[0] >= 1000 or e[1] >= 1000]
-    STATIC_GRAPH.remove_nodes_from(saved_variant_nodes)
     try:
         game = LiveGame()
         build_errors: list[str] = []
@@ -5512,11 +5500,3 @@ def test_twirl_full_game_replay_clean():
     finally:
         config.set_vp_target(saved_vp)
         config.set_discard_limit(saved_discard)
-        # Restore the pre-existing variant slice of STATIC_GRAPH so
-        # later tests see exactly the augmentations they would have
-        # without us having run.
-        for n in list(STATIC_GRAPH.nodes()):
-            if n >= 1000:
-                STATIC_GRAPH.remove_node(n)
-        STATIC_GRAPH.add_nodes_from(saved_variant_nodes)
-        STATIC_GRAPH.add_edges_from(saved_variant_edges)
