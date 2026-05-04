@@ -934,6 +934,65 @@
                     }
                 }
 
+                // Engine-deficit alarm: leader produces 1.5×+ self.
+                let engineDeficit = null;
+                if (st && st.map && (st.totalRolls >= 8)) {
+                    const selfPerRoll = selfBlock?.production?.per_roll || 0;
+                    let topOpp = null;
+                    for (const o of oppsBlock) {
+                        const p = o.prod || 0;
+                        if (!topOpp || p > topOpp.prod) {
+                            topOpp = { ...o, prod: p };
+                        }
+                    }
+                    if (topOpp && selfPerRoll > 0
+                            && topOpp.prod >= selfPerRoll * 1.5
+                            && topOpp.prod >= 0.5) {
+                        engineDeficit = {
+                            leader_username: topOpp.username,
+                            leader_per_roll: topOpp.prod.toFixed(2),
+                            self_per_roll: selfPerRoll.toFixed(2),
+                            ratio: (topOpp.prod / selfPerRoll).toFixed(1),
+                        };
+                    }
+                }
+
+                // Robber-on-me — when robber sits on a tile we have
+                // settle/city on. Surfaces a banner urging the user
+                // to clear it (knight, robber-move on a 7).
+                let robberOnMe = null;
+                if (st && st.map && st.robberTile) {
+                    const tile = st.map.tiles[st.robberTile];
+                    if (tile && tile.resource) {
+                        let myBuildings = 0;
+                        let hasCity = false;
+                        for (const nid of tile.nodes) {
+                            const b = st.buildings[nid];
+                            if (b && b.color === st.selfColor) {
+                                myBuildings += 1;
+                                if (b.kind === 'CITY') hasCity = true;
+                            }
+                        }
+                        if (myBuildings > 0) {
+                            // Recent cost tally: how many of the last
+                            // 8 non-7 rolls actually hit this tile.
+                            const recent = (st.rollHistory || []).slice(-8);
+                            const non7 = recent.filter(r => r.total !== 7);
+                            const blocks = non7.filter(
+                                r => r.total === tile.number).length;
+                            robberOnMe = {
+                                tile_id: st.robberTile,
+                                resource: tile.resource,
+                                number: tile.number,
+                                buildings: myBuildings,
+                                has_city: hasCity,
+                                rolls_recent: non7.length,
+                                blocks_recent: blocks,
+                            };
+                        }
+                    }
+                }
+
                 // Production stall — opp went N rolls without producing.
                 // Heuristic: if their hand total hasn't grown in 5+
                 // rolls AND they have producing tiles, they're being
@@ -991,6 +1050,8 @@
                     standings,
                     longest_road_race: lrRace,
                     largest_army_race: laRace,
+                    engine_deficit: engineDeficit,
+                    robber_on_me: robberOnMe,
                     threat,
                     win_proximity: winProx,
                     winning_move: winningMove,
