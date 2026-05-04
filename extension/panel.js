@@ -2098,15 +2098,34 @@
         if (snap.strategy && snap.strategy.active) {
             const st = snap.strategy;
             const tag = String(st.active);
-            // Short labels — the full names are too long for a one-
-            // line banner. Order matches strategy_select._TAGS so the
+            // Plain-English labels and a one-line "what this means"
+            // tooltip — the bare tag identifiers (OWS, LR_RUSH) read
+            // as insider jargon to anyone who hasn't read the strategy
+            // v2 plan. Order matches strategy_select._TAGS so the
             // primary always wins in the rare case of a duplicate.
             const TAG_LABELS = {
-                OWS: 'OWS',
-                LR_RUSH: 'LR rush',
-                PORT_TRADE: 'port trade',
-                RB_CARVED_TILES: 'road builder',
-                BALANCED: 'balanced',
+                OWS: 'Ore-Wheat-Sheep',
+                LR_RUSH: 'Longest Road rush',
+                PORT_TRADE: 'Port trader',
+                RB_CARVED_TILES: 'Road Builder',
+                BALANCED: 'Balanced',
+            };
+            const TAG_TOOLTIPS = {
+                OWS: 'Cities + dev cards. Hold dev cards for '
+                    + 'flexibility, not just knights — they conceal '
+                    + 'your real VP and let you pivot.',
+                LR_RUSH: 'Wood + brick footprint with expansion room. '
+                    + 'Set up via placements, then rush the last '
+                    + 'roads in 1-2 turns to claim Longest Road.',
+                PORT_TRADE: 'Settle near a relevant 2:1 port (not on '
+                    + 'it), route a road to reach it on settle #2. '
+                    + 'Trade your surplus down for what you need.',
+                RB_CARVED_TILES: 'Carved-out cluster of 4-5 tiles. '
+                    + 'Build settlements / cities normally; use roads '
+                    + 'to block opponents inside your zone, claim LR '
+                    + 'in the last 2 rounds.',
+                BALANCED: 'No dominant archetype — keep options '
+                    + 'open. The default when nothing else fits.',
             };
             const TAG_ICONS = {
                 OWS: '🏛',
@@ -2116,6 +2135,7 @@
                 BALANCED: '⚖️',
             };
             const label = TAG_LABELS[tag] || tag;
+            const tooltip = TAG_TOOLTIPS[tag] || '';
             const icon = TAG_ICONS[tag] || '🎯';
             // Override styling: when a pivot trigger forced the
             // active tag away from primary, lean visual on the
@@ -2137,7 +2157,9 @@
                 : '';
             parts.push(
                 `<div class="strategy-banner ${tag.toLowerCase()}`
-                    + (overridden ? ' overridden' : '') + '">'
+                    + (overridden ? ' overridden' : '') + '"'
+                    + (tooltip ? ` title="${escapeHtml(tooltip)}"` : '')
+                    + '>'
                 + `<div class="sb-head">`
                 + `<span class="b-ico">${icon}</span> `
                 + `<span class="strat-tag">${escapeHtml(label)}</span>`
