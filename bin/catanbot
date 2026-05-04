@@ -1,16 +1,48 @@
 #!/usr/bin/env bash
 # Repo-local launcher for the CatanBot CLI.
 #
-# Uses the venv's Python and sets PYTHONPATH to src/ so we don't depend on
-# the editable-install .pth file being processed — which, on some macOS
-# setups, gets silently skipped by site.py due to the UF_HIDDEN flag APFS
-# puts on compressed pip-written files.
+# On first run, bootstraps a .venv from pyproject.toml (including the
+# bridge extras) so a friend can clone + run a single command and be
+# playing. Subsequent runs skip the bootstrap and just exec the CLI.
+#
+# Why this exists: the editable-install .pth file gets silently skipped
+# by site.py on some macOS setups when APFS marks it UF_HIDDEN, which
+# makes the packaged `.venv/bin/catanbot` entry point fail with a
+# `ModuleNotFoundError`. Setting PYTHONPATH=src/ explicitly sidesteps
+# that whole class of bug.
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PY="$REPO_ROOT/.venv/bin/python"
-if [ ! -x "$PY" ]; then
-    echo "catanbot: no venv at $REPO_ROOT/.venv" >&2
-    echo "create one with: python3 -m venv .venv && .venv/bin/pip install -e ." >&2
+VENV="$REPO_ROOT/.venv"
+PY="$VENV/bin/python"
+
+# Pick a Python interpreter for the bootstrap. Prefer 3.12, then any
+# 3.11+; fall back to plain `python3` and let pip's version check
+# fail with a useful error.
+pick_python() {
+    for cand in python3.13 python3.12 python3.11 python3; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            ver=$("$cand" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+            major=${ver%.*}
+            minor=${ver#*.}
+            if [ "$major" -ge 3 ] && [ "$minor" -ge 11 ]; then
+                echo "$cand"
+                return
+            fi
+        fi
+    done
+    echo "catanbot: needs Python 3.11+. Install one and re-run." >&2
+    echo "  macOS:        brew install python@3.12" >&2
+    echo "  Ubuntu/Deb:   sudo apt install python3.12 python3.12-venv" >&2
     exit 1
+}
+
+if [ ! -x "$PY" ]; then
+    echo "catanbot: bootstrapping .venv (first run, ~30s)" >&2
+    BOOTSTRAP_PY="$(pick_python)"
+    "$BOOTSTRAP_PY" -m venv "$VENV"
+    "$VENV/bin/pip" install --upgrade pip >/dev/null
+    "$VENV/bin/pip" install -e "$REPO_ROOT[bridge]"
+    echo "catanbot: bootstrap done." >&2
 fi
+
 exec env PYTHONPATH="$REPO_ROOT/src" "$PY" -m catanbot.cli "$@"

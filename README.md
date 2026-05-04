@@ -135,9 +135,48 @@ machine. The Chrome extension's only network destination is
 
 ---
 
-## Install
+## Quick start
 
-Requires Python 3.11+ (catanatron constraint). macOS / Linux.
+Requires Python 3.11+ (catanatron constraint). macOS / Linux / WSL.
+Three commands to get a friend playing:
+
+```bash
+git clone https://github.com/NoahLaforet/CatanBot.git
+cd CatanBot
+./bin/catanbot live
+```
+
+The launcher script auto-creates a `.venv`, installs everything
+from `pyproject.toml` (including the FastAPI bridge), and starts
+the bridge on `127.0.0.1:8765` with the live advisor on. First
+run takes ~30s; subsequent runs start in <2s.
+
+If `./bin/catanbot` complains about Python, install **Python 3.11+**
+first:
+
+- macOS: `brew install python@3.12`
+- Ubuntu/Debian: `sudo apt install python3.12 python3.12-venv`
+- Windows: install from [python.org](https://www.python.org/downloads/)
+  and run from WSL (the launcher is bash-only)
+
+Then load the Chrome extension:
+
+1. Open `chrome://extensions` in Chrome.
+2. Toggle **Developer mode** (top-right).
+3. Click **Load unpacked** and pick the `extension/` folder.
+4. Pin the green CatanBot icon to the toolbar (puzzle-piece →
+   pin) and click it — the side panel opens.
+5. Open colonist.io, start a game. The bridge terminal logs each
+   event; the panel renders the HUD live.
+
+To update: `git pull`, then reload ⟳ on the CatanBot card in
+`chrome://extensions`.
+
+> **Heads-up for friends:** the bridge runs entirely on your
+> machine. Game state never leaves `127.0.0.1`. The extension's
+> only network destination is the local bridge.
+
+## Manual install (if the launcher gives you trouble)
 
 ```bash
 git clone https://github.com/NoahLaforet/CatanBot.git
@@ -145,45 +184,32 @@ cd CatanBot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[bridge]'
-./bin/catanbot --help
+./bin/catanbot live           # or: catanbot live
 ```
 
-The `[bridge]` extras pull in FastAPI + uvicorn for the live bridge.
-Skip if you only want the offline replay / advisor CLIs.
+The `[bridge]` extras pull in FastAPI + uvicorn. If you want
+**uv** instead of `pip` + `venv`:
+
+```bash
+git clone https://github.com/NoahLaforet/CatanBot.git
+cd CatanBot
+uv sync --extra bridge
+uv run catanbot live
+```
 
 > On macOS the packaged `.venv/bin/catanbot` entry point can flake
 > when the editable-install `.pth` file picks up an `UF_HIDDEN` flag
-> from APFS. The repo-local `./bin/catanbot` launcher sidesteps
-> that by setting `PYTHONPATH=src/` explicitly — use it instead of
-> the packaged entry point.
+> from APFS. The repo-local `./bin/catanbot` launcher sidesteps that
+> by setting `PYTHONPATH=src/` explicitly — use it instead of the
+> packaged entry point.
 
-## Live play on colonist.io
+## Other ways to run the bridge
 
 ```bash
-# Start the bridge with the live advisor on
-./bin/catanbot live
-
-# Or the lower-level bridge command, with custom WS mirror path
+# Live advisor with custom WS-frame mirror (lets you replay
+# the game offline later via `catanbot replay`)
 ./bin/catanbot bridge --advisor --ws-jsonl ws_captures/$(date +%Y-%m-%d).jsonl
 ```
-
-### Install the Chrome extension (recommended)
-
-The extension renders the HUD in Chrome's native side panel (same
-mechanism the Claude extension uses) — no overlap with the colonist
-board, no draggable pop-out window to manage.
-
-1. Open `chrome://extensions` in Chrome.
-2. Toggle **Developer mode** (top-right).
-3. Click **Load unpacked** and pick the `extension/` folder in this
-   repo.
-4. Pin the green CatanBot icon to the toolbar (puzzle-piece menu →
-   pin) and click it — the side panel opens on the right.
-5. Open colonist.io and start a game. The bridge terminal logs each
-   event; the panel shows the HUD live.
-
-To pull updates: `git pull`, then click the reload ⟳ icon on the
-CatanBot card in `chrome://extensions`.
 
 A Chrome Web Store listing is in preparation (see
 `docs/STORE_LISTING.md` for the submission checklist; build a
