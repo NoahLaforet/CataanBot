@@ -50,6 +50,28 @@
     // see the same value.
     let latestAdvisorSnap = null;
 
+    // Auto-open postmortem when the bridge reports a new one.
+    // `latest_postmortem.seq` increments each time _write_postmortem
+    // succeeds; we ask the service worker to open a tab next to the
+    // colonist tab. Initialize to whatever the first snap says so a
+    // page reload mid-session doesn't re-open a stale postmortem.
+    let _seenPostmortemSeq = null;
+    function _maybeOpenPostmortem(snap) {
+        const lp = snap && snap.latest_postmortem;
+        if (!lp || !lp.available) return;
+        const seq = Number(lp.seq) || 0;
+        if (_seenPostmortemSeq === null) {
+            _seenPostmortemSeq = seq;
+            return;
+        }
+        if (seq === _seenPostmortemSeq) return;
+        _seenPostmortemSeq = seq;
+        try {
+            chrome.runtime.sendMessage({ type: 'open-postmortem' })
+                .catch(() => {});
+        } catch (_) { /* extension context may be invalidated */ }
+    }
+
     // Fire-and-forget POST. Used by both the DOM log forwarder (/log)
     // and the WS frame forwarder (/ws). Keeps the userscript quiet even
     // if the bridge is down so a game session isn't noisy. Optionally
@@ -2596,6 +2618,7 @@
                     renderOverlay(ui, snap, true);
                     if (snap) latestAdvisorSnap = snap;
                 }
+                _maybeOpenPostmortem(snap);
             }).catch(() => {
                 renderOverlay(ui, lastSnap, false);
             });

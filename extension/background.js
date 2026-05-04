@@ -106,6 +106,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         postJson(`${BRIDGE_BASE}/streamer-anon`, msg.payload);
         return false;
     }
+    if (msg.type === 'open-postmortem') {
+        // Auto-pop the postmortem when a game ends. Place the new
+        // tab immediately to the right of the colonist tab (rather
+        // than the very end of the strip) and don't steal focus —
+        // Noah can flip to it when he's done with whatever's open.
+        // Background instead of foreground because postmortems often
+        // land in the middle of multi-game sessions where stealing
+        // focus would interrupt a fresh GameStart.
+        (async () => {
+            let openerIndex = undefined;
+            try {
+                const tabs = await chrome.tabs.query({
+                    url: 'https://colonist.io/*',
+                });
+                if (tabs && tabs.length) {
+                    // Most recently active colonist tab wins.
+                    tabs.sort((a, b) =>
+                        (b.lastAccessed || 0) - (a.lastAccessed || 0));
+                    openerIndex = (tabs[0].index ?? 0) + 1;
+                }
+            } catch (_) { /* fall through with undefined index */ }
+            try {
+                await chrome.tabs.create({
+                    url: `${BRIDGE_BASE}/postmortem`,
+                    active: false,
+                    index: openerIndex,
+                });
+            } catch (e) {
+                console.warn('[catanbot] open-postmortem failed:', e);
+            }
+        })();
+        return false;
+    }
     if (msg.type === 'reset-bridge') {
         postJson(`${BRIDGE_BASE}/reset`, {})
             .then(ok => sendResponse({ ok }));

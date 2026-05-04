@@ -4,6 +4,36 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.34.0 — 2026-05-04
+
+Auto-open postmortem + dark-mode redesign.
+
+Postmortems used to land in `~/Desktop/postmortems/<stamp>.html`
+and Noah had to fish them out manually. Now when a game ends the
+panel detects the new postmortem and asks the service worker to
+pop it open in a new tab adjacent to the colonist tab — no
+download dialog, no manual click.
+
+- **Bridge** — new `GET /postmortem` serves the most recently
+  written file inline (HTMLResponse). State carries
+  `last_postmortem_path` + `last_postmortem_seq`; the snap
+  exposes `latest_postmortem: {seq, available}` so the panel
+  can diff seq across polls.
+- **Panel** — `_maybeOpenPostmortem` runs on every advisor tick.
+  First seq seen is recorded silently (a page-reload mid-session
+  doesn't re-pop a stale postmortem); subsequent bumps fire an
+  `open-postmortem` runtime message.
+- **Background** — handles `open-postmortem` by calling
+  `chrome.tabs.create` with `index = colonist.index + 1` and
+  `active: false`. Doesn't steal focus mid-game.
+- **Postmortem template** — full dark-mode redesign matching the
+  HUD palette (--bg-0/--bg-1, --pos for the winner, etc.). Hero
+  header with winner name + duration + event count + VP target;
+  scoreboard panel with ranked VP rows (winner highlighted
+  green); 2x2 chart grid that collapses to single-column under
+  760px; report block now sits in a styled card instead of a
+  bare `<pre>`.
+
 ## v0.33.14 — 2026-05-04
 
 LiveGame reboots on player-set change in GameStart.

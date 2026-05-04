@@ -393,4 +393,7 @@ def _write_postmortem(st, game_over) -> None:
         return
 
     st["pm_written"] = True
+    st["last_postmortem_path"] = str(path)
+    st["last_postmortem_seq"] = int(
+        st.get("last_postmortem_seq") or 0) + 1
     print(f"\n=== postmortem written → {path} ===\n", flush=True)

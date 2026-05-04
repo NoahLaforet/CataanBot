@@ -190,6 +190,13 @@ def _build_app(jsonl_path: Path | None = None,
         # chat showed Aria/Bran/Cyrus on 2026-05-04).
         "streamer_anon": {},
         "streamer_self_username": None,
+        # Auto-open postmortem: when _write_postmortem finishes, store
+        # the absolute path + a monotonic seq here. The panel polls
+        # /advisor, notices `latest_postmortem.seq` changed, and asks
+        # the service worker to open a tab to GET /postmortem so Noah
+        # doesn't have to fish the file out of ~/Desktop/postmortems.
+        "last_postmortem_path": None,
+        "last_postmortem_seq": 0,
         # Latest pending player-to-player trade offer from the DOM log.
         # {"player", "give", "want", "ts"} when live; cleared on commit,
         # on any subsequent offer, or on the next dice roll. Evaluated
@@ -334,6 +341,31 @@ def _build_app(jsonl_path: Path | None = None,
             _print_dispatch_results(
                 game, results, st["ws_count"], advisor=advisor)
         return {"ok": True, "results": len(results or [])}
+
+    @app.get("/postmortem")
+    def get_postmortem():
+        """Serve the most recently written postmortem HTML.
+
+        Used by the side-panel auto-open flow: when a game ends, the
+        bridge writes the postmortem to disk and bumps
+        ``last_postmortem_seq``; the panel detects the bump and asks
+        the extension service worker to open a tab pointing here. We
+        return the file inline so Chrome renders it directly rather
+        than triggering a download.
+        """
+        from fastapi.responses import HTMLResponse, PlainTextResponse
+        path = st.get("last_postmortem_path")
+        if not path:
+            return PlainTextResponse(
+                "no postmortem yet — finish a game first.",
+                status_code=404,
+            )
+        try:
+            html = Path(path).read_text()
+        except OSError as e:
+            return PlainTextResponse(
+                f"couldn't read {path}: {e}", status_code=500)
+        return HTMLResponse(content=html)
 
     @app.post("/streamer-anon")
     def streamer_anon(
@@ -2415,6 +2447,12 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # with what colonist's chat / banners show.
     snap["streamer_anon"] = dict(st.get("streamer_anon") or {})
     snap["streamer_self_username"] = st.get("streamer_self_username")
+    # Auto-open postmortem trigger. Panel diffs `seq`; on bump it
+    # asks the service worker to open GET /postmortem in a new tab.
+    snap["latest_postmortem"] = {
+        "seq": int(st.get("last_postmortem_seq") or 0),
+        "available": bool(st.get("last_postmortem_path")),
+    }
     return snap
 
 
