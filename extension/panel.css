@@ -2767,6 +2767,85 @@ html, body, .panel {
   color: var(--fg-mute);
 }
 
+/* Advisor-source segmented radio in the settings drawer. Three
+   buttons (auto / bridge only / extension only) with the active
+   one filled in. Status line below explains what each mode does. */
+.drawer-row .seg-radio {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 11px;
+  margin-right: 4px;
+}
+.drawer-row .seg-radio input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.drawer-row .seg-radio span {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--fg-dim);
+  background: transparent;
+  transition: all 80ms ease;
+}
+.drawer-row .seg-radio:hover span {
+  border-color: var(--fg-dim);
+  color: var(--fg);
+}
+.drawer-row .seg-radio input:checked + span {
+  background: var(--accent, #16a34a);
+  color: var(--bg-0, #0a0e15);
+  border-color: var(--accent, #16a34a);
+  font-weight: 700;
+}
+.drawer-row .seg-radio-status {
+  display: block;
+  flex-basis: 100%;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--fg-dim);
+  font-style: italic;
+}
+/* Bridge-unreachable placeholder — shown only when the user picked
+   "bridge only" mode AND the bridge isn't responding. Tells them
+   the source they explicitly chose is down. */
+.bridge-down {
+  padding: 14px 12px;
+  border: 1px dashed rgba(248, 113, 113, 0.4);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.05);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 12px 4px;
+}
+.bridge-down .bd-h {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #f87171;
+  margin-bottom: 6px;
+}
+.bridge-down .bd-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+.bridge-down .bd-actions a, .bridge-down .bd-actions button {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-1, #131821);
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+}
+
 /* Standalone banner — small pill at the top of #content that tells
    the user the recs they're seeing came from the JS recommender,
    not the local Python bridge. Always visible in standalone mode,

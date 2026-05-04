@@ -28,6 +28,22 @@
       <label class="toggle"><input type="checkbox" id="pause"/><span>pause banners &amp; recs</span></label>
     </div>
     <div class="drawer-row">
+      <span class="drawer-label">source</span>
+      <label class="seg-radio">
+        <input type="radio" name="advisor-mode" id="mode-auto" value="auto" checked/>
+        <span>auto</span>
+      </label>
+      <label class="seg-radio">
+        <input type="radio" name="advisor-mode" id="mode-bridge" value="bridge"/>
+        <span>bridge only</span>
+      </label>
+      <label class="seg-radio">
+        <input type="radio" name="advisor-mode" id="mode-extension" value="extension"/>
+        <span>extension only</span>
+      </label>
+      <span class="seg-radio-status" id="advisor-mode-status"></span>
+    </div>
+    <div class="drawer-row">
       <span class="drawer-label">privacy</span>
       <label class="toggle"><input type="checkbox" id="streamer-mode"/><span>streamer mode (hide usernames)</span></label>
     </div>

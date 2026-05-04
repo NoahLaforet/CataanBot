@@ -1784,6 +1784,36 @@
             applyStreamer(streamerInput.checked);
         });
 
+        // Advisor source mode — bridge / extension / auto. Read on
+        // mount, written on toggle. Drives `_getAdvisorMode()` in
+        // the polling tick which decides whether to skip the bridge
+        // fetch (extension), refuse fallback (bridge), or do the
+        // default behaviour (auto). Status text describes what each
+        // mode does so it's clear which source is feeding recs.
+        const modeInputs = document.querySelectorAll(
+            'input[name="advisor-mode"]');
+        const modeStatus = document.getElementById('advisor-mode-status');
+        const MODE_TIPS = {
+            auto: 'bridge if reachable, JS recommender otherwise',
+            bridge: 'always bridge — placeholder if it’s down',
+            extension: 'always JS recommender — bridge ignored',
+        };
+        function applyMode(mode) {
+            _setAdvisorMode(mode);
+            for (const r of modeInputs) {
+                r.checked = (r.value === mode);
+            }
+            if (modeStatus) {
+                modeStatus.textContent = MODE_TIPS[mode] || '';
+            }
+        }
+        applyMode(_getAdvisorMode());
+        for (const r of modeInputs) {
+            r.addEventListener('change', () => {
+                if (r.checked) applyMode(r.value);
+            });
+        }
+
         // Opacity slider — applies to the host element (outside shadow)
         // so the whole overlay goes translucent. 100% = default. Useful
         // for placing the HUD over the board without blocking reads.
@@ -2355,6 +2385,33 @@
         if (!snap) {
             ui.content.innerHTML =
                 '<span class="err">bridge unreachable</span>';
+            if (ui.histHost) ui.histHost.classList.add('hidden');
+            if (ui.evalHost) ui.evalHost.classList.add('hidden');
+            if (ui.mqHost) ui.mqHost.classList.add('hidden');
+            if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            return;
+        }
+        // Bridge-only mode + bridge unreachable: render the explicit
+        // "bridge unreachable" placeholder instead of falling back
+        // to the JS recommender. User picked this mode for a reason
+        // (training with the Python bridge) — silently swapping
+        // sources would be wrong.
+        if (snap._bridge_unreachable) {
+            ui.content.innerHTML =
+                '<div class="bridge-down">'
+                + '<div class="bd-h">bridge unreachable</div>'
+                + '<div class="bd-body">You picked '
+                + '<b>bridge only</b> mode but the local Python '
+                + 'bridge isn’t responding on '
+                + '<code>127.0.0.1:8765</code>. Start it from the '
+                + 'project root with <code>uv run cataanbot bridge</code>, '
+                + 'or switch to <b>auto</b> / <b>extension only</b> '
+                + 'in the ⚙ settings drawer to use the JS '
+                + 'recommender instead.</div>'
+                + '<div class="bd-actions">'
+                + '<a href="https://github.com/NoahLaforet/CatanBot#install" '
+                + 'target="_blank" rel="noopener">install docs →</a>'
+                + '</div></div>';
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
@@ -4075,6 +4132,28 @@
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // Advisor source mode. Reads from localStorage so the user's
+    // pick survives reloads. Three values:
+    //   'auto'      — bridge if reachable, else extension (default).
+    //   'bridge'    — always render the bridge snap; show a clear
+    //                 "bridge unreachable" placeholder if it's down.
+    //                 Use this when you're training with the Python
+    //                 bridge and don't want the JS recommender to
+    //                 "help" with possibly-different recs.
+    //   'extension' — always render the JS recommender snap,
+    //                 ignoring whatever the bridge is sending.
+    function _getAdvisorMode() {
+        try {
+            const m = localStorage.getItem('cataan-advisor-mode');
+            if (m === 'bridge' || m === 'extension') return m;
+        } catch (_) {}
+        return 'auto';
+    }
+    function _setAdvisorMode(m) {
+        try { localStorage.setItem('cataan-advisor-mode', m); } catch (_) {}
+        window.__catanbotRenderDirty = true;
+    }
+
     function startAdvisorPoll() {
         let ui = mountOverlay();
         if (!ui) {
@@ -4100,13 +4179,23 @@
             // lobby and game views). mountOverlay is a no-op if already
             // present, a full rebuild if not.
             ui = mountOverlay() || ui;
+            const mode = _getAdvisorMode();
+
+            // Extension-only mode: skip the bridge fetch entirely and
+            // render the JS-recommender snap every tick. Lets the user
+            // train against the standalone path without bridge recs
+            // racing in.
+            if (mode === 'extension') {
+                const snap = _makeNoBridgeSnap();
+                lastSnap = snap;
+                latestAdvisorSnap = snap;
+                renderOverlay(ui, snap, false);
+                window.__catanbotRenderDirty = false;
+                return;
+            }
+
             getJson(BRIDGE_ADVISOR_URL).then((snap) => {
                 bridgeFailStreak = 0;
-                // Settings outside this closure (streamer mode, etc.)
-                // can set window.__catanbotRenderDirty to force a
-                // re-render even when seq hasn't changed — so toggle
-                // changes take effect immediately, not "whenever the
-                // next game frame arrives" (could be many seconds).
                 const dirty = !!window.__catanbotRenderDirty;
                 window.__catanbotRenderDirty = false;
                 if (snap && (snap.seq !== lastSeq || dirty)) {
@@ -4121,14 +4210,25 @@
                 _maybeOpenPostmortem(snap);
             }).catch(() => {
                 bridgeFailStreak += 1;
+                // Bridge-only mode: never fall back to the standalone
+                // snap. Render a clear "bridge unreachable" placeholder
+                // so the user knows the source they explicitly chose
+                // is down, instead of the JS recommender silently
+                // taking over.
+                if (mode === 'bridge') {
+                    renderOverlay(ui, {
+                        _source: 'bridge_down',
+                        seq: -3,
+                        game_started: false,
+                        self: null,
+                        opps: [],
+                        recommendations: [],
+                        _bridge_unreachable: true,
+                    }, false);
+                    return;
+                }
                 if (bridgeFailStreak >= BRIDGE_FAIL_THRESHOLD) {
-                    // Render the "no bridge" standalone-mode frame
-                    // — this is what CWS users see if they install
-                    // the extension without the bridge. Standalone
-                    // recommender (lib/) wires up here in a later
-                    // commit; for now the frame is informational
-                    // only. Idempotent: re-rendering with the same
-                    // synthetic snap is cheap.
+                    // Auto fallback to the standalone snap.
                     renderOverlay(ui, _makeNoBridgeSnap(), false);
                 } else {
                     renderOverlay(ui, lastSnap, false);
