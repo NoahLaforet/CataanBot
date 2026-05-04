@@ -2353,8 +2353,16 @@ html, body, .panel {
   font-weight: 800 !important;
 }
 @keyframes cataanbot-win-pulse-flat {
-  from { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important; }
-  to   { box-shadow: 0 0 14px 2px rgba(74, 222, 128, 0.45) !important; }
+  from {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
+    background: linear-gradient(90deg,
+      rgba(74, 222, 128, 0.18), var(--bg-1) 70%) !important;
+  }
+  to   {
+    box-shadow: 0 0 22px 4px rgba(74, 222, 128, 0.75) !important;
+    background: linear-gradient(90deg,
+      rgba(74, 222, 128, 0.42), var(--bg-1) 80%) !important;
+  }
 }
 .threat.imminent {
   animation: cataanbot-imminent-pulse-flat 1.6s ease-in-out
@@ -2365,18 +2373,43 @@ html, body, .panel {
   font-weight: 800 !important;
 }
 @keyframes cataanbot-imminent-pulse-flat {
-  from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important; }
-  to   { box-shadow: 0 0 12px 2px rgba(248, 113, 113, 0.45) !important; }
+  from {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important;
+    background: linear-gradient(90deg,
+      rgba(248, 113, 113, 0.18), var(--bg-1) 60%) !important;
+  }
+  to   {
+    box-shadow: 0 0 20px 3px rgba(248, 113, 113, 0.70) !important;
+    background: linear-gradient(90deg,
+      rgba(248, 113, 113, 0.40), var(--bg-1) 70%) !important;
+  }
 }
 .knight-hint.should-play,
 .dev-hint.should-play {
-  animation: cataanbot-play-pulse-flat 2.0s ease-in-out infinite alternate
+  animation: cataanbot-play-pulse-flat 1.4s ease-in-out infinite alternate
     !important;
   border-left-color: var(--pos) !important;
+  border-left-width: 4px !important;
+  background: linear-gradient(90deg,
+    rgba(74, 222, 128, 0.14), var(--bg-1) 70%) !important;
+}
+.knight-hint.should-play .kh-verdict.play,
+.dev-hint.should-play .kh-verdict.play {
+  background: var(--pos) !important;
+  color: #0a1810 !important;
+  font-weight: 900 !important;
 }
 @keyframes cataanbot-play-pulse-flat {
-  from { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important; }
-  to   { box-shadow: 0 0 8px 1px rgba(74, 222, 128, 0.30) !important; }
+  from {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.0) !important;
+    background: linear-gradient(90deg,
+      rgba(74, 222, 128, 0.14), var(--bg-1) 70%) !important;
+  }
+  to   {
+    box-shadow: 0 0 18px 3px rgba(74, 222, 128, 0.65) !important;
+    background: linear-gradient(90deg,
+      rgba(74, 222, 128, 0.32), var(--bg-1) 80%) !important;
+  }
 }
 /* Robber-on-me — every roll the robber sits on a self tile is a
    tax on Noah's economy. Pulse so it stays visible when the panel
@@ -2391,8 +2424,16 @@ html, body, .panel {
   font-weight: 700 !important;
 }
 @keyframes cataanbot-robber-pulse-flat {
-  from { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important; }
-  to   { box-shadow: 0 0 11px 2px rgba(248, 113, 113, 0.40) !important; }
+  from {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.0) !important;
+    background: linear-gradient(90deg,
+      rgba(248, 113, 113, 0.16), var(--bg-1) 70%) !important;
+  }
+  to   {
+    box-shadow: 0 0 18px 3px rgba(248, 113, 113, 0.65) !important;
+    background: linear-gradient(90deg,
+      rgba(248, 113, 113, 0.36), var(--bg-1) 80%) !important;
+  }
 }
 /* Robber-targets section pulses when the placement decision is
    active — self rolled a 7 (robber_pending) or just played a
