@@ -313,7 +313,7 @@ def _compute_winning_move(
     self_snap = snap.get("self") or {}
     vp = int(self_snap.get("vp", 0) or 0)
     gap = VP_TARGET - vp
-    if gap <= 0 or gap > 2:
+    if gap > 2:
         return None
 
     try:
@@ -328,6 +328,27 @@ def _compute_winning_move(
         return None
     my_idx = state.color_to_index.get(my_enum)
     if my_idx is None:
+        return None
+
+    # Already-won path: vp already ≥ target AND held VP cards account
+    # for the difference (i.e. our visible VP is short, but the cards
+    # in hand close the gap on reveal). Fires only on self's turn —
+    # off-turn this just adds noise. This is the case Noah lost on
+    # 2026-05-03 vs Plunder101: 8 visible + 2 VP cards = 10 effective,
+    # but he never claimed before Plunder hit 10 first.
+    if gap <= 0:
+        vp_held = int(snap.get("dev_cards_vp_held") or 0)
+        if vp_held > 0 and snap.get("my_turn"):
+            return {
+                "kind": "claim_with_vp_cards",
+                "vp": vp,
+                "vp_after": vp,
+                "confidence": "high",
+                "detail": (f"VP cards in hand bring you to {vp} — "
+                           f"play any move to claim"),
+                "message": "WIN THIS TURN",
+                "alternatives": [],
+            }
         return None
     ps = state.player_state
     # Setup phase is self-filtering via the gap check above: VP=0-2 in

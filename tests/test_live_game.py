@@ -1439,13 +1439,49 @@ def test_winning_move_silent_when_gap_too_wide():
 
 
 def test_winning_move_silent_when_already_won():
-    """VP already ≥ target — game is over, banner has nothing to add."""
+    """VP already ≥ target without held VP cards — game has ended via
+    a visible build, banner has nothing to add. Held VP cards on
+    self's turn are a separate path covered below."""
     if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
         pytest.skip("live captures not present")
     from cataanbot.bridge import _compute_winning_move
     game, self_color, *_ = _winning_move_fixture()
-    snap = {"self": {"vp": 10}}
+    snap = {"self": {"vp": 10}, "dev_cards_vp_held": 0, "my_turn": True}
     hand = {"WOOD": 1, "BRICK": 1, "SHEEP": 1, "WHEAT": 1, "ORE": 1}
+    assert _compute_winning_move(game, self_color, hand, snap) is None
+
+
+def test_winning_move_fires_when_vp_cards_already_close_the_gap():
+    """The 2026-05-03 vs Plunder101 loss pattern: 8 visible VP + 2
+    held VP cards = 10 effective VP, but Noah never claimed before
+    the opp won on their turn. winning-move should surface this on
+    self's turn so the banner says 'WIN THIS TURN — VP cards bring
+    you to 10'."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, *_ = _winning_move_fixture()
+    # Visible 8 + 2 held VP cards = 10 total. The vp_total includes
+    # held cards already, so self.vp = 10 here.
+    snap = {"self": {"vp": 10}, "dev_cards_vp_held": 2, "my_turn": True}
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
+    wm = _compute_winning_move(game, self_color, hand, snap)
+    assert wm is not None
+    assert wm["kind"] == "claim_with_vp_cards"
+    assert wm["vp"] == 10
+    assert "VP cards" in wm["detail"]
+    assert wm["confidence"] == "high"
+
+
+def test_winning_move_silent_with_vp_cards_off_turn():
+    """VP cards in hand only matter when it's self's turn — off-turn
+    the banner should stay quiet (claiming requires being on turn)."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from cataanbot.bridge import _compute_winning_move
+    game, self_color, *_ = _winning_move_fixture()
+    snap = {"self": {"vp": 10}, "dev_cards_vp_held": 2, "my_turn": False}
+    hand = {"WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 0, "ORE": 0}
     assert _compute_winning_move(game, self_color, hand, snap) is None
 
 
