@@ -1076,12 +1076,27 @@ def _format_scoreboard(report: ReplayReport) -> list[str]:
         key=lambda kv: report.final_vp.get(kv[0], 0),
         reverse=True,
     )
+    winner_color = report.winner_color
+    from cataanbot.config import VP_TARGET
     for color, stats in ranking:
         vp = report.final_vp.get(color, 0)
         tag = ""
         if stats.vp_awards:
             tag = f"  ({', '.join(sorted(set(stats.vp_awards)))})"
-        lines.append(f"  {color:<7} — {vp:>2} VP  ({stats.username}){tag}")
+        # Missed-the-win callout: any non-winner whose tracker VP at
+        # game-end was >= the win target was effectively at the
+        # threshold but didn't claim — usually because their VP cards
+        # weren't revealable on the right turn (just-bought rule), or
+        # because the opp closed first on their own turn. Concrete
+        # actionable feedback: Noah's 2026-05-03 vs Plunder101 loss
+        # where he ended at 12 effective VP (target 10) but Plunder
+        # crossed first on their turn.
+        miss_tag = ""
+        if (winner_color and color != winner_color
+                and vp >= VP_TARGET):
+            miss_tag = "  ← had enough VP, opp closed first"
+        lines.append(
+            f"  {color:<7} — {vp:>2} VP  ({stats.username}){tag}{miss_tag}")
     return lines
 
 

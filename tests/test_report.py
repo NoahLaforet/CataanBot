@@ -997,3 +997,44 @@ def test_longest_road_transfer_strips_without_previous_holder():
     assert "longest_road" not in rep.players["RED"].vp_awards, (
         "Alice (RED) must lose LR even when previous_holder is None")
     assert "longest_road" in rep.players["BLUE"].vp_awards
+
+
+def test_scoreboard_flags_loser_who_had_enough_vp():
+    """When a non-winner's tracker VP at game end is at/above the
+    win target, the postmortem should flag it — they had enough but
+    the opp closed first. Came out of Noah's 2026-05-03 vs Plunder101
+    loss: he ended at 12 effective VP (target 10) but Plunder crossed
+    on their own turn first.
+    """
+    from cataanbot.report import build_report, format_report
+    from cataanbot.live import ColorMap
+    from cataanbot.events import GameOverEvent
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [GameOverEvent(winner="Bob")]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 12, "BLUE": 10},
+    )
+    out = format_report(rep)
+    # Loser RED at 12 VP (target 10 default) → flagged.
+    assert "had enough VP, opp closed first" in out
+    # Winner line should NOT carry the flag.
+    blue_line = next(line for line in out.splitlines()
+                     if "BLUE" in line and "VP" in line and "(Bob)" in line)
+    assert "had enough VP" not in blue_line
+
+
+def test_scoreboard_no_flag_when_loser_under_target():
+    """Normal loss case (loser ended below target) — no flag, just
+    the regular score line."""
+    from cataanbot.report import build_report, format_report
+    from cataanbot.live import ColorMap
+    from cataanbot.events import GameOverEvent
+    cm = ColorMap({"Alice": "RED", "Bob": "BLUE"})
+    events = [GameOverEvent(winner="Bob")]
+    rep = build_report(
+        events, [_result(e) for e in events], cm,
+        final_vp={"RED": 7, "BLUE": 10},
+    )
+    out = format_report(rep)
+    assert "had enough VP" not in out
