@@ -1791,6 +1791,29 @@
         function fireNewGame() {
             disarmNewGame();
             postTo('http://127.0.0.1:8765/reset', {}, { quiet: true });
+            // Reset standalone state too — buildings/roads/hands
+            // from the previous game shouldn't survive a new-game
+            // click. Lib reload + state re-init so the next WS
+            // frame rebuilds cleanly. Background's replay cache
+            // also gets cleared so a stale GameStart isn't
+            // re-broadcast.
+            try {
+                _standalone.board = null;
+                _standalone.mapStateFrame = null;
+                _standalone.mapStateFingerprint = null;
+                _standalone.gameStarted = false;
+                _standalone.selfColorId = null;
+                _standalone.currentTurnPlayerColor = null;
+                _standalone.bankRemaining = {};
+                if (_standalone._lib) {
+                    _standalone.state = _standalone._lib.newGameState();
+                }
+            } catch (_) {}
+            try {
+                chrome.runtime.sendMessage({
+                    type: 'reset-replay-cache' }).catch(() => {});
+            } catch (_) {}
+            window.__catanbotRenderDirty = true;
             newGameBtn.classList.add('flash-ok');
             newGameBtn.textContent = 'reset ✓';
             setTimeout(() => {
