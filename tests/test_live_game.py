@@ -5330,11 +5330,14 @@ def test_strategic_options_surfaces_longest_road_push():
     assert lr["pieces"] == 1
 
 
-def test_strategic_options_surfaces_lr_push_two_roads_out():
-    """Reddit 36k-game finding #5: LR wins 56-61% of games and is
-    sticky. LR push should fire 2 roads out, not just 1, so the
-    player can plan ahead instead of only seeing the option on the
-    victory lap."""
+def test_strategic_options_surfaces_lr_push_two_roads_out_commit_phase():
+    """Strategy v2 P2-10 (chalks777): LR push fires 2 roads out only
+    in commit phase (self VP >= 7 OR any opp at 8+ VP). In setup
+    phase the option stays quiet at 2-out — real players don't
+    invest in roads early; they place to enable a future LR and
+    rush the last X roads in 1-2 turns. The earlier "fire 2-out
+    everywhere" rule was based on bot-vs-bot heuristic data and
+    overstated the value of mid-game LR investment."""
     from catanatron import Color, Game, RandomPlayer
     from catanbot.bridge import _compute_strategic_options
 
@@ -5346,6 +5349,8 @@ def test_strategic_options_surfaces_lr_push_two_roads_out():
     cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
     cat.state.player_state["P0_LONGEST_ROAD_LENGTH"] = 3
     cat.state.player_state["P0_HAS_ROAD"] = False
+    # Set self to 7 VP so commit_phase fires.
+    cat.state.player_state["P0_VICTORY_POINTS"] = 7
     for i in range(1, 4):
         cat.state.player_state[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
         cat.state.player_state[f"P{i}_HAS_ROAD"] = False
@@ -5356,8 +5361,39 @@ def test_strategic_options_surfaces_lr_push_two_roads_out():
     lr = next((o for o in opts if o["kind"] == "longest_road_push"),
               None)
     assert lr is not None, (
-        "LR push should surface at 3 roads (2 away from qualifying)")
+        "LR push should surface at 3 roads in commit phase")
     assert lr["pieces"] == 2
+    assert lr.get("phase") == "commit"
+
+
+def test_strategic_options_skips_lr_push_two_roads_out_setup_phase():
+    """In setup phase (low VP, no opp pressure), the LR push should
+    stay quiet when 2 roads away — chalks777's note that real LR
+    plays come from late-game commits, not early road investment."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_LONGEST_ROAD_LENGTH"] = 3
+    cat.state.player_state["P0_HAS_ROAD"] = False
+    cat.state.player_state["P0_VICTORY_POINTS"] = 4  # setup phase
+    for i in range(1, 4):
+        cat.state.player_state[f"P{i}_LONGEST_ROAD_LENGTH"] = 0
+        cat.state.player_state[f"P{i}_HAS_ROAD"] = False
+        cat.state.player_state[f"P{i}_VICTORY_POINTS"] = 4
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {"WOOD": 0, "BRICK": 0}) or []
+    lr = next((o for o in opts if o["kind"] == "longest_road_push"),
+              None)
+    assert lr is None, (
+        f"LR push should NOT surface 2 roads out in setup phase; "
+        f"got {lr}")
 
 
 def test_strategic_options_skips_lr_push_three_roads_out():
@@ -5428,6 +5464,62 @@ def test_strategic_options_returns_none_when_nothing_actionable():
     cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
     g = _wrap_for_game_plan(cat)
     assert _compute_strategic_options(g, "RED", {"WOOD": 1}) is None
+
+
+def test_strategic_options_la_defend_fires_when_holding_la_under_pressure():
+    """Strategy v2 P2-9: when self holds LA and any opp is at >= 2
+    played knights, surface a la_defend option directing buy-dev-cards
+    to keep the cushion. Regardless of self's own knights in hand."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_PLAYED_KNIGHT"] = 3
+    cat.state.player_state["P0_KNIGHT_IN_HAND"] = 0
+    cat.state.player_state["P0_HAS_ARMY"] = True
+    # BLUE on 2 played knights — the threat.
+    cat.state.player_state["P1_PLAYED_KNIGHT"] = 2
+    cat.state.player_state["P1_HAS_ARMY"] = False
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {}) or []
+    defend = [o for o in opts if o["kind"] == "la_defend"]
+    assert defend, (
+        f"expected la_defend to fire; got {[o['kind'] for o in opts]}")
+    assert defend[0]["vp_swing"] == 2
+
+
+def test_strategic_options_la_snipe_labels_push_when_opp_one_away():
+    """When self can claim LA AND an opp sits exactly 1 knight from
+    threshold, the largest_army_push option should be labelled 'LA
+    snipe' so the user understands the time pressure."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.bridge import _compute_strategic_options
+
+    cat = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=42,
+    )
+    cat.state.player_state["P0_SETTLEMENTS_AVAILABLE"] = 3
+    cat.state.player_state["P0_PLAYED_KNIGHT"] = 1
+    cat.state.player_state["P0_KNIGHT_IN_HAND"] = 2
+    cat.state.player_state["P0_HAS_ARMY"] = False
+    # BLUE at 2 played → opp_max=2, threshold=3, BLUE is 1 away.
+    cat.state.player_state["P1_PLAYED_KNIGHT"] = 2
+    cat.state.player_state["P1_HAS_ARMY"] = False
+
+    g = _wrap_for_game_plan(cat)
+    opts = _compute_strategic_options(g, "RED", {}) or []
+    push = [o for o in opts if o["kind"] == "largest_army_push"]
+    assert push, f"expected largest_army_push; got {opts}"
+    assert push[0].get("snipe") is True
+    assert "snipe" in push[0]["label"].lower()
 
 
 def test_apply_game_settings_picks_up_variant_targets():
@@ -5532,6 +5624,73 @@ def test_seven_prep_hint_levels_and_threshold():
     # actionable not abstract.
     assert "DUMP TO 7" in danger["message"]
     assert "5 cards" in danger["message"]
+
+
+def test_seven_prep_consider_tier_fires_when_seven_overdue():
+    """Strategy v2 P1-8: at exactly DISCARD_LIMIT + 1 (8 cards) the
+    pre-v2 helper stayed silent. The new 'consider' tier fires when
+    pressure crosses 0.6 — driven by rolls-since-last-7 and opp hand
+    sizes."""
+    from catanbot.bridge import _compute_seven_prep_hint
+
+    # 8 cards alone is not enough — silent.
+    silent = _compute_seven_prep_hint({"WOOD": 4, "BRICK": 4}, 8)
+    assert silent is None
+
+    # 8 cards + 12 rolls without a 7 + two opps at 7 each → pressure
+    # well above 0.6 → consider tier fires.
+    history = [{"total": n} for n in
+               (4, 6, 8, 10, 4, 5, 9, 3, 11, 6, 4, 8)]
+    consider = _compute_seven_prep_hint(
+        {"WOOD": 4, "BRICK": 4}, 8,
+        roll_history=history,
+        opp_hand_sizes=[7, 8],
+    )
+    assert consider is not None
+    assert consider["level"] == "consider"
+    assert consider["pressure"] >= 0.6
+    assert "trad" in consider["message"].lower()
+
+
+def test_seven_prep_consider_silent_when_seven_recent():
+    """A 7 in the last 5 rolls means the pressure is reset — even
+    with a borderline hand the consider tier shouldn't fire."""
+    from catanbot.bridge import _compute_seven_prep_hint
+
+    history = [{"total": 4}, {"total": 7}, {"total": 8}]
+    out = _compute_seven_prep_hint(
+        {"WOOD": 4, "BRICK": 4}, 8,
+        roll_history=history,
+        opp_hand_sizes=[7, 8],
+    )
+    assert out is None
+
+
+def test_seven_dodge_pressure_components():
+    """The pressure score blends three signals; each contributes
+    independently and the sum clamps to [0, 1]."""
+    from catanbot.bridge_hints import _seven_dodge_pressure
+
+    # Hand at limit, no overdue, no opp pressure → 0.
+    assert _seven_dodge_pressure(
+        cards=7, roll_history=[], opp_hand_sizes=[]) == 0.0
+
+    # Hand 1 above limit alone → 0.2.
+    assert abs(_seven_dodge_pressure(
+        cards=8, roll_history=[], opp_hand_sizes=[]) - 0.2) < 1e-9
+
+    # 12 rolls since last 7 (=> 7 over) → 0.05 * 7 = 0.35, capped at 0.4.
+    history = [{"total": n} for n in
+               (4, 6, 8, 10, 4, 5, 9, 3, 11, 6, 4, 8)]
+    only_overdue = _seven_dodge_pressure(
+        cards=7, roll_history=history, opp_hand_sizes=[])
+    assert abs(only_overdue - 0.35) < 1e-9
+
+    # All three combined, fully clamped.
+    total = _seven_dodge_pressure(
+        cards=12, roll_history=history,
+        opp_hand_sizes=[7, 8, 9])
+    assert total == 1.0
 
 
 def test_track_overlay_routes_ws_trade_offer_into_pending():

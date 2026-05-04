@@ -89,8 +89,49 @@ def _weighted_raw_production(counter: dict) -> float:
         v * _RESOURCE_WEIGHT.get(r, 1.0) for r, v in counter.items()))
 
 
+def compute_table_scarcity(game: "Game") -> dict[str, float]:
+    """Per-resource "table scarcity" score in [0, 1].
+
+    Strategy v2 P2-11 (Gaminkid05): a port for a resource the rest of
+    the table is short on is less valuable than the same port for an
+    abundant resource — if opponents can't produce it, we can extract
+    1:1 player trades anyway. Conversely, when the table is FLUSH on
+    a resource, a port helps because no one will trade for it.
+
+    Scarcity = 1 - (table_total_production_for_resource /
+                    sum_table_total_production).
+
+    With even production, scarcity = 4/5 = 0.8 for every resource. A
+    resource with 50% of the table's production scores 0.5; a resource
+    with 0 production scores 1.0 (truly scarce).
+
+    Returns ``{}`` on failure so callers can default to a 0-bias.
+    """
+    out: dict[str, float] = {}
+    try:
+        m = game.state.board.map
+        totals: dict[str, float] = {
+            "WOOD": 0.0, "BRICK": 0.0, "SHEEP": 0.0,
+            "WHEAT": 0.0, "ORE": 0.0,
+        }
+        for nid, (_col, btype) in game.state.board.buildings.items():
+            mult = 2.0 if btype == "CITY" else 1.0
+            for res, v in m.node_production.get(int(nid), {}).items():
+                if res in totals:
+                    totals[res] += mult * float(v)
+        grand = sum(totals.values())
+        if grand <= 0:
+            return out
+        for r, v in totals.items():
+            out[r] = max(0.0, min(1.0, 1.0 - v / grand))
+    except Exception:  # noqa: BLE001
+        return {}
+    return out
+
+
 def _port_bonus(port_label: str | None, resources: dict[str, float],
-                tiles: list[tuple[str, int | None]] | None = None) -> float:
+                tiles: list[tuple[str, int | None]] | None = None,
+                table_scarcity: dict[str, float] | None = None) -> float:
     """Additive bonus for port access, scaled by production alignment.
 
     All values are in cards-per-roll units to match raw_production
@@ -145,6 +186,18 @@ def _port_bonus(port_label: str | None, resources: dict[str, float],
                     best_match_pip = p
             if 0 < best_match_pip <= 2:
                 bonus *= 0.5
+        # Strategy v2 P2-11: table-scarcity dampening. Even-distribution
+        # baseline is 0.8 (1 - 1/5). When the port resource is *more*
+        # scarce table-wide than that — i.e. opponents barely produce
+        # it — a port loses some value because we can extract 1:1
+        # player trades for our surplus instead. The damp scales
+        # linearly past the 0.8 baseline up to a cap of 0.7× at fully
+        # absent (scarcity == 1.0). Below 0.8 (resource is abundant
+        # table-wide) the bonus stays at full strength.
+        if table_scarcity:
+            sc = float(table_scarcity.get(port_resource, 0.0))
+            if sc > 0.8:
+                bonus *= 1.0 - (sc - 0.8) * 1.5  # 0.8→1.0 ; 1.0→0.7
         return bonus
     return 0.015
 
@@ -195,6 +248,11 @@ def score_opening_nodes(game: "Game",
     all_land_nodes = set(m.land_nodes)
     land_nodes = (all_land_nodes & legal_nodes
                   if legal_nodes is not None else all_land_nodes)
+    # Strategy v2 P2-11: table scarcity is computed once per scoring
+    # pass (cheap — single iteration over all buildings) and passed
+    # into _port_bonus to dampen ports for resources opponents won't
+    # have. Empty during fully empty boards (no buildings yet).
+    table_scarcity = compute_table_scarcity(game)
 
     # Pass 1: compute base_score per node.
     base_by_node: dict[int, float] = {}
@@ -214,7 +272,11 @@ def score_opening_nodes(game: "Game",
         # Pass tiles into _port_bonus so the pip-alignment guard fires
         # — a 2:1 wheat port adjacent only to a wheat 2/3/11/12 tile
         # gets half the bonus, matching the strategy v2 P1-7 plan.
-        port_bonus = _port_bonus(port_label, resources, tiles=tiles)
+        # Plus the table-scarcity dampening from P2-11.
+        port_bonus = _port_bonus(
+            port_label, resources, tiles=tiles,
+            table_scarcity=table_scarcity or None,
+        )
         base = raw * diversity + port_bonus
         base_by_node[node_id] = base
 
@@ -689,6 +751,9 @@ def score_second_settlements(
     F_prod = {r: float(m.node_production.get(first_node_id, {}).get(r, 0.0))
               for r in RESOURCES}
     marginal_at_F = {r: 1.0 / (0.5 + F_prod[r]) for r in RESOURCES}
+    # Strategy v2 P2-11: compute table scarcity once for the pass and
+    # reuse across every candidate's port_bonus call.
+    table_scarcity = compute_table_scarcity(game)
 
     results: list[SecondSettleScore] = []
     for node_id in m.land_nodes:
@@ -715,7 +780,12 @@ def score_second_settlements(
         # Pass N's tiles to the port helper so the pip-alignment guard
         # fires on a port whose matching resource only sits on a weak
         # 2/3/11/12 tile of N. (Strategy v2 P1-7.)
-        port_bonus = _port_bonus(port_label, combined, tiles=tiles)
+        # Add table_scarcity from P2-11 — same dampening as the first-
+        # settle pass uses.
+        port_bonus = _port_bonus(
+            port_label, combined, tiles=tiles,
+            table_scarcity=table_scarcity or None,
+        )
 
         best_road = _best_opening_road(m, first_node_id, node_id,
                                        neighbors, land_nodes)

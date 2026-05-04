@@ -118,6 +118,8 @@ def _compute_discard_hint(
 
 def _compute_seven_prep_hint(
     hand: dict[str, int], cards: int,
+    roll_history: list[dict[str, Any]] | None = None,
+    opp_hand_sizes: list[int] | None = None,
 ) -> dict[str, Any] | None:
     """Pre-roll warning: spend down before the next 7 hits.
 
@@ -125,16 +127,23 @@ def _compute_seven_prep_hint(
     AFTER a 7 forces a discard). This one fires PROACTIVELY when self
     is sitting at risky card counts:
 
-    * **danger** (cards >= DISCARD_LIMIT + 3, default 10): expected
+    * **danger**   (cards >= DISCARD_LIMIT + 3, default 10): expected
       discard on a 7 would be 5+ cards — game-changing damage. Banner
       should dominate the HUD.
-    * **warn**   (cards >= DISCARD_LIMIT + 2, default 9): expected
+    * **warn**     (cards >= DISCARD_LIMIT + 2, default 9): expected
       discard would be 4+ cards. Worth a clear "spend down" prompt.
+    * **consider** (strategy v2 P1-8): cards == DISCARD_LIMIT + 1 (8
+      by default) AND the 7-pressure score crosses 0.6. Pressure
+      blends hand size, rolls-since-last-7, and opp hand sizes —
+      catches the soft case where you're "fine right now" but a 7
+      is statistically overdue and would still hurt.
 
-    Returns None when self holds DISCARD_LIMIT + 1 or fewer — at 8 cards
-    you'd lose 4 to a 7 but the risk : opportunity-cost ratio doesn't
-    yet justify forcing a spend-down. The proactive warning kicks in
-    one card above that.
+    Returns None when no level fires.
+
+    Strategy v2 P1-8 added ``roll_history`` (the bridge's last-10
+    rolls ring buffer) and ``opp_hand_sizes`` (live ws-derived totals)
+    so the consider trigger can use real game state. Both are
+    optional — without them, behaviour matches the pre-v2 thresholds.
 
     Noah's BrickdDaddy game: caught at 11+ cards 48 times with 4 self-
     discard blunder annotations. The reactive discard_hint shows up
@@ -142,23 +151,77 @@ def _compute_seven_prep_hint(
     the first place.
     """
     from catanbot.config import DISCARD_LIMIT
-    if cards < DISCARD_LIMIT + 2:
+    pressure = _seven_dodge_pressure(
+        cards=cards,
+        roll_history=roll_history or [],
+        opp_hand_sizes=opp_hand_sizes or [],
+    )
+    if cards >= DISCARD_LIMIT + 2:
+        expected_discard = cards // 2
+        level = "danger" if cards >= DISCARD_LIMIT + 3 else "warn"
+    elif (cards >= DISCARD_LIMIT + 1 and pressure >= 0.6):
+        # Soft trigger — we're one card above the limit AND a 7 is
+        # statistically overdue. Recommend trading down before rolling.
+        expected_discard = cards // 2
+        level = "consider"
+    else:
         return None
-    expected_discard = cards // 2
-    level = "danger" if cards >= DISCARD_LIMIT + 3 else "warn"
     # Plan a hypothetical discard so the user sees what they'd lose
     # if a 7 hit RIGHT NOW. Same logic as the reactive discard_hint —
     # gives them a concrete handle on what's at stake.
     drops, _preserve = _compute_discard_plan(hand, expected_discard)
+    if level == "consider":
+        msg = (f"7 overdue — consider trading down to {DISCARD_LIMIT} "
+               f"(would lose {expected_discard} cards)")
+    else:
+        msg = (f"DUMP TO {DISCARD_LIMIT} BEFORE YOU ROLL — "
+               f"a 7 right now costs you {expected_discard} cards")
     return {
         "level": level,
         "cards": cards,
         "expected_discard": expected_discard,
         "would_drop": drops,
-        "message": (
-            f"DUMP TO {DISCARD_LIMIT} BEFORE YOU ROLL — "
-            f"a 7 right now costs you {expected_discard} cards"),
+        "pressure": round(pressure, 2),
+        "message": msg,
     }
+
+
+def _seven_dodge_pressure(
+    cards: int,
+    roll_history: list[dict[str, Any]],
+    opp_hand_sizes: list[int],
+) -> float:
+    """Compute a 0-1 pressure score blending the three 7-dodge signals.
+
+    The components, each contributing up to ~0.4:
+
+    * ``hand_factor`` — overshoot above ``DISCARD_LIMIT``. Zero at or
+      below the limit; rises 0.2 per card above.
+    * ``overdue_factor`` — rolls-since-last-7. Zero when a 7 has hit
+      in the last 5 rolls; rises 0.05 per roll past 5, capping at
+      0.4 by 13+ rolls. (The expected-7 rate is 1/6 — every 6 rolls.
+      Past 8 rolls is meaningfully overdue.)
+    * ``opp_pressure`` — opponents holding >= 7 cards each contribute
+      0.1 (max 0.3). When multiple players are at the discard line, a
+      7 hurts the table broadly and someone may force one via knight
+      to leverage that.
+
+    Sum is clamped to [0, 1].
+    """
+    from catanbot.config import get_discard_limit
+    limit = get_discard_limit()
+    hand_factor = max(0.0, (cards - limit) * 0.2)
+    # Rolls since last 7 — count from the END of history.
+    rolls_since_seven = 0
+    for entry in reversed(roll_history):
+        if int(entry.get("total") or 0) == 7:
+            break
+        rolls_since_seven += 1
+    overdue_factor = max(0.0, min(0.4,
+                                  (rolls_since_seven - 5) * 0.05))
+    opp_pressure = min(0.3, sum(
+        0.1 for n in (opp_hand_sizes or []) if int(n) >= 7))
+    return min(1.0, hand_factor + overdue_factor + opp_pressure)
 
 
 # Resource tie-breaker weights when a Monopoly would net equal totals
@@ -1233,24 +1296,67 @@ def _compute_strategic_options(
         # so the player can plan ahead, not just on the 1-road victory
         # lap. Past 2 roads it dilutes — too speculative against the
         # other strategic options on the strip.
-        if 1 <= roads_needed <= 2:
+        #
+        # Strategy v2 P2-10 (chalks777): real players don't *invest*
+        # in roads early — they place to enable a future LR and rush
+        # the last X roads in 1-2 turns. Two phases:
+        #
+        #   setup  — early/mid game (self VP < 6 AND no opp at 8+ VP):
+        #            only surface when roads_needed == 1, framed as
+        #            "ready to grab when you next afford a road."
+        #            Doesn't push the user to road-spam.
+        #   commit — late game (self VP >= 7 OR any opp at 8+ VP):
+        #            full rush, fire whenever roads_needed <= 2,
+        #            framed as "commit now, this is the closeout."
+        opp_vps = [int(ps.get(f"P{idx}_VICTORY_POINTS", 0))
+                   for col, idx in state.color_to_index.items()
+                   if col != my_enum]
+        my_vp = int(ps.get(f"P{my_idx}_VICTORY_POINTS", 0) or 0)
+        any_opp_close = any(v >= 8 for v in opp_vps)
+        commit_phase = (my_vp >= 7) or any_opp_close
+        eligible_in_setup = (roads_needed == 1)
+        eligible_in_commit = (1 <= roads_needed <= 2)
+        eligible = (commit_phase and eligible_in_commit) or (
+            not commit_phase and eligible_in_setup)
+        if eligible:
             vp_swing = 2 if not opp_lr_holder else 4  # take + denial
+            phase_label = "commit" if commit_phase else "setup"
+            verb = ("commit — rush"
+                    if commit_phase else
+                    "setup — ready to grab")
             options.append({
                 "kind": "longest_road_push",
                 "label": "LR push",
-                "detail": (f"+{roads_needed} road"
+                "phase": phase_label,
+                "detail": (f"{verb} +{roads_needed} road"
                            f"{'s' if roads_needed > 1 else ''}"
                            + (" · denies opp" if opp_lr_holder else "")),
                 "vp_swing": vp_swing,
                 "pieces": roads_needed,
             })
 
-    # ---- Largest army push -------------------------------------------
+    # ---- Largest army push (+ defend / snipe states) ------------------
+    # Strategy v2 P2-9 (chalks777): LA takes >= 3 turns to claim from
+    # zero (one knight per turn) and is nearly impossible to flip
+    # once held. We surface up to two related options:
+    #
+    #   largest_army_push — we can claim LA outright in 1-2 plays
+    #                       (held + played >= threshold). Original
+    #                       baseline; tests rely on this firing.
+    #   la_defend         — we already HOLD LA AND any opp is at
+    #                       >= 2 played knights. Buy dev cards to
+    #                       keep the cushion (one extra knight beats
+    #                       their next play). Strategy v2 addition.
+    #   la_snipe          — refined "push" case: an opp is exactly
+    #                       1 from LA AND we can race in <= 2 turns.
+    #                       Same kind/copy direction as the basic
+    #                       push, but the detail names the threat.
     knights_played = int(ps.get(f"P{my_idx}_PLAYED_KNIGHT", 0))
     knights_held = int(ps.get(f"P{my_idx}_KNIGHT_IN_HAND", 0))
     self_has_la = bool(ps.get(f"P{my_idx}_HAS_ARMY", False))
     opp_knights_max = 0
     opp_la_holder = False
+    opp_at_two_plus_played = False
     for col, idx in state.color_to_index.items():
         if col == my_enum:
             continue
@@ -1260,20 +1366,46 @@ def _compute_strategic_options(
             opp_knights_max = ok
         if oh:
             opp_la_holder = True
+        if ok >= 2:
+            opp_at_two_plus_played = True
     la_threshold = max(3, opp_knights_max + 1)
     needed_plays = max(0, la_threshold - knights_played)
+
+    # LA_DEFEND: we hold LA, opp at 2+ knights — buy dev cards.
+    if self_has_la and opp_at_two_plus_played:
+        options.append({
+            "kind": "la_defend",
+            "label": "LA defend",
+            "detail": (
+                "buy dev cards — opp at 2+ knights threatens your LA"),
+            "vp_swing": 2,
+            "pieces": 0,
+        })
+
+    # Largest_army_push: original push trigger. Now annotated as
+    # "snipe" when an opp is 1 knight away.
     if (not self_has_la and knights_held >= 1
             and knights_played + knights_held >= la_threshold
             and needed_plays > 0):
         vp_swing = 2 if not opp_la_holder else 4
+        snipe = (opp_knights_max + 1 >= 3 and not opp_la_holder
+                 and opp_knights_max == la_threshold - 1)
+        if snipe:
+            label = "LA snipe"
+            detail = (f"opp 1 from LA — play {needed_plays} knight"
+                      f"{'s' if needed_plays > 1 else ''} to snipe")
+        else:
+            label = "LA push"
+            detail = (f"play {needed_plays} knight"
+                      f"{'s' if needed_plays > 1 else ''}"
+                      + (" · denies opp" if opp_la_holder else ""))
         options.append({
             "kind": "largest_army_push",
-            "label": "LA push",
-            "detail": (f"play {needed_plays} knight"
-                       f"{'s' if needed_plays > 1 else ''}"
-                       + (" · denies opp" if opp_la_holder else "")),
+            "label": label,
+            "detail": detail,
             "vp_swing": vp_swing,
             "pieces": needed_plays,
+            "snipe": snipe,
         })
 
     # ---- Dev-card dive ------------------------------------------------

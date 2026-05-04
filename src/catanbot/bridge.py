@@ -2306,9 +2306,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # Pre-roll spend-down warning. Fires when self is over the safe
     # threshold (DISCARD_LIMIT + 2) but BEFORE a 7 has been rolled.
     # The reactive discard_hint above only fires after the 7 lands;
-    # this is the prevention.
+    # this is the prevention. Strategy v2 P1-8 added a "consider"
+    # tier driven off rolls-since-last-7 + opp hand sizes — pass the
+    # ring buffer + opp sizes so the soft trigger can fire too.
     try:
-        snap["seven_prep"] = _compute_seven_prep_hint(hand, cards)
+        opp_sizes = []
+        try:
+            for cid, count in (
+                    sess.hand_card_counts.items()
+                    if sess is not None else []):
+                if cid == sess.self_color_id:
+                    continue
+                opp_sizes.append(int(count))
+        except Exception:  # noqa: BLE001
+            opp_sizes = []
+        snap["seven_prep"] = _compute_seven_prep_hint(
+            hand, cards,
+            roll_history=list(st.get("roll_history") or []),
+            opp_hand_sizes=opp_sizes,
+        )
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] seven_prep failed: {e!r}", flush=True)
     # Leader-threat banner: flag when any opp is at/near the win

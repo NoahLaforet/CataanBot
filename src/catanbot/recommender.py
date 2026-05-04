@@ -1685,6 +1685,86 @@ def recommend_actions(
             # blocked build will still surface as a "save for X" plan.
             break
 
+    # --- Proactive rebalance trades (strategy v2 P1-6) ----------------
+    # The Reddit 36k-game sim only emitted ~1.2 player trades per game
+    # vs. real-game tables that average 8-15. The build-targeted
+    # propose_trade above only fires on builds 1-card-short, so a
+    # surplus-heavy hand with no immediate build pressure shows zero
+    # outgoing proposals. This block surfaces "rebalance" trades when:
+    #
+    #   * self has 4+ of a single resource (clear surplus)
+    #   * a non-leader opp is known to hold a resource we have <= 1 of
+    #   * the existing propose_trade list didn't already cover this case
+    #
+    # Score floors at ~3.5 — below any affordable build, above the
+    # generic dev-card fallback. The trade is informational rather
+    # than urgent; the user can always ignore.
+    try:
+        any_propose_trade = any(
+            r.get("kind") == "propose_trade" for r in recs)
+    except Exception:  # noqa: BLE001
+        any_propose_trade = True
+    if (not any_propose_trade and opp_hands is not None
+            and not _hand_can_afford(hand, _SETTLEMENT_COST)
+            and not _hand_can_afford(hand, _CITY_COST)):
+        # What does each non-leader opp hold by resource?
+        from catanbot.config import close_to_win_vp
+        close_vp = close_to_win_vp()
+        opp_holdings: dict[str, int] = {}
+        try:
+            from catanatron import Color  # noqa: F401
+            ps = game.state.player_state
+            for opp_color, opp_idx in (
+                    game.state.color_to_index.items()):
+                if opp_color == c:
+                    continue
+                opp_vp = int(ps.get(
+                    f"P{opp_idx}_VICTORY_POINTS", 0) or 0)
+                if opp_vp >= close_vp:
+                    # Don't feed leaders — chalks777's leader-aversion
+                    # rule. Skip even when they hold what we need.
+                    continue
+                # opp_hands keys are color-name strings.
+                opp_h = opp_hands.get(
+                    opp_color.name
+                    if hasattr(opp_color, "name") else str(opp_color),
+                    {})
+                for r, n in opp_h.items():
+                    if r == "unknown" or not n:
+                        continue
+                    opp_holdings[r] = opp_holdings.get(r, 0) + int(n)
+        except Exception:  # noqa: BLE001
+            opp_holdings = {}
+        # Find the surplus resource (the one we have most of, >= 4).
+        surplus_res, surplus_count = None, 0
+        for r, n in hand.items():
+            if n >= 4 and n > surplus_count:
+                surplus_res, surplus_count = r, n
+        # Find the most-needed resource (the one we have least of).
+        needed_res, needed_count = None, 99
+        for r, n in hand.items():
+            if r == surplus_res:
+                continue
+            if n < needed_count and opp_holdings.get(r, 0) > 0:
+                needed_res, needed_count = r, n
+        if (surplus_res and needed_res
+                and surplus_count >= 4 and needed_count <= 1):
+            # 2-of-surplus for 1-of-needed is friendly; opps tend to
+            # accept it because they pocket a card. Score 3.5 puts it
+            # below most affordable builds but above generic dev.
+            recs.append({
+                "kind": "propose_trade",
+                "when": "now",
+                "score": 3.5,
+                "give": {surplus_res: 2},
+                "get": {needed_res: 1},
+                "unlocks": None,
+                "variant": "rebalance",
+                "detail": (
+                    f"offer 2 {surplus_res.lower()} for "
+                    f"1 {needed_res.lower()} · rebalance hand"),
+            })
+
     # 1-ply search rerank: for each affordable build, simulate executing
     # it on a game copy and score the resulting state. The rec with the
     # best post-action evaluation wins — actual lookahead value, not just

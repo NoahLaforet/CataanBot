@@ -1951,3 +1951,74 @@ def test_unknown_strategy_tag_is_a_no_op():
     # Same kinds in same order, same scores.
     assert [r.get("kind") for r in base] == [r.get("kind") for r in biased]
     assert [r.get("score") for r in base] == [r.get("score") for r in biased]
+
+
+# --- proactive rebalance trades (P1-6) -------------------------------
+
+def test_rebalance_trade_fires_on_surplus_with_opp_holding_need():
+    """Strategy v2 P1-6: when self has 4+ of a single resource AND no
+    immediate build is unlocked AND a non-leader opp holds something
+    we have <=1 of, surface a 2:1 rebalance trade rec."""
+    from catanbot.recommender import recommend_actions
+
+    g = _setup_for_full_hand_bias()
+    # Hand: 5 SHEEP (clear surplus), 0 BRICK (clear need), 0 WOOD too
+    # (so settlement also blocked). Can't afford settle/city/road.
+    hand = {"SHEEP": 5, "WOOD": 0, "BRICK": 0, "WHEAT": 0, "ORE": 0}
+    # Stub opp hands: BLUE holds BRICK (the resource we need most).
+    opp_hands = {"BLUE": {"BRICK": 3, "unknown": 0}}
+    out = recommend_actions(
+        g, "RED", hand, top=10, opp_hands=opp_hands)
+    rebalance = [r for r in out
+                 if r.get("kind") == "propose_trade"
+                 and r.get("variant") == "rebalance"]
+    assert rebalance, (
+        f"expected a rebalance propose_trade rec; got "
+        f"kinds={[r.get('kind') for r in out]}")
+    rec = rebalance[0]
+    assert rec["give"] == {"SHEEP": 2}
+    assert rec["get"] == {"BRICK": 1}
+
+
+def test_rebalance_trade_silent_when_propose_trade_already_emitted():
+    """If the build-targeted propose_trade path already fired, don't
+    pile on with a generic rebalance — the user's already got a
+    pointed trade rec."""
+    from catanbot.recommender import recommend_actions
+
+    g = _setup_for_full_hand_bias()
+    # 1 short of settlement (missing BRICK), surplus SHEEP. The
+    # build-targeted propose_trade should fire; rebalance should NOT.
+    hand = {"WOOD": 1, "BRICK": 0, "SHEEP": 5, "WHEAT": 1, "ORE": 0}
+    opp_hands = {"BLUE": {"BRICK": 3}}
+    out = recommend_actions(
+        g, "RED", hand, top=10, opp_hands=opp_hands)
+    proposals = [r for r in out if r.get("kind") == "propose_trade"]
+    rebalances = [r for r in proposals
+                  if r.get("variant") == "rebalance"]
+    assert proposals, "build-targeted propose_trade should have fired"
+    assert not rebalances, (
+        "rebalance shouldn't double up when a targeted trade exists")
+
+
+def test_rebalance_trade_silent_when_only_leader_holds_resource():
+    """Don't feed the leader. If the only opp holding our needed
+    resource is at close_to_win VP, skip the rebalance."""
+    from catanbot.recommender import recommend_actions
+    from catanatron import Color
+
+    g = _setup_for_full_hand_bias()
+    # Push BLUE to 8+ VP so the close-to-win filter trips.
+    state = g.state
+    blue_idx = state.color_to_index[Color.BLUE]
+    state.player_state[f"P{blue_idx}_VICTORY_POINTS"] = 9
+
+    hand = {"SHEEP": 5, "WOOD": 0, "BRICK": 0, "WHEAT": 0, "ORE": 0}
+    opp_hands = {"BLUE": {"BRICK": 3}}
+    out = recommend_actions(
+        g, "RED", hand, top=10, opp_hands=opp_hands)
+    rebalances = [r for r in out
+                  if r.get("kind") == "propose_trade"
+                  and r.get("variant") == "rebalance"]
+    assert not rebalances, (
+        "shouldn't propose a trade to a close-to-winning leader")

@@ -78,6 +78,66 @@ def test_port_bonus_scales_with_produced_resource():
     assert _port_bonus(None, {"WHEAT": 3.0}) == 0.0
 
 
+def test_port_bonus_table_scarcity_dampens_when_resource_is_scarce():
+    """Strategy v2 P2-11: a 2:1 port for a resource the rest of the
+    table barely produces is worth less than the un-dampened value
+    — opponents will trade us 1:1 for our surplus regardless. The
+    damp scales linearly past the 0.8 even-distribution baseline up
+    to 0.7× at scarcity == 1.0."""
+    from catanbot.advisor import _port_bonus
+
+    tiles = [("WHEAT", 6), ("BRICK", 9)]
+    base = _port_bonus("WHEAT 2:1", {"WHEAT": 1.0}, tiles=tiles)
+    # Even-distribution scarcity (0.8) → no dampening.
+    even = _port_bonus(
+        "WHEAT 2:1", {"WHEAT": 1.0}, tiles=tiles,
+        table_scarcity={"WHEAT": 0.8})
+    assert abs(even - base) < 1e-9
+
+    # Half-scarce-ish (0.9) → 1 - (0.9 - 0.8) * 1.5 = 0.85× damp.
+    mid = _port_bonus(
+        "WHEAT 2:1", {"WHEAT": 1.0}, tiles=tiles,
+        table_scarcity={"WHEAT": 0.9})
+    assert abs(mid - base * 0.85) < 1e-9, (
+        f"mid scarcity should give 0.85× damp; "
+        f"base={base}, mid={mid}")
+
+    # Fully scarce (1.0) → 1 - (1.0 - 0.8) * 1.5 = 0.7× damp.
+    full = _port_bonus(
+        "WHEAT 2:1", {"WHEAT": 1.0}, tiles=tiles,
+        table_scarcity={"WHEAT": 1.0})
+    assert abs(full - base * 0.7) < 1e-9
+
+
+def test_compute_table_scarcity_evens_out_on_balanced_board():
+    """compute_table_scarcity returns ~0.8 per resource on a board
+    with even production (5 resources, perfectly balanced) — the
+    even-distribution baseline that the dampening uses as the
+    no-damp anchor."""
+    from catanbot.advisor import compute_table_scarcity
+
+    class FakeMap:
+        node_production = {
+            10: {"WOOD": 1.0, "BRICK": 1.0, "SHEEP": 1.0,
+                 "WHEAT": 1.0, "ORE": 1.0},
+        }
+
+    class FakeBoard:
+        map = FakeMap()
+        buildings = {10: ("RED", "SETTLEMENT")}
+
+    class FakeState:
+        board = FakeBoard()
+
+    class FakeGame:
+        state = FakeState()
+
+    out = compute_table_scarcity(FakeGame())
+    for r, v in out.items():
+        assert abs(v - 0.8) < 1e-9, (
+            f"{r} should land at the 0.8 baseline; got {v}")
+
+
 def test_port_bonus_pip_alignment_halves_on_weak_tile():
     """Strategy v2 P1-7: a 2:1 wheat port whose only matching tile is
     on a 2/3/11/12 number (pip <= 2) gets half the bonus. Real port
@@ -156,9 +216,11 @@ def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
 
     Strategy v2 P1-7 added a pip-alignment penalty (halve when the
     matching tile is 2/3/11/12), so this test passes ``tiles=`` on
-    both sides of the comparison to keep them aligned."""
+    both sides of the comparison to keep them aligned. Strategy v2
+    P2-11 added table_scarcity dampening for resources opps barely
+    produce — passed in the same way."""
     from catanbot.advisor import (
-        _port_bonus, score_second_settlements)
+        _port_bonus, compute_table_scarcity, score_second_settlements)
     top = score_opening_nodes(tracker.game)[0]
     seconds = score_second_settlements(tracker.game, top.node_id, color="RED")
     # Recompute what the unified helper would return given the same
@@ -168,6 +230,7 @@ def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
     # rebuild combined by adding the first-node side.
     m = tracker.game.state.board.map
     first_prod = m.node_production.get(top.node_id, {})
+    scarcity = compute_table_scarcity(tracker.game)
     had_port_nodes = False
     for s in seconds:
         if not s.port:
@@ -175,7 +238,8 @@ def test_second_settle_port_bonus_shares_first_settle_formula(tracker):
         had_port_nodes = True
         combined = {r: first_prod.get(r, 0.0) + s.resources.get(r, 0.0)
                     for r in s.resources}
-        expected = _port_bonus(s.port, combined, tiles=s.tiles)
+        expected = _port_bonus(s.port, combined, tiles=s.tiles,
+                               table_scarcity=scarcity or None)
         assert abs(s.port_bonus - expected) < 1e-9, (
             f"node {s.node_id} port {s.port}: got {s.port_bonus}, "
             f"expected {expected} from shared helper")
