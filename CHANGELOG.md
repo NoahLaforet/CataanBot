@@ -4,6 +4,90 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.32.0 — 2026-05-03
+
+Twirl variant support, Reddit-36k-game-finding tunings, and a real
+"win this turn" path that fired the loss case from earlier today.
+
+### Variant maps
+- **Twirl** (mapSetting=31, 42 tiles / 126 corners / 168 edges /
+  12 ports) plays end-to-end. The bridge auto-detects colonist's
+  dual-GameStart pattern (placeholder 19/54/72/9 frame followed
+  by the real Twirl shape) and rebuilds the catanatron CatanMap
+  on the second frame; without that, every diff with a corner id
+  past the placeholder range silently dropped and the next valid
+  road build hit "Invalid Road Placement".
+- **Recs gate** widened to a `_RECS_SAFE_VARIANTS` whitelist so
+  layout-only variants (Twirl, classic) flow through; rules-
+  changing variants (5-6 ext, Cities & Knights, Seafarers) stay
+  suppressed because the recommender doesn't model their state
+  machine.
+- **Postmortem fingerprint** labels twirl + pond by tile/corner
+  count (was generic "variant") and pulls edge + port counts
+  from the colonist mapping (catanatron's CatanMap reads them
+  back as 0 and 6 regardless of map shape).
+- **Variant builder self-clean** — every variant boot strips the
+  prior variant's slice of catanatron's STATIC_GRAPH before
+  augmenting with the current map's edges. Without it, two
+  variants in the same process collide at the same node-id range
+  and settle-distance discards pull in stale neighbors, rejecting
+  valid placements.
+
+### Recommender / strategy tunes (Reddit 36k-game findings)
+- **3rd-settle expansion bias (#1)** — settlement recs get a 1.25×
+  rank bump while self has only the opening 2 footprints, with
+  "· settle #3" appended to detail; clears the moment a 3rd
+  footprint lands. Paired with a milestone banner ("settle #3 —
+  biggest predictor · need 🌲 1 + 🐑 1") that's now actually
+  rendered in the HUD; previously the bridge computed it but
+  panel.js dropped it on the floor.
+- **Wheat priority (#2)** — opening-eval raw production weights
+  wheat at 1.10× (every other resource at 1.0×). Wheat is the
+  one resource used in every major build; the flat sum was
+  under-weighting it against ore-on-6/8 stacks.
+- **Composition over pips (#3)** — diversity multiplier bumped
+  from 1.05/1.15 to 1.08/1.22 for 2-distinct / 3-distinct nodes.
+- **LR push surfaces earlier (#5)** — strategic-options strip now
+  flags the longest-road push 1-2 roads from qualifying (was
+  1 road only). Past 2 stays quiet to avoid speculative noise.
+- **Brick-port early pickup (in-flight before today)** — 1.4×
+  rank bump on roads landing on a 2:1 port for a resource self
+  already produces; 3:1 ports skipped (Reddit data flagged
+  generic-port chasing as net-negative).
+
+### Win detection
+- **Claim path for held VP cards** — winning-move banner now fires
+  when self.vp ≥ target with held VP cards covering the gap and
+  it's self's turn. Came directly out of a 2026-05-03 loss vs
+  Plunder101 where Noah was at 8 visible + 2 held VP cards but
+  never claimed before the opp won on their next turn. Banner
+  reads "WIN THIS TURN — VP cards in hand bring you to N · play
+  any move to claim".
+
+### HUD
+- **Resource cells icon-first with vertical divider bars** —
+  switched from "N icon" to "icon N" across self hand, opp hand,
+  trade pills, near-build missing line, roll-yield strip, discard
+  hint, seven-prep. Each cell has padding + a left-border so the
+  boundary between resources is unambiguous at a glance. Replaces
+  the gap-only spacing that left "1🧱 2🐑" reading as one blob.
+- **Dev-deck per-type strip backend** — knight / monopoly / YoP /
+  road-building remaining counts ship in `dev_deck.by_type`,
+  driving the HUD strip Noah requested for spotting under-
+  contested LA pushes by knight scarcity (Reddit finding #4).
+  HUD render + CSS shipped in earlier sessions; this completes
+  the loop.
+
+### Hint hygiene
+- **Piece-supply guard** on monopoly + YoP unlock checks: skip a
+  build when the player is out of that piece. Was telling Noah
+  "WOOD+WHEAT unlocks settlement" at 5 settlements placed.
+- **TradeCloseEvent + offer_id** on TradeOfferEvent so the HUD's
+  incoming-trade banner clears the moment colonist marks the
+  offer null/closed instead of lingering until the next snapshot.
+- **Content scraper** drops the isAtBottom() gate so log events
+  keep flowing when Noah scrolls up to read chat.
+
 ## v0.31.0 — 2026-05-01
 
 Two extension fixes for the "panel must be open before Start Game"
