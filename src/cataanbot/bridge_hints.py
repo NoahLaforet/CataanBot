@@ -291,11 +291,28 @@ def _compute_monopoly_hint(
     best_res, best_count = ranked[0]
     if best_count <= 0:
         return None
-    # Unlock reason: which build does this unlock (if any)?
+    # Unlock reason: which build does this unlock (if any)? Skip a
+    # build the player can't physically place (out of pieces) — same
+    # piece-supply guard the YoP hint uses, since "unlocks settlement"
+    # at 5 settles placed is a play that does nothing.
+    settles_left = int(state.player_state.get(
+        f"P{idx}_SETTLEMENTS_AVAILABLE", 5))
+    cities_left = int(state.player_state.get(
+        f"P{idx}_CITIES_AVAILABLE", 4))
+    roads_left = int(state.player_state.get(
+        f"P{idx}_ROADS_AVAILABLE", 15))
+    placeable = {
+        "settlement": settles_left > 0,
+        "city": cities_left > 0,
+        "road": roads_left > 0,
+        "dev card": True,
+    }
     unlock_reason: str | None = None
     gained = dict(self_hand)
     gained[best_res] = gained.get(best_res, 0) + best_count
     for name, cost in _BUILD_COSTS_MONOPOLY.items():
+        if not placeable.get(name, True):
+            continue
         if (all(gained.get(r, 0) >= n for r, n in cost.items())
                 and not all(self_hand.get(r, 0) >= n
                             for r, n in cost.items())):
@@ -380,11 +397,30 @@ def _compute_yop_hint(
         held = int(playable_count or 0)
     if held <= 0:
         return None
+    # Piece-supply guard. When the player has placed all 5 settlements
+    # (or 4 cities, or 15 roads) the hint must not recommend a YoP pair
+    # whose unlock target is a build they physically can't place. Bug
+    # Noah hit on 2026-05-02: at 5 settles placed, hint suggested
+    # WOOD+WHEAT "unlocks settlement" — a play that does nothing.
+    settles_left = int(state.player_state.get(
+        f"P{idx}_SETTLEMENTS_AVAILABLE", 5))
+    cities_left = int(state.player_state.get(
+        f"P{idx}_CITIES_AVAILABLE", 4))
+    roads_left = int(state.player_state.get(
+        f"P{idx}_ROADS_AVAILABLE", 15))
+    placeable = {
+        "settlement": settles_left > 0,
+        "city": cities_left > 0,
+        "road": roads_left > 0,
+        "dev card": True,
+    }
     # For each target build, compute deficit in self_hand. A pick is
     # "unlocking" iff total_deficit <= 2 (YoP grants exactly 2 cards).
     best: tuple[int, str, list[str]] | None = None  # (priority, build, [r1, r2])
     priority = {"city": 4, "settlement": 3, "dev card": 2, "road": 1}
     for name, cost in _BUILD_COSTS_MONOPOLY.items():
+        if not placeable.get(name, True):
+            continue
         deficit: dict[str, int] = {}
         for r, n in cost.items():
             d = n - self_hand.get(r, 0)
