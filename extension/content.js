@@ -484,7 +484,7 @@
             .replace(/\s+/g, ' ')
             .trim();
         const names = parts.filter(p => p.kind === 'name')
-            .map(p => ({ name: p.name, color: p.color }));
+            .map(p => ({ name: p.name, color: p.color, bg: p.bg }));
         const icons = parts.filter(p => p.kind === 'icon')
             .map(p => ({ alt: p.alt, src_tail: p.src_tail }));
 

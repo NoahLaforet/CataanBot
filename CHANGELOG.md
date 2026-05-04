@@ -4,6 +4,24 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.33.12 — 2026-05-04
+
+Fix the orange-pill-renders-white bug for real this time.
+
+content.js's chat serializer captured `{name, color, bg}` per
+name span but the final `names` array sent to the bridge dropped
+`bg` and only sent `{name, color}`. The bridge's
+`_harvest_display_colors` had a bg-fallback path coded since
+forever — explicitly for the case "colonist ships WHITE-player
+names without inline color styles ... and instead uses a colored
+background" — but it never received bg data because content.js
+was filtering it out at the wire.
+
+Confirmed live: snap showed `color_css: null` for every player
+including the orange-in-colonist player who maps to catanatron
+WHITE → COLOR_HEX[WHITE] = `#f0f0f0` → white pill. With bg now
+flowing through, the harvester can latch the colonist orange.
+
 ## v0.33.11 — 2026-05-04
 
 Defensive panel fix: kill the local fantasy-name counter entirely.
