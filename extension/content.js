@@ -34,6 +34,31 @@
     // DOM change so the rewrite usually sticks within a frame.
     let streamerOn = false;
     const STREAMER_DATA_FLAG = 'cataanonymized';
+
+    // Inject a hard-blank CSS rule so player-colored spans render
+    // transparent UNTIL our anonymizer marks them with the dedup
+    // attribute. Kills the first-frame flash where colonist's
+    // React paints "Morgan" before our MutationObserver fires.
+    // Scoped to html[data-cataan-streamer="1"] so it's a no-op
+    // when streamer mode is off.
+    function _ensureStreamerCss() {
+        const id = 'cataan-streamer-css';
+        if (document.getElementById(id)) return;
+        const style = document.createElement('style');
+        style.id = id;
+        style.textContent = `
+            html[data-cataan-streamer="1"]
+                span[style*="color"]:not([data-${STREAMER_DATA_FLAG}]),
+            html[data-cataan-streamer="1"]
+                div[style*="color"]:not([data-${STREAMER_DATA_FLAG}]) {
+                color: transparent !important;
+                text-shadow: none !important;
+            }
+        `;
+        (document.head || document.documentElement)
+            .appendChild(style);
+    }
+    _ensureStreamerCss();
     let _anonSelfName = null;
     // Stable seat-order labels. First opp we see gets the first
     // fantasy name, second gets the second, etc. Self is always
@@ -147,43 +172,57 @@
             knownNames.push(_anonSelfName);
         }
         if (knownNames.length === 0) return;
-        // Sort by length descending — avoids partial matches when
-        // one username is a prefix of another.
         knownNames.sort((a, b) => b.length - a.length);
         const escaped = knownNames.map(n =>
             n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-        // Word boundary on both sides — colonist's "Roehm's Turn"
-        // text node should match Roehm exactly, not partial.
         const re = new RegExp('\\b(' + escaped.join('|') + ')\\b', 'g');
-        const walker = document.createTreeWalker(
-            document.body, NodeFilter.SHOW_TEXT, {
-                acceptNode: (node) => {
-                    if (!node.textContent
-                            || node.textContent.length < 2) {
-                        return NodeFilter.FILTER_REJECT;
-                    }
-                    const parent = node.parentElement;
-                    if (!parent) return NodeFilter.FILTER_REJECT;
-                    if (_isInputLike(parent)) {
-                        return NodeFilter.FILTER_REJECT;
-                    }
-                    // Skip script/style nodes outright.
-                    const tag = parent.tagName;
-                    if (tag === 'SCRIPT' || tag === 'STYLE'
-                            || tag === 'NOSCRIPT') {
-                        return NodeFilter.FILTER_REJECT;
-                    }
-                    return NodeFilter.FILTER_ACCEPT;
-                },
-            });
+        const filter = {
+            acceptNode: (node) => {
+                if (!node.textContent
+                        || node.textContent.length < 2) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
+                if (_isInputLike(parent)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const tag = parent.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE'
+                        || tag === 'NOSCRIPT') {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            },
+        };
         const updates = [];
-        let node;
-        while ((node = walker.nextNode())) {
-            if (!re.test(node.textContent)) continue;
-            // Reset lastIndex since regex has global flag.
-            re.lastIndex = 0;
-            updates.push(node);
+        function walkRoot(root) {
+            // Walk text nodes in this root.
+            const walker = document.createTreeWalker(
+                root, NodeFilter.SHOW_TEXT, filter);
+            let node;
+            while ((node = walker.nextNode())) {
+                if (!re.test(node.textContent)) continue;
+                re.lastIndex = 0;
+                updates.push(node);
+            }
+            // Recurse into open shadow roots — colonist's modals
+            // (robber-victim picker, dev-card popups, trade
+            // dialogs) sometimes mount via React portal into a
+            // Shadow DOM where the main-document walker is blind.
+            // Closed shadow roots stay opaque, but those are rare
+            // in colonist's bundle.
+            const elementWalker = document.createTreeWalker(
+                root, NodeFilter.SHOW_ELEMENT, null);
+            let el;
+            while ((el = elementWalker.nextNode())) {
+                if (el.shadowRoot) {
+                    try { walkRoot(el.shadowRoot); }
+                    catch (_) { /* closed root or perm denied */ }
+                }
+            }
         }
+        walkRoot(document.body);
         for (const node of updates) {
             re.lastIndex = 0;
             const newText = node.textContent.replace(re,
@@ -221,9 +260,13 @@
             }, ms);
         }
     }
+    function _setStreamerHtmlFlag(on) {
+        document.documentElement.dataset.cataanStreamer = on ? '1' : '0';
+    }
     try {
         chrome.storage.local.get(['streamer'], (res) => {
             streamerOn = !!(res && res.streamer);
+            _setStreamerHtmlFlag(streamerOn);
             if (streamerOn) {
                 _refreshSelfName();
                 _burstAnon();
@@ -232,6 +275,7 @@
         chrome.storage.onChanged.addListener((changes, area) => {
             if (area !== 'local' || !changes.streamer) return;
             streamerOn = !!changes.streamer.newValue;
+            _setStreamerHtmlFlag(streamerOn);
             if (streamerOn) {
                 _refreshSelfName();
                 _burstAnon();
