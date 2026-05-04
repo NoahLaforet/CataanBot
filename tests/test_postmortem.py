@@ -42,10 +42,11 @@ def test_render_postmortem_html_writes_complete_file(tmp_path: Path):
     assert body.startswith("<!doctype html>")
     assert body.count("<img ") == 4
     assert body.count("data:image/png;base64,") == 4
-    # Report section included.
-    assert "<pre>" in body
+    # Report section included. v0.34.0 wrapped it in a styled card,
+    # so the `<pre>` carries `class="report"` instead of being bare.
+    assert "<pre class=\"report\"" in body
     assert "Winner: Alice" in body or "Alice" in body
-    # jsonl path escaped into the source div.
+    # jsonl path escaped into the source meta-row.
     assert "fixture.jsonl" in body
 
 
@@ -62,4 +63,7 @@ def test_render_postmortem_html_works_without_jsonl_path(tmp_path: Path):
     )
     assert out.exists()
     body = out.read_text()
-    assert "unknown source" in body
+    # v0.34.0 renders the source as "live game" when no jsonl_path is
+    # supplied (live bridge runs don't have one). Old template used
+    # "(unknown source)"; updated to match the new placeholder.
+    assert "live game" in body
