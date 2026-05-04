@@ -213,15 +213,43 @@
                     _standalone.state = lib.newGameState();
                 }
                 // mapState — appears on GameStart frames. Triggers
-                // a board build / rebuild.
+                // a board build / rebuild. When a fresh GameStart
+                // arrives mid-session (new game after a previous one
+                // ended), the state container needs a hard reset:
+                // node IDs depend on the board layout, so old
+                // buildings/roads/etc. are stale once the new map
+                // lands. We preserve usernames + the lib pointer
+                // since those are session-scoped.
                 const fullMs = _findMapState(decoded);
+                // Stable fingerprint for the mapState — tile count +
+                // ordered tile.type list. Lets us detect a genuinely
+                // new map (different shape / variant) vs. the same
+                // map re-shipped on a resync frame, so we only do a
+                // hard state reset on real new games.
+                const _msFingerprint = (ms) => {
+                    if (!ms || !ms.tileHexStates) return null;
+                    const keys = Object.keys(ms.tileHexStates);
+                    const types = keys.map(k =>
+                        ms.tileHexStates[k].type).join(',');
+                    return `${keys.length}|${types}`;
+                };
+                const newFp = _msFingerprint(fullMs);
                 if (fullMs && (!_standalone.board
-                        || _standalone.mapStateFrame !== fullMs)) {
+                        || _standalone.mapStateFingerprint !== newFp)) {
+                    const wasBoardLoaded = !!_standalone.board;
                     _standalone.mapStateFrame = fullMs;
+                    _standalone.mapStateFingerprint = newFp;
                     _standalone.board =
                         lib.buildBoardFromColonistMap(fullMs);
                     _standalone.gameStarted = true;
                     if (_standalone.board) {
+                        if (wasBoardLoaded) {
+                            // Hard-reset state on a real new game.
+                            _standalone.state = lib.newGameState();
+                            _standalone.bankRemaining = {};
+                            _standalone.selfColorId = null;
+                            _standalone.currentTurnPlayerColor = null;
+                        }
                         _standalone.state.map = _standalone.board;
                     }
                     dirty = true;
@@ -314,7 +342,29 @@
                 const inOpeningPhase = totalRollsSoFar === 0
                     && playersTotal > 0
                     && settlesPlaced < expectedOpeningSettles;
-                const ranked = lib.scoreOpeningNodes(_standalone.board);
+                // Opening picks: use scoreSecondSettlements when self
+                // has placed a 1st settle (round-2 picks should
+                // consider complement value, not just raw production).
+                // Falls back to scoreOpeningNodes otherwise.
+                let ranked;
+                let firstNodeId = null;
+                if (_standalone.state) {
+                    for (const [nid, b] of Object.entries(
+                            _standalone.state.buildings)) {
+                        if (b.color === _standalone.state.selfColor) {
+                            firstNodeId = nid; break;
+                        }
+                    }
+                }
+                if (firstNodeId
+                        && (_standalone.state?.handTotal[
+                            _standalone.state.selfColor] || 0) === 0
+                        && totalRollsSoFar === 0) {
+                    ranked = lib.scoreSecondSettlements(
+                        _standalone.board, firstNodeId);
+                } else {
+                    ranked = lib.scoreOpeningNodes(_standalone.board);
+                }
                 // Self bank info — drives a "your turn / wait"
                 // status when self color is known.
                 const selfBank =
