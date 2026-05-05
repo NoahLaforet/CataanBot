@@ -2744,6 +2744,13 @@
         // tab, no game open." Tell the user that, not "install the
         // bridge" — the bridge is optional.
         if (snap && snap._source === 'no_bridge') {
+            const d = window.__catanbotDiag || {};
+            const diagText = `ws ${d.wsBroadcastsReceived || 0}`
+                + ` · dec ${d.decodeAttempts || 0}`
+                + ` · map ${d.mapStateFound || 0}`
+                + ` · snap ${d.snapshotsApplied || 0}`
+                + ` · replay ${d.replayRequests || 0}/`
+                + `${d.replayResponses || 0}`;
             ui.content.innerHTML =
                 `<div class="no-bridge-frame">`
                 + `<div class="nb-icon">🎲</div>`
@@ -2751,19 +2758,26 @@
                 + `<div class="nb-body">`
                 + `Open a Catan game on `
                 + `<a href="https://colonist.io" target="_blank" `
-                + `rel="noopener">colonist.io</a> and the panel will `
-                + `start showing opening picks within a second of `
-                + `the game starting.`
+                + `rel="noopener">colonist.io</a>. Mid-game recs, `
+                + `dev-card hints, robber targets, opp inference, `
+                + `and the strategy banner will all light up within `
+                + `a second of the game starting — no bridge needed.`
                 + `</div>`
                 + `<div class="nb-footnote">`
-                + `<b>Want the full HUD?</b> Mid-game recs, dev-card `
-                + `play timing, robber targets, and post-game `
-                + `analysis need an optional local Python bridge `
-                + `(open-source, runs on your machine, game state `
-                + `stays local). `
-                + `<a href="https://github.com/NoahLaforet/CatanBot#install" `
-                + `target="_blank" rel="noopener">install the bridge →</a>`
+                + `If you'd rather have the Python bridge running `
+                + `(unlocks 1-ply search-delta annotations + post-`
+                + `game postmortem rendering), see the `
+                + `<a href="https://github.com/NoahLaforet/CatanBot#quick-start" `
+                + `target="_blank" rel="noopener">install docs</a>. `
+                + `Open ⚙ → source to pick which path the panel `
+                + `uses (default: auto).`
                 + `</div>`
+                + `<div class="nb-diag" title="ws: WS broadcasts `
+                + `received · dec: decode attempts · map: GameStart `
+                + `frames seen · snap: state-mutating snapshots `
+                + `applied · replay: request-replay calls / `
+                + `responses with cached data">`
+                + diagText + `</div>`
                 + `</div>`;
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
