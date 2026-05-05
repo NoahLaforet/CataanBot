@@ -1306,6 +1306,39 @@
                     };
                 }
 
+                // 3rd-settle milestone — biggest pre-mid-game predictor
+                // of winning per the Reddit 36k-game data. Fires when
+                // self has placed 2 settles, no city upgrades yet (so
+                // it's still the *first* settle delta), and past turn
+                // 5. Bridge ships the same shape: {kind, headline,
+                // missing}.
+                let milestone = null;
+                if (st && st.selfColor) {
+                    let selfSettles = 0, selfCities = 0;
+                    for (const b of Object.values(st.buildings)) {
+                        if (b.color !== st.selfColor) continue;
+                        if (b.kind === 'CITY') selfCities += 1;
+                        else selfSettles += 1;
+                    }
+                    if (selfSettles === 2 && selfCities === 0
+                            && totalRolls >= 5) {
+                        const need = {};
+                        const cost = { WOOD: 1, BRICK: 1,
+                                       SHEEP: 1, WHEAT: 1 };
+                        const myHand = st.hands[st.selfColor]
+                            || lib.newHand();
+                        for (const [r, n] of Object.entries(cost)) {
+                            const have = myHand[r] || 0;
+                            if (have < n) need[r] = n - have;
+                        }
+                        milestone = {
+                            kind: 'third_settle',
+                            headline: 'Settle #3 — biggest predictor',
+                            missing: need,
+                        };
+                    }
+                }
+
                 // Engine-deficit alarm: leader produces 1.5×+ self.
                 let engineDeficit = null;
                 if (st && st.map && (st.totalRolls >= 8)) {
@@ -1433,6 +1466,7 @@
                     dev_deck: devDeck,
                     friendly_robber_active:
                         _chatFlags.friendlyRobberActive,
+                    milestone,
                     threat,
                     win_proximity: winProx,
                     winning_move: winningMove,
