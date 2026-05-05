@@ -441,6 +441,66 @@ function _devCardRec(state, hand, otherRecs) {
     };
 }
 
+/** Player-to-player trade proposals. When self is exactly 1 card
+ *  short of a build target AND we have a surplus of another
+ *  resource, suggest a 1-for-1 fair trade with whichever opp
+ *  produces the missing resource (or fallback to "any opp").
+ *  Mirrors recommender._propose_trades in slim form.
+ *
+ *  Ships `kind=propose_trade` with `give`, `get`, `unlocks`,
+ *  `variant` ("1:1 fair") so the panel's existing trade-rec
+ *  renderer at panel.js line ~2070 picks them up unchanged.
+ */
+function _proposeTradeRecs(state, hand, opts) {
+    const board = state.map;
+    if (!board) return [];
+    const recs = [];
+    const wanted = [
+        ['city', COSTS.city, 6.5, 'city'],
+        ['settlement', COSTS.settlement, 6.0, 'settlement'],
+        ['road', COSTS.road, 4.5, 'road'],
+        ['dev_card', COSTS.dev_card, 4.0, 'dev card'],
+    ];
+    for (const [target, cost, baseScore, kindWord] of wanted) {
+        if (handCanAfford(hand, cost)) continue;
+        const need = _missing(hand, cost);
+        const needKeys = Object.keys(need);
+        // Only emit propose-trade when we're short by exactly 1
+        // resource type AND the deficit is just 1 card. Anything
+        // bigger is better served by bank/port trades or saving up.
+        if (needKeys.length !== 1) continue;
+        const needRes = needKeys[0];
+        if (need[needRes] !== 1) continue;
+        // Find a surplus we'd offer. Has to NOT be needed by the
+        // build itself.
+        for (const surplus of RESOURCE_NAMES) {
+            if (surplus === needRes) continue;
+            const have = hand[surplus] || 0;
+            const reservedByCost = cost[surplus] || 0;
+            if (have - 1 < reservedByCost) continue;
+            // Score floor at 1.5 so we don't outrank affordable
+            // builds, but high enough to clearly beat the dev-card
+            // fallback when a real trade unlocks a build.
+            const score = Math.max(1.5,
+                Math.min(8.0, baseScore));
+            recs.push({
+                kind: 'propose_trade',
+                when: 'now',
+                score: Math.round(score * 10) / 10,
+                give: { [surplus]: 1 },
+                get: { [needRes]: 1 },
+                unlocks: target,
+                variant: '1:1 fair',
+                detail: `offer 1 ${surplus.toLowerCase()} for `
+                    + `1 ${needRes.toLowerCase()} · `
+                    + `unlocks ${kindWord}`,
+            });
+            break;  // one surplus offer per blocked build
+        }
+    }
+    return recs.slice(0, 3);
+}
+
 /** Build a ranked rec list. opts: { topK, includeSoon }. */
 export function recommendActions(state, opts = {}) {
     if (!state || !state.selfColor || !state.map) return [];
@@ -450,6 +510,7 @@ export function recommendActions(state, opts = {}) {
     recs.push(..._settleRecs(state, hand, opts));
     recs.push(..._roadRecs(state, hand, opts));
     recs.push(..._bankTradeRecs(state, hand, opts));
+    recs.push(..._proposeTradeRecs(state, hand, opts));
     recs.push(_devCardRec(state, hand, recs));
 
     // Filter out duplicates by (kind, node_id|edge|target).
@@ -461,14 +522,24 @@ export function recommendActions(state, opts = {}) {
         seen.add(key);
         out.push(r);
     }
-    out.sort((a, b) => {
+    // Filter dups: a propose_trade for `target=settlement` shouldn't
+    // co-exist with a bank_trade for the same target. Bank/port is
+    // preferred when affordable since it doesn't depend on opp
+    // accepting; player trade only fires when no bank-trade rec
+    // already covered the same build.
+    const bankTargets = new Set(
+        out.filter(r => r.kind === 'bank_trade')
+            .map(r => r.target_kind));
+    const filtered = out.filter(r =>
+        !(r.kind === 'propose_trade' && bankTargets.has(r.unlocks)));
+    filtered.sort((a, b) => {
         // 'now' beats 'soon' in display order (panel splits by when
         // already, but keeping the global ranking sane is nice).
         if (a.when !== b.when) return a.when === 'now' ? -1 : 1;
         return b.score - a.score;
     });
     const topK = opts.topK || 12;
-    return out.slice(0, topK);
+    return filtered.slice(0, topK);
 }
 
 /** Robber-target ranking — bridge had this in advisor.score_robber_targets;
