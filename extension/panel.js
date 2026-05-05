@@ -188,6 +188,13 @@
     // simpler. When drift gets bad, the panel's hand_tracked flag
     // stays false so the user reads it as approximate.
     const _chatHands = {};   // username → {res: count}
+    // Game-rule flags inferred from chat — colonist announces some
+    // optional rules in the chat log at game start (no WS frame
+    // signal for them). Currently tracks Friendly Robber, which
+    // protects ≤ 2 VP players from being robbed.
+    const _chatFlags = {
+        friendlyRobberActive: false,
+    };
     const COLONIST_TO_CATAN = {
         Lumber: 'WOOD', Brick: 'BRICK', Wool: 'SHEEP',
         Grain: 'WHEAT', Ore: 'ORE',
@@ -259,6 +266,18 @@
         const text = String(p.text || '').toLowerCase();
         const player = _firstName(p.parts);
         const resources = _iconsToResources(p.parts);
+
+        // Friendly Robber announcement — colonist logs it once at
+        // game start ("friendly robber active" / similar). Latches a
+        // flag so robber-target ranking can filter out protected
+        // (≤2 VP) victims, mirroring the bridge.
+        if (text.startsWith('friendly robber')
+                || text.includes('friendly robber active')) {
+            if (!_chatFlags.friendlyRobberActive) {
+                _chatFlags.friendlyRobberActive = true;
+                window.__catanbotRenderDirty = true;
+            }
+        }
 
         if (player) {
             // Production from setup phase or rolls. Setup-phase
@@ -644,7 +663,10 @@
                     try { rbH = lib.rbHint(st); } catch (_) {}
                     try {
                         robberTargets = lib.recommendRobberTargets
-                            ? lib.recommendRobberTargets(st)
+                            ? lib.recommendRobberTargets(st, {
+                                friendlyRobber: _chatFlags
+                                    .friendlyRobberActive,
+                            })
                             : [];
                     } catch (_) {}
                     try {
@@ -1409,6 +1431,8 @@
                     engine_deficit: engineDeficit,
                     robber_on_me: robberOnMe,
                     dev_deck: devDeck,
+                    friendly_robber_active:
+                        _chatFlags.friendlyRobberActive,
                     threat,
                     win_proximity: winProx,
                     winning_move: winningMove,

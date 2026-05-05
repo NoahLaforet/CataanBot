@@ -495,10 +495,22 @@ export function recommendRobberTargets(state, opts = {}) {
                 adj.push({ ...b, isSelf: false });
             }
         }
-        const oppAdj = adj.filter(x => !x.isSelf);
+        let oppAdj = adj.filter(x => !x.isSelf);
         const hasSelfAdj = adj.some(x => x.isSelf);
         if (oppAdj.length === 0) continue;
         if (hasSelfAdj) continue;
+        // Friendly Robber filter: colonist's optional rule protects
+        // any player at ≤ 2 VP from being the rob target. When
+        // active, drop opps below the threshold from the victim
+        // pool so the panel doesn't suggest moves the game won't
+        // let you make.
+        if (opts.friendlyRobber) {
+            oppAdj = oppAdj.filter(b => {
+                const vp = state.vp[b.color] || 0;
+                return vp > 2;
+            });
+            if (oppAdj.length === 0) continue;
+        }
         // Score: pip × oppPiecesValue × steal-EV
         const pip = pipsForNumber(tile.number);
         let pieceValue = 0;
