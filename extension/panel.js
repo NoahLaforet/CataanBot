@@ -72,7 +72,12 @@
         byCss: {},          // 'rgb(...)'/hex → username
         byUser: {},         // username → css
         recent: [],         // recent username strings, dedup-ordered
+        self: null,         // self username (latched once on the
+                            // first chat broadcast that carries p.self)
     };
+    function _stashedSelfName() {
+        return _standaloneNames.self;
+    }
     function _normCss(c) {
         if (!c) return '';
         return String(c).replace(/\s+/g, '').toLowerCase();
@@ -220,6 +225,30 @@
     const _chatDevPlays = {
         MONOPOLY: 0, YEAR_OF_PLENTY: 0, ROAD_BUILDING: 0,
     };
+    // Move-quality history — chess-style classification of each
+    // self-build vs the rec list cached from the previous tick.
+    // Mirrors bridge's move_history field. Each entry:
+    // {label: '!!'|'!'|'?!'|'?'|'??', rank: int|null, kind, ts}.
+    const _moveHistory = [];
+    // Set of self-owned node ids and edge keys we've already
+    // classified — we diff each tick to find newly-built pieces and
+    // grade them once, then add to these sets.
+    const _gradedSelfNodes = new Set();
+    const _gradedSelfEdges = new Set();
+    // Rec list cached at the end of the previous snap tick. The new
+    // tick's diff (self placed something) classifies against this.
+    let _lastRecs = [];
+    // Knight-played-this-turn flag (chat-detected). When true, the
+    // standalone snap surfaces robber_reason='knight' so the urgent
+    // banner fires. Cleared on next turn.
+    let _selfKnightPlayedThisTurn = false;
+    let _selfKnightPlayedAtTurn = null;
+    // Dev-card just-bought flag — bought a dev card this turn so
+    // playable count for self drops by 1 (Catan rule: can't play a
+    // dev card the turn you bought it). Cleared at start of next
+    // self turn.
+    let _selfDevsJustBought = 0;
+    let _selfDevsBoughtAtTurn = null;
     // Active trade offers — keyed by offerer username. Set when
     // chat says "X wants to give [a] for [b]"; cleared when X
     // commits a trade or makes a new offer. The snap builder reads
@@ -296,7 +325,10 @@
                 || (n.bg && String(n.bg).trim()) || '';
             _stashName(n.name, css);
         }
-        if (p.self) _stashName(p.self, '');
+        if (p.self) {
+            _stashName(p.self, '');
+            _standaloneNames.self = String(p.self);
+        }
 
         const text = String(p.text || '').toLowerCase();
         const player = _firstName(p.parts);
@@ -359,6 +391,17 @@
                     // separately — guard via a follow-up "took from bank"
                     // dedup. Practically the bank-take always lands
                     // milliseconds later so the +1 here is rare.
+                } else if (text.includes('knight')
+                        || altsLc.some(a => a.includes('knight'))) {
+                    // Self-played knight → flag so the snap surfaces
+                    // robber_reason='knight' for an urgent banner.
+                    const selfUserNow = _stashedSelfName();
+                    if (selfUserNow && player === selfUserNow) {
+                        _selfKnightPlayedThisTurn = true;
+                        _selfKnightPlayedAtTurn =
+                            _standalone.currentTurnPlayerColor;
+                        window.__catanbotRenderDirty = true;
+                    }
                 }
             }
             // Discard on a 7
@@ -388,6 +431,17 @@
                 _addChat(player, 'SHEEP', -1);
                 _addChat(player, 'WHEAT', -1);
                 _addChat(player, 'ORE', -1);
+                // Self bought a dev card → can't play it this turn.
+                // Mirrors python's just_bought tracking.
+                if (_standalone.state) {
+                    const selfUserNow = _stashedSelfName();
+                    if (selfUserNow && player === selfUserNow) {
+                        _selfDevsJustBought += 1;
+                        _selfDevsBoughtAtTurn =
+                            _standalone.currentTurnPlayerColor;
+                        window.__catanbotRenderDirty = true;
+                    }
+                }
             }
             // Trade with bank: "X gave bank [a] [a] [a] [a] and took [b]"
             else if (text.includes('gave bank')
@@ -626,6 +680,17 @@
                                 delete _chatTradeOffers[k];
                             }
                             _chatFlags.friendlyRobberActive = false;
+                            _moveHistory.length = 0;
+                            _gradedSelfNodes.clear();
+                            _gradedSelfEdges.clear();
+                            _lastRecs = [];
+                            _selfKnightPlayedThisTurn = false;
+                            _selfKnightPlayedAtTurn = null;
+                            _selfDevsJustBought = 0;
+                            _selfDevsBoughtAtTurn = null;
+                            _chatDevPlays.MONOPOLY = 0;
+                            _chatDevPlays.YEAR_OF_PLENTY = 0;
+                            _chatDevPlays.ROAD_BUILDING = 0;
                         }
                         _standalone.state.map = _standalone.board;
                     } else {
@@ -1189,16 +1254,71 @@
                         + (dev.YEAR_OF_PLENTY || 0)
                         + (dev.ROAD_BUILDING || 0);
                     devHeld = devVpHeld + devNonVp;
-                    // Playable: standalone has no per-turn purchase
-                    // tracking, so we treat all non-VP cards as
-                    // playable. The "just bought / play next turn"
-                    // distinction stays bridge-only.
-                    devPlayable = devNonVp;
+                    // Playable = non-VP cards minus any bought THIS
+                    // turn (Catan rule: can't play a dev card the
+                    // turn you bought it). Cleared at the start of
+                    // self's next turn, below. Mirrors python's
+                    // dev_cards_just_bought semantics.
+                    const stillThisTurn = _selfDevsBoughtAtTurn != null
+                        && _standalone.currentTurnPlayerColor
+                            === _selfDevsBoughtAtTurn;
+                    if (!stillThisTurn) _selfDevsJustBought = 0;
+                    devPlayable = Math.max(0,
+                        devNonVp - _selfDevsJustBought);
                 }
-                // Bank supply for the bank-row card. Standalone tracks
-                // each player's bank-remaining counts; the global
-                // resource bank (cards remaining in the deck) we don't
-                // have. Skip — renderer hides when missing.
+                // Bank supply (per-resource cards left in the deck).
+                // Mirrors bridge_economy._compute_bank_supply. Each
+                // resource starts at 19; subtract every player's
+                // current holdings. Self.hand is authoritative; opps
+                // come from chat inference (best-effort). Marks
+                // tracked=false when any opp has unknowns so the
+                // renderer can de-emphasise.
+                let bankSupply = null;
+                if (st && st.selfColor) {
+                    const totals = {
+                        WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0,
+                    };
+                    const selfH = st.hands[st.selfColor]
+                        || lib.newHand();
+                    for (const r of Object.keys(totals)) {
+                        totals[r] += selfH[r] || 0;
+                    }
+                    let opaqueOpp = false;
+                    for (const c of st.colors) {
+                        if (c === st.selfColor) continue;
+                        const oppUserL = _bestUsernameFor(c)
+                            || _colorName(c);
+                        const inf = _chatHands[oppUserL];
+                        const wsTotal = st.handTotal[c] || 0;
+                        if (!inf) {
+                            // Best fallback: distribute the WS total
+                            // evenly. We don't try — just flag opaque.
+                            if (wsTotal > 0) opaqueOpp = true;
+                            continue;
+                        }
+                        const infTotal = Object.values(inf)
+                            .reduce((s, v) => s + v, 0);
+                        if (Math.abs(infTotal - wsTotal) > 1) {
+                            opaqueOpp = true;
+                        }
+                        for (const r of Object.keys(totals)) {
+                            totals[r] += inf[r] || 0;
+                        }
+                    }
+                    const remaining = {};
+                    for (const r of Object.keys(totals)) {
+                        remaining[r] = Math.max(0, 19 - totals[r]);
+                    }
+                    const low = Object.entries(remaining)
+                        .filter(([, n]) => n <= 2)
+                        .sort((a, b) => a[1] - b[1])
+                        .map(([resource, count]) => ({ resource, count }));
+                    bankSupply = {
+                        remaining,
+                        low,
+                        tracked: !opaqueOpp,
+                    };
+                }
                 // Opening phase: convert the JS opening-pick ranking
                 // into proper `opening_settlement` recommendations so
                 // the standard renderer's setup-phase rec block
@@ -1274,6 +1394,74 @@
                         };
                     });
                     outRecs = openingRecs;
+                }
+                // Move-quality grading — diff self-owned buildings/roads
+                // against what we've already classified, grade each new
+                // build against the rec list cached from the previous
+                // tick (recs computed AFTER the build is in state would
+                // have already removed it). Only post-setup builds are
+                // graded — opening picks are graded separately by the
+                // setup-phase rec block above. Mirrors python's
+                // move_history field built in bridge.py:962-979.
+                if (st && st.selfColor && !inOpeningPhase
+                        && Array.isArray(_lastRecs) && _lastRecs.length) {
+                    // New self settlements / cities.
+                    for (const [nid, b] of Object.entries(st.buildings)) {
+                        if (b.color !== st.selfColor) continue;
+                        const k = `${b.kind}|${nid}`;
+                        if (_gradedSelfNodes.has(k)) continue;
+                        // Skip if this node was already graded under
+                        // the SETTLEMENT label and is now a CITY upgrade —
+                        // we WANT to re-grade for the city upgrade.
+                        const piece = b.kind === 'CITY'
+                            ? 'city' : 'settlement';
+                        const ev = { piece, node_id: nid };
+                        const r = lib.classifyBuildAgainstRecs(
+                            ev, _lastRecs);
+                        _moveHistory.push({
+                            label: r.label, rank: r.rank,
+                            kind: piece,
+                            node_id: nid,
+                            ts: Date.now(),
+                        });
+                        _gradedSelfNodes.add(k);
+                    }
+                    // New self roads.
+                    for (const [eid, c] of Object.entries(st.roads)) {
+                        if (c !== st.selfColor) continue;
+                        if (_gradedSelfEdges.has(eid)) continue;
+                        const ev = { piece: 'road', edge_key: eid };
+                        const r = lib.classifyBuildAgainstRecs(
+                            ev, _lastRecs);
+                        _moveHistory.push({
+                            label: r.label, rank: r.rank,
+                            kind: 'road',
+                            edge_key: eid,
+                            ts: Date.now(),
+                        });
+                        _gradedSelfEdges.add(eid);
+                    }
+                    // Cap history at 30 — same as bridge's
+                    // _track_overlay_state cap.
+                    while (_moveHistory.length > 30) _moveHistory.shift();
+                } else if (inOpeningPhase) {
+                    // Pre-seed graded sets during setup so the first
+                    // post-setup build gets graded against fresh recs,
+                    // not the opening picks. Otherwise the first 2
+                    // settlements + 2 roads would all flag '??' (they
+                    // don't appear in the mid-game rec list).
+                    if (st && st.selfColor) {
+                        for (const [nid, b] of Object.entries(
+                                st.buildings)) {
+                            if (b.color !== st.selfColor) continue;
+                            _gradedSelfNodes.add(`${b.kind}|${nid}`);
+                        }
+                        for (const [eid, c] of Object.entries(st.roads)) {
+                            if (c === st.selfColor) {
+                                _gradedSelfEdges.add(eid);
+                            }
+                        }
+                    }
                 }
                 // Phase derivation for the dataset hook + renderer's
                 // game_progress block. Mirrors strategy.js phase
@@ -1903,6 +2091,11 @@
                             : `${winnerName} wins`,
                     };
                 }
+                // Cache the rec list we're about to return so the
+                // NEXT tick's move-quality grading can look up the
+                // rank of any newly-placed self build against the
+                // recs that existed BEFORE the build landed.
+                _lastRecs = outRecs.slice();
                 return {
                     seq: -2,
                     _source: 'standalone',
@@ -1922,8 +2115,95 @@
                     dev_cards_vp_held: devVpHeld,
                     dev_cards_non_vp_held: devNonVp,
                     dev_cards_playable: devPlayable,
-                    dev_cards_just_bought: 0,
+                    dev_cards_just_bought: _selfDevsJustBought,
                     dev_cards_type_known: true,
+                    // Move-quality history. Each entry has label
+                    // (!! / ! / ?! / ? / ??) + rank (1-N or null) +
+                    // kind + ts. Renderer can show a running tally /
+                    // last-move badge, same as bridge.
+                    move_history: _moveHistory.slice(),
+                    bank_supply: bankSupply,
+                    game_plan: (() => {
+                        // Slim heuristic version of python's
+                        // _compute_game_plan. Surfaces the highest-VP
+                        // near-term goal (city > settle > road) and a
+                        // one-line summary. Skipped during setup —
+                        // opening picks own that surface.
+                        if (inOpeningPhase) return null;
+                        if (!st || !selfBlock) return null;
+                        const recList = outRecs || [];
+                        // Prefer city/settle goals; fall back to road.
+                        const priority = ['city', 'settlement', 'road'];
+                        let pick = null;
+                        for (const want of priority) {
+                            pick = recList.find(r => r.kind === want);
+                            if (pick) break;
+                        }
+                        if (!pick) return null;
+                        const missing = pick.missing || {};
+                        const missingCount = Object.values(missing)
+                            .reduce((s, v) => s + (v || 0), 0);
+                        let summary;
+                        if (missingCount === 0) {
+                            summary = `ready to ${pick.kind}`;
+                        } else {
+                            const parts = Object.entries(missing)
+                                .map(([r, n]) => `${n} ${r.toLowerCase()}`)
+                                .join(' + ');
+                            summary = `${missingCount} short — need ${parts}`;
+                        }
+                        return {
+                            goal_kind: pick.kind,
+                            goal_label: pick.kind,
+                            goal_node: pick.node_id || null,
+                            goal_tiles: pick.tiles || null,
+                            missing,
+                            summary,
+                        };
+                    })(),
+                    production_stall: (() => {
+                        // Self stall: how many non-7 rolls in a row
+                        // produced nothing on any self-owned tile?
+                        // Mirrors bridge.py:1824-1846. Threshold 3+
+                        // dry rolls before surfacing.
+                        if (!st || !st.map) return null;
+                        const myPerRoll = selfBlock?.production?.per_roll || 0;
+                        if (myPerRoll <= 0) return null;
+                        const hist = st.rollHistory || [];
+                        if (hist.length < 3) return null;
+                        const non7 = hist.filter(r => r.total !== 7);
+                        if (non7.length === 0) return null;
+                        // Count self-tile production on each roll
+                        // total. Build a map of selfTotal → count.
+                        const selfNumbers = {};
+                        for (const [nid, b] of Object.entries(
+                                st.buildings)) {
+                            if (b.color !== st.selfColor) continue;
+                            const node = st.map.nodes[nid];
+                            if (!node) continue;
+                            for (const tid of node.tiles) {
+                                const t = st.map.tiles[tid];
+                                if (!t || !t.number) continue;
+                                if (t.id === st.robberTile
+                                        || tid === st.robberTile) continue;
+                                selfNumbers[t.number] =
+                                    (selfNumbers[t.number] || 0)
+                                    + (b.kind === 'CITY' ? 2 : 1);
+                            }
+                        }
+                        let dry = 0;
+                        for (let i = non7.length - 1; i >= 0; i--) {
+                            const gained = selfNumbers[non7[i].total] || 0;
+                            if (gained > 0) break;
+                            dry += 1;
+                        }
+                        if (dry < 3) return null;
+                        return {
+                            rolls_dry: dry,
+                            window: non7.length,
+                            per_roll: Number(myPerRoll.toFixed(2)),
+                        };
+                    })(),
                     robber_targets: robberTargets,
                     // Robber lifecycle — derive forced/placed exactly
                     // like the bridge does. forced = self rolled 7,
@@ -1936,6 +2216,22 @@
                     robber_reason: (() => {
                         if (!st) return null;
                         if (st.robberPending) return 'forced';
+                        // 'knight' window — self chat-detected to
+                        // have played a knight this turn AND the
+                        // robber rec table still has targets. Clears
+                        // when the turn changes (handled above by
+                        // resetting _selfKnightPlayedThisTurn).
+                        const stillThisTurn =
+                            _selfKnightPlayedAtTurn != null
+                            && _standalone.currentTurnPlayerColor
+                                === _selfKnightPlayedAtTurn;
+                        if (!stillThisTurn) {
+                            _selfKnightPlayedThisTurn = false;
+                        }
+                        if (_selfKnightPlayedThisTurn && myTurn
+                                && (robberTargets || []).length) {
+                            return 'knight';
+                        }
                         // 'placed' window — if robber moved within
                         // the last 1 roll AND it's still self's turn
                         // (matches python's clear-on-next-non7-roll

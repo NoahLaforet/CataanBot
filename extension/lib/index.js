@@ -32,6 +32,8 @@ export { knightHint, monopolyHint, yopHint, rbHint }
 export { computeStrategy } from './strategy.js';
 export { planBankTrades, evaluateIncomingTrade }
     from './trades.js';
+export { classifyRank, classifyBuildAgainstRecs, findRank,
+         CLASSIFICATIONS } from './move_quality.js';
 
 import { newGameState, initSeats } from './state.js';
 import { buildBoardFromColonistMap } from './board.js';

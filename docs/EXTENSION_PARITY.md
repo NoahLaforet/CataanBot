@@ -6,7 +6,7 @@ this open when picking up cross-context — line items here
 describe the *target* (bridge behaviour from `src/catanbot/`) and
 the *current state* of the standalone pipeline.
 
-Last refresh: 2026-05-05 06:30 UTC · extension v0.37.34
+Last refresh: 2026-05-05 07:30 UTC · extension v0.37.35
 
 ## Core game state
 
@@ -108,23 +108,41 @@ Last refresh: 2026-05-05 06:30 UTC · extension v0.37.34
 
 ## Bridge-only by design (skip)
 
-- `eval_history` — per-roll catanatron evaluator output
-- `move_history` — chess-style !! / ! / ?! / ? / ?? grading vs bot top-10 at decision time
-- `latest_postmortem` — full HTML postmortem at /postmortem
-- `game_plan` — multi-step planning (bridge runs `_compute_game_plan` over catanatron state)
-- `plan` — persistent multi-turn plan banner
-- `strategic_options` — alt game plans (`_compute_strategic_options`)
+- `eval_history` — per-roll catanatron evaluator output. Catanatron-tier;
+  no JS equivalent.
+- `latest_postmortem` — full HTML postmortem at /postmortem. Bridge writes
+  to disk; standalone has no file system.
+- `strategic_options` — multi-archetype alt-plan ranking
+  (`_compute_strategic_options`). Heavy lookahead.
+
+Now ported (v0.37.35):
+- `move_history` — chess-style !! / ! / ?! / ? / ?? grading vs the rec
+  list cached the previous tick.
+- `game_plan` — slim heuristic version surfacing the top-priority
+  near-term goal + one-line summary.
 
 ## Outstanding gaps to close
 
-All user-visible parity items are now live. Remaining work is
-catanatron-tier lookahead, which by design stays bridge-only:
+Only catanatron-tier lookahead is left:
 
-1. **game_plan / plan / strategic_options** — multi-step lookahead.
-   Bridge-only; the flat rec list covers the live HUD use case.
-2. **production_stall** — per-opp roll-by-roll hand-history dry-streak
-   detection. We sample card totals (5-roll buffer) but not a
-   per-resource history.
+1. **eval_history** — per-roll catanatron evaluator output. No JS
+   equivalent without a JS port of catanatron.
+2. **strategic_options** — multi-archetype alt-plan ranking. Heavy
+   lookahead; the flat rec list + game_plan banner cover the live
+   HUD use case.
+3. **latest_postmortem** — bridge writes HTML to disk; standalone
+   has no filesystem.
+
+Closed in v0.37.35:
+- ~~move_history~~ — chess-style grading via `lib/move_quality.js`
+  + per-tick rec cache.
+- ~~bank_supply~~ — per-resource Catan deck remaining.
+- ~~production_stall~~ — self-side dry-streak detection.
+- ~~game_plan banner~~ — slim heuristic of `_compute_game_plan`.
+- ~~knight `robber_reason`~~ — chat-detected self knight play
+  fires the urgent banner.
+- ~~dev_cards_just_bought~~ — chat-detected dev buy blocks
+  same-turn play of that card.
 
 Closed in v0.37.34:
 - ~~opening_settlement `road` field~~ (v0.37.32 — `_best_opening_road`

@@ -4,6 +4,44 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.37.35 — 2026-05-05
+
+Deeper python parity: chess-style move grading, bank-supply
+display, dev-card timing, and a multi-step plan banner all now
+ship in the extension snap.
+
+- **move_history (new lib/move_quality.js)** — every self build
+  graded `!!` / `!` / `?!` / `?` / `??` against the rec list
+  cached at the previous tick. Mirrors python's `move_quality.py`
+  + `bridge.py:962-979`. Tracked via diffing self's
+  `state.buildings` and `state.roads` per snap; capped at 30
+  entries. Opening picks are pre-seeded into the graded set so the
+  first 2 settles + roads don't flag '??'.
+- **bank_supply (panel.js)** — per-resource cards remaining in the
+  19-per-resource Catan deck. Mirrors
+  `bridge_economy._compute_bank_supply`. Self.hand is authoritative;
+  opps come from chat inference (best-effort). `tracked` field
+  marks when an opp's drift would make the math unreliable.
+- **production_stall (panel.js)** — self-side dry-streak detector.
+  Walks rollHistory backwards counting non-7 rolls where no
+  self-owned tile produced. Surfaces at 3+ dry rolls. Same
+  threshold as bridge.
+- **knight robber_reason (panel.js)** — chat-detected self knight
+  play sets `_selfKnightPlayedThisTurn`, which the snap reads to
+  ship `robber_reason='knight'` so the urgent banner fires the
+  moment you click the knight. Cleared on turn change.
+- **dev_cards_just_bought (panel.js)** — chat-detected "X bought
+  development card" where X is self bumps a per-turn counter.
+  `dev_cards_playable` now subtracts that counter so the dev-card
+  hint block stops suggesting plays for cards we just bought
+  (Catan rule: can't play a dev card the turn you bought it).
+  Cleared on turn change.
+- **game_plan banner (panel.js)** — heuristic port of python's
+  `_compute_game_plan`. Picks the top-priority rec (city > settle
+  > road) and writes a one-line plan summary like "ready to city"
+  or "2 short — need 1 brick + 1 wheat". Renderer at panel.js:4228
+  was already wired; standalone just never set the field.
+
 ## v0.37.34 — 2026-05-05
 
 Python parity catch-up: extension snap now mirrors every bridge
