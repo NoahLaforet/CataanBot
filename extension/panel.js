@@ -137,7 +137,23 @@
         if (depth > 6) return null;
         if (o && typeof o === 'object' && !Array.isArray(o)
                 && !ArrayBuffer.isView(o)) {
-            if ('tileHexStates' in o) return o;
+            // Require tileHexStates to be NON-EMPTY. Mid-game delta
+            // frames ship `mapState: {tileHexStates: {}}` to mean
+            // "no tile changes this turn", and an earlier
+            // implementation matched on the key existing — that
+            // burned a build attempt on every delta and the
+            // resulting null return locked the dedup fingerprint
+            // out of retrying. Real GameStart frames have ≥ 19
+            // tiles AND a populated tileCornerStates.
+            if ('tileHexStates' in o
+                    && o.tileHexStates
+                    && typeof o.tileHexStates === 'object'
+                    && Object.keys(o.tileHexStates).length > 0
+                    && o.tileCornerStates
+                    && typeof o.tileCornerStates === 'object'
+                    && Object.keys(o.tileCornerStates).length > 0) {
+                return o;
+            }
             for (const v of Object.values(o)) {
                 const r = _findMapState(v, depth + 1);
                 if (r) return r;

@@ -91,17 +91,24 @@ const _GAMESTART_B64S = _b64Variants('tileHexStates');
 const _PLAYERSTATES_B64S = _b64Variants('playerStates');
 // GameStart frames carry the full mapState (hex states, corner
 // states, edge states, port states) and run ~6-10kB of base64.
-// Incremental deltas are typically <1kB. Treat any frame larger
-// than ~3kB as a likely GameStart even if the b64 sniff misses,
-// so we don't lose the cache to a key-string alignment edge case.
-const LIKELY_GAMESTART_MIN_BYTES = 3072;
+// Mid-game incremental deltas are typically <1kB and may include
+// the literal "tileHexStates" key with an empty dict ("no tile
+// changes this delta"). Match on key bytes AND minimum size so
+// we only ever cache the real GameStart, not deltas that mention
+// the key.
+const GAMESTART_MIN_B64_BYTES = 3072;
 function _frameLooksLikeGameStart(frame) {
     if (!frame || frame.kind !== 'arraybuffer' || !frame.b64) return false;
-    if (_GAMESTART_B64S.some(v => frame.b64.includes(v))) return true;
-    // Size-based fallback: large frames are GameStart-class even
-    // when the literal key bytes happen to straddle a chunk
-    // boundary in the msgpack stream.
-    return frame.b64.length >= LIKELY_GAMESTART_MIN_BYTES;
+    // Hard size floor — a real GameStart with mapState + cornerStates
+    // + edgeStates + portStates is always ≥ 3kB. Anything smaller
+    // can't carry the full payload no matter what keys it mentions.
+    if (frame.b64.length < GAMESTART_MIN_B64_BYTES) return false;
+    // Either the literal key bytes match (reliable) OR the frame is
+    // big enough that GameStart is the only plausible source. Some
+    // captures show a single occasional mid-game resync frame ~6kB
+    // that does carry mapState — we cache those too as a safety net.
+    return _GAMESTART_B64S.some(v => frame.b64.includes(v))
+        || frame.b64.length >= 5000;
 }
 function _frameLooksLikeState(frame) {
     if (!frame || frame.kind !== 'arraybuffer' || !frame.b64) return false;

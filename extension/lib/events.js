@@ -245,13 +245,24 @@ export function applySnapshot(state, decoded) {
     if (state.map) {
         const corners = _findKey(decoded, 'tileCornerStates');
         if (corners && typeof corners === 'object') {
-            for (const c of Object.values(corners)) {
+            for (const [cid, c] of Object.entries(corners)) {
                 if (!c || typeof c !== 'object') continue;
-                if (c.x == null || c.y == null || c.z == null) continue;
                 const bt = Number(c.buildingType) || 0;
                 const owner = c.owner == null ? 0 : Number(c.owner);
-                const nodeId = _cornerNodeId(
-                    state.map, Number(c.x), Number(c.y), Number(c.z));
+                // Mid-game delta frames omit x/y/z and ship only
+                // {owner, buildingType}. Resolve via the GameStart-
+                // built cornerIdToNodeId map. Full GameStart frames
+                // ship coords; we use them when present so a re-
+                // sync frame from a different layout still
+                // resolves correctly.
+                let nodeId = null;
+                if (c.x != null && c.y != null && c.z != null) {
+                    nodeId = _cornerNodeId(state.map,
+                        Number(c.x), Number(c.y), Number(c.z));
+                }
+                if (!nodeId && state.map.cornerIdToNodeId) {
+                    nodeId = state.map.cornerIdToNodeId[cid] || null;
+                }
                 if (!nodeId) continue;
                 const prev = state.buildings[nodeId];
                 if (bt === 0) {
@@ -287,12 +298,17 @@ export function applySnapshot(state, decoded) {
         // --- Roads from tileEdgeStates. ---------------------------
         const edges = _findKey(decoded, 'tileEdgeStates');
         if (edges && typeof edges === 'object') {
-            for (const e of Object.values(edges)) {
+            for (const [eidColonist, e] of Object.entries(edges)) {
                 if (!e || typeof e !== 'object') continue;
-                if (e.x == null || e.y == null || e.z == null) continue;
                 const owner = e.owner == null ? 0 : Number(e.owner);
-                const eid = _edgeId(
-                    state.map, Number(e.x), Number(e.y), Number(e.z));
+                let eid = null;
+                if (e.x != null && e.y != null && e.z != null) {
+                    eid = _edgeId(state.map, Number(e.x),
+                        Number(e.y), Number(e.z));
+                }
+                if (!eid && state.map.edgeIdToEdgeId) {
+                    eid = state.map.edgeIdToEdgeId[eidColonist] || null;
+                }
                 if (!eid) continue;
                 const prev = state.roads[eid];
                 if (!owner) {

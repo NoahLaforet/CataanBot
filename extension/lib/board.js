@@ -200,7 +200,14 @@ export function buildBoardFromColonistMap(mapState) {
     // same signature when colonist ships redundant entries
     // (rare, but observed on some variant maps); the dict-by-
     // signature dedup handles that cleanly.
-    for (const c of Object.values(cornerStates)) {
+    //
+    // Also keep a cornerIdToNodeId map. Mid-game delta frames
+    // ship corner updates as `tileCornerStates: {<cornerId>:
+    // {owner, buildingType}}` — owner+type only, no coords. To
+    // apply those we need to remember which colonist corner id
+    // resolved to which signature node id at GameStart.
+    const cornerIdToNodeId = {};
+    for (const [cid, c] of Object.entries(cornerStates)) {
         const cx = Number(c.x), cy = Number(c.y), cz = Number(c.z);
         const sig = cornerSig(cx, cy, cz);
         if (!nodes[sig]) {
@@ -211,6 +218,7 @@ export function buildBoardFromColonistMap(mapState) {
                 port: null,
             };
         }
+        cornerIdToNodeId[cid] = sig;
     }
     // Back-link tiles → nodes. For each node sig, look up which
     // tiles in its 3-tile signature actually exist in the
@@ -232,7 +240,12 @@ export function buildBoardFromColonistMap(mapState) {
     // of the owning tile. Each entry resolves to two endpoint
     // signatures via edgeEndpoints; we look those up in the
     // node dict and connect.
-    for (const e of Object.values(edgeStates)) {
+    // Same id→edge map as the corner one above — delta frames
+    // ship edge updates as {<edgeId>: {owner, type}} without
+    // coords, so we save the colonist edge id → resolved edge id
+    // mapping for events.js to reuse on each road update.
+    const edgeIdToEdgeId = {};
+    for (const [eid_colonist, e] of Object.entries(edgeStates)) {
         const ex = Number(e.x), ey = Number(e.y), ez = Number(e.z);
         const [sigA, sigB] = edgeEndpoints(ex, ey, ez);
         const a = resolveNodeSig(nodes, sigA);
@@ -244,6 +257,7 @@ export function buildBoardFromColonistMap(mapState) {
             nodes[a].neighbors.add(b);
             nodes[b].neighbors.add(a);
         }
+        edgeIdToEdgeId[eid_colonist] = eid;
     }
 
     // Pass 4: back-link edges to tiles. An edge belongs to
@@ -317,6 +331,13 @@ export function buildBoardFromColonistMap(mapState) {
         landTiles,
         desertTile,
         ports,
+        // Id-translation maps used by events.js to apply mid-game
+        // delta frames that ship corner / edge updates without
+        // coords. cornerIdToNodeId: colonist tileCornerStates key
+        // → JS node signature id. edgeIdToEdgeId: colonist
+        // tileEdgeStates key → JS edge id (sig||sig).
+        cornerIdToNodeId,
+        edgeIdToEdgeId,
     };
 }
 
