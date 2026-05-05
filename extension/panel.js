@@ -1419,6 +1419,7 @@
     // cached copy so the standalone path can build the board without
     // waiting for the user to start a new game. Fired once on
     // load + again every 30s as a safety net (colonist resync, etc.).
+    let _replayHadCachedFrames = false;
     function _requestReplay() {
         _diag.replayRequests += 1;
         try {
@@ -1426,12 +1427,31 @@
                 .then((resp) => {
                     if (resp && (resp.had_game_start || resp.had_state)) {
                         _diag.replayResponses += 1;
+                        _replayHadCachedFrames = true;
+                        window.__catanbotRenderDirty = true;
                     }
                 })
                 .catch(() => {});
         } catch (_) {}
     }
     _requestReplay();
+    // Auto-retry on cold start. If the first request-replay returned
+    // empty (service worker just spawned, cache wasn't hydrated yet,
+    // or no GameStart has happened yet), keep asking every 2s for
+    // 30s. By then either a real frame has landed in the cache or
+    // the user has had time to start a colonist game on a fresh tab.
+    let _coldRetries = 0;
+    const _coldTimer = setInterval(() => {
+        _coldRetries += 1;
+        if (_replayHadCachedFrames || _coldRetries >= 15) {
+            clearInterval(_coldTimer);
+            return;
+        }
+        _requestReplay();
+    }, 2000);
+    // Long-period keepalive — re-broadcasts in case the service
+    // worker restarted mid-game and dropped the cache. 30s matches
+    // the MV3 idle-kill timer.
     setInterval(_requestReplay, 30000);
 
     // Log a one-line console diagnostic every 10s for the first 30s
@@ -2867,11 +2887,31 @@
         // Tells the user the source of recs without pretending the
         // panel is bridge-connected.
         if (snap._source === 'standalone') {
+            const d = window.__catanbotDiag || {};
+            // Inline diag — gives the user "is it working?" feedback
+            // without making them open DevTools. Shows: ws frames
+            // received, decode attempts, mapState found, snapshots
+            // applied, replay requests/responses. Only renders the
+            // most-pertinent counters so the strip stays one line.
+            const diagText = [
+                'ws ' + (d.wsBroadcastsReceived || 0),
+                'dec ' + (d.decodeAttempts || 0),
+                'map ' + (d.mapStateFound || 0),
+                'snap ' + (d.snapshotsApplied || 0),
+                'replay ' + (d.replayRequests || 0)
+                    + '/' + (d.replayResponses || 0),
+            ].join(' · ');
             parts.push(
                 '<div class="standalone-banner">'
                 + '<span class="sb-pill">STANDALONE</span> '
                 + '<span class="sb-meta">no bridge — '
                 + 'JS recommender</span>'
+                + '<span class="sb-diag" '
+                + 'title="ws: WS broadcasts received · dec: decode '
+                + 'attempts · map: GameStart frames seen · snap: '
+                + 'state-mutating snapshots applied · replay: '
+                + 'request-replay calls / responses with cached data">'
+                + diagText + '</span>'
                 + '</div>');
         }
         // WIN THIS TURN banner — highest-priority signal. Renders above

@@ -254,9 +254,108 @@ const RATIONALE = {
     BALANCED: 'no dominant archetype — keep options open.',
 };
 
+/** Pivot trigger detectors. Each fires at most one trigger; the
+ *  list is folded into snap.strategy.pivot_triggers + may produce
+ *  an override_tag that flips the active archetype as long as the
+ *  condition holds. Slim port of strategy_select._detect_*.
+ */
+function _selfTileNumbers(state, nodeIds) {
+    if (!state.map || !nodeIds.length) return new Set();
+    const out = new Set();
+    for (const nid of nodeIds) {
+        const node = state.map.nodes[nid];
+        if (!node) continue;
+        for (const tid of node.tiles) {
+            const t = state.map.tiles[tid];
+            if (t && t.number) out.add(t.number);
+        }
+    }
+    return out;
+}
+function _detectHotNumber(state, nodeIds) {
+    const recent = (state.rollHistory || []).slice(-10);
+    if (recent.length < 5) return null;
+    const counts = {};
+    for (const r of recent) {
+        const n = r.total;
+        if (n && n !== 7) counts[n] = (counts[n] || 0) + 1;
+    }
+    const myNumbers = _selfTileNumbers(state, nodeIds);
+    for (const [num, c] of Object.entries(counts)) {
+        if (c >= 4 && myNumbers.has(Number(num))) {
+            return {
+                name: 'hot_number',
+                detail: `${num} rolled ${c}× in last 10 — lean in`,
+                override_tag: null,
+            };
+        }
+    }
+    return null;
+}
+function _detectOppCloseToLA(state) {
+    if (state.hasArmy) return null;  // someone already holds it
+    const myK = state.playedKnights[state.selfColor] || 0;
+    for (const c of state.colors) {
+        if (c === state.selfColor) continue;
+        const k = state.playedKnights[c] || 0;
+        const vp = state.vp[c] || 0;
+        if (k >= 2 && k > myK && vp >= 4) {
+            return {
+                name: 'opp_close_to_la',
+                detail: `opp on ${k} knights — race to LA or commit to denial`,
+                override_tag: null,
+            };
+        }
+    }
+    return null;
+}
+function _detectOppCloseToWin(state) {
+    const target = state.vpTarget || 10;
+    const closeAt = target - 4;  // matches bridge default close_to_win_vp
+    for (const c of state.colors) {
+        if (c === state.selfColor) continue;
+        const vp = state.vp[c] || 0;
+        if (vp >= closeAt) {
+            return {
+                name: 'opp_close_to_win',
+                detail: `opp at ${vp} VP — tighten trades, deny resources`,
+                override_tag: null,
+            };
+        }
+    }
+    return null;
+}
+function _detectSevenOverdue(state) {
+    const recent = (state.rollHistory || []).slice(-10);
+    if (recent.length < 8) return null;
+    const limit = state.discardLimit || 7;
+    const myHand = state.handTotal[state.selfColor] || 0;
+    if (myHand <= limit) return null;
+    if (recent.some(r => r.total === 7)) return null;
+    return {
+        name: 'seven_overdue',
+        detail: `hand at ${myHand}, no 7 in 10 rolls — trade down `
+            + 'before the next 7',
+        override_tag: null,
+    };
+}
+function _detectPivots(state, nodeIds) {
+    const triggers = [];
+    const hot = _detectHotNumber(state, nodeIds);
+    if (hot) triggers.push(hot);
+    const oppLA = _detectOppCloseToLA(state);
+    if (oppLA) triggers.push(oppLA);
+    const oppWin = _detectOppCloseToWin(state);
+    if (oppWin) triggers.push(oppWin);
+    const seven = _detectSevenOverdue(state);
+    if (seven) triggers.push(seven);
+    return triggers;
+}
+
 /** Compute the strategy snap for the current state.
  *  Returns the shape `panel.renderStrategyBanner` reads:
- *  { active, primary, fallback, rationale, phase, scores, ranking }
+ *  { active, primary, fallback, rationale, phase, scores, ranking,
+ *    pivot_triggers, override_tag }
  */
 export function computeStrategy(state) {
     if (!state || !state.map) return null;
@@ -293,6 +392,18 @@ export function computeStrategy(state) {
         if (!primary) primary = 'BALANCED';
         active = primary;
     }
+    // Pivot triggers — informational signals that surface below the
+    // banner. Most are non-overriding; an explicit override_tag flips
+    // active as long as the trigger fires (matches the bridge).
+    const triggers = isPre ? [] : _detectPivots(state, nodeIds);
+    let overrideTag = null;
+    for (const t of triggers) {
+        if (t.override_tag && t.override_tag !== primary) {
+            overrideTag = t.override_tag;
+            active = overrideTag;
+            break;
+        }
+    }
     const phase = _phaseFor(state.totalRolls || 0);
     const rationale = RATIONALE[active] || RATIONALE.BALANCED;
     return {
@@ -303,5 +414,10 @@ export function computeStrategy(state) {
         phase,
         scores,
         ranking,
+        pivot_triggers: triggers.map(t => t.name),
+        pivot_details: triggers.map(t => ({
+            name: t.name, detail: t.detail,
+        })),
+        override_tag: overrideTag,
     };
 }

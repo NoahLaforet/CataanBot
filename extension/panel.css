@@ -2877,6 +2877,13 @@ html, body, .panel {
 .standalone-banner .sb-meta {
   color: var(--fg-dim);
 }
+.standalone-banner .sb-diag {
+  margin-left: auto;
+  color: var(--fg-mute, var(--fg-dim));
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: -0.02em;
+}
 /* Standalone frame — old Phase 3 static-render path. Kept for
    compatibility with any code path that still renders it (CLI
    tools, tests). The live panel now flows through the standard
