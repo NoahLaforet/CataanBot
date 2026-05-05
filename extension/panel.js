@@ -763,6 +763,68 @@
                 let robberTargets = [];
                 let selfBlock = null, oppsBlock = [];
                 let strategy = null;
+                // Helpers are hoisted ABOVE the
+                // `if (st && st.selfColor)` block because the snap's
+                // bottom half (current_turn_username, standings,
+                // races, threat, milestone, robber-on-me) calls them
+                // even when self hasn't latched yet. Defining them
+                // inside the if-block was throwing
+                // `_bestUsernameFor is not defined` and silently
+                // falling through to no_bridge — fixed in v0.37.30.
+                //
+                // colonist color id (1..6) → catanatron-shaped color
+                // name + display hex.
+                const COLONIST_COLOR_NAME = {
+                    '1': 'RED', '2': 'BLUE', '3': 'ORANGE',
+                    '4': 'WHITE', '5': 'GREEN', '6': 'BROWN',
+                };
+                const COLONIST_COLOR_HEX = {
+                    '1': '#e8715f', '2': '#4aa7d4',
+                    '3': '#e29a4a', '4': '#f0f0f0',
+                    '5': '#7ac74f', '6': '#a07045',
+                };
+                const _colorName = (cid) =>
+                    COLONIST_COLOR_NAME[String(cid)] || `P${cid}`;
+                const _colorHex = (cid) =>
+                    COLONIST_COLOR_HEX[String(cid)] || '#888';
+                function _parseRgb(s) {
+                    if (!s) return null;
+                    const m = String(s).trim().toLowerCase();
+                    let mm = m.match(/^#([0-9a-f]{3})$/);
+                    if (mm) {
+                        const h = mm[1];
+                        return [parseInt(h[0]+h[0],16),
+                                parseInt(h[1]+h[1],16),
+                                parseInt(h[2]+h[2],16)];
+                    }
+                    mm = m.match(/^#([0-9a-f]{6})$/);
+                    if (mm) {
+                        return [parseInt(mm[1].slice(0,2),16),
+                                parseInt(mm[1].slice(2,4),16),
+                                parseInt(mm[1].slice(4,6),16)];
+                    }
+                    mm = m.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                    if (mm) return [+mm[1], +mm[2], +mm[3]];
+                    return null;
+                }
+                function _bestUsernameFor(cid) {
+                    const target = _parseRgb(_colorHex(cid));
+                    if (!target) return null;
+                    let best = null, bestDist = 1e9;
+                    for (const [css, user]
+                            of Object.entries(_standaloneNames.byCss)) {
+                        const rgb = _parseRgb(css);
+                        if (!rgb) continue;
+                        const d = Math.pow(target[0]-rgb[0], 2)
+                                + Math.pow(target[1]-rgb[1], 2)
+                                + Math.pow(target[2]-rgb[2], 2);
+                        if (d < bestDist) {
+                            bestDist = d; best = user;
+                        }
+                    }
+                    if (bestDist > 30000) return null;
+                    return best;
+                }
                 if (st && st.selfColor) {
                     try { recs = lib.recommendActions(st); } catch (_) {}
                     try { knightH = lib.knightHint(st); } catch (_) {}
@@ -782,70 +844,6 @@
                             ? lib.computeStrategy(st)
                             : null;
                     } catch (_) {}
-                    // colonist color id → catanatron-shaped color
-                    // name + display hex. Standard convention from
-                    // capture inspection: 1=red, 2=blue, 3=orange,
-                    // 4=white, 5=green, 6=brown. Falls back to a
-                    // gray if a future variant adds new ids.
-                    const COLONIST_COLOR_NAME = {
-                        '1': 'RED', '2': 'BLUE', '3': 'ORANGE',
-                        '4': 'WHITE', '5': 'GREEN', '6': 'BROWN',
-                    };
-                    const COLONIST_COLOR_HEX = {
-                        '1': '#e8715f', '2': '#4aa7d4',
-                        '3': '#e29a4a', '4': '#f0f0f0',
-                        '5': '#7ac74f', '6': '#a07045',
-                    };
-                    const _colorName = (cid) =>
-                        COLONIST_COLOR_NAME[String(cid)] || `P${cid}`;
-                    const _colorHex = (cid) =>
-                        COLONIST_COLOR_HEX[String(cid)] || '#888';
-                    // Username matching: chat scraper ships
-                    // {username, css} pairs. We pick the chat CSS
-                    // closest by RGB distance to the target color
-                    // id's catanatron hex. Falls back to the color
-                    // name when no match.
-                    function _parseRgb(s) {
-                        if (!s) return null;
-                        const m = String(s).trim().toLowerCase();
-                        let mm = m.match(/^#([0-9a-f]{3})$/);
-                        if (mm) {
-                            const h = mm[1];
-                            return [parseInt(h[0]+h[0],16),
-                                    parseInt(h[1]+h[1],16),
-                                    parseInt(h[2]+h[2],16)];
-                        }
-                        mm = m.match(/^#([0-9a-f]{6})$/);
-                        if (mm) {
-                            return [parseInt(mm[1].slice(0,2),16),
-                                    parseInt(mm[1].slice(2,4),16),
-                                    parseInt(mm[1].slice(4,6),16)];
-                        }
-                        mm = m.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-                        if (mm) return [+mm[1], +mm[2], +mm[3]];
-                        return null;
-                    }
-                    function _bestUsernameFor(cid) {
-                        const target = _parseRgb(_colorHex(cid));
-                        if (!target) return null;
-                        let best = null, bestDist = 1e9;
-                        for (const [css, user]
-                                of Object.entries(_standaloneNames.byCss)) {
-                            const rgb = _parseRgb(css);
-                            if (!rgb) continue;
-                            const d = Math.pow(target[0]-rgb[0], 2)
-                                    + Math.pow(target[1]-rgb[1], 2)
-                                    + Math.pow(target[2]-rgb[2], 2);
-                            if (d < bestDist) {
-                                bestDist = d; best = user;
-                            }
-                        }
-                        // Reject if too far away (color hasn't been
-                        // chat-attributed yet). Threshold is loose —
-                        // colonist's reds vary across rows.
-                        if (bestDist > 30000) return null;
-                        return best;
-                    }
                     // Self/opps blocks for the panel's status cards.
                     // Field naming mirrors src/catanbot/bridge.py snap
                     // shape: hand = {res:int}, cards = int total,
