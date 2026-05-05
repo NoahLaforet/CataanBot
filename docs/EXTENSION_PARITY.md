@@ -6,7 +6,7 @@ this open when picking up cross-context — line items here
 describe the *target* (bridge behaviour from `src/catanbot/`) and
 the *current state* of the standalone pipeline.
 
-Last refresh: 2026-05-04 22:00 UTC · extension v0.37.31
+Last refresh: 2026-05-05 06:30 UTC · extension v0.37.34
 
 ## Core game state
 
@@ -54,14 +54,14 @@ Last refresh: 2026-05-04 22:00 UTC · extension v0.37.31
 | `opp.hand` | `{res: int}` (inferred + drift) | `{res: int}` (chat-inferred only) | bridge has hand_tracker drift; standalone is best-effort |
 | `opp.unknown` | int (3rd-party-steal residue) | int (rough) | standalone tracks via WS-total minus inferred sum |
 | `opp.hand_tracked` | bool | bool | true when |inferred − WS| ≤ 1 |
-| `opp.card_delta` / `card_delta_window` | int / int | n/a | bridge tracks 5-roll delta |
+| `opp.card_delta` / `card_delta_window` | int / int | int / int | live (5-roll ring buffer in events.js) |
 | `opp.vp` | int | int | live |
 | `opp.dev_cards` | int (total) | int (total) | live |
-| `opp.dev_stash_risk` | bool | n/a | not ported |
+| `opp.dev_stash_risk` | bool | bool | live (`dev≥2 AND vp+dev≥target-1`) |
 | `opp.knights_played` | int | int | live |
 | `opp.pieces` | `{settles, cities, roads}` | same | live |
 | `opp.prod` | float (per-roll) | float | live |
-| `opp.ports` | array | n/a | not ported |
+| `opp.ports` | array | array | live (walks opp's settles/cities for `node.port`) |
 | `opps[]` order | seat order | sorted by colonist color id | matches colonist UI |
 
 ## Recommendations
@@ -94,7 +94,7 @@ Last refresh: 2026-05-04 22:00 UTC · extension v0.37.31
 | `engine_deficit` | `{leader_username, leader_per_roll, self_per_roll, ratio}` | same | live |
 | `robber_on_me` | `{tile_id, resource, number, buildings, has_city, rolls_recent, blocks_recent}` | same | live |
 | `discard_hint` | `{need, drop, rationale}` | same | live |
-| `seven_prep` | `{level, cards, limit, message, would_drop?}` | partial — `would_drop` not shipped | bridge previews specific cards to drop |
+| `seven_prep` | `{level, cards, limit, message, would_drop?}` | same | live — would_drop preview now shipped |
 | `hot_numbers` | `[{number, count}, ...]` | same | top-2 |
 | `sevens_hot` | `{count, window, message}` | same | live |
 | `production_stall` | per-opp dry-streak | n/a | requires per-roll hand-history tracking |
@@ -104,7 +104,7 @@ Last refresh: 2026-05-04 22:00 UTC · extension v0.37.31
 | `largest_army_race` | `{level, message}` | same | live |
 | `incoming_trade` | `{offerer, color, color_css, vp, give, want, verdict, reason, counter?}` | same minus counter | basic ACCEPT/DECLINE/CONSIDER |
 | `bank_supply` | per-resource deck remaining | n/a | not surfaced in renderer |
-| `dev_deck.by_type` | `{KNIGHT.remaining, ...}` | KNIGHT only | bridge tracks plays for all types via chat |
+| `dev_deck.by_type` | `{KNIGHT.remaining, ...}` | all 5 types | knights via mechanicKnightState; mono / yop / rb via chat parser; vp from self typed counts |
 
 ## Bridge-only by design (skip)
 
@@ -117,11 +117,26 @@ Last refresh: 2026-05-04 22:00 UTC · extension v0.37.31
 
 ## Outstanding gaps to close
 
-1. **opening_settlement `road` field** — port `_best_opening_road` to advisor.js. Picks the best of 3 adjacent edges per opening pick by what landing it opens. Required for the "↳ road: between BR3 SHE10" sub-line under each opening pick. ← user's "road recommendations" complaint
-2. **propose_trade recs** — port `_propose_trades` from recommender.py. When self short on a build target, suggest a port-bank trade OR a propose-trade to whichever opp produces the surplus. Bridge-only currently.
-3. **opp_card_delta** — track per-opp card-total over a 5-roll window so the "+3 in 5" / "−2 in 5" annotations on opp rows can fire.
-4. **dev_deck per-type for non-knight** — port the chat "X played Y" parsing so we know plays of monopoly / yop / rb (not just knights). Used by the dev-deck strip at the bottom of the panel.
-5. **game_plan / plan / strategic_options** — multi-step lookahead. Lower priority; the flat rec list works without.
-6. **production_stall** — per-opp roll-by-roll hand-history tracking.
+All user-visible parity items are now live. Remaining work is
+catanatron-tier lookahead, which by design stays bridge-only:
 
-Items 1-2 are the user-visible gaps named in the bridge. 3-6 are nice-to-have or bridge-only.
+1. **game_plan / plan / strategic_options** — multi-step lookahead.
+   Bridge-only; the flat rec list covers the live HUD use case.
+2. **production_stall** — per-opp roll-by-roll hand-history dry-streak
+   detection. We sample card totals (5-roll buffer) but not a
+   per-resource history.
+
+Closed in v0.37.34:
+- ~~opening_settlement `road` field~~ (v0.37.32 — `_best_opening_road`
+  ported to advisor.js)
+- ~~propose_trade recs~~ (v0.37.33 — `_propose_trades` ported to
+  recommender.js)
+- ~~opp_card_delta~~ (v0.37.34 — 5-roll ring buffer in events.js)
+- ~~dev_deck per-type for non-knight~~ (v0.37.34 — chat parser for
+  monopoly / yop / rb plays)
+- ~~seven_prep `would_drop`~~ (v0.37.34)
+- ~~opp.dev_stash_risk + opp.ports~~ (v0.37.34)
+- ~~opening-rec routing bug~~ (v0.37.34 — building/road-counted
+  setup_phase)
+- ~~trade-modal stuck~~ (v0.37.34 — WS-driven `tradeState` lifecycle)
+- ~~robber recs intermittent~~ (v0.37.34 — robberPending lifecycle)

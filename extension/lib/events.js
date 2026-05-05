@@ -233,7 +233,12 @@ export function applySnapshot(state, decoded) {
             && robber.locationTileIndex != null) {
         const tid = String(Number(robber.locationTileIndex));
         if (tid !== state.robberTile) {
+            // Robber just moved — clear the "must place" flag and
+            // anchor the review window. Mirrors RobberMoveEvent path
+            // in bridge.py:950-961.
             state.robberTile = tid;
+            state.robberPending = false;
+            state.robberMovedAtRolls = state.totalRolls || 0;
             dirty = true;
         }
     }
@@ -515,6 +520,75 @@ export function applySnapshot(state, decoded) {
         }
     }
 
+    // --- Active trade offers (tradeState). -----------------------
+    // Mirrors python's _trade_offer_events in colonist_diff.py.
+    // activeOffers: {offer_id: payload | null} — null means the
+    //   offer was withdrawn / declined / expired; drop it.
+    // closedOffers: {offer_id: ...} — offer resolved (committed,
+    //   countered, or timed out); drop it.
+    // We only stash offers from non-self creators with both
+    // offeredResources + wantedResources populated; partial-update
+    // frames (just playerResponses) reuse the cached payload.
+    if (state.tradeOffers == null) state.tradeOffers = {};
+    const tradeState = _findKey(decoded, 'tradeState');
+    if (tradeState && typeof tradeState === 'object') {
+        const active = tradeState.activeOffers;
+        if (active && typeof active === 'object') {
+            for (const [offerId, payload] of Object.entries(active)) {
+                if (payload === null) {
+                    if (state.tradeOffers[offerId]) {
+                        delete state.tradeOffers[offerId];
+                        dirty = true;
+                    }
+                    continue;
+                }
+                if (!payload || typeof payload !== 'object') continue;
+                const offered = payload.offeredResources;
+                const wanted = payload.wantedResources;
+                const creator = payload.creator;
+                if (offered == null || wanted == null
+                        || creator == null) {
+                    // Partial-update frame; ignore unless we have it cached.
+                    continue;
+                }
+                if (state.selfColorId != null
+                        && Number(creator) === Number(state.selfColorId)) {
+                    // Self-created offer — banner not for the sender.
+                    continue;
+                }
+                const give = {};
+                for (const ci of (Array.isArray(offered) ? offered : [])) {
+                    const r = _CARD_RESOURCE[Number(ci)];
+                    if (r) give[r] = (give[r] || 0) + 1;
+                }
+                const want = {};
+                for (const ci of (Array.isArray(wanted) ? wanted : [])) {
+                    const r = _CARD_RESOURCE[Number(ci)];
+                    if (r) want[r] = (want[r] || 0) + 1;
+                }
+                if (!Object.keys(give).length
+                        && !Object.keys(want).length) continue;
+                const prev = state.tradeOffers[offerId];
+                if (!prev || prev.creator !== String(creator)) {
+                    state.tradeOffers[offerId] = {
+                        creator: String(creator),
+                        give, want, ts: Date.now(),
+                    };
+                    dirty = true;
+                }
+            }
+        }
+        const closed = tradeState.closedOffers;
+        if (closed && typeof closed === 'object') {
+            for (const offerId of Object.keys(closed)) {
+                if (state.tradeOffers[offerId]) {
+                    delete state.tradeOffers[offerId];
+                    dirty = true;
+                }
+            }
+        }
+    }
+
     // --- Roll detection from diceState. ---------------------------
     // Colonist's setup-phase ships a play-order-determination dice
     // BEFORE anyone places settlements (it's part of the GameStart
@@ -550,6 +624,27 @@ export function applySnapshot(state, decoded) {
             }
             state.totalRolls += 1;
             state.rollHistogram[total] = (state.rollHistogram[total] || 0) + 1;
+            // Per-color card-total history sample (mirrors bridge.py:883-888).
+            // 5-deep ring buffer — captures swings even across a few
+            // rolls of churn. Done on every roll including 7s; a robber
+            // steal that drops a victim's count is itself signal.
+            if (state.oppCardHist == null) state.oppCardHist = {};
+            for (const c of state.colors) {
+                const series = state.oppCardHist[c] || [];
+                series.push(state.handTotal[c] || 0);
+                if (series.length > 5) series.shift();
+                state.oppCardHist[c] = series;
+            }
+            // Robber-pending lifecycle (mirrors bridge.py:917-949):
+            // self rolls 7 → pending=true; opp rolls 7 → reset; any
+            // other roll → reset only when no review window owed.
+            if (total === 7) {
+                if (roller === state.selfColorId) {
+                    state.robberPending = true;
+                } else {
+                    state.robberPending = false;
+                }
+            }
             dirty = true;
         }
     }

@@ -211,6 +211,15 @@
     const _chatFlags = {
         friendlyRobberActive: false,
     };
+    // Dev-card plays counted from chat — {kind: count} aggregated
+    // across all players. Mirrors python's
+    // dev_cards_played_by_type in bridge.py:2281-2286 so the
+    // dev_deck strip can show all four non-knight types decreasing.
+    // Knights are tracked authoritatively via mechanicKnightState
+    // and are NOT counted here (would double-count).
+    const _chatDevPlays = {
+        MONOPOLY: 0, YEAR_OF_PLENTY: 0, ROAD_BUILDING: 0,
+    };
     // Active trade offers — keyed by offerer username. Set when
     // chat says "X wants to give [a] for [b]"; cleared when X
     // commits a trade or makes a new offer. The snap builder reads
@@ -321,6 +330,36 @@
             else if (text.includes('took from bank')
                     && resources.length) {
                 for (const r of resources) _addChat(player, r, 1);
+                // Count the YoP play. "took from bank" is a deterministic
+                // YoP signature even when the "X used Year of Plenty"
+                // line is missing.
+                _chatDevPlays.YEAR_OF_PLENTY += 1;
+                window.__catanbotRenderDirty = true;
+            }
+            // Dev-card play — "X used Knight / Monopoly / Road Building /
+            // Year of Plenty". Mirrors parser.py:287-301. Knights are
+            // tracked via mechanicKnightState (authoritative); we
+            // explicitly skip the knight branch here so deck counts
+            // don't double-count.
+            else if (text.includes('used')) {
+                const altsLc = (p.parts || [])
+                    .filter(x => x && x.kind === 'icon' && x.alt)
+                    .map(x => String(x.alt).toLowerCase());
+                if (text.includes('road building')
+                        || altsLc.some(a => a.includes('road_building'))) {
+                    _chatDevPlays.ROAD_BUILDING += 1;
+                    window.__catanbotRenderDirty = true;
+                } else if (text.includes('monopoly')
+                        || altsLc.some(a => a.includes('monopoly'))) {
+                    _chatDevPlays.MONOPOLY += 1;
+                    window.__catanbotRenderDirty = true;
+                } else if (text.includes('year of plenty')) {
+                    // YoP is also incremented above on "took from bank".
+                    // Do not double-count if the "used" line arrives
+                    // separately — guard via a follow-up "took from bank"
+                    // dedup. Practically the bank-take always lands
+                    // milliseconds later so the +1 here is rare.
+                }
             }
             // Discard on a 7
             else if (text.includes('discarded')
@@ -693,34 +732,78 @@
                 const lib = _standalone._lib;
                 _diag.snapBuildAttempts =
                     (_diag.snapBuildAttempts || 0) + 1;
-                // Compute opening-phase progression from bank
-                // counts. Settles in bank: 5 means no placements,
-                // 4 means 1 placed, 3 means 2 placed (= done with
-                // openings for that player).
+                // Compute opening-phase progression by counting
+                // buildings + roads per color directly off
+                // state.buildings / state.roads. Mirrors the bridge
+                // (bridge.py:1517-1549) which counts catanatron's
+                // board.buildings/board.roads per seat. The earlier
+                // bank-derived approach failed at GameStart because
+                // mechanic*State events haven't fired yet, so banks
+                // was empty → playersTotal=0 → inOpeningPhase=false
+                // → panel routed to mid-game with no opening picks.
+                const stForPhase = _standalone.state;
                 const banks = _standalone.bankRemaining || {};
-                const playersTotal = Object.keys(banks).length;
+                const seenColors = new Set(stForPhase
+                    ? stForPhase.colors : []);
+                for (const k of Object.keys(banks)) seenColors.add(k);
+                const playersTotal = seenColors.size;
+                // Per-color settlement+city counts (cities count too —
+                // an upgraded settlement still counts as an opening).
+                const buildingsPerColor = {};
+                if (stForPhase) {
+                    for (const b of Object.values(stForPhase.buildings)) {
+                        if (!b || !b.color) continue;
+                        if (b.kind !== 'SETTLEMENT' && b.kind !== 'CITY') continue;
+                        buildingsPerColor[b.color] =
+                            (buildingsPerColor[b.color] || 0) + 1;
+                    }
+                }
+                // Per-color road counts (roads dict is already
+                // de-duplicated by edgeKey).
+                const roadsPerColor = {};
+                if (stForPhase) {
+                    for (const c of Object.values(stForPhase.roads)) {
+                        if (!c) continue;
+                        roadsPerColor[c] = (roadsPerColor[c] || 0) + 1;
+                    }
+                }
                 let settlesPlaced = 0;
                 let citiesPlaced = 0;
-                for (const b of Object.values(banks)) {
-                    settlesPlaced += Math.max(
-                        0, 5 - (b.settles || 5));
-                    citiesPlaced += Math.max(
-                        0, 4 - (b.cities || 4));
+                if (stForPhase) {
+                    for (const b of Object.values(stForPhase.buildings)) {
+                        if (b?.kind === 'SETTLEMENT') settlesPlaced += 1;
+                        else if (b?.kind === 'CITY') citiesPlaced += 1;
+                    }
                 }
                 const expectedOpeningSettles = 2 * playersTotal;
-                const totalRollsSoFar = (_standalone.state
-                    && _standalone.state.totalRolls) || 0;
-                // Setup-phase detection: bank-derived count says
-                // "openings still happening" while
-                // settlesPlaced < expectedOpeningSettles (4 players
-                // → 8 settles to place). The earlier
-                // totalRollsSoFar === 0 guard misfired because
-                // colonist ships a play-order-determination dice
-                // in the GameStart frame (before any placements);
-                // events.js now skips that pre-placement roll
-                // entirely, so settlesPlaced is the real signal.
-                const inOpeningPhase = playersTotal > 0
-                    && settlesPlaced < expectedOpeningSettles;
+                const totalRollsSoFar = (stForPhase
+                    && stForPhase.totalRolls) || 0;
+                // Opening complete = every color has ≥2 buildings AND
+                // ≥2 roads. Same logic as bridge.py:1543-1549; we keep
+                // the road check so the opening picks (with their
+                // matching road sub-line) stay visible while the
+                // placing player is still laying their 2nd road.
+                const allColors = Object.keys(buildingsPerColor);
+                const minBuildings = allColors.length
+                    ? Math.min(...allColors.map(c => buildingsPerColor[c]))
+                    : 0;
+                const roadColors = Object.keys(roadsPerColor);
+                const minRoads = roadColors.length
+                    ? Math.min(...roadColors.map(c => roadsPerColor[c]))
+                    : 0;
+                const openingComplete = playersTotal > 0
+                    && allColors.length >= playersTotal
+                    && minBuildings >= 2
+                    && roadColors.length >= playersTotal
+                    && minRoads >= 2;
+                // Players-total fallback: if state.colors is still
+                // empty (very first frame), fall back to anything we
+                // can see in buildings/roads/banks. Prevents a brief
+                // "no opening picks" flicker on the absolute first
+                // GameStart frame.
+                const inOpeningPhase = stForPhase != null
+                    && (stForPhase.started || playersTotal > 0)
+                    && !openingComplete;
                 // Opening picks: use scoreSecondSettlements when self
                 // has placed a 1st settle (round-2 picks should
                 // consider complement value, not just raw production).
@@ -1018,6 +1101,56 @@
                             ? Math.max(0, wsTotal - infTotal) : 0;
                         const tracked = inf && Math.abs(
                             wsTotal - infTotal) <= 1;
+                        // Card-delta over a 5-roll window — current
+                        // count minus oldest sample. Bridge parity:
+                        // bridge.py:2108-2118.
+                        const cardSeries = (st.oppCardHist
+                            && st.oppCardHist[c]) || [];
+                        const cardDelta = cardSeries.length >= 2
+                            ? wsTotal - cardSeries[0]
+                            : 0;
+                        const cardDeltaWindow = cardSeries.length >= 2
+                            ? cardSeries.length
+                            : 0;
+                        // Per-opp ports owned. Walks their buildings
+                        // and reads node.port — same logic as the
+                        // self.ports computation a few lines up.
+                        const oppPorts = [];
+                        if (st.map) {
+                            for (const [nid, bb] of Object.entries(
+                                    st.buildings)) {
+                                if (bb.color !== c) continue;
+                                const node = st.map.nodes[nid];
+                                if (!node || !node.port) continue;
+                                oppPorts.push(node.port.kind === '3:1'
+                                    ? 'GENERIC' : node.port.resource);
+                            }
+                        }
+                        // Dev-stash hidden-VP risk — mirrors python's
+                        // _is_dev_stash_risk in bridge_economy.py:173-187.
+                        // dev_cards >= 2 AND vp + dev_cards >= VP - 1.
+                        const oppDev = st.devCardsTotal[c] || 0;
+                        const oppVp = st.vp[c] || 0;
+                        const vpTarget = st.vpTarget || 10;
+                        const oppDevStashRisk = oppDev >= 2
+                            && (oppVp + oppDev) >= (vpTarget - 1);
+                        // Production rate — same per_roll math as
+                        // self, just over the opp's settlements/cities.
+                        let oppPerRoll = 0;
+                        if (st.map) {
+                            for (const [nid, bb] of Object.entries(
+                                    st.buildings)) {
+                                if (bb.color !== c) continue;
+                                const node = st.map.nodes[nid];
+                                if (!node) continue;
+                                const mult = bb.kind === 'CITY' ? 2 : 1;
+                                for (const tid of node.tiles) {
+                                    const t = st.map.tiles[tid];
+                                    if (!t || !t.resource) continue;
+                                    oppPerRoll += (t.pip / 36) * mult;
+                                }
+                            }
+                        }
                         oppsBlock.push({
                             username: oppUser,
                             is_placeholder: false,
@@ -1028,13 +1161,15 @@
                             hand: inf ? { ...inf } : null,
                             unknown,
                             hand_tracked: tracked,
-                            card_delta: 0,
-                            card_delta_window: 0,
-                            vp: st.vp[c] || 0,
-                            dev_cards: st.devCardsTotal[c] || 0,
-                            dev_stash_risk: false,
+                            card_delta: cardDelta,
+                            card_delta_window: cardDeltaWindow,
+                            vp: oppVp,
+                            dev_cards: oppDev,
+                            dev_stash_risk: oppDevStashRisk,
                             knights_played: st.playedKnights[c] || 0,
                             pieces: oppPieces,
+                            ports: oppPorts,
+                            prod: oppPerRoll,
                         });
                     }
                 }
@@ -1367,10 +1502,29 @@
                                 + 'feed the largest stacks first',
                         };
                     } else if (total >= limit - 1 && total >= 6) {
+                        // Mirror python's _compute_seven_prep_hint
+                        // (bridge_hints.py:119-186) — preview the
+                        // would-drop plan even before the 7 hits, so
+                        // the user sees exactly what they'd lose.
+                        const expectedDiscard = Math.floor(total / 2);
+                        const sortedHand = Object.entries(
+                                selfBlock.hand || {})
+                            .filter(([, n]) => n > 0)
+                            .sort((a, b) => b[1] - a[1]);
+                        const wouldDrop = {};
+                        let leftToDrop = expectedDiscard;
+                        for (const [r, n] of sortedHand) {
+                            if (leftToDrop <= 0) break;
+                            const give = Math.min(leftToDrop, n);
+                            wouldDrop[r] = give;
+                            leftToDrop -= give;
+                        }
                         sevenPrep = {
                             level: total === limit ? 'fat' : 'watch',
                             cards: total,
                             limit,
+                            expected_discard: expectedDiscard,
+                            would_drop: wouldDrop,
                             message: total === limit
                                 ? `at the cliff (${total} cards) `
                                 + '— spend before next 7'
@@ -1450,14 +1604,43 @@
                 if (st && st.colors.length) {
                     const knightsPlayedTotal = st.colors.reduce(
                         (s, c) => s + (st.playedKnights[c] || 0), 0);
+                    // Standard dev deck composition:
+                    // 14 knights, 5 VP, 2 monopoly, 2 YoP, 2 RB.
+                    // Self's typed dev_cards subtract from the
+                    // "remaining-in-deck" (cards in hand are out of
+                    // deck). Plays are tracked via mechanicKnightState
+                    // (knights) and chat (the rest).
+                    const selfDev = (st.devCardsByType
+                        && st.devCardsByType[st.selfColor]) || {};
+                    const selfHeld = {
+                        KNIGHT: selfDev.KNIGHT || 0,
+                        MONOPOLY: selfDev.MONOPOLY || 0,
+                        YEAR_OF_PLENTY: selfDev.YEAR_OF_PLENTY || 0,
+                        ROAD_BUILDING: selfDev.ROAD_BUILDING || 0,
+                        VICTORY_POINT: selfDev.VICTORY_POINT || 0,
+                    };
+                    const monoLeft = Math.max(0, 2
+                        - (_chatDevPlays.MONOPOLY || 0)
+                        - selfHeld.MONOPOLY);
+                    const yopLeft = Math.max(0, 2
+                        - (_chatDevPlays.YEAR_OF_PLENTY || 0)
+                        - selfHeld.YEAR_OF_PLENTY);
+                    const rbLeft = Math.max(0, 2
+                        - (_chatDevPlays.ROAD_BUILDING || 0)
+                        - selfHeld.ROAD_BUILDING);
+                    const knightLeft = Math.max(0, 14
+                        - knightsPlayedTotal - selfHeld.KNIGHT);
+                    const vpLeft = Math.max(0, 5
+                        - selfHeld.VICTORY_POINT);
                     devDeck = {
                         by_type: {
-                            KNIGHT: {
-                                remaining: Math.max(0, 14 - knightsPlayedTotal),
-                            },
+                            KNIGHT: { remaining: knightLeft },
+                            MONOPOLY: { remaining: monoLeft },
+                            YEAR_OF_PLENTY: { remaining: yopLeft },
+                            ROAD_BUILDING: { remaining: rbLeft },
+                            VICTORY_POINT: { remaining: vpLeft },
                         },
-                        knights_remaining: Math.max(
-                            0, 14 - knightsPlayedTotal),
+                        knights_remaining: knightLeft,
                     };
                 }
 
@@ -1474,16 +1657,43 @@
                     let bestOffer = null;
                     let bestTs = 0;
                     const selfUserName = selfBlock?.username;
-                    for (const [user, offer] of
-                            Object.entries(_chatTradeOffers)) {
-                        if (user === selfUserName) continue;
-                        // Drop offers older than 60 s — colonist
-                        // doesn't always log a "withdrawn" line, so
-                        // pretend stale offers are gone.
-                        if (Date.now() - offer.ts > 60000) continue;
+                    // Primary source: WS-driven state.tradeOffers
+                    // (tradeState.activeOffers parsing in events.js).
+                    // These auto-clear on cancel/decline/timeout via
+                    // tradeState.closedOffers + null-payload signals,
+                    // so the banner doesn't get stuck.
+                    for (const [offerId, offer] of Object.entries(
+                            st.tradeOffers || {})) {
+                        const cidStr = String(offer.creator);
+                        if (cidStr === String(st.selfColor)) continue;
+                        const u = _bestUsernameFor(cidStr)
+                            || _colorName(cidStr);
                         if (offer.ts > bestTs) {
                             bestTs = offer.ts;
-                            bestOffer = { user, ...offer };
+                            bestOffer = {
+                                user: u,
+                                give: offer.give,
+                                want: offer.want,
+                                ts: offer.ts,
+                                offer_id: offerId,
+                                creatorCid: cidStr,
+                            };
+                        }
+                    }
+                    // Fallback: chat-only offer detection (kept as a
+                    // safety net for "X wants to give" log lines that
+                    // arrive before the matching tradeState frame).
+                    // Drop chat offers > 30 s old since the WS path
+                    // is now the source of truth.
+                    if (!bestOffer) {
+                        for (const [user, offer] of
+                                Object.entries(_chatTradeOffers)) {
+                            if (user === selfUserName) continue;
+                            if (Date.now() - offer.ts > 30000) continue;
+                            if (offer.ts > bestTs) {
+                                bestTs = offer.ts;
+                                bestOffer = { user, ...offer };
+                            }
                         }
                     }
                     if (bestOffer) {
@@ -1715,6 +1925,29 @@
                     dev_cards_just_bought: 0,
                     dev_cards_type_known: true,
                     robber_targets: robberTargets,
+                    // Robber lifecycle — derive forced/placed exactly
+                    // like the bridge does. forced = self rolled 7,
+                    // robber not yet placed; placed = robber moved
+                    // within the last few rolls and we're still on
+                    // the same self turn (or just left it). Renderer
+                    // (panel.js:4099-4111) gates the robber-target
+                    // table on these flags.
+                    robber_pending: !!(st && st.robberPending),
+                    robber_reason: (() => {
+                        if (!st) return null;
+                        if (st.robberPending) return 'forced';
+                        // 'placed' window — if robber moved within
+                        // the last 1 roll AND it's still self's turn
+                        // (matches python's clear-on-next-non7-roll
+                        // semantics).
+                        if (st.robberMovedAtRolls != null
+                                && (st.totalRolls - st.robberMovedAtRolls) <= 0
+                                && myTurn
+                                && (robberTargets || []).length) {
+                            return 'placed';
+                        }
+                        return null;
+                    })(),
                     last_roll: lastRoll,
                     roll_history: st ? st.rollHistory.slice() : [],
                     total_rolls: st ? st.totalRolls : 0,
@@ -1762,11 +1995,14 @@
                         expectedOpeningSettles,
                         citiesPlaced,
                         inOpeningPhase,
-                        selfSettlesPlaced: selfBank
-                            ? Math.max(0, 5 - (selfBank.settles || 5))
+                        openingComplete,
+                        minBuildings,
+                        minRoads,
+                        selfSettlesPlaced: stForPhase
+                            ? buildingsPerColor[stForPhase.selfColor] || 0
                             : null,
-                        selfCitiesPlaced: selfBank
-                            ? Math.max(0, 4 - (selfBank.cities || 4))
+                        selfRoads: stForPhase
+                            ? roadsPerColor[stForPhase.selfColor] || 0
                             : null,
                     },
                 };

@@ -4,6 +4,45 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.37.34 — 2026-05-05
+
+Python parity catch-up: extension snap now mirrors every bridge
+surface Noah uses live. Closes the "stuck on waiting for game" /
+"trade modal stuck" / "robber recs not always firing" reports.
+
+- **Setup-phase routing (panel.js)** — `inOpeningPhase` now derives
+  from `state.buildings` + `state.roads` per color, mirroring
+  `bridge.py:1517-1549`. Earlier bank-derived path failed at
+  GameStart (mechanic*State events haven't fired yet → `playersTotal=0`
+  → `inOpeningPhase=false` → panel routed to mid-game with no
+  opening picks). Opening picks now appear from the first frame.
+- **WS-driven trade lifecycle (events.js, panel.js)** — added
+  `state.tradeOffers` populated from `tradeState.activeOffers`,
+  cleared on `null` payload OR `tradeState.closedOffers`. Mirrors
+  python's `_trade_offer_events`. Banner no longer sticks on
+  cancel / decline / counter-offer / timeout. Chat-based detection
+  remains as a 30-second-window fallback.
+- **Robber lifecycle (events.js, panel.js)** — `robberPending` and
+  `robberMovedAtRolls` track the same forced/placed window the
+  bridge does. Snap now ships `robber_pending` + `robber_reason`
+  ('forced' or 'placed'), so the renderer's gate at panel.js:4108
+  actually fires in standalone — robber rec table now appears
+  every time you roll a 7.
+- **opp_card_delta (events.js, panel.js)** — 5-roll ring buffer of
+  per-color hand totals. Each opp row now ships `card_delta` /
+  `card_delta_window` so the "+3 in 5" annotation renders.
+- **dev_deck per-type (panel.js)** — chat parses "X used Monopoly /
+  Road Building / Year of Plenty" and "X took from bank" so the
+  dev-deck strip shows all four non-knight types decreasing.
+  Previously knight was the only deck count tracked.
+- **seven_prep would_drop (panel.js)** — pre-roll fat-hand warning
+  now previews the exact discard plan (`would_drop` map) just like
+  the bridge's `_compute_seven_prep_hint`.
+- **opp.dev_stash_risk + opp.ports + opp.prod (panel.js)** —
+  hidden-VP risk flag (`dev_cards >= 2 AND vp + dev >= target - 1`),
+  per-opp port list, and per-opp production rate now ship in each
+  opp block.
+
 ## v0.37.0 — 2026-05-04
 
 Standalone Phase 4: full mid-game state from the extension alone.

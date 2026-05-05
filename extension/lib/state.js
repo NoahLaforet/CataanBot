@@ -92,6 +92,30 @@ export function newGameState() {
         // True between game-over and next GameStart. Drives the
         // "waiting for next game" HUD frame.
         gameOver: null,  // { winnerColor, winnerUsername }
+        // Per-color hand-total history — last 5 samples taken on
+        // every roll (mirrors python's opp_card_hist in
+        // bridge.py:883-888). Powers the "+3 in 5" annotation on
+        // opp rows.
+        oppCardHist: {},
+        // Robber lifecycle — mirrors python's robber_pending /
+        // robber_moved_at_rolls in src/catanbot/bridge.py:160-162.
+        // robberPending: true between self rolling a 7 and the
+        //   robber being placed (robberTile change). Cleared when:
+        //   * robber moves (any tile change),
+        //   * an opponent rolls a 7,
+        //   * a non-7 roll fires while not pending.
+        // robberMovedAtRolls: totalRolls value when robberTile last
+        //   changed. Drives the "placed" review-window display.
+        robberPending: false,
+        robberMovedAtRolls: null,
+        // Active trade offers, keyed by offer_id. Each entry:
+        // {creator: cidStr, give: {res:int}, want: {res:int}, ts}.
+        // Mirrors Python's pending_trade_offer flow — populated from
+        // tradeState.activeOffers, cleared when an offer goes null
+        // or appears in tradeState.closedOffers. Authoritative
+        // source for the incoming-trade banner; chat-based offers
+        // are a fallback only.
+        tradeOffers: {},
         // Internal: dedup fingerprint for the most-recent emitted
         // RollEvent. Prevents re-counting on resync frames.
         _lastRollFp: null,
