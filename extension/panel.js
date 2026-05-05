@@ -708,15 +708,18 @@
                         0, 4 - (b.cities || 4));
                 }
                 const expectedOpeningSettles = 2 * playersTotal;
-                // Setup-phase detection: bank-derived count says
-                // "openings still happening" UNTIL we see the first
-                // dice roll, at which point we're definitively in
-                // mid-game regardless of what the bank counts say
-                // (joined mid-game, missed a setup frame, etc.).
                 const totalRollsSoFar = (_standalone.state
                     && _standalone.state.totalRolls) || 0;
-                const inOpeningPhase = totalRollsSoFar === 0
-                    && playersTotal > 0
+                // Setup-phase detection: bank-derived count says
+                // "openings still happening" while
+                // settlesPlaced < expectedOpeningSettles (4 players
+                // → 8 settles to place). The earlier
+                // totalRollsSoFar === 0 guard misfired because
+                // colonist ships a play-order-determination dice
+                // in the GameStart frame (before any placements);
+                // events.js now skips that pre-placement roll
+                // entirely, so settlesPlaced is the real signal.
+                const inOpeningPhase = playersTotal > 0
                     && settlesPlaced < expectedOpeningSettles;
                 // Opening picks: use scoreSecondSettlements when self
                 // has placed a 1st settle (round-2 picks should

@@ -516,9 +516,21 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Roll detection from diceState. ---------------------------
+    // Colonist's setup-phase ships a play-order-determination dice
+    // BEFORE anyone places settlements (it's part of the GameStart
+    // payload). That dice is NOT a game roll — counting it
+    // incorrectly bumps totalRolls to 1 right at GameStart, which
+    // breaks the opening-phase trigger (panel skipped opening
+    // picks because "first roll already happened"). Real game rolls
+    // only fire AFTER both opening rounds are complete, by which
+    // point at least one player has a settlement on the board.
+    // Gate on Object.keys(state.buildings).length > 0 so the
+    // pre-placement order roll is silently dropped.
     const dice = _findKey(decoded, 'diceState');
+    const anyBuildings = Object.keys(state.buildings || {}).length > 0;
     if (dice && typeof dice === 'object'
-            && dice.dice1 != null && dice.dice2 != null) {
+            && dice.dice1 != null && dice.dice2 != null
+            && anyBuildings) {
         const d1 = Number(dice.dice1);
         const d2 = Number(dice.dice2);
         const total = d1 + d2;
