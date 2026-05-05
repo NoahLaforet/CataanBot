@@ -211,6 +211,11 @@
     const _chatFlags = {
         friendlyRobberActive: false,
     };
+    // Active trade offers — keyed by offerer username. Set when
+    // chat says "X wants to give [a] for [b]"; cleared when X
+    // commits a trade or makes a new offer. The snap builder reads
+    // the most-recent non-self entry to populate snap.incoming_trade.
+    const _chatTradeOffers = {};
     const COLONIST_TO_CATAN = {
         Lumber: 'WOOD', Brick: 'BRICK', Wool: 'SHEEP',
         Grain: 'WHEAT', Ore: 'ORE',
@@ -231,6 +236,11 @@
         _chatHands[user] = {
             WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0,
         };
+    }
+    function _bagFromList(list) {
+        const out = {};
+        for (const r of list || []) out[r] = (out[r] || 0) + 1;
+        return out;
     }
     function _firstName(parts) {
         for (const p of parts || []) {
@@ -362,14 +372,47 @@
                 for (const r of give) _addChat(player, r, -1);
                 for (const r of got) _addChat(player, r, 1);
             }
+            // Trade offer: "X wants to give [a] for [b]". Stash the
+            // offer keyed by offerer; the snap builder picks the
+            // most-recent non-self entry and runs eval. Pre-"for"
+            // icons are give; post-"for" icons are want.
+            else if (text.includes('wants to give')) {
+                let pastFor = false;
+                const give = [];
+                const want = [];
+                for (const part of (p.parts || [])) {
+                    if (part.kind === 'text' && part.text
+                            && /\bfor\b/i.test(part.text)
+                            && !pastFor) {
+                        pastFor = true; continue;
+                    }
+                    if (part.kind === 'icon' && part.alt) {
+                        const res = COLONIST_TO_CATAN[part.alt]
+                            || COLONIST_TO_CATAN[part.alt.toLowerCase()];
+                        if (!res) continue;
+                        (pastFor ? want : give).push(res);
+                    }
+                }
+                _chatTradeOffers[player] = {
+                    give: _bagFromList(give),
+                    want: _bagFromList(want),
+                    ts: Date.now(),
+                };
+                window.__catanbotRenderDirty = true;
+            }
             // Player-to-player trade: "X gave [a] and got [b] from Y"
             // Splits parts at the "and got" text marker; pre = gave,
             // post-up-to-"from" = got. The receiver is the second
             // 'name' part after "from". Affects both sides of the
-            // table in opposite directions.
+            // table in opposite directions. Also clears the offerer's
+            // pending trade-offer entry since it's now resolved.
             else if (text.includes('gave')
                     && text.includes('and got')
                     && text.includes('from')) {
+                if (_chatTradeOffers[player]) {
+                    delete _chatTradeOffers[player];
+                    window.__catanbotRenderDirty = true;
+                }
                 let gaveDone = false;
                 let pastFrom = false;
                 const give = [];
@@ -540,6 +583,10 @@
                             for (const k of Object.keys(_chatHands)) {
                                 delete _chatHands[k];
                             }
+                            for (const k of Object.keys(_chatTradeOffers)) {
+                                delete _chatTradeOffers[k];
+                            }
+                            _chatFlags.friendlyRobberActive = false;
                         }
                         _standalone.state.map = _standalone.board;
                     } else {
@@ -1365,6 +1412,122 @@
                     };
                 }
 
+                // Incoming trade — pick the most-recent offer from a
+                // non-self player, score it. Bridge does this via
+                // _evaluate_pending_trade; standalone runs a slim
+                // version: can self pay the want? Does accepting
+                // unlock a build? If yes → ACCEPT. If self gives up
+                // a critical resource → DECLINE. Else CONSIDER.
+                let incomingTrade = null;
+                if (st && st.selfColor) {
+                    const selfHand = st.hands[st.selfColor]
+                        || lib.newHand();
+                    let bestOffer = null;
+                    let bestTs = 0;
+                    const selfUserName = selfBlock?.username;
+                    for (const [user, offer] of
+                            Object.entries(_chatTradeOffers)) {
+                        if (user === selfUserName) continue;
+                        // Drop offers older than 60 s — colonist
+                        // doesn't always log a "withdrawn" line, so
+                        // pretend stale offers are gone.
+                        if (Date.now() - offer.ts > 60000) continue;
+                        if (offer.ts > bestTs) {
+                            bestTs = offer.ts;
+                            bestOffer = { user, ...offer };
+                        }
+                    }
+                    if (bestOffer) {
+                        // Can self pay the want?
+                        let canPay = true;
+                        for (const [r, n] of Object.entries(
+                                bestOffer.want || {})) {
+                            if ((selfHand[r] || 0) < n) {
+                                canPay = false; break;
+                            }
+                        }
+                        // Post-trade hypothetical hand.
+                        const post = { ...selfHand };
+                        for (const [r, n] of Object.entries(
+                                bestOffer.want || {})) {
+                            post[r] = (post[r] || 0) - n;
+                        }
+                        for (const [r, n] of Object.entries(
+                                bestOffer.give || {})) {
+                            post[r] = (post[r] || 0) + n;
+                        }
+                        // Does post-trade unlock any build self
+                        // can't currently afford?
+                        const COSTS = {
+                            settlement: { WOOD: 1, BRICK: 1,
+                                SHEEP: 1, WHEAT: 1 },
+                            city: { WHEAT: 2, ORE: 3 },
+                            road: { WOOD: 1, BRICK: 1 },
+                            'dev card': { SHEEP: 1, WHEAT: 1, ORE: 1 },
+                        };
+                        let unlocks = null;
+                        for (const [name, cost] of Object.entries(COSTS)) {
+                            const canBefore = Object.entries(cost)
+                                .every(([r, n]) => (selfHand[r] || 0) >= n);
+                            if (canBefore) continue;
+                            const canAfter = Object.entries(cost)
+                                .every(([r, n]) => (post[r] || 0) >= n);
+                            if (canAfter) { unlocks = name; break; }
+                        }
+                        // Critical-resource check: would we drop a
+                        // 6+ stack to 0? Probably DECLINE.
+                        let drainsCritical = false;
+                        for (const [r, n] of Object.entries(
+                                bestOffer.want || {})) {
+                            const before = selfHand[r] || 0;
+                            if (before >= 6 && before - n <= 1) {
+                                drainsCritical = true;
+                                break;
+                            }
+                        }
+                        let verdict = 'consider';
+                        let reason = 'no clear unlock or downside';
+                        if (!canPay) {
+                            verdict = 'decline';
+                            reason = `can't afford `
+                                + Object.entries(bestOffer.want || {})
+                                    .map(([r, n]) => `${n} ${r.toLowerCase()}`)
+                                    .join(' + ');
+                        } else if (unlocks) {
+                            verdict = 'accept';
+                            reason = `unlocks ${unlocks}`;
+                        } else if (drainsCritical) {
+                            verdict = 'decline';
+                            reason = 'drains a critical stack';
+                        }
+                        // Find offerer's color id from username.
+                        let offererColorId = null;
+                        for (const c of st.colors) {
+                            const u = _bestUsernameFor(c);
+                            if (u === bestOffer.user) {
+                                offererColorId = c; break;
+                            }
+                        }
+                        const offererColorName = offererColorId
+                            ? _colorName(offererColorId) : null;
+                        const offererCss = offererColorId
+                            ? (_standaloneNames.byUser[bestOffer.user]
+                                || _colorHex(offererColorId))
+                            : null;
+                        const offererVp = offererColorId
+                            ? (st.vp[offererColorId] || 0) : 0;
+                        incomingTrade = {
+                            offerer: bestOffer.user,
+                            offerer_color: offererColorName,
+                            offerer_color_css: offererCss,
+                            offerer_vp: offererVp,
+                            give: bestOffer.give || {},
+                            want: bestOffer.want || {},
+                            verdict, reason,
+                        };
+                    }
+                }
+
                 // 3rd-settle milestone — biggest pre-mid-game predictor
                 // of winning per the Reddit 36k-game data. Fires when
                 // self has placed 2 settles, no city upgrades yet (so
@@ -1525,6 +1688,7 @@
                     dev_deck: devDeck,
                     friendly_robber_active:
                         _chatFlags.friendlyRobberActive,
+                    incoming_trade: incomingTrade,
                     milestone,
                     threat,
                     win_proximity: winProx,
