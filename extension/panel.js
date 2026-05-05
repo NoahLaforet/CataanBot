@@ -691,6 +691,8 @@
         if (_standalone.board && _standalone._lib) {
             try {
                 const lib = _standalone._lib;
+                _diag.snapBuildAttempts =
+                    (_diag.snapBuildAttempts || 0) + 1;
                 // Compute opening-phase progression from bank
                 // counts. Settles in bank: 5 means no placements,
                 // 4 means 1 placed, 3 means 2 placed (= done with
@@ -1721,7 +1723,16 @@
                             : null,
                     },
                 };
-            } catch (_) { /* fall through to no-bridge */ }
+            } catch (e) {
+                _diag.snapBuildErrors =
+                    (_diag.snapBuildErrors || 0) + 1;
+                _diag.lastError = 'snap build threw: '
+                    + String(e && e.message || e);
+                try {
+                    console.warn('[catanbot] snap build threw',
+                        e && e.stack ? e.stack : e);
+                } catch (_) {}
+            }
         }
         return {
             seq: -1,

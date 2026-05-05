@@ -154,10 +154,59 @@ export function decodeOne(buf, view, off) {
             const n = view.getUint32(off, false); off += 4;
             return readMap(buf, view, off, n);
         }
+        // Fixed-size extension types — colonist uses 0xD6 / 0xD7 for
+        // timestamps in chat-log gameLogState entries (dateReceived,
+        // dateRead). 1 byte type tag + N bytes payload. Decode the
+        // raw bytes; we don't actually care about the timestamp
+        // value for any current surface, so we surface it as
+        // {ext: typeTag, data: Uint8Array} and the recursive walker
+        // ignores it.
+        case 0xD4: return _readFixExt(buf, off, 1);   // fixext 1
+        case 0xD5: return _readFixExt(buf, off, 2);   // fixext 2
+        case 0xD6: return _readFixExt(buf, off, 4);   // fixext 4
+        case 0xD7: return _readFixExt(buf, off, 8);   // fixext 8
+        case 0xD8: return _readFixExt(buf, off, 16);  // fixext 16
+        // Variable-length extensions.
+        case 0xC7: {  // ext 8
+            const n = buf[off]; off += 1;
+            return _readFixExt(buf, off, n);
+        }
+        case 0xC8: {  // ext 16
+            const n = view.getUint16(off, false); off += 2;
+            return _readFixExt(buf, off, n);
+        }
+        case 0xC9: {  // ext 32
+            const n = view.getUint32(off, false); off += 4;
+            return _readFixExt(buf, off, n);
+        }
+        // Bin types — raw byte arrays. Older msgpack writers use
+        // these for binary payloads. Return as a plain Uint8Array;
+        // _findKey skips ArrayBuffer.isView() values anyway.
+        case 0xC4: {  // bin 8
+            const n = buf[off]; off += 1;
+            return [buf.slice(off, off + n), off + n];
+        }
+        case 0xC5: {  // bin 16
+            const n = view.getUint16(off, false); off += 2;
+            return [buf.slice(off, off + n), off + n];
+        }
+        case 0xC6: {  // bin 32
+            const n = view.getUint32(off, false); off += 4;
+            return [buf.slice(off, off + n), off + n];
+        }
     }
     throw new MsgpackError(
         `unsupported msgpack type byte 0x${b.toString(16).padStart(2, '0')} `
         + `at offset ${off - 1}`);
+}
+
+// Ext type reader. type byte + N bytes payload. We surface as
+// {ext: typeTag, data: Uint8Array} so the rest of the tree walks
+// past it cleanly — none of our consumers care about the contents.
+function _readFixExt(buf, off, n) {
+    const typeTag = buf[off];
+    const data = buf.slice(off + 1, off + 1 + n);
+    return [{ ext: typeTag, data }, off + 1 + n];
 }
 
 /** Decode a single msgpack value from the head of `data`.
