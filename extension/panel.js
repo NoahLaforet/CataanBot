@@ -327,6 +327,48 @@
                 for (const r of give) _addChat(player, r, -1);
                 for (const r of got) _addChat(player, r, 1);
             }
+            // Player-to-player trade: "X gave [a] and got [b] from Y"
+            // Splits parts at the "and got" text marker; pre = gave,
+            // post-up-to-"from" = got. The receiver is the second
+            // 'name' part after "from". Affects both sides of the
+            // table in opposite directions.
+            else if (text.includes('gave')
+                    && text.includes('and got')
+                    && text.includes('from')) {
+                let gaveDone = false;
+                let pastFrom = false;
+                const give = [];
+                const got = [];
+                let receiver = null;
+                for (const part of (p.parts || [])) {
+                    if (part.kind === 'text' && part.text) {
+                        if (/and got/i.test(part.text)) {
+                            gaveDone = true; continue;
+                        }
+                        if (/from/i.test(part.text)) {
+                            pastFrom = true; continue;
+                        }
+                    }
+                    if (part.kind === 'name' && pastFrom && !receiver) {
+                        receiver = part.name;
+                        continue;
+                    }
+                    if (part.kind === 'icon' && part.alt && !pastFrom) {
+                        const res = COLONIST_TO_CATAN[part.alt]
+                            || COLONIST_TO_CATAN[part.alt.toLowerCase()];
+                        if (!res) continue;
+                        (gaveDone ? got : give).push(res);
+                    }
+                }
+                for (const r of give) {
+                    _addChat(player, r, -1);
+                    if (receiver) _addChat(receiver, r, 1);
+                }
+                for (const r of got) {
+                    _addChat(player, r, 1);
+                    if (receiver) _addChat(receiver, r, -1);
+                }
+            }
             // Steal with revealed resource: "you stole from X [res]"
             else if (text.includes('you stole from')
                     && resources.length) {
