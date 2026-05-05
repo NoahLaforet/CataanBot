@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CatanBot — live Settlers of Catan advisor for colonist.io</title>
+<meta name="description" content="Chrome extension + local Python bridge that runs a tournament-grade live advisor on top of colonist.io. Strategy archetypes, dev-card play timing, robber EV, opp inference.">
+<meta property="og:title" content="CatanBot — live Catan advisor">
+<meta property="og:description" content="Chrome side-panel HUD + local Python bridge. Real-time recs, dev-card hints, robber-target EV, opp inference, postmortem.">
+<meta property="og:image" content="https://noahlaforet.github.io/CatanBot/media/04_trade_accept_wide.gif">
+<meta property="og:url" content="https://noahlaforet.github.io/CatanBot/">
+<meta name="theme-color" content="#0b0e14">
+<style>
+:root {
+  --bg-0: #0b0e14;
+  --bg-1: #131821;
+  --bg-2: #1c2230;
+  --fg: #e6edf3;
+  --fg-dim: #9aa6b2;
+  --fg-mute: #5b6573;
+  --line: rgba(255,255,255,0.08);
+  --accent: #16a34a;
+  --accent-bright: #22c55e;
+  --pos: #4ade80;
+  --neg: #f87171;
+  --warn: #fbbf24;
+  --hex: #4aa7d4;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent-bright); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.55;
+}
+code:not(pre code) {
+  background: var(--bg-1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #c9d6e3;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+header {
+  padding: 60px 0 36px;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-weight: 800; font-size: 16px; letter-spacing: 0.02em;
+}
+.brand .logo {
+  width: 26px; height: 26px;
+  background: var(--accent);
+  color: var(--bg-0);
+  border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 900;
+}
+h1 {
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.05;
+  margin: 24px 0 16px;
+  letter-spacing: -0.02em;
+}
+.lede {
+  font-size: 19px;
+  color: var(--fg-dim);
+  max-width: 720px;
+  margin-bottom: 28px;
+}
+.cta-row {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  margin-top: 24px;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  color: var(--fg);
+  text-decoration: none;
+  transition: filter 80ms ease, transform 80ms ease;
+}
+.btn:hover { text-decoration: none; filter: brightness(1.18); }
+.btn:active { transform: translateY(1px); }
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-0);
+}
+.btn .arrow { font-size: 16px; }
+.tag {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--fg-mute);
+  margin-left: 6px;
+}
+section { padding: 56px 0; border-bottom: 1px solid var(--line); }
+section h2 {
+  font-size: 28px;
+  margin: 0 0 18px;
+  letter-spacing: -0.01em;
+}
+section h3 {
+  font-size: 18px;
+  margin: 28px 0 8px;
+  color: var(--fg);
+}
+section p { color: var(--fg-dim); max-width: 760px; }
+.clip {
+  margin: 28px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-1);
+}
+.clip img { display: block; width: 100%; }
+.clip-caption {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  border-top: 1px solid var(--line);
+}
+.clip-caption strong { color: var(--fg); font-weight: 700; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin-top: 24px;
+}
+@media (max-width: 720px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px 22px;
+}
+.card h3 { margin-top: 0; font-size: 18px; }
+.card p { color: var(--fg-dim); font-size: 14px; }
+.card .meta {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+.pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  color: var(--fg-dim);
+}
+.pill.green { color: var(--pos); border-color: rgba(74, 222, 128, 0.3); }
+.pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.3); }
+
+ul.feature-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--fg-dim);
+  font-size: 14px;
+}
+ul.feature-list li { margin-bottom: 6px; }
+ul.feature-list strong { color: var(--fg); font-weight: 700; }
+
+.compact-list { font-size: 14px; color: var(--fg-dim); }
+.compact-list li { margin-bottom: 4px; }
+
+footer {
+  padding: 40px 0 56px;
+  font-size: 13px;
+  color: var(--fg-mute);
+}
+footer a { color: var(--fg-dim); }
+.footer-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+.center { text-align: center; }
+.diag-strip {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--fg-mute);
+  background: var(--bg-1);
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  display: inline-block;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">
+    <span class="logo">C</span>
+    <span>CatanBot</span>
+    <span class="tag">v0.37 · 2026-05-04</span>
+  </div>
+  <h1>A live Catan advisor that watches the game with you.</h1>
+  <p class="lede">
+    Chrome side-panel HUD + a local Python bridge that ingests
+    every WebSocket frame from <a href="https://colonist.io">colonist.io</a>,
+    runs handcrafted recommender + dev-card hints + robber EV on
+    top of <a href="https://github.com/bcollazo/catanatron">catanatron</a>,
+    and renders the verdict in real time. No ML, no cloud — game
+    state never leaves your machine.
+  </p>
+  <div class="cta-row">
+    <a class="btn primary" href="https://github.com/NoahLaforet/CatanBot/releases/latest">
+      <span>Download latest release</span> <span class="arrow">→</span>
+    </a>
+    <a class="btn" href="https://github.com/NoahLaforet/CatanBot">
+      <span>★</span> <span>Source on GitHub</span>
+    </a>
+    <a class="btn" href="#install">Install guide</a>
+  </div>
+</header>
+
+<section>
+  <h2>See it in action</h2>
+  <p>Clipped from a real 4-player ranked game (15-VP target, 30 minutes, won 15-5).</p>
+
+  <div class="clip">
+    <img src="media/01_opening_picks_wide.gif" alt="Pre-placement strategy ranking + top opening picks ranked A B C D">
+    <div class="clip-caption">
+      <strong>Pre-placement strategy.</strong> Board affinity ranks
+      the five archetypes (Port trader leading at 0.85), then top
+      settle picks A/B/C with their tiles, scores, and 2nd-pick
+      complement tags so you can plan your follow-up before placing.
+    </div>
+  </div>
+
+  <div class="clip">
+    <img src="media/02_early_recs_wide.gif" alt="Round-5 recommender — settle hero score 6.0 with milestone banner">
+    <div class="clip-caption">
+      <strong>Early-game recommender.</strong> Round 5, BALANCED
+      archetype banner, settle rec at 6.0 with the actual tiles
+      visible, and a "settle #3 — biggest predictor — ready to
+      build" milestone (per the 36k-game Reddit data: winners
+      build #3 ~7 turns earlier than losers).
+    </div>
+  </div>
+
+  <div class="clip">
+    <img src="media/03_knight_hold_wide.gif" alt="Dev-card knight HOLD verdict with rationale">
+    <div class="clip-caption">
+      <strong>Dev-card play timing.</strong> Knight in hand,
+      robber blocking an opp on a weak number. The hint goes
+      <em>HOLD</em> with a one-line reason instead of burning the
+      card on a marginal trigger.
+    </div>
+  </div>
+
+  <div class="clip">
+    <img src="media/04_trade_accept_wide.gif" alt="Endgame: PORT TRADER, KNIGHT PLAY, trade ACCEPT, roll histogram">
+    <div class="clip-caption">
+      <strong>Endgame multi-surface.</strong> Round 29, you're at
+      11 VP and leading. PORT TRADER active. KNIGHT lights up
+      <em>PLAY</em> with a strong block on wheat 4. An incoming
+      trade gets an <em>ACCEPT</em> verdict with the EV gain
+      ("unlocks trade proposal +3.4"). Roll histogram shows the
+      dice bias for the whole game.
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <h2>Install</h2>
+  <p>You need both pieces — the Chrome extension renders the HUD,
+  the bridge does the heavy lifting. Or just the extension if you
+  want a leaner setup.</p>
+
+  <div class="grid-2">
+
+    <div class="card">
+      <h3>Chrome extension</h3>
+      <div class="meta">
+        <span class="pill green">stable</span>
+        <span class="pill">v0.37.26</span>
+        <span class="pill">~144 KB</span>
+      </div>
+      <p>Side-panel HUD on the right of every colonist.io tab.
+      Manifest V3, no Tampermonkey, no extension-store install
+      required. Loads the JS recommender for full mid-game advisor
+      out of the box (no bridge needed).</p>
+      <ul class="compact-list">
+        <li>Download <a href="https://github.com/NoahLaforet/CatanBot/releases/tag/extension-v0.37.26">extension-v0.37.26.zip</a> and extract.</li>
+        <li>Open <code>chrome://extensions</code>, toggle <b>Developer mode</b>.</li>
+        <li><b>Load unpacked</b> → pick the <code>extension/</code> folder.</li>
+        <li>Pin the icon, click it, open colonist.io.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Local bridge (Python)</h3>
+      <div class="meta">
+        <span class="pill green">optional</span>
+        <span class="pill">v0.37.0</span>
+        <span class="pill">FastAPI</span>
+      </div>
+      <p>Unlocks 1-ply search-delta annotations, postmortem
+      rendering, eval sparkline, move-quality grading, and trade
+      evaluation. Runs locally on <code>127.0.0.1:8765</code>.</p>
+      <pre>git clone https://github.com/NoahLaforet/CatanBot.git
+cd CatanBot
+./bin/catanbot live</pre>
+      <p style="font-size:13px; margin-top:14px;">
+        First run auto-creates a <code>.venv</code> and installs the
+        bridge — about 30 s. Needs Python 3.11+. <b>Windows users:</b>
+        clone the repo, then double-click <code>bin\setup-windows.cmd</code>
+        to install WSL2 + Ubuntu and bootstrap the bridge inside it.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2>What it does</h2>
+
+  <h3>Live recs and verdicts</h3>
+  <ul class="feature-list">
+    <li><strong>Opening picks</strong> — every legal corner ranked by complement-aware production, port adjacency, distance-2 denial, and resource diversity. Pairs each pick with a follow-up road suggestion.</li>
+    <li><strong>In-game recommender</strong> — top-N ranked actions: settlement / city / road / dev card / port trade. Each rec carries a 1-ply EV delta when the bridge is running so you see <em>how much</em> better the bot's pick is than doing nothing.</li>
+    <li><strong>Dev-card play timing</strong> — knight / monopoly / year-of-plenty / road-building each get a typed PLAY/HOLD verdict with conversational reasoning. VP cards are tracked but not surfaced as playable. Catan's no-play-on-buy rule is respected.</li>
+    <li><strong>Robber + 7-roll telemetry</strong> — top targets ranked by blocking value × victim VP × hand size. Auto-detects colonist's optional Friendly Robber rule and filters protected (≤2 VP) victims.</li>
+  </ul>
+
+  <h3>Strategy-aware</h3>
+  <ul class="feature-list">
+    <li><strong>Five archetypes</strong> — OWS / LR rush / Port trader / Road Builder / Balanced. Once both opening settles land, the bot detects which archetype your placements actually enable and biases recommendations toward it.</li>
+    <li><strong>Pivot triggers</strong> — hot-number streaks, road-building dev card drawn, opp closing on Largest Army, opp crossing close-to-win VP, sevens overdue with a heavy hand. Each fires a named trigger that adapts the bias mid-game.</li>
+    <li><strong>Backed by data</strong> — five tunings in the recommender are inspired by <a href="https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/">u/Hot-Rooster1675's 36k-game simulation</a>, including 3rd-settle expansion bumps and wheat-priority weights.</li>
+  </ul>
+
+  <h3>HUD details</h3>
+  <ul class="feature-list">
+    <li><strong>Live overlay</strong> — roll histogram with 36-roll baseline, eval sparkline, per-build move-quality (<code>!! / ! / ?! / ? / ??</code>), opp hand inference + production rate.</li>
+    <li><strong>Variant boards</strong> — same Catan rules, different layouts: Pond (24 tiles, interior lake), Twirl (42 tiles, swirl) build a fresh CatanMap from colonist's authoritative geometry.</li>
+    <li><strong>Streamer mode</strong> — every username in the HUD is replaced with "Opp 1 / Opp 2" so screen recordings don't expose real handles.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Privacy</h2>
+  <p>The bridge runs locally. Game state never leaves your
+  machine. The Chrome extension's only network destination is
+  <code>127.0.0.1:8765</code> — the bridge listens on localhost
+  only and the extension's <code>host_permissions</code> in
+  <code>manifest.json</code> reflects that. Full privacy
+  policy: <a href="privacy.html">privacy.html</a>.</p>
+</section>
+
+<footer>
+  <div class="footer-row">
+    <span>CatanBot © 2026 Noah Laforet · GPL-3.0-or-later</span>
+    <span>
+      <a href="https://github.com/NoahLaforet/CatanBot">source</a> ·
+      <a href="https://github.com/NoahLaforet/CatanBot/releases">releases</a> ·
+      <a href="privacy.html">privacy</a>
+    </span>
+  </div>
+</footer>
+</div>
+</body>
+</html>
