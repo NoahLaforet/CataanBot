@@ -18,7 +18,7 @@ export { buildBoardFromColonistMap, pipsForNumber,
 export { applyEvent, applyAll, applySnapshot } from './events.js';
 export { scoreOpeningNodes, scoreSecondSettlements,
          scoreRobberTargets, computeTableScarcity,
-         legalNodesAfterPicks,
+         legalNodesAfterPicks, bestOpeningRoad, edgeTiles,
          DIVERSITY_BY_COUNT, RESOURCE_WEIGHT }
     from './advisor.js';
 export { decodeMsgpack, decodeIncomingFrame, decodeOutgoingFrame,

@@ -1071,6 +1071,40 @@
                 // opening because city/road/dev_card aren't legal yet.
                 let outRecs = recs;
                 if (inOpeningPhase) {
+                    // scoredByNode lookup for the opening-road
+                    // helper — pulls every legal node's score from
+                    // the same ranking we use for the picks list,
+                    // so the road suggestion is consistent with the
+                    // settle scoring (same scarcity, port bonuses,
+                    // diversity factors).
+                    const scoredByNode = {};
+                    for (const r of ranked) scoredByNode[r.nodeId] = r.score;
+                    // Distance-rule blocked set — every placed
+                    // settlement claims its own node + neighbours.
+                    const placedNodes = new Set();
+                    if (_standalone.state) {
+                        for (const nid of Object.keys(
+                                _standalone.state.buildings)) {
+                            placedNodes.add(nid);
+                            const node = _standalone.board.nodes[nid];
+                            if (!node) continue;
+                            for (const nb of node.neighbors) {
+                                placedNodes.add(nb);
+                            }
+                        }
+                    }
+                    // Self-owned road edges so the round-3/4 road
+                    // follow-up doesn't propose a road we already
+                    // placed (Catan rejects double-roads).
+                    const myEdges = new Set();
+                    if (_standalone.state) {
+                        for (const [eid, c] of Object.entries(
+                                _standalone.state.roads)) {
+                            if (c === _standalone.state.selfColor) {
+                                myEdges.add(eid);
+                            }
+                        }
+                    }
                     const openingRecs = ranked.slice(0, 8).map((o) => {
                         // Calibrate openings to the same 1-10 score
                         // band the bridge ships. The advisor's `score`
@@ -1081,6 +1115,17 @@
                             Math.min(10,
                                 Math.max(2, o.score * 14 + 2.5)
                             ) * 10) / 10;
+                        // Best adjacent road for this settle pick —
+                        // bridge ships {edge_tiles, sealed?} and the
+                        // renderer at line ~3633 reads it as the
+                        // "↳ road: between BR3 SHE10" sub-line.
+                        let road = null;
+                        try {
+                            road = lib.bestOpeningRoad(
+                                _standalone.board, o.nodeId, {
+                                    scoredByNode, placedNodes, myEdges,
+                                });
+                        } catch (_) { /* keep null */ }
                         return {
                             kind: 'opening_settlement',
                             when: 'now',
@@ -1090,6 +1135,7 @@
                             tiles: o.tiles,
                             port: o.port || null,
                             resources: o.resources || null,
+                            road,
                         };
                     });
                     outRecs = openingRecs;

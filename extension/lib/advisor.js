@@ -181,6 +181,111 @@ export function scoreOpeningNodes(board, opts = {}) {
     return scores;
 }
 
+/** Tile descriptors for the edge between two nodes — the 1-2
+ *  resource-bearing tiles that touch the edge. Mirrors
+ *  recommender._edge_tiles. Used by opening-road suggestion to
+ *  surface "↳ road: between BR3 SHE10" style hints. */
+export function edgeTiles(board, nodeA, nodeB) {
+    const a = board.nodes[nodeA];
+    const b = board.nodes[nodeB];
+    if (!a || !b) return [];
+    const tilesA = new Set(a.tiles);
+    const tilesB = new Set(b.tiles);
+    const out = [];
+    for (const tid of tilesA) {
+        if (!tilesB.has(tid)) continue;
+        const t = board.tiles[tid];
+        if (!t) continue;
+        out.push([t.resource || 'DESERT', t.number]);
+    }
+    return out;
+}
+
+/** Best opening road for a proposed settlement. Picks one of the
+ *  three adjacent edges by what 2-hop expansion target the road
+ *  opens up, with fallback to the highest-prod adjacent direction
+ *  when every corridor is sealed. JS port of
+ *  recommender._best_opening_road, slimmed for the standalone
+ *  pipeline (no opp pieces during opening so no contested /
+ *  sealed-by-opp logic).
+ *
+ *  Returns `{edge, toward_node, edge_tiles, sealed?}` matching the
+ *  bridge shape the panel renderer reads, or `null` if the node
+ *  has no neighbours.
+ *
+ *  `scoredByNode` is a dict of {nodeId: score} from a prior
+ *  scoreOpeningNodes pass — caller reuses the existing scoring
+ *  rather than re-computing.
+ *
+ *  `placedNodes` (Set) marks nodes that already have a settlement
+ *  on them (and their neighbours, distance-rule). Edges into those
+ *  are degraded.
+ */
+export function bestOpeningRoad(board, settlementNodeId, opts = {}) {
+    if (!board || !board.nodes) return null;
+    const settle = board.nodes[settlementNodeId];
+    if (!settle) return null;
+    const scoredByNode = opts.scoredByNode || {};
+    const placedNodes = opts.placedNodes || new Set();
+    const myEdges = opts.myEdges || new Set();   // 'a||b' strings we own
+    let best = null;       // {combined, far, expansion}
+    let fallback = null;   // {prod, far}
+    for (const far of settle.neighbors) {
+        // Skip edges we already own a road on (round-3/4 follow-up
+        // flow shouldn't suggest a road we built in round 1).
+        const eid = settlementNodeId < far
+            ? `${settlementNodeId}||${far}`
+            : `${far}||${settlementNodeId}`;
+        if (myEdges.has(eid)) continue;
+        // Far-node production for the fallback ranking.
+        const farNode = board.nodes[far];
+        if (!farNode) continue;
+        let farProd = 0;
+        for (const tid of farNode.tiles) {
+            const t = board.tiles[tid];
+            if (t && t.resource && t.number) farProd += (t.pip || 0);
+        }
+        if (fallback === null || farProd > fallback.prod) {
+            fallback = { prod: farProd, far };
+        }
+        // Best 2-hop expansion via (settle → far → x).
+        let expScore = 0;
+        let expNode = null;
+        for (const x of farNode.neighbors) {
+            if (x === settlementNodeId) continue;
+            // Distance-rule blocked? Skip.
+            if (placedNodes.has(x)) continue;
+            const xs = scoredByNode[x];
+            if (xs == null) continue;
+            if (xs > expScore) {
+                expScore = xs;
+                expNode = x;
+            }
+        }
+        if (expNode === null) continue;
+        const combined = expScore * 100.0 + farProd;
+        if (best === null || combined > best.combined) {
+            best = { combined, far, expansion: expNode };
+        }
+    }
+    if (best !== null) {
+        return {
+            edge: [settlementNodeId, best.far],
+            toward_node: best.expansion,
+            edge_tiles: edgeTiles(board, settlementNodeId, best.far),
+        };
+    }
+    if (fallback !== null) {
+        return {
+            edge: [settlementNodeId, fallback.far],
+            toward_node: fallback.far,
+            edge_tiles: edgeTiles(board, settlementNodeId, fallback.far),
+            sealed: true,
+        };
+    }
+    return null;
+}
+
 /** Distance-rule legality: nodes that remain legal after the
  *  given placements claim themselves + their neighbours. */
 export function legalNodesAfterPicks(board, picks) {
