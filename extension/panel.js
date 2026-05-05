@@ -494,27 +494,70 @@
                 if (fullMs && (!_standalone.board
                         || _standalone.mapStateFingerprint !== newFp)) {
                     const wasBoardLoaded = !!_standalone.board;
-                    _standalone.mapStateFrame = fullMs;
-                    _standalone.mapStateFingerprint = newFp;
-                    _diag.boardsBuilt += 1;
-                    _standalone.board =
-                        lib.buildBoardFromColonistMap(fullMs);
-                    _standalone.gameStarted = true;
-                    if (_standalone.board) {
+                    _diag.boardBuildAttempts =
+                        (_diag.boardBuildAttempts || 0) + 1;
+                    let built = null;
+                    try {
+                        built = lib.buildBoardFromColonistMap(fullMs);
+                    } catch (e) {
+                        _diag.boardBuildErrors =
+                            (_diag.boardBuildErrors || 0) + 1;
+                        _diag.lastError =
+                            'board build threw: ' + String(e && e.message || e);
+                    }
+                    if (built) {
+                        // Only commit fingerprint + board on a
+                        // successful build; otherwise the next
+                        // mapState frame can retry with a fresh
+                        // attempt instead of being deduped out.
+                        _standalone.mapStateFrame = fullMs;
+                        _standalone.mapStateFingerprint = newFp;
+                        _standalone.board = built;
+                        _standalone.gameStarted = true;
+                        _diag.boardsBuilt += 1;
                         if (wasBoardLoaded) {
                             // Hard-reset state on a real new game.
                             _standalone.state = lib.newGameState();
                             _standalone.bankRemaining = {};
                             _standalone.selfColorId = null;
                             _standalone.currentTurnPlayerColor = null;
-                            // Drop chat-inferred hands too —
-                            // last game's resources don't carry
-                            // over to the new game.
                             for (const k of Object.keys(_chatHands)) {
                                 delete _chatHands[k];
                             }
                         }
                         _standalone.state.map = _standalone.board;
+                    } else {
+                        // Build returned null. Log enough about the
+                        // mapState that we can diagnose: how many
+                        // tile / corner / edge / port entries does
+                        // it actually have? The likely suspect is
+                        // an empty tileHexStates dict on a delta
+                        // frame that nominally carries the key.
+                        _diag.boardBuildNullReturns =
+                            (_diag.boardBuildNullReturns || 0) + 1;
+                        const tileCount = Object.keys(
+                            fullMs.tileHexStates || {}).length;
+                        const cornerCount = Object.keys(
+                            fullMs.tileCornerStates || {}).length;
+                        const edgeCount = Object.keys(
+                            fullMs.tileEdgeStates || {}).length;
+                        const portCount = Object.keys(
+                            fullMs.portEdgeStates || {}).length;
+                        _diag.lastError =
+                            `board build null: tiles=${tileCount} `
+                            + `corners=${cornerCount} `
+                            + `edges=${edgeCount} `
+                            + `ports=${portCount}`;
+                        // Log once per attempt so the user can see
+                        // it in DevTools without inspecting state.
+                        try {
+                            console.warn(
+                                '[catanbot] board build returned null',
+                                { tileCount, cornerCount,
+                                  edgeCount, portCount,
+                                  mapStateKeys:
+                                      Object.keys(fullMs) });
+                        } catch (_) {}
                     }
                     dirty = true;
                 }
@@ -2848,9 +2891,12 @@
             const diagText = `ws ${d.wsBroadcastsReceived || 0}`
                 + ` · dec ${d.decodeAttempts || 0}`
                 + ` · map ${d.mapStateFound || 0}`
+                + ` · board ${d.boardsBuilt || 0}/`
+                + `${d.boardBuildAttempts || 0}`
                 + ` · snap ${d.snapshotsApplied || 0}`
                 + ` · replay ${d.replayRequests || 0}/`
-                + `${d.replayResponses || 0}`;
+                + `${d.replayResponses || 0}`
+                + (d.lastError ? ` · ${d.lastError.slice(0, 80)}` : '');
             ui.content.innerHTML =
                 `<div class="no-bridge-frame">`
                 + `<div class="nb-icon">🎲</div>`
@@ -3011,6 +3057,8 @@
                 'ws ' + (d.wsBroadcastsReceived || 0),
                 'dec ' + (d.decodeAttempts || 0),
                 'map ' + (d.mapStateFound || 0),
+                'board ' + (d.boardsBuilt || 0)
+                    + '/' + (d.boardBuildAttempts || 0),
                 'snap ' + (d.snapshotsApplied || 0),
                 'replay ' + (d.replayRequests || 0)
                     + '/' + (d.replayResponses || 0),
