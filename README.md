@@ -141,31 +141,54 @@ Requires Python 3.11+ (catanatron constraint).
 
 ### ★ Windows users — read this first
 
-The bridge is bash-only (the auto-bootstrap launcher is a shell
-script), so on Windows you run it inside **WSL2 + Ubuntu**. Chrome
-stays on Windows; it reaches the WSL bridge over `127.0.0.1:8765`
-automatically (Windows 10 build 19041+ or Windows 11 forwards
-localhost from WSL2 back to the host with no extra config).
+The bridge is bash-only (POSIX shell launcher), so on Windows you
+run it inside **WSL2 + Ubuntu**. Chrome stays on Windows; it
+reaches the WSL bridge over `127.0.0.1:8765` automatically
+(Windows 10 build 19041+ or Windows 11 forwards WSL2 localhost
+back to the host with no extra config).
 
-One-time setup, run from an **admin** PowerShell:
+One-time setup — clone the repo on Windows, then double-click
+`bin\setup-windows.cmd`:
 
 ```powershell
-# 1. (after cloning the repo somewhere on Windows OR inside WSL)
-.\bin\setup-windows.ps1
+# In any normal PowerShell or cmd (does NOT have to be admin):
+git clone https://github.com/NoahLaforet/CatanBot.git
+cd CatanBot
+
+# Then in File Explorer, double-click  bin\setup-windows.cmd
+# (it auto-elevates and bypasses the unsigned-script policy).
 ```
 
-The script:
+The script (in this order):
 
-- Confirms you're on a recent enough Windows build
-- Installs WSL2 if you don't have it
-- Installs Ubuntu if no Linux distro is registered
-- Verifies the default distro can run commands
-- Tells you the next 3 commands to run inside Ubuntu
+1. Re-launches itself elevated if needed.
+2. Confirms Windows build ≥ 19041 (WSL2 requires it).
+3. Installs **WSL2** if missing (`wsl --install`).
+4. Installs **Ubuntu** if no Linux distro is registered.
+5. Smoke-tests the distro can run a command.
+6. Inside Ubuntu, installs `git` + `python3` + `python3-venv` via
+   `apt-get` (one sudo prompt for your WSL password).
+7. Clones CatanBot into `~/CatanBot` inside Ubuntu (or `git
+   pull`s if it's already there).
+8. Bootstraps the venv + bridge dependencies.
+9. Prints the **two** commands you actually need to remember:
+   - Inside Ubuntu: `cd ~/CatanBot && ./bin/catanbot live`
+   - In Chrome: `chrome://extensions → Load unpacked → pick the
+     printed `\\wsl.localhost\Ubuntu\home\<you>\CatanBot\extension`
+     path`
 
-If the script triggers a reboot or asks you to finish Ubuntu's
-first-run wizard, do that step, then re-run the script to
-verify, then move on to the **macOS / Linux / WSL** block below.
-Once WSL is set up, the daily flow is identical to macOS / Linux.
+If WSL or Ubuntu install triggers a reboot or asks you to finish a
+first-run wizard, do that step and re-run the .cmd. The script is
+idempotent — re-running it after a reboot picks up where it left
+off.
+
+> **Why a `.cmd` shim and not just the `.ps1`?** PowerShell blocks
+> unsigned `.ps1` scripts by default ("File cannot be loaded
+> because running scripts is disabled on this system"). The `.cmd`
+> elevates and runs PowerShell with `-ExecutionPolicy Bypass` so
+> you don't have to fight that. If you'd rather call the `.ps1`
+> directly, run from an admin PowerShell:
+> `powershell -ExecutionPolicy Bypass -File .\bin\setup-windows.ps1`
 
 ### macOS / Linux / WSL
 

@@ -145,6 +145,52 @@ if ($smoke -match "wsl-ok") {
     exit 1
 }
 
+# --- Make sure git + python are in the distro ----------------------
+Write-Step "Installing git + python inside Ubuntu (sudo prompt may appear)"
+$prereqs = "sudo -n apt-get update -qq 2>/dev/null && sudo -n apt-get install -y -qq git python3 python3-venv 2>/dev/null"
+$installAttempt = wsl --exec bash -c "$prereqs && echo PREREQS_OK || echo PREREQS_NEEDS_PASSWORD"
+if ($installAttempt -match "PREREQS_OK") {
+    Write-Ok "git + python3 + python3-venv present"
+} else {
+    Write-Warn "passwordless sudo isn't enabled — running interactive install."
+    Write-Note "Ubuntu will prompt for your WSL password once."
+    wsl --exec bash -c "sudo apt-get update && sudo apt-get install -y git python3 python3-venv"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "apt-get install failed. Open an Ubuntu terminal and run:"
+        Write-Note "    sudo apt-get update && sudo apt-get install -y git python3 python3-venv"
+        Write-Note "Then re-run this script."
+        exit 1
+    }
+    Write-Ok "git + python3 + python3-venv installed"
+}
+
+# --- Clone the repo inside the distro at ~/CatanBot ----------------
+Write-Step "Cloning CatanBot inside Ubuntu (~/CatanBot)"
+$cloneCheck = wsl --exec bash -lc "if [ -d ~/CatanBot/.git ]; then echo PRESENT; else echo MISSING; fi"
+if ($cloneCheck -match "PRESENT") {
+    Write-Ok "~/CatanBot already cloned — pulling latest"
+    wsl --exec bash -lc "cd ~/CatanBot && git pull --ff-only 2>&1 | tail -3"
+} else {
+    wsl --exec bash -lc "git clone https://github.com/NoahLaforet/CatanBot.git ~/CatanBot"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "git clone failed inside Ubuntu."
+        exit 1
+    }
+    Write-Ok "cloned to ~/CatanBot"
+}
+
+# --- Bootstrap the launcher (creates .venv + installs deps) --------
+Write-Step "Bootstrapping the bridge venv inside Ubuntu (~30s on first run)"
+wsl --exec bash -lc "cd ~/CatanBot && ./bin/catanbot --help >/dev/null"
+if ($LASTEXITCODE -eq 0) {
+    Write-Ok "bridge ready — venv created + dependencies installed"
+} else {
+    Write-Err "bridge bootstrap failed. Open Ubuntu and run:"
+    Write-Note "    cd ~/CatanBot && ./bin/catanbot --help"
+    Write-Note "to see the full error."
+    exit 1
+}
+
 # --- Bridge port reachability hint ----------------------------------
 # WSL2 forwards 127.0.0.1:<port> from the WSL2 distro to the Windows
 # host on Windows 10 build 19041+ / Windows 11. The user's Chrome on
@@ -155,16 +201,25 @@ Write-Ok "Windows build $winBuild supports WSL2 localhost forwarding"
 Write-Note "Chrome (Windows) will reach 127.0.0.1:8765 in WSL automatically"
 
 # --- Final next steps ----------------------------------------------
+$wslUser = (wsl --exec bash -c 'echo $USER').Trim()
+$extPath = "\\wsl.localhost\Ubuntu\home\$wslUser\CatanBot\extension"
+
 Write-Host ""
-Write-Host "  All set. Inside an Ubuntu (WSL) terminal, run:" -ForegroundColor Green
+Write-Host "  Setup done." -ForegroundColor Green
 Write-Host ""
-Write-Host "    git clone https://github.com/NoahLaforet/CatanBot.git" -ForegroundColor White
-Write-Host "    cd CatanBot" -ForegroundColor White
-Write-Host "    ./bin/catanbot live" -ForegroundColor White
+Write-Host "  ── Start the bridge ──" -ForegroundColor Cyan
+Write-Host "  Open Ubuntu (Start menu → 'Ubuntu') and run:" -ForegroundColor White
 Write-Host ""
-Write-Host "  Then in Chrome:" -ForegroundColor Green
-Write-Host "    1. chrome://extensions  →  Developer mode" -ForegroundColor White
-Write-Host "    2. Load unpacked  →  pick the extension/ folder" -ForegroundColor White
-Write-Host "       (browse to \\wsl.localhost\Ubuntu\home\<you>\CatanBot\extension)" -ForegroundColor White
-Write-Host "    3. Pin the CatanBot icon, click it, open colonist.io" -ForegroundColor White
+Write-Host "    cd ~/CatanBot && ./bin/catanbot live" -ForegroundColor White
+Write-Host ""
+Write-Host "  Leave that terminal open — it logs every event." -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  ── Load the Chrome extension ──" -ForegroundColor Cyan
+Write-Host "  In Chrome:" -ForegroundColor White
+Write-Host "    1. Open  chrome://extensions" -ForegroundColor White
+Write-Host "    2. Toggle  Developer mode (top right)" -ForegroundColor White
+Write-Host "    3. Click  Load unpacked  and pick:" -ForegroundColor White
+Write-Host "         $extPath" -ForegroundColor Yellow
+Write-Host "    4. Pin the CatanBot icon (puzzle piece menu → pin)" -ForegroundColor White
+Write-Host "    5. Click the icon, open colonist.io, start a game." -ForegroundColor White
 Write-Host ""
