@@ -315,6 +315,7 @@ def _build_app(jsonl_path: Path | None = None,
             st["streamer_anon"] = {}
             st["streamer_self_username"] = None
             st["pending_trade_offer"] = None
+            st["pending_trade_offer_cid"] = None
             st["eval_history"] = []
             st["last_recs_for_self"] = []
             st["move_history"] = []
@@ -535,6 +536,7 @@ def _build_app(jsonl_path: Path | None = None,
         st["pm_written"] = False
         st["display_colors"] = {}
         st["pending_trade_offer"] = None
+        st["pending_trade_offer_cid"] = None
         st["eval_history"] = []
         st["last_recs_for_self"] = []
         st["move_history"] = []
@@ -916,8 +918,21 @@ def _track_overlay_state(st, results) -> None:
                 st["robber_pending"] = True
                 # Fresh attempt budget for this placement window.
                 st["robber_snapshot_retry_n"] = 0
-                st["robber_snapshot"] = _compute_robber_snapshot(
+                snap_attempt = _compute_robber_snapshot(
                     game, display_colors=st["display_colors"])
+                st["robber_snapshot"] = snap_attempt
+                # Diagnostic: when the user reports "robber recs not
+                # popping up", the empty / None case is the suspect.
+                # Log loudly on the initial roll-time compute so the
+                # bridge terminal shows it; the retry path will pick
+                # up if the state was just stale.
+                if not snap_attempt:
+                    print(
+                        f"[robber] empty snapshot on self 7-roll — "
+                        f"will retry. friendly_robber={getattr(game.session, 'friendly_robber_active', False)}, "
+                        f"current_robber={game.tracker.game.state.board.robber_coordinate}",
+                        flush=True,
+                    )
             elif r.event.total == 7:
                 # Opponent rolled 7 — you don't pick, clear any stale
                 # overlay ranking from a prior self-roll if somehow still set.
@@ -965,18 +980,33 @@ def _track_overlay_state(st, results) -> None:
             # populate. Same payload shape as the DOM-log path so the
             # snap builder + frontend renderer don't need to know which
             # pipeline fired the offer.
+            import time as _t
             st["pending_trade_offer"] = {
                 "player": r.event.player,
                 "give": dict(r.event.give),
                 "want": dict(r.event.want),
                 "offer_id": getattr(r.event, "offer_id", None),
-                "ts": None,
+                "ts": _t.time(),
             }
+            # Anchor the offer to the offerer's color id so a turn
+            # rotation away from them can clear it (colonist trade
+            # offers die at end-of-offerer's-turn but doesn't always
+            # ship a closedOffers / activeOffers=null signal —
+            # banner gets stuck without this).
+            try:
+                if game.session is not None:
+                    for cid, uname in game.session.player_names.items():
+                        if uname == r.event.player:
+                            st["pending_trade_offer_cid"] = int(cid)
+                            break
+            except Exception:  # noqa: BLE001
+                pass
         elif isinstance(r.event, TradeCommitEvent):
             # Same clear-on-commit rule the DOM-log handler uses: the
             # offer's decision window closes the moment a trade is
             # actually executed (or rolled past).
             st["pending_trade_offer"] = None
+            st["pending_trade_offer_cid"] = None
         elif isinstance(r.event, TradeCloseEvent):
             # Standing offer was withdrawn / declined / expired without
             # a commit. Clear ONLY when the closing offer matches the
@@ -988,6 +1018,7 @@ def _track_overlay_state(st, results) -> None:
                 or cur.get("offer_id") == r.event.offer_id
             ):
                 st["pending_trade_offer"] = None
+                st["pending_trade_offer_cid"] = None
 
 
 
@@ -1345,17 +1376,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     if needs_retry and game is not None:
         attempts = int(st.get("robber_snapshot_retry_n") or 0)
         if attempts < 30:
+            err_msg = None
             try:
                 new_snap = _compute_robber_snapshot(
                     game, display_colors=st.get("display_colors") or {})
-            except Exception:  # noqa: BLE001
+            except Exception as _e:  # noqa: BLE001
                 new_snap = None
+                err_msg = repr(_e)
             if new_snap:
                 st["robber_snapshot"] = new_snap
                 st["robber_snapshot_retry"] = False
                 st["robber_snapshot_retry_n"] = 0
             else:
                 st["robber_snapshot_retry_n"] = attempts + 1
+                if attempts in (0, 5, 15, 29):
+                    print(
+                        f"[robber] retry {attempts + 1}/30 still empty — "
+                        f"err={err_msg or 'returned-empty'}",
+                        flush=True,
+                    )
         else:
             # Give up; clear the retry flag so we don't keep paying
             # the per-poll _compute_robber_snapshot cost.
@@ -2133,6 +2172,30 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         })
 
     pending = st.get("pending_trade_offer")
+    if pending:
+        # Stuck-banner guards: colonist doesn't always ship a
+        # closedOffers / activeOffers=null signal when an offer
+        # expires (time-out, turn rotation, opp-side cancel),
+        # which left the banner glued to the screen until the next
+        # game start. Clear when:
+        #   1. the offer is older than 60 seconds (colonist's UI
+        #      timer is 30 s; double it for safety)
+        #   2. the current turn has rotated AWAY from the offerer
+        #      (offers die at end-of-offerer's turn even when the
+        #      WS doesn't say so)
+        import time as _t
+        ts = pending.get("ts")
+        offerer_cid = st.get("pending_trade_offer_cid")
+        cur_cid = (game.session.current_turn_color_id
+                   if game.session is not None else None)
+        expired = ts is not None and (_t.time() - ts) > 60.0
+        rotated = (offerer_cid is not None
+                   and cur_cid is not None
+                   and int(cur_cid) != int(offerer_cid))
+        if expired or rotated:
+            st["pending_trade_offer"] = None
+            st["pending_trade_offer_cid"] = None
+            pending = None
     if pending:
         snap["incoming_trade"] = _evaluate_pending_trade(
             st, game, self_color, hand, pending, snap=snap)

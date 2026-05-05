@@ -5716,13 +5716,16 @@ def test_track_overlay_routes_ws_trade_offer_into_pending():
         player="Bob", give={"BRICK": 2}, want={"SHEEP": 1})
     _track_overlay_state(
         st, [DispatchResult(event=offer, status="applied")])
-    assert st["pending_trade_offer"] == {
-        "player": "Bob",
-        "give": {"BRICK": 2},
-        "want": {"SHEEP": 1},
-        "offer_id": None,
-        "ts": None,
-    }
+    pending = st["pending_trade_offer"]
+    assert pending["player"] == "Bob"
+    assert pending["give"] == {"BRICK": 2}
+    assert pending["want"] == {"SHEEP": 1}
+    assert pending["offer_id"] is None
+    # Timestamp gets set to time.time() at offer-receive — used by
+    # the snap builder's 60-second stuck-banner failsafe. Just
+    # confirm it's a real number, not None.
+    assert isinstance(pending["ts"], float)
+    assert pending["ts"] > 0
     # A subsequent commit (the trade actually executed, or got rolled
     # past) clears the pending offer — same rule the DOM-log path uses.
     commit = TradeCommitEvent(
