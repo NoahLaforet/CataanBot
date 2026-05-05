@@ -12,6 +12,26 @@ Built on top of [catanatron](https://github.com/bcollazo/catanatron)
 (Python Catan engine) — handcrafted heuristics + 1-ply state-eval
 search, no ML.
 
+## See it in action
+
+Clipped from a real 4-player game (15-VP target, won 15-5):
+
+**Pre-placement — board affinity scoring picks the strongest archetype on this board, then ranks the top opening picks A/B/C with their tiles, scores, and 2nd-pick complement tags.**
+
+![opening picks](docs/media/01_opening_picks_wide.gif)
+
+**Early game — round 5, recommender hero shows a settle at score 6.0 with the actual tiles, the active strategy archetype banner, and a "settle #3 — biggest predictor — ready to build" milestone the moment you can afford it.**
+
+![early-game recs](docs/media/02_early_recs_wide.gif)
+
+**Mid-game — knight in hand, robber blocking an opp on a weak number. The hint goes HOLD with a one-line reason ("a block exists but you only hold 1 knight — hold for a clearer trigger") instead of burning the card on a marginal trigger.**
+
+![knight hold](docs/media/03_knight_hold_wide.gif)
+
+**Endgame — round 29, you're 11 VP and leading. Strategy banner has flipped to PORT TRADER. KNIGHT lights up PLAY with a strong block on wheat 4. An incoming trade from Aria gets an ACCEPT verdict with the EV gain in line ("unlocks trade proposal +3.4"). The roll histogram shows the dice bias for the whole game.**
+
+![trade accept + knight play](docs/media/04_trade_accept_wide.gif)
+
 ## Architecture
 
 ```
