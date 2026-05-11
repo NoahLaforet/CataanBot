@@ -243,6 +243,7 @@ def _compute_monopoly_hint(
     playable_count: int = 0,
     opp_card_totals: dict[str, int] | None = None,
     bank_supply: dict[str, int] | None = None,
+    opp_hands: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, Any] | None:
     """Pick the best resource to steal when self plays Monopoly.
 
@@ -284,6 +285,25 @@ def _compute_monopoly_hint(
     for opp_color in state.color_to_index:
         if opp_color == my_enum:
             continue
+        # Prefer the trimmed hand the snap publishes for this opp —
+        # snap["opps"][i]["hand"] has already been clipped to physical
+        # supply AND trimmed against the WS-authoritative total, so
+        # using it keeps the monopoly per_opp counts pixel-consistent
+        # with what the user sees in the opp row. Fall back to the
+        # raw tracker hand + local scaling when the snap hands aren't
+        # available (kept so direct callers in tests / postmortem
+        # without a snap still get a usable result).
+        counts: dict[str, int] = {}
+        if opp_hands is not None and opp_color.value in opp_hands:
+            snap_hand = opp_hands[opp_color.value]
+            for r in totals:
+                n = int(snap_hand.get(r, 0))
+                if n < 0:
+                    n = 0
+                counts[r] = n
+                totals[r] += n
+            per_opp[opp_color.value] = counts
+            continue
         try:
             opp_hand = game.tracker.hand(opp_color.value)
         except Exception:  # noqa: BLE001
@@ -298,7 +318,6 @@ def _compute_monopoly_hint(
         cap = None
         if opp_card_totals is not None:
             cap = opp_card_totals.get(opp_color.value)
-        counts: dict[str, int] = {}
         raw_sum = sum(int(n) for n in opp_hand.values())
         scale = 1.0
         if cap is not None and raw_sum > cap and raw_sum > 0:

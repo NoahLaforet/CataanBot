@@ -2369,12 +2369,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                         opp_cards[c] = int(count)
                     except Exception:  # noqa: BLE001
                         pass
+        # Per-opp hands as already trimmed/clipped in snap["opps"]
+        # above. Passing this in keeps monopoly_hint's per_opp counts
+        # consistent with what the user sees in the opponent rows;
+        # the old path called tracker.hand() + scaled separately,
+        # which could disagree with snap["opps"] by ±1 card per
+        # resource depending on which path rounded which way.
+        opp_hands_snap: dict[str, dict[str, int]] = {}
+        for opp_row in snap.get("opps") or []:
+            oc = opp_row.get("color")
+            oh = opp_row.get("hand") or {}
+            if oc:
+                opp_hands_snap[oc] = {r: int(n) for r, n in oh.items()}
         snap["monopoly_hint"] = _compute_monopoly_hint(
             game, self_color, hand,
             display_colors=st.get("display_colors") or {},
             playable_count=hint_fallback,
             opp_card_totals=opp_cards,
-            bank_supply=snap.get("bank_supply"))
+            bank_supply=snap.get("bank_supply"),
+            opp_hands=opp_hands_snap)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] monopoly_hint failed: {e!r}", flush=True)
     try:
