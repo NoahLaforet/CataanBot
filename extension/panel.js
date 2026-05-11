@@ -873,6 +873,26 @@
                 // has placed a 1st settle (round-2 picks should
                 // consider complement value, not just raw production).
                 // Falls back to scoreOpeningNodes otherwise.
+                //
+                // Distance-rule legality — exclude every placed
+                // settlement/city node AND its neighbours from the
+                // candidate pool. Without this the opening picks list
+                // is computed once against the empty board and never
+                // shrinks as opponents (or self) place pieces, so the
+                // top 8 freezes on the same nodes regardless of what
+                // happens in-game.
+                const _placedAll = new Set();
+                if (_standalone.state) {
+                    for (const nid of Object.keys(
+                            _standalone.state.buildings)) {
+                        _placedAll.add(nid);
+                        const node = _standalone.board.nodes[nid];
+                        if (!node) continue;
+                        for (const nb of node.neighbors) {
+                            _placedAll.add(nb);
+                        }
+                    }
+                }
                 let ranked;
                 let firstNodeId = null;
                 if (_standalone.state) {
@@ -883,14 +903,23 @@
                         }
                     }
                 }
+                // legalNodes = land nodes minus everything that's been
+                // claimed under the distance rule. Reuse this for both
+                // scorers so opening + 2nd-settle picks stay in sync.
+                const _legalNodes = new Set(
+                    [..._standalone.board.landNodes]
+                        .filter(n => !_placedAll.has(n)));
                 if (firstNodeId
                         && (_standalone.state?.handTotal[
                             _standalone.state.selfColor] || 0) === 0
                         && totalRollsSoFar === 0) {
                     ranked = lib.scoreSecondSettlements(
-                        _standalone.board, firstNodeId);
+                        _standalone.board, firstNodeId,
+                        { legalNodes: _legalNodes });
                 } else {
-                    ranked = lib.scoreOpeningNodes(_standalone.board);
+                    ranked = lib.scoreOpeningNodes(
+                        _standalone.board,
+                        { legalNodes: _legalNodes });
                 }
                 // Self bank info — drives a "your turn / wait"
                 // status when self color is known.
@@ -1336,18 +1365,9 @@
                     for (const r of ranked) scoredByNode[r.nodeId] = r.score;
                     // Distance-rule blocked set — every placed
                     // settlement claims its own node + neighbours.
-                    const placedNodes = new Set();
-                    if (_standalone.state) {
-                        for (const nid of Object.keys(
-                                _standalone.state.buildings)) {
-                            placedNodes.add(nid);
-                            const node = _standalone.board.nodes[nid];
-                            if (!node) continue;
-                            for (const nb of node.neighbors) {
-                                placedNodes.add(nb);
-                            }
-                        }
-                    }
+                    // Reuse the legality set we already built above
+                    // for the ranked-picks filter.
+                    const placedNodes = _placedAll;
                     // Self-owned road edges so the round-3/4 road
                     // follow-up doesn't propose a road we already
                     // placed (Catan rejects double-roads).

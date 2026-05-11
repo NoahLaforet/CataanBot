@@ -4,6 +4,20 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.37.36 — 2026-05-10
+
+Opening-pick recs now react to placements. The standalone snap was
+computing `scoreOpeningNodes` against the empty board exactly once
+per tick and never passing the `legalNodes` filter, so the top 8
+picks stayed frozen on the same nodes regardless of who placed
+where. As opponents claimed top spots they kept appearing in your
+list; as you placed your 1st settle the round-2 ranking still
+included your own node. Now the placed-and-neighbour set is built
+once at the top of the snap, inverted into a `legalNodes` Set, and
+passed to both `scoreOpeningNodes` and `scoreSecondSettlements`.
+The downstream road-suggestion `placedNodes` reuses the same set
+instead of rebuilding it.
+
 ## v0.37.35 — 2026-05-05
 
 Deeper python parity: chess-style move grading, bank-supply
