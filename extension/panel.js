@@ -3024,6 +3024,53 @@
             else armNewGame();
         });
 
+        // Scan-map button. Promotes the current weekly mapSetting
+        // into the bridge's runtime allow-list so recs flow on
+        // unrecognized layouts (e.g. Scramble). One click, no confirm:
+        // the bridge re-validates server-side and refuses to promote
+        // anything that isn't classic-tile + mapSetting-only.
+        const scanBtn = document.getElementById('scan-map-btn');
+        if (scanBtn) {
+            const SCAN_LABEL = 'map not recognized: scan';
+            scanBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (scanBtn.disabled) return;
+                scanBtn.disabled = true;
+                scanBtn.textContent = 'scanning…';
+                postJson('http://127.0.0.1:8765/scan_map', {})
+                    .then((res) => {
+                        if (res && res.ok) {
+                            scanBtn.textContent = 'scanned ✓';
+                            window.__catanbotRenderDirty = true;
+                            setTimeout(() => {
+                                scanBtn.disabled = false;
+                                scanBtn.textContent = SCAN_LABEL;
+                            }, 1500);
+                        } else {
+                            const reason = (res && res.reason)
+                                || 'scan refused';
+                            console.warn(LOG_PREFIX,
+                                'scan_map refused:', res);
+                            scanBtn.textContent =
+                                'scan refused: ' + reason;
+                            setTimeout(() => {
+                                scanBtn.disabled = false;
+                                scanBtn.textContent = SCAN_LABEL;
+                            }, 3000);
+                        }
+                    })
+                    .catch((err) => {
+                        console.warn(LOG_PREFIX,
+                            'scan_map failed', err);
+                        scanBtn.textContent = 'bridge offline';
+                        setTimeout(() => {
+                            scanBtn.disabled = false;
+                            scanBtn.textContent = SCAN_LABEL;
+                        }, 3000);
+                    });
+            });
+        }
+
         // Pause toggle — sets data-paused on the panel so the CSS filter
         // suppresses tactical sections. The advisor keeps polling so
         // unpause is instant and state is still current.
@@ -3441,6 +3488,7 @@
                 + `</div>`;
         }).join('');
         const variantBadge = document.getElementById('variant-badge');
+        const scanMapBtn = document.getElementById('scan-map-btn');
         return {
             host, panel, body, content, dot,
             histHost, hist, histTotal,
@@ -3448,6 +3496,7 @@
             mqHost, mqTally, mqLast,
             devDeckHost, devDeck,
             variantBadge,
+            scanMapBtn,
         };
     }
 
@@ -3756,7 +3805,7 @@
                 + '<b>bridge only</b> mode but the local Python '
                 + 'bridge isn’t responding on '
                 + '<code>127.0.0.1:8765</code>. Start it from the '
-                + 'project root with <code>uv run cataanbot bridge</code>, '
+                + 'project root with <code>uv run catanbot bridge</code>, '
                 + 'or switch to <b>auto</b> / <b>extension only</b> '
                 + 'in the ⚙ settings drawer to use the JS '
                 + 'recommender instead.</div>'
@@ -3813,11 +3862,27 @@
                 ui.panel.dataset.variant = 'non-classic';
                 ui.variantBadge.textContent = 'variant — recs OFF';
                 ui.variantBadge.title = `${variant} — bot can't track this map's node IDs reliably (catanatron underneath only models classic). Recommendations suppressed to avoid suggesting occupied corners. Histogram + opp tracking still work.`;
+            } else if (variant === 'scanned') {
+                ui.panel.dataset.variant = 'non-classic';
+                ui.variantBadge.textContent = 'scanned map';
+                ui.variantBadge.title = `Custom layout you scanned this session. Classic tile types, classic rules. Recommender scores the actual geometry from the parsed map, same path as Twirl.`;
             } else {
                 ui.panel.dataset.variant = 'non-classic';
                 ui.variantBadge.textContent = 'variant map';
                 ui.variantBadge.title = `${variant} — same Catan rules, different board shape. Opening picks, recommender, and port 2:1 trade rates all work on the actual geometry.`;
             }
+        }
+        // Scan-map button. Bridge sets snap.scan_eligible when the
+        // board uses classic tile types and only mapSetting is non-zero
+        // (the weekly random Scramble pattern). CSS keys off the
+        // data-scan-eligible attribute, so the button is hidden when
+        // not applicable without us re-doing the visibility math here.
+        ui.panel.dataset.scanEligible = snap.scan_eligible ? '1' : '0';
+        if (ui.scanMapBtn) {
+            const mid = snap.map_setting;
+            ui.scanMapBtn.title = (mid != null)
+                ? `Map not recognized (mapSetting=${mid}). Bot will trust this board's layout and turn recs back on. Safe for weekly random maps like Scramble.`
+                : ui.scanMapBtn.title;
         }
         // Friendly Robber pill — colonist's optional rule that
         // protects players at or below 2 VP from being robbed. When

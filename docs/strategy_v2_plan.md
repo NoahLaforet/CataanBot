@@ -10,7 +10,7 @@ prior tuning notes). This document is about the *agent-behavior critique*
 in the comments — what competitive humans actually do that the heuristic
 agents (and, by extension, our recommender) get wrong.
 
-CataanBot is an *advisor* for one human seat, not a 4-bot simulator, but
+CatanBot is an *advisor* for one human seat, not a 4-bot simulator, but
 every critique below maps onto a recommender heuristic we ship. The
 question is just: when our HUD recommends a move, is it recommending
 what a tournament player would do, or what a naive heuristic would?

@@ -53,7 +53,7 @@ Locally, on your machine only:
   preferences (font scale, streamer-mode toggle, panel section
   collapse states, opacity).
 - Bridge-side: per-game WebSocket frame mirrors in
-  `~/Desktop/CataanBot/sessions/active.jsonl` (rotates per
+  `~/Desktop/CatanBot/sessions/active.jsonl` (rotates per
   game, capped at the active session), and an HTML
   post-mortem of each finished game in `postmortems/`. These
   files are written by the bridge process to your own disk.

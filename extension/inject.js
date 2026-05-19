@@ -15,7 +15,7 @@
 //   content.js (isolated)  — listens to window.message, forwards to background.js
 //   background.js (sw)     — POSTs to http://127.0.0.1:8765/ws
 
-(function installCataanbotWSHook() {
+(function installCatanbotWSHook() {
     if (window.__catanbotWS) return;
     const buffer = [];
     const summary = { opened: 0, sent: 0, recv: 0,

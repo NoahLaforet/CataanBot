@@ -2063,6 +2063,31 @@
   .panel[data-variant="non-classic"] .variant-badge { display: inline-block; }
   .panel[data-friendly-robber="1"] .friendly-robber-badge { display: inline-block; }
 
+  /* "Map not recognized: scan" button. Shown only when the bridge
+     reports scan_eligible (classic tile types + only mapSetting is
+     non-zero), e.g. on the weekly Scramble map. One click promotes the
+     mapSetting into the bridge's scanned allow-list and recs flow. */
+  .scan-map-btn {
+    display: none;
+    padding: 1px var(--s-2);
+    border-radius: var(--radius-sm);
+    background: rgba(74, 167, 212, 0.18);
+    color: var(--accent, #4aa7d4);
+    font-size: calc(9px * var(--font-scale));
+    font-weight: 800;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    border: 1px solid rgba(74, 167, 212, 0.45);
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .scan-map-btn:hover { background: rgba(74, 167, 212, 0.28); }
+  .scan-map-btn:disabled { opacity: 0.6; cursor: progress; }
+  .panel[data-scan-eligible="1"] .scan-map-btn { display: inline-block; }
+  /* When scan is offered, suppress the redundant "variant recs OFF"
+     badge so the header doesn't double up. */
+  .panel[data-scan-eligible="1"] .variant-badge { display: none; }
+
   .drawer {
     display: none;
     flex-direction: column;

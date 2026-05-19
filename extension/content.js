@@ -21,7 +21,7 @@
 // being present for trade offers + other multi-token events; a
 // flatter payload misses those.
 
-(function bootCataanbotContent() {
+(function bootCatanbotContent() {
     const LOG_PREFIX = '[catanbot]';
 
     // ---- Streamer mode: anonymize colonist's own DOM -------------
