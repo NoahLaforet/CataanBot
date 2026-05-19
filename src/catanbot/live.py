@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from catanbot.events import (
+    BankSyncEvent,
     BuildEvent,
     DevCardBuyEvent,
     DevCardPlayEvent,
@@ -39,6 +40,7 @@ from catanbot.events import (
     RollBlockedEvent,
     RollEvent,
     StealEvent,
+    TileRevealEvent,
     TradeCommitEvent,
     TradeOfferEvent,
     UnknownEvent,
@@ -271,6 +273,20 @@ def _dispatch(
          NoStealEvent, TradeOfferEvent),
     ):
         return DispatchResult(event, "skipped", "informational")
+
+    if isinstance(event, BankSyncEvent):
+        tracker.set_bank(event.resources)
+        return DispatchResult(
+            event, "applied", f"bank sync → {_fmt_res(event.resources)}",
+        )
+
+    if isinstance(event, TileRevealEvent):
+        tracker.reveal_tile(event.coord, event.resource, event.number)
+        label = event.resource or "DESERT"
+        tok = f" ({event.number})" if event.number else ""
+        return DispatchResult(
+            event, "applied", f"fog revealed → {label}{tok}",
+        )
 
     if isinstance(event, GameOverEvent):
         return DispatchResult(

@@ -73,6 +73,21 @@ COLONIST_TILE_RESOURCE = {
 # variant board even when the gameSettings flags don't fire.
 KNOWN_CLASSIC_TILE_TYPES = frozenset(COLONIST_TILE_RESOURCE)
 
+# Black Forest fog tile type ints. The board ships with the centre all
+# wood (type 1) and the rest hidden under fog — type 7 is the common
+# fog hex (~28 on a fresh board), type 8 is the rarer fog variant (~4).
+# Both arrive with ``diceNumber: 0``; pointing a road at one flips it
+# via a tileHexStates diff to a real resource (types 0..5) with a real
+# token. Distinct from a truly-unknown variant tile: fog is *expected*
+# and the engine handles its reveal, so a fog-only board still gets
+# live recs.
+FOG_TILE_TYPES = frozenset({7, 8})
+
+
+def is_fog_tile(type_int: int) -> bool:
+    """True when ``type_int`` is a Black Forest unrevealed fog hex."""
+    return int(type_int) in FOG_TILE_TYPES
+
 # Port type int → resource name. Type 1 is the generic 3:1 port (no
 # resource lock); types 2..6 are the resource-specific 2:1 ports,
 # offset-by-one against tiles (2:1 wood = port type 2 etc.).

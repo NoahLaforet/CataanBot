@@ -755,6 +755,13 @@ def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
         "WOOD": 5, "BRICK": 2, "SHEEP": 1, "WHEAT": 0, "ORE": 0,
     })
     sess.hand_card_counts[opp_cid] = 4
+    # Drain the bank so the physical-supply cap (a separate concern with
+    # its own test, test_advisor_snapshot_clips_inferred_to_physical_supply)
+    # doesn't clamp these injected buckets before the trim logic runs.
+    # With the bank synced to colonist's authoritative count, the cap is
+    # tight enough that an over-injected WOOD bucket would get zeroed
+    # first; an empty bank keeps the cap loose for this isolation test.
+    game.tracker.game.state.resource_freqdeck = [0, 0, 0, 0, 0]
 
     st = {
         "seq": 0, "game": game,
@@ -3369,6 +3376,12 @@ def test_snapshot_populates_can_afford_on_opps():
         "WOOD": 0, "BRICK": 0, "SHEEP": 0, "WHEAT": 2, "ORE": 3}
     for r, n in hand_override.items():
         state.player_state[f"P{idx}_{r}_IN_HAND"] = n
+    # Drain the bank so the physical-supply cap doesn't clamp the
+    # injected ore/wheat below a city's cost. With the bank synced to
+    # colonist's authoritative count, 19 - bank - self can be < 3 for a
+    # resource; that cap is exercised by its own test. Here we isolate
+    # can_afford surfacing, so keep the bank loose.
+    state.resource_freqdeck = [0, 0, 0, 0, 0]
     sess = game.session
     target_cid = next(
         cid for cid, name in sess.player_names.items()

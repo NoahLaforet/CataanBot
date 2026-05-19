@@ -12,8 +12,8 @@ from catanbot.colonist_diff import (
 )
 from catanbot.colonist_proto import load_capture
 from catanbot.events import (
-    BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
-    ProduceEvent, RobberMoveEvent, RollEvent, VPEvent,
+    BankSyncEvent, BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
+    ProduceEvent, RobberMoveEvent, RollEvent, TileRevealEvent, VPEvent,
 )
 from catanbot.live import ColorMap, apply_event
 from catanbot.tracker import Tracker
@@ -342,6 +342,69 @@ def test_diff_robber_becomes_move_event_with_coord():
     ev = events[0]
     assert isinstance(ev, RobberMoveEvent)
     assert ev.coord == sess.mapping.tile_coord[any_tid]
+
+
+def test_diff_fog_reveal_emits_tile_reveal_event():
+    """Black Forest: a tileHexStates diff flipping a fog tile (type 7/8)
+    to a real resource emits one TileRevealEvent and updates the
+    mapping so a re-broadcast of the same hex doesn't double-fire."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    tid = next(iter(sess.mapping.tile_coord))
+    sess.mapping.tile_types[tid] = 7  # mark fog
+    events = events_from_diff(sess, {"mapState": {
+        "tileHexStates": {str(tid): {"type": 3, "diceNumber": 8}}}})
+    reveals = [e for e in events if isinstance(e, TileRevealEvent)]
+    assert len(reveals) == 1
+    ev = reveals[0]
+    assert ev.coord == sess.mapping.tile_coord[tid]
+    assert ev.resource == "SHEEP"
+    assert ev.number == 8
+    assert sess.mapping.tile_types[tid] == 3
+    again = events_from_diff(sess, {"mapState": {
+        "tileHexStates": {str(tid): {"type": 3, "diceNumber": 8}}}})
+    assert not [e for e in again if isinstance(e, TileRevealEvent)]
+
+
+def test_diff_fog_reveal_applies_resource_on_tracker():
+    """A TileRevealEvent dispatched to the tracker mutates the live
+    CatanMap so the freshly revealed hex carries its resource/number."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    body = _game_start_body(CAPTURE_EARLY)
+    from catanbot.colonist_map import build_catanatron_map_from_colonist
+    cat_map = build_catanatron_map_from_colonist(
+        body["gameState"]["mapState"], sess.mapping)
+    tracker = Tracker(catan_map=cat_map)
+    coord = next(iter(tracker.game.state.board.map.land_tiles))
+    apply_event(tracker, ColorMap(),
+                TileRevealEvent(coord=coord, resource="ORE", number=11))
+    tile = tracker.game.state.board.map.land_tiles[coord]
+    assert tile.resource == "ORE"
+    assert tile.number == 11
+
+
+def test_diff_bank_state_emits_bank_sync_event():
+    """A bankState diff merges into the running bank and emits one
+    BankSyncEvent; an unchanged re-broadcast emits nothing."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    events = events_from_diff(sess, {
+        "bankState": {"resourceCards": {"1": 12, "5": 3}}})
+    syncs = [e for e in events if isinstance(e, BankSyncEvent)]
+    assert len(syncs) == 1
+    assert syncs[0].resources["WOOD"] == 12
+    assert syncs[0].resources["ORE"] == 3
+    unchanged = events_from_diff(sess, {
+        "bankState": {"resourceCards": {"1": 12}}})
+    assert not [e for e in unchanged if isinstance(e, BankSyncEvent)]
+
+
+def test_variant_label_black_forest_for_fog_board():
+    """A board whose only non-classic tiles are fog hexes (7/8) and
+    whose only variant flag is the map id labels as black_forest, so
+    the recs gate keeps recommendations on."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    sess.non_classic_tiles = {7, 8}
+    sess.game_settings = {"mapSetting": 33}
+    assert sess.variant_label() == "black_forest"
 
 
 def test_diff_dice_roll_emits_roll_event():

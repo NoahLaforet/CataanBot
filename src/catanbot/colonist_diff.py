@@ -33,14 +33,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from catanbot.colonist_map import (
-    KNOWN_CLASSIC_TILE_TYPES, MapMapping, build_mapping,
-    corner_tile_signature, tile_resource,
+    FOG_TILE_TYPES, KNOWN_CLASSIC_TILE_TYPES, MapMapping, build_mapping,
+    corner_tile_signature, is_fog_tile, tile_resource,
 )
 from catanbot.events import (
-    BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
+    BankSyncEvent, BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
     Event, HandSyncEvent, ProduceEvent,
-    DevCardPlayEvent, RobberMoveEvent, RollEvent, TradeCloseEvent,
-    TradeOfferEvent, VPEvent,
+    DevCardPlayEvent, RobberMoveEvent, RollEvent, TileRevealEvent,
+    TradeCloseEvent, TradeOfferEvent, VPEvent,
 )
 
 # Resource type ints used inside `playerStates.{cid}.resourceCards.cards`.
@@ -87,6 +87,22 @@ _VP_WEIGHTS: dict[int, int] = {0: 1, 1: 2, 2: 1, 4: 2, 5: 2}
 _KNOWN_LAYOUT_VARIANTS: dict[int, str] = {
     31: "twirl",
 }
+
+# Runtime allow-list of mapSetting ids the user has clicked "Scan map"
+# on. Mirrors _KNOWN_LAYOUT_VARIANTS but lives only for the lifetime of
+# the bridge process — weekly maps like Scramble change every week, so
+# we don't want to bake them into source. variant_label() promotes a
+# scanned mapSetting to label "scanned" (which the recs gate accepts).
+_SCANNED_MAP_SETTINGS: set[int] = set()
+
+
+def mark_map_setting_scanned(map_setting: int) -> None:
+    """Add ``map_setting`` to the runtime scanned allow-list."""
+    _SCANNED_MAP_SETTINGS.add(int(map_setting))
+
+
+def is_map_setting_scanned(map_setting: int) -> bool:
+    return int(map_setting) in _SCANNED_MAP_SETTINGS
 
 
 class LiveSessionError(RuntimeError):
@@ -223,6 +239,12 @@ class LiveSession:
     # once. Without this, every subsequent diff after the winning
     # transition would re-emit GameOverEvent and flood the postmortem.
     game_over_emitted: bool = False
+    # Authoritative resource-bank counts, keyed by colonist resource
+    # type int (1=WOOD..5=ORE). Seeded from GameStart's bankState and
+    # patched by every diff that carries one — colonist ships partial
+    # bankState deltas (just the changed resource). Mirrored into the
+    # tracker via BankSyncEvent so the freqdeck never drifts negative.
+    bank_resources: dict[int, int] = field(default_factory=dict)
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
@@ -318,6 +340,20 @@ class LiveSession:
         if isinstance(robber, dict) and "locationTileIndex" in robber:
             sess.robber_tile_id = int(robber["locationTileIndex"])
 
+        # Seed the resource bank from GameStart's full bankState so the
+        # tracker's freqdeck starts on ground truth (matters for boards
+        # whose bank isn't the classic 19-per-resource, and so diff
+        # deltas patch a complete picture rather than an empty one).
+        bank = game_state.get("bankState") or {}
+        if isinstance(bank, dict):
+            cards = bank.get("resourceCards")
+            if isinstance(cards, dict):
+                for k, v in cards.items():
+                    try:
+                        sess.bank_resources[int(k)] = int(v)
+                    except (TypeError, ValueError):
+                        continue
+
         # Seed per-color VP breakdown from colonist's playerStates. On
         # a mid-game reconnect this ships the full current VP state for
         # every player, so we're immediately in sync with what the UI
@@ -385,6 +421,22 @@ class LiveSession:
                 and set(nonzero) == {"mapSetting"}
                 and nonzero["mapSetting"] in _KNOWN_LAYOUT_VARIANTS):
             return _KNOWN_LAYOUT_VARIANTS[nonzero["mapSetting"]]
+        # Same shape, runtime allow-list: user clicked "Scan map" on
+        # an unknown weekly map (e.g. Scramble). Confirmed classic-tile
+        # only and mapSetting-only at scan time, so geometry-scored
+        # recs are safe just like Twirl above.
+        if (not self.non_classic_tiles
+                and set(nonzero) == {"mapSetting"}
+                and is_map_setting_scanned(nonzero["mapSetting"])):
+            return "scanned"
+        # Black Forest — the board's only non-classic tiles are fog
+        # hexes (types 7/8) and the sole variant flag is the map id.
+        # Fog reveal is fully modelled by the reveal-event path, so
+        # recs are safe here; the gate whitelists "black_forest".
+        if (self.non_classic_tiles
+                and self.non_classic_tiles <= FOG_TILE_TYPES
+                and set(nonzero) <= {"mapSetting"}):
+            return "black_forest"
         parts = []
         for k, v in nonzero.items():
             parts.append(f"{k.replace('Setting','')}={v}")
@@ -540,6 +592,63 @@ def events_from_diff(
             edge_nodes=(a, b),
         ))
         sess.known_edges[eid] = int(owner)
+
+    # Black Forest fog reveal — a road pointed at a fog hex flips it to
+    # a real tile, shipped as a tileHexStates diff carrying the new
+    # `type` (resource ints 0..5) and a real `diceNumber`. Only a
+    # fog -> non-fog transition counts; colonist occasionally re-ships
+    # an unchanged hex state, and a non-fog hex never re-rolls.
+    hex_diff = map_diff.get("tileHexStates") or {}
+    for tid_str, t in hex_diff.items():
+        try:
+            tid = int(tid_str)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(t, dict) or t.get("type") is None:
+            continue
+        new_type = int(t["type"])
+        prev_type = sess.mapping.tile_types.get(tid)
+        if prev_type is None or not is_fog_tile(prev_type):
+            continue
+        if is_fog_tile(new_type):
+            continue
+        coord = sess.mapping.tile_coord.get(tid)
+        if coord is None:
+            continue
+        raw_dice = t.get("diceNumber")
+        number = int(raw_dice) if raw_dice else None  # 0 = desert
+        resource = tile_resource(new_type)             # None = desert
+        sess.mapping.tile_types[tid] = new_type
+        if number is not None:
+            sess.mapping.tile_dice[tid] = number
+        out.append(TileRevealEvent(
+            coord=coord, resource=resource, number=number))
+
+    # Resource bank — colonist ships partial bankState deltas (just the
+    # resources whose count changed). Merge into the session's running
+    # bank and emit the merged whole so the tracker resyncs to ground
+    # truth instead of drifting on give/take accounting.
+    bank_state = diff.get("bankState")
+    if isinstance(bank_state, dict):
+        cards = bank_state.get("resourceCards")
+        if isinstance(cards, dict):
+            changed = False
+            for k, v in cards.items():
+                try:
+                    type_int, count = int(k), int(v)
+                except (TypeError, ValueError):
+                    continue
+                if sess.bank_resources.get(type_int) != count:
+                    sess.bank_resources[type_int] = count
+                    changed = True
+            if changed:
+                merged = {
+                    _CARD_RESOURCE[t]: c
+                    for t, c in sess.bank_resources.items()
+                    if t in _CARD_RESOURCE
+                }
+                if merged:
+                    out.append(BankSyncEvent(resources=merged))
 
     robber = diff.get("mechanicRobberState")
     if isinstance(robber, dict) and "locationTileIndex" in robber:

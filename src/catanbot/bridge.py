@@ -103,7 +103,8 @@ from catanbot.bridge_postmortem import (
 # are also valid. Rules-changing variants (5-6 ext, Cities & Knights,
 # Seafarers) stay suppressed because the recommender doesn't model
 # their state machine.
-_RECS_SAFE_VARIANTS: frozenset[str] = frozenset({"classic", "twirl"})
+_RECS_SAFE_VARIANTS: frozenset[str] = frozenset(
+    {"classic", "twirl", "scanned", "black_forest"})
 
 
 def _build_app(jsonl_path: Path | None = None,
@@ -512,6 +513,38 @@ def _build_app(jsonl_path: Path | None = None,
                 flush=True,
             )
         return result
+
+    @app.post("/scan_map")
+    def scan_map() -> dict[str, Any]:
+        """Promote the current game's mapSetting to the runtime scanned
+        allow-list. Fired by the HUD's "Map not recognized: scan"
+        button on a weekly random map like Scramble. Safe only when the
+        board's tile types are all classic and the only non-zero flag
+        is mapSetting (same shape as known layout-only variants like
+        Twirl). Server re-validates these conditions; the HUD's check
+        is informational, not load-bearing."""
+        from catanbot.colonist_diff import mark_map_setting_scanned
+        sess = st["game"].session
+        if sess is None:
+            return {"ok": False, "reason": "no active session"}
+        gs = sess.game_settings or {}
+        flag_keys = ("modeSetting", "extensionSetting",
+                     "scenarioSetting", "mapSetting")
+        nonzero = {k: gs[k] for k in flag_keys
+                   if isinstance(gs.get(k), int) and gs[k] != 0}
+        if set(nonzero) != {"mapSetting"}:
+            return {"ok": False,
+                    "reason": "non-layout variant flags set",
+                    "game_settings": dict(gs)}
+        if sess.non_classic_tiles:
+            return {"ok": False,
+                    "reason": "board has non-classic tile types",
+                    "tiles": sorted(sess.non_classic_tiles)}
+        map_id = int(nonzero["mapSetting"])
+        mark_map_setting_scanned(map_id)
+        print(f"[bridge] scan_map: mapSetting={map_id} promoted "
+              f"to scanned allow-list", flush=True)
+        return {"ok": True, "map_setting": map_id, "label": "scanned"}
 
     @app.post("/reset")
     def reset() -> dict[str, Any]:
@@ -1915,6 +1948,28 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         snap["variant"] = "classic"
         snap["game_settings"] = {}
+    # Scan-map eligibility: the HUD shows a "Map not recognized: scan"
+    # button when this is true. Safe to scan only if the board uses
+    # classic tile types and the ONLY non-zero setting flag is the
+    # mapSetting id — same shape as known layout-only variants (Twirl).
+    # The user clicks Scan to add this mapSetting to a runtime allow-
+    # list, so weekly random maps (Scramble, etc.) flow through the
+    # recs path without us baking each weekly id into source.
+    snap["scan_eligible"] = False
+    snap["map_setting"] = None
+    try:
+        gs = sess.game_settings or {}
+        flag_keys = ("modeSetting", "extensionSetting",
+                     "scenarioSetting", "mapSetting")
+        nonzero = {k: gs[k] for k in flag_keys
+                   if isinstance(gs.get(k), int) and gs[k] != 0}
+        if (set(nonzero) == {"mapSetting"}
+                and not sess.non_classic_tiles
+                and snap["variant"] not in _RECS_SAFE_VARIANTS):
+            snap["scan_eligible"] = True
+            snap["map_setting"] = int(nonzero["mapSetting"])
+    except Exception:  # noqa: BLE001
+        pass
     # Friendly Robber rule (colonist optional). When active, the
     # robber-target ranker has already filtered protected victims.
     # HUD shows a small pill so the user knows the rule is on AND

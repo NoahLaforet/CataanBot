@@ -216,6 +216,31 @@ class HandSyncEvent:
 
 
 @dataclass
+class BankSyncEvent:
+    """Authoritative resource-bank counts from colonist's ``bankState``.
+
+    Keyed by catanatron resource name. Colonist ships the full bank at
+    GameStart and partial deltas in diffs; the diff extractor merges
+    them and emits the merged whole so the tracker's freqdeck tracks
+    ground truth. Give/take accounting alone slowly desyncs the bank,
+    and badly on wood-heavy Black Forest boards where it can run
+    negative and silently zero out roll payouts."""
+    resources: dict[str, int]
+
+
+@dataclass
+class TileRevealEvent:
+    """A Black Forest fog tile was revealed by a road and became a real
+    hex. ``coord`` is the catanatron cube coord; ``resource`` is the
+    catanatron resource name (None = desert); ``number`` is the dice
+    token (None for desert). The tracker mutates the live CatanMap so
+    subsequent rolls pay out from the freshly revealed tile."""
+    coord: tuple[int, int, int]
+    resource: str | None
+    number: int | None
+
+
+@dataclass
 class UnknownEvent:
     """Parser couldn't classify — kept verbatim so we can add a rule later."""
     text: str
@@ -242,5 +267,7 @@ Event = Union[
     InfoEvent,
     DisconnectEvent,
     HandSyncEvent,
+    BankSyncEvent,
+    TileRevealEvent,
     UnknownEvent,
 ]

@@ -312,6 +312,48 @@ class Tracker:
             raise TrackerError(f"no land tile at {coord}")
         self.game.state.board.robber_coordinate = coord
 
+    # --- Black Forest fog reveal ----------------------------------------
+    def reveal_tile(
+        self,
+        coord: tuple[int, int, int],
+        resource: str | None,
+        number: int | None,
+    ) -> None:
+        """Turn a Black Forest fog hex into a real producing tile.
+
+        Fog hexes are built as ``LandTile``s with ``resource=None`` /
+        ``number=None``; revealing one sets those fields in place so
+        catanatron's ``yield_resources`` pays out from the hex on the
+        next matching roll. ``node_production`` is precomputed at map
+        build from tile resources, so we rebuild it here — that's the
+        cache the opening-pick recommender scores corners against."""
+        cat_map = self.game.state.board.map
+        tile = cat_map.land_tiles.get(coord)
+        if tile is None:
+            raise TrackerError(f"no land tile at {coord} to reveal")
+        tile.resource = resource
+        tile.number = number
+        from catanatron.models.map import init_node_production
+        cat_map.node_production = init_node_production(cat_map.adjacent_tiles)
+        self.history.append({
+            "op": "reveal", "args": [list(coord), resource, number],
+        })
+
+    def set_bank(self, resources: dict[str, int]) -> None:
+        """Overwrite the bank freqdeck from authoritative colonist counts.
+
+        ``resources`` is ``{resource_name: count}``; resources absent
+        from the dict keep their current freqdeck value. Keeps the
+        bank from drifting on long or wood-heavy games, where give/take
+        accounting alone can push it negative and make catanatron's
+        ``yield_resources`` treat a resource as depleted."""
+        from catanatron.state import RESOURCES
+        deck = self.game.state.resource_freqdeck
+        for idx, name in enumerate(RESOURCES):
+            if name in resources:
+                deck[idx] = max(0, int(resources[name]))
+        self.history.append({"op": "bank", "args": [dict(resources)]})
+
     # --- dice rolls ------------------------------------------------------
     def roll(self, number: int) -> dict[str, dict[str, int]]:
         """Record that `number` was rolled. Returns per-color payout dict.

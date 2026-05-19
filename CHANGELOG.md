@@ -4,6 +4,30 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.38.0 — 2026-05-18
+
+Black Forest variant support. The all-wood-centre map with fog hexes
+around the rim now plays end to end: fog tiles (colonist tile types 7
+and 8) are detected at GameStart, and a road that reveals one flips it
+to a real tile live.
+
+- **Fog reveal engine.** A `tileHexStates` diff flipping a fog hex to
+  a real resource emits a `TileRevealEvent`; the tracker mutates the
+  live catanatron map so the hex pays out on the next matching roll,
+  and rebuilds `node_production` so opening-pick scoring picks it up.
+- **Recs stay on.** A board whose only non-classic tiles are fog
+  hexes labels as `black_forest` and clears the recs gate, so the HUD
+  keeps recommending instead of going quiet on the variant.
+- **Bank sync.** The tracker's resource bank now resyncs from
+  colonist's authoritative `bankState` on every diff that carries one.
+  Give/take accounting alone drifted the bank, badly on wood-heavy
+  Black Forest boards where it ran negative and silently zeroed out
+  roll payouts.
+- **Scan-map button.** Unrecognized weekly maps (Scramble and the
+  like) get a "map not recognized: scan" button that confirms the
+  board uses classic tiles and rules so geometry-scored recs turn
+  back on.
+
 ## v0.37.36 — 2026-05-10
 
 Opening-pick recs now react to placements. The standalone snap was
