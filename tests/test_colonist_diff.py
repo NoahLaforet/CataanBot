@@ -1053,3 +1053,14 @@ def test_ws_game_over_emitted_when_player_hits_vp_target():
     over_events2 = [e for e in events2 if isinstance(e, GameOverEvent)]
     assert over_events2 == [], (
         f"GameOverEvent should fire only once per session: {events2}")
+
+
+def test_too_many_players_flag():
+    """>4 seated players exceeds catanatron's 4 colors → flagged so the
+    HUD can show limited tracking instead of dropping a seat silently."""
+    sess = LiveSession.from_game_start(_game_start_body(CAPTURE_EARLY))
+    assert not sess.too_many_players()          # fort4092 was 3 players
+    sess.player_names = {1: "a", 2: "b", 3: "c", 4: "d"}
+    assert not sess.too_many_players()          # exactly 4 is fine
+    sess.player_names = {1: "a", 2: "b", 3: "c", 4: "d", 5: "e"}
+    assert sess.too_many_players()              # 5 can't be tracked

@@ -456,6 +456,17 @@ class LiveSession:
             parts.append(f"tiles={{{tiles}}}")
         return "variant: " + ", ".join(parts)
 
+    # catanatron exposes exactly 4 colors (RED/BLUE/ORANGE/WHITE). A 5-6
+    # player colonist board (the big Twirl/Volcano lobbies can seat 6)
+    # has no catanatron color for the 5th/6th player, so their builds,
+    # rolls, and yields can't be tracked — better to flag "limited
+    # tracking" than to silently render a board missing a whole seat.
+    _CATANATRON_COLOR_CAPACITY = 4
+
+    def too_many_players(self) -> bool:
+        """True when more players are seated than catanatron can track."""
+        return len(self.player_names) > self._CATANATRON_COLOR_CAPACITY
+
     def player_for(self, color_id: int | None) -> str:
         if color_id is None:
             return ""

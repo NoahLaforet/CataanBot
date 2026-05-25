@@ -1976,6 +1976,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         snap["variant"] = "classic"
         snap["game_settings"] = {}
+    # 5-6 player boards exceed catanatron's 4 colors, so the extra
+    # seat(s) can't be tracked — flag it so the HUD shows "limited
+    # tracking" instead of silently rendering a board missing a player.
+    try:
+        snap["players_unsupported"] = sess.too_many_players()
+    except Exception:  # noqa: BLE001
+        snap["players_unsupported"] = False
     # Scan-map eligibility: the HUD shows a "Map not recognized: scan"
     # button when this is true. Safe to scan only if the board uses
     # classic tile types and the ONLY non-zero setting flag is the
