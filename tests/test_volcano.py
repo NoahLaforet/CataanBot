@@ -156,3 +156,25 @@ def test_gold_pick_prefers_thin_production_when_flush():
     )
     assert pick["resource"] == "ORE"
     assert pick["toward"] is None
+
+
+def test_volcano_eval_credits_gold_building():
+    """evaluate_state must credit a building on the gold hex as production
+    (it's non-producing in catanatron, so node_production gives it 0).
+    Regression: search_rerank undervalued gold builds mid-game."""
+    from catanatron import Color
+    from catanbot.eval import evaluate_state
+    game = _volcano_fresh_game().tracker.game
+    m = game.state.board.map
+    gold_node = sorted(m.gold_node_ids)[0]
+
+    def eval_settle(node):
+        g = game.copy()
+        g.state.board.build_settlement(Color.RED, node, initial_build_phase=True)
+        return evaluate_state(g, Color.RED)
+
+    base = evaluate_state(game, Color.RED)
+    gold_eval = eval_settle(gold_node)
+    # The gold settlement must score strictly above the empty baseline —
+    # the wildcard credit (plus any real adjacent tiles) is counted.
+    assert gold_eval > base

@@ -42,7 +42,14 @@ EVAL_WEIGHTS: dict[str, float] = {
     "dev": 2.5,           # per playable dev card
     "knight": 1.5,        # per played knight (largest-army race)
     "road_past3": 1.0,    # per road segment beyond 3 (longest-road race)
+    "gold_premium": 1.25, # wildcard multiplier on gold-hex yield (Volcano)
 }
+
+# Dice-number → pip count (ways to roll it out of 36). Used to value the
+# gold/volcano hex, whose number is kept off the catanatron tile (so
+# yield_resources can't choke on a None-resource numbered tile) and lives
+# on cat_map.gold_number instead.
+_PIP_BY_NUMBER = {2: 1, 12: 1, 3: 2, 11: 2, 4: 3, 10: 3, 5: 4, 9: 4, 6: 5, 8: 5}
 
 
 def evaluate_state(game, my_color) -> float:
@@ -111,6 +118,21 @@ def _player_score(state, board, m, color) -> float:
         mult = 2.0 if btype == "CITY" else 1.0
         for _res, pips in m.node_production.get(int(nid), {}).items():
             prod += mult * float(pips)
+    # Gold/volcano hex (Volcano map): it's built as a non-producing tile
+    # in catanatron (no gold resource), so node_production credits it 0.
+    # Add its yield by hand for buildings on a gold node — a wildcard, so
+    # weighted just above a fixed resource. Without this, search_rerank
+    # undervalues building/upgrading on the gold hex mid-game, the same
+    # blind spot the opening scorer fixes via gold_node_ids.
+    gold_nodes = getattr(m, "gold_node_ids", frozenset())
+    gold_number = getattr(m, "gold_number", None)
+    if gold_nodes and gold_number:
+        gold_pips = _PIP_BY_NUMBER.get(int(gold_number), 0) / 36.0
+        if gold_pips:
+            for nid, (bcol, btype) in board.buildings.items():
+                if bcol == color and int(nid) in gold_nodes:
+                    mult = 2.0 if btype == "CITY" else 1.0
+                    prod += mult * gold_pips * EVAL_WEIGHTS["gold_premium"]
     score += prod * EVAL_WEIGHTS["prod"]
 
     # Hand: capped value (each resource up to the discard line is worth
