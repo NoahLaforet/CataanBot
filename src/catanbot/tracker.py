@@ -683,14 +683,22 @@ class Tracker:
             )
         if not per_color:
             return {"per_color": {}, "leaders": [], "top": 0, "callout": None}
-        from catanbot.config import VP_TARGET, mid_late_vp
+        # Read VP_TARGET LIVE off the config module, not a bound import:
+        # config uses PEP 562 __getattr__ so the per-game target set by
+        # _apply_game_settings (Volcano is 14-16, custom lobbies vary) is
+        # reflected. A `from config import VP_TARGET` snapshots 10 at
+        # import and fires winner/one_away several VP early on high-target
+        # boards. (audit 2026-05-24)
+        from catanbot import config
+        from catanbot.config import mid_late_vp
+        vp_target = config.VP_TARGET
         top = max(per_color.values())
         leaders = [c for c, v in per_color.items() if v == top]
-        if top >= VP_TARGET:
+        if top >= vp_target:
             callout = "winner"
-        elif top >= VP_TARGET - 1:
+        elif top >= vp_target - 1:
             callout = "one_away"
-        elif top >= VP_TARGET - 2:
+        elif top >= vp_target - 2:
             callout = "two_away"
         elif top >= mid_late_vp():
             callout = "leader"

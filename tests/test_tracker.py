@@ -45,6 +45,29 @@ def test_settle_updates_vp(tracker):
     assert tracker.game.state.player_state[f"P{idx}_VICTORY_POINTS"] == 1
 
 
+def test_vp_status_respects_live_vp_target(tracker):
+    """vp_status reads the LIVE config VP target, not a frozen import.
+
+    Regression for the audit finding: a `from config import VP_TARGET`
+    bound 10 at import, so on a 14-VP board (Volcano) the winner/one_away
+    callouts fired several VP early. 13 VP must read one_away at target 14
+    and winner at target 10.
+    """
+    from catanbot import config
+    idx = tracker.game.state.color_to_index[tracker._color("RED")]
+    tracker.game.state.player_state[f"P{idx}_VICTORY_POINTS"] = 13
+    orig = config.VP_TARGET
+    try:
+        config.set_vp_target(14)
+        st = tracker.vp_status()
+        assert st["top"] == 13
+        assert st["callout"] == "one_away"
+        config.set_vp_target(10)
+        assert tracker.vp_status()["callout"] == "winner"
+    finally:
+        config.set_vp_target(orig)
+
+
 def test_city_upgrades_settlement(tracker):
     node = _any_legal_node(tracker, "BLUE")
     tracker.settle("BLUE", node)

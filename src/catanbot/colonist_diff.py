@@ -564,11 +564,18 @@ def events_from_diff(
         # dice-roll payout, and without it opponent hands stay blank
         # until their first real roll fires. Detect it by counting the
         # owner's settlements *after* this update: exactly 2 means this
-        # diff is the 2nd-settlement placement. The WS playerStates diff
-        # also ships a resourceCards update in the same frame for the
-        # self-player, so HandSyncEvent (emitted further down) will
-        # overwrite any double-count on our own hand.
-        if piece == "settlement":
+        # diff is the 2nd-settlement placement.
+        #
+        # Skip the self-player: self's hand is authoritative via
+        # HandSyncEvent (from playerStates.resourceCards). Emitting this
+        # ProduceEvent for self assumed the resourceCards diff always
+        # rides in the SAME frame and overwrites it — but colonist ships
+        # partial deltas, and a split frame leaves self's hand inflated by
+        # the 3 starting cards for the rest of the game. produce_events_
+        # for_roll skips self for the same reason. (audit 2026-05-24)
+        if (piece == "settlement"
+                and (sess.self_color_id is None
+                     or int(owner) != sess.self_color_id)):
             owner_settlements = sum(
                 1 for cid2, own in sess.corner_owners.items()
                 if own == int(owner)
