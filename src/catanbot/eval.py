@@ -28,6 +28,22 @@ from catanbot import config
 _RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
 _DEV_PLAYABLE = ("KNIGHT", "MONOPOLY", "YEAR_OF_PLENTY", "ROAD_BUILDING")
 
+# Component weights for _player_score. Pulled out of the function body so
+# they can be measured + tuned via self-play (scripts/eval_player.py).
+# Defaults are the original hand-tuned values — changing one here changes
+# both the live HUD's search_rerank and the self-play player, so only
+# adjust against a measured win-rate improvement on fixed-seed games.
+EVAL_WEIGHTS: dict[str, float] = {
+    "vp_linear": 20.0,    # per-VP linear term
+    "vp_quad": 1.5,       # per-VP^2 (endgame emphasis)
+    "prod": 10.0,         # per expected pip/roll
+    "hand": 1.5,          # per card up to discard cap
+    "hand_over_cap": 3.0, # penalty per card above cap
+    "dev": 2.5,           # per playable dev card
+    "knight": 1.5,        # per played knight (largest-army race)
+    "road_past3": 1.0,    # per road segment beyond 3 (longest-road race)
+}
+
 
 def evaluate_state(game, my_color) -> float:
     """Overall state strength for ``my_color``, higher = better.
@@ -84,7 +100,7 @@ def _player_score(state, board, m, color) -> float:
     # Quadratic VP emphasis so the last few VPs matter disproportionately.
     # At vp=0: contribution 0. At vp=target: contribution 20*target^2.
     # Between those the closer to target, the more every VP is worth.
-    score = vp * 20.0 + vp * vp * 1.5
+    score = vp * EVAL_WEIGHTS["vp_linear"] + vp * vp * EVAL_WEIGHTS["vp_quad"]
 
     # Total per-turn expected production (pips × building multiplier).
     # Sum over own buildings; city doubles pips.
@@ -95,7 +111,7 @@ def _player_score(state, board, m, color) -> float:
         mult = 2.0 if btype == "CITY" else 1.0
         for _res, pips in m.node_production.get(int(nid), {}).items():
             prod += mult * float(pips)
-    score += prod * 10.0
+    score += prod * EVAL_WEIGHTS["prod"]
 
     # Hand: capped value (each resource up to the discard line is worth
     # a flat amount; beyond triggers the 7-roll discard penalty).
@@ -103,23 +119,23 @@ def _player_score(state, board, m, color) -> float:
         int(ps.get(f"P{idx}_{r}_IN_HAND", 0)) for r in _RESOURCES
     )
     cap = config.get_discard_limit()
-    score += min(hand_total, cap) * 1.5
+    score += min(hand_total, cap) * EVAL_WEIGHTS["hand"]
     if hand_total > cap:
         # Discard risk — each card above the limit is half-lost-value in
         # expectation (7-roll probability × half rounded down).
-        score -= (hand_total - cap) * 3.0
+        score -= (hand_total - cap) * EVAL_WEIGHTS["hand_over_cap"]
 
     # Dev cards: playable dev cards are latent action potential. VP
     # cards already count via ``hidden_vp`` above (linear + quadratic).
     playable_dev = sum(
         int(ps.get(f"P{idx}_{kind}_IN_HAND", 0)) for kind in _DEV_PLAYABLE
     )
-    score += playable_dev * 2.5
+    score += playable_dev * EVAL_WEIGHTS["dev"]
 
     # Largest-army race: each played knight is worth half a VP in
     # expectation (3 knights unlock the +2 VP, but opponents can race).
     played_knights = int(ps.get(f"P{idx}_PLAYED_KNIGHT", 0))
-    score += played_knights * 1.5
+    score += played_knights * EVAL_WEIGHTS["knight"]
 
     # Longest-road race: once a player hits 5 road segments they're in
     # contention. Raw length past 4 is a proxy; the actual +2 VP for
@@ -127,7 +143,7 @@ def _player_score(state, board, m, color) -> float:
     # awards HAS_ROAD which feeds VICTORY_POINTS) so avoid double-count.
     road_len = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0))
     if road_len >= 4:
-        score += (road_len - 3) * 1.0
+        score += (road_len - 3) * EVAL_WEIGHTS["road_past3"]
 
     # Pieces in reserve — running out forces dead turns. Minor weight.
     settles_left = int(ps.get(f"P{idx}_SETTLEMENTS_AVAILABLE", 5))
