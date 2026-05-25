@@ -170,6 +170,54 @@ def _closest_missing_build(
     return candidates[0]
 
 
+# Tie-break order when several resources are equally good to pull off the
+# gold/volcano hex — wheat and ore carry the most builds (city + dev), so
+# prefer them when nothing else decides it.
+_GOLD_UTILITY_ORDER = ("WHEAT", "ORE", "SHEEP", "BRICK", "WOOD")
+
+
+def _gold_resource_pick(
+    hand: dict[str, int],
+    production_by_resource: dict[str, float] | None = None,
+) -> dict[str, Any] | None:
+    """Which resource to take when the gold/volcano hex rolls.
+
+    Gold pays a resource of your choice, so the pick is "what unblocks the
+    most valuable thing soonest". Priority:
+
+    1. If you're short for a build, take the bottleneck resource of the
+       nearest build (city > settlement > dev > road via
+       ``_closest_missing_build``). Ties broken toward the resource you
+       *produce* least, then by general utility.
+    2. If every build is already affordable, bank your thinnest-produced
+       resource (utility-biased) toward the next city.
+
+    Returns ``{"resource", "reason", "toward"}`` or None on bad input.
+    """
+    if not isinstance(hand, dict):
+        return None
+    prod = production_by_resource or {}
+    nb = _closest_missing_build(hand)
+    if nb:
+        missing = nb["missing"]
+        build = nb["build"]
+        gap = int(nb["gap"])
+        res = sorted(
+            missing,
+            key=lambda r: (-missing[r], prod.get(r, 0.0),
+                           _GOLD_UTILITY_ORDER.index(r)),
+        )[0]
+        reason = (f"completes your {build}" if gap == 1
+                  else f"biggest step toward your {build}")
+        return {"resource": res, "reason": reason, "toward": build}
+    res = sorted(
+        _GOLD_UTILITY_ORDER,
+        key=lambda r: (prod.get(r, 0.0), _GOLD_UTILITY_ORDER.index(r)),
+    )[0]
+    return {"resource": res, "reason": "your thinnest resource — bank toward a city",
+            "toward": None}
+
+
 def _is_dev_stash_risk(
     vp: int, dev_cards: int, vp_target: int | None = None,
 ) -> bool:
