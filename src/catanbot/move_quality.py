@@ -53,8 +53,14 @@ def rec_matches_build(rec: dict[str, Any], ev: BuildEvent) -> bool:
     if rec.get("kind") != ev.piece:
         return False
     if ev.piece in ("settlement", "city"):
+        # Node 0 is a real land node, so `node_id or -1` would mis-read a
+        # legit node-0 build as -1 and never match its own rec (grading
+        # the bot's #1 pick as a "??" blunder). Distinguish None from 0.
+        rid = rec.get("node_id")
+        if rid is None or ev.node_id is None:
+            return False
         try:
-            return int(rec.get("node_id") or -1) == int(ev.node_id or -2)
+            return int(rid) == int(ev.node_id)
         except (TypeError, ValueError):
             return False
     if ev.piece == "road":

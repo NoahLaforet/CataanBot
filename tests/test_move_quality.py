@@ -37,6 +37,18 @@ def test_rec_matches_settlement_by_node():
     assert not rec_matches_build(rec, ev_other)
 
 
+def test_rec_matches_node_zero():
+    """Node 0 is a real land node — a node-0 build must match its own
+    rec, not get dropped by a falsy `node_id or -1` (which graded the
+    bot's #1 pick as a blunder). Regression for the move-quality bug."""
+    rec = {"kind": "settlement", "node_id": 0}
+    ev = BuildEvent(player="Noah", piece="settlement", node_id=0)
+    assert rec_matches_build(rec, ev)
+    # A node-0 rec must NOT match a build with a missing node_id.
+    ev_none = BuildEvent(player="Noah", piece="settlement", node_id=None)
+    assert not rec_matches_build(rec, ev_none)
+
+
 def test_rec_matches_city_by_node():
     rec = {"kind": "city", "node_id": 12}
     ev = BuildEvent(player="Noah", piece="city", node_id=12)
