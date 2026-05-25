@@ -346,3 +346,30 @@ def test_active_plan_locks_and_persists_across_polls():
     p4 = _track_active_plan(st, recs4, {"WHEAT": 2, "ORE": 3})
     assert p4 is None
     assert st["active_plan"] is None
+
+
+VOLCANO_CAPTURE = (Path(__file__).parent.parent
+                   / "ws_captures" / "volcano-2026-05-23.jsonl")
+
+
+def test_fog_hint_fires_on_volcano_board():
+    """A fog board with unrevealed fog surfaces snap['fog_hint']; the
+    classic capture leaves it None."""
+    if not VOLCANO_CAPTURE.exists():
+        pytest.skip("volcano capture not present")
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(VOLCANO_CAPTURE):  # buffer-format loader
+        game.feed(payload)
+    snap = _build_advisor_snapshot(_make_st(game))
+    assert snap["variant"] == "volcano"
+    assert snap["fog_hint"] is not None
+    assert snap["fog_hint"]["fog_remaining"] > 0
+
+    if CAPTURE_MIDGAME.exists():
+        cg = LiveGame()
+        for payload in _iter_payloads(CAPTURE_MIDGAME):
+            cg.feed(payload)
+        assert _build_advisor_snapshot(_make_st(cg))["fog_hint"] is None

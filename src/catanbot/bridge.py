@@ -1983,6 +1983,30 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["players_unsupported"] = sess.too_many_players()
     except Exception:  # noqa: BLE001
         snap["players_unsupported"] = False
+    # Fog-board hint (Black Forest / Volcano): unrevealed fog hexes reveal
+    # into a real tile + a free resource when a road lands adjacent, and
+    # they skew to the resources the visible board is short on, on strong
+    # numbers (mined from captures: ~77% land on an absent/scarce resource,
+    # ~65% on 5/6/8/9). So expanding into the fog ring is +EV — surface it
+    # while fog remains. Counts live off the mapping, which the reveal path
+    # updates as fog flips to real tiles.
+    snap["fog_hint"] = None
+    try:
+        if snap.get("variant") in ("black_forest", "volcano"):
+            from catanbot.colonist_map import is_fog_tile
+            fog_remaining = sum(
+                1 for ty in sess.mapping.tile_types.values()
+                if is_fog_tile(int(ty)))
+            if fog_remaining > 0:
+                snap["fog_hint"] = {
+                    "fog_remaining": fog_remaining,
+                    "message": (
+                        f"{fog_remaining} fog tiles unrevealed — a road into "
+                        "the fog ring reveals a free resource, biased to the "
+                        "scarce types on strong numbers (+EV)."),
+                }
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] fog_hint failed: {e!r}", flush=True)
     # Scan-map eligibility: the HUD shows a "Map not recognized: scan"
     # button when this is true. Safe to scan only if the board uses
     # classic tile types and the ONLY non-zero setting flag is the
