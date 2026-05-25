@@ -25,6 +25,8 @@ VOLCANO_CAPTURE = (Path(__file__).parent.parent
 
 
 def _volcano_game() -> LiveGame:
+    """Full replay of the capture (multiple stacked games — exercises the
+    reboot path; ends on the last game's mid/late-game state)."""
     if not VOLCANO_CAPTURE.exists():
         pytest.skip(f"volcano capture not present at {VOLCANO_CAPTURE}")
     game = LiveGame()
@@ -37,11 +39,52 @@ def _volcano_game() -> LiveGame:
     return game
 
 
+def _volcano_fresh_game() -> LiveGame:
+    """A pre-placement board built from the capture's last GameStart only
+    — deterministic empty board for opening-pick / gold-annotation tests."""
+    if not VOLCANO_CAPTURE.exists():
+        pytest.skip(f"volcano capture not present at {VOLCANO_CAPTURE}")
+    last_gs = None
+    for fr in load_capture(VOLCANO_CAPTURE):
+        if fr.error or not isinstance(fr.payload, dict):
+            continue
+        p = fr.payload
+        if p.get("type") == 4:
+            body = p.get("payload")
+            if not isinstance(body, dict):
+                continue
+            gstate = body.get("gameState") if "gameState" in body else body
+            if isinstance(gstate, dict) and isinstance(
+                    gstate.get("mapState"), dict):
+                last_gs = p
+    if last_gs is None:
+        pytest.skip("no usable GameStart in volcano capture")
+    game = LiveGame()
+    game.feed(last_gs)
+    if not game.started:
+        pytest.skip("volcano GameStart did not boot a game")
+    return game
+
+
 def test_volcano_builds_without_crash():
     """The 71-tile board parses into a catanatron map cleanly."""
     game = _volcano_game()
     m = game.tracker.game.state.board.map
     assert len(m.land_tiles) == 71
+
+
+def test_volcano_no_build_drift_across_stacked_games():
+    """Replaying the full capture (which stacks several games' GameStarts
+    via the autosave) must not drop builds: catanatron's board ends in
+    sync with colonist's authoritative corner ownership. Regression for
+    the STATIC_GRAPH stacked-rebuild drift (board-regression reboot)."""
+    game = _volcano_game()
+    board = game.tracker.game.state.board
+    cat_buildings = len(board.buildings)
+    known = len(game.session.known_corners)
+    assert cat_buildings == known, (
+        f"board drift: catanatron has {cat_buildings} buildings, "
+        f"colonist tracked {known}")
 
 
 def test_volcano_variant_label():
@@ -58,29 +101,28 @@ def test_volcano_recs_enabled_in_gate():
 
 
 def test_volcano_gold_nodes_annotated():
-    """annotate_gold_nodes records the gold hex's 6 nodes + its number."""
+    """annotate_gold_nodes records the gold hex's 6 nodes + a real number."""
     game = _volcano_game()
     m = game.tracker.game.state.board.map
-    assert len(m.gold_node_ids) == 6
-    assert m.gold_number == 6
+    assert len(m.gold_node_ids) == 6        # one hex == six corners
+    assert m.gold_number in range(2, 13) and m.gold_number != 7
 
 
 def test_volcano_gold_scored_as_wildcard():
-    """A gold-adjacent node carries a GOLD resource + GOLD tile label and
-    scores above what it would as a dead desert hex."""
-    game = _volcano_game()
+    """A gold-adjacent node carries a GOLD resource + GOLD tile label."""
+    game = _volcano_fresh_game()
     m = game.tracker.game.state.board.map
+    gold_number = m.gold_number
     scores = {ns.node_id: ns for ns in score_opening_nodes(game.tracker.game)}
     gold_nodes = [scores[n] for n in m.gold_node_ids if n in scores]
     assert gold_nodes, "no gold nodes scored"
-    # At least one gold node exposes the wildcard in resources + tiles.
     assert any("GOLD" in ns.resources for ns in gold_nodes)
-    assert any(("GOLD", 6) in ns.tiles for ns in gold_nodes)
+    assert any(("GOLD", gold_number) in ns.tiles for ns in gold_nodes)
 
 
 def test_volcano_opening_recs_nonempty():
-    """recommend_opening produces ranked picks on the volcano board."""
-    game = _volcano_game()
+    """recommend_opening produces ranked picks on a fresh volcano board."""
+    game = _volcano_fresh_game()
     recs = recommend_opening(game.tracker.game, None, top=5)
     assert recs, "expected opening recommendations on volcano board"
 

@@ -143,6 +143,39 @@ def _gamestart_shape_changed(session, body: dict[str, Any]) -> bool:
     return new_counts != cur_counts
 
 
+def _gamestart_board_regressed(tracker, body: dict[str, Any]) -> bool:
+    """True if the incoming GameStart shows FEWER placed buildings than we
+    currently track — a fresh game (or quit-and-restart) rather than a
+    forward reconnect.
+
+    A genuine reconnect replays the *current* authoritative gameState, so
+    its placed-building count is >= what we already have. A brand-new game
+    on the same board shape + same players (no GameOver seen, e.g. a quick
+    rematch) ships an emptier board. Without rebooting, the prior game's
+    settlements linger in catanatron's board and trip the distance rule
+    when the new game places a settlement on a now-"adjacent-to-occupied"
+    node — the stacked-GameStart drift that dropped builds on variant
+    maps (Volcano capture 2026-05-23: 7 settlements / 14 roads lost).
+    """
+    if tracker is None:
+        return False
+    game_state = body.get("gameState") if "gameState" in body else body
+    if not isinstance(game_state, dict):
+        return False
+    ms = game_state.get("mapState")
+    if not isinstance(ms, dict):
+        return False
+    corners = ms.get("tileCornerStates") or {}
+    incoming = sum(
+        1 for c in corners.values()
+        if isinstance(c, dict) and int(c.get("buildingType") or 0) > 0)
+    try:
+        current = len(tracker.game.state.board.buildings)
+    except Exception:  # noqa: BLE001
+        return False
+    return incoming < current
+
+
 @dataclass
 class LiveGame:
     """Container for one in-progress colonist game.
@@ -358,6 +391,17 @@ class LiveGame:
                 if (self.started and self.session is not None
                         and _gamestart_player_set_changed(
                             self.session, body)):
+                    self.session = None
+                    self.tracker = None
+                    rebooted = True
+                # Board-regression reboot: a same-shape, same-players
+                # rematch (no GameOver seen) ships an emptier board than
+                # we track. Resyncing only hands would leave the prior
+                # game's settlements on the board and trip the distance
+                # rule on the new game's nearby placements. Reboot when
+                # the incoming GameStart has fewer buildings than we hold.
+                if (self.started and self.session is not None
+                        and _gamestart_board_regressed(self.tracker, body)):
                     self.session = None
                     self.tracker = None
                     rebooted = True
