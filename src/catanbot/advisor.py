@@ -68,6 +68,15 @@ _RESOURCE_WEIGHT: dict[str, float] = {
     "ORE": 1.0,
 }
 
+# Wildcard weight for a gold/volcano hex (Volcano map). Gold pays a
+# resource of your choice on its number, so a gold card is strictly more
+# useful than any single fixed resource — you can always turn it into the
+# scarcest thing you need. Weighted just above wheat (the best fixed
+# resource) and counted as a distinct resource for diversity, since it
+# covers whatever your other tiles miss. Read off ``map.gold_node_ids`` /
+# ``map.gold_number`` annotated by colonist_map.annotate_gold_nodes().
+_GOLD_WEIGHT = 1.25
+
 
 # Pip-dot table: each Catan number's odds out of 36 = "pips" — referenced
 # both by the robber scorer (further down) and the port-pip-alignment
@@ -254,6 +263,14 @@ def score_opening_nodes(game: "Game",
     # have. Empty during fully empty boards (no buildings yet).
     table_scarcity = compute_table_scarcity(game)
 
+    # Gold/volcano wildcard hex (Volcano map). Nodes touching it get a
+    # wildcard yield valued just above wheat and an extra diversity slot,
+    # since gold pays whatever resource you choose. Empty on classic maps.
+    gold_node_ids = getattr(m, "gold_node_ids", frozenset())
+    gold_number = getattr(m, "gold_number", None)
+    gold_yield = (PIP_DOTS_BY_NUMBER.get(int(gold_number), 0) / 36.0
+                  if gold_number else 0.0)
+
     # Pass 1: compute base_score per node.
     base_by_node: dict[int, float] = {}
     scratch: dict[int, dict] = {}
@@ -263,12 +280,23 @@ def score_opening_nodes(game: "Game",
         resources = {r: float(v) for r, v in counter.items()}
 
         distinct = sum(1 for v in resources.values() if v > 0)
-        diversity = _DIVERSITY_BY_COUNT.get(distinct, 1.15)
         port_label = node_to_port.get(node_id)
         tiles: list[tuple[str, int | None]] = []
         for tile in m.adjacent_tiles.get(node_id, []):
             label = tile.resource if tile.resource else "DESERT"
             tiles.append((label, tile.number))
+        # Gold adjacency: add the wildcard yield to raw production, expose
+        # it as a GOLD resource, bump diversity by one (it covers any
+        # missing resource), and relabel one DESERT tile slot as GOLD.
+        if node_id in gold_node_ids and gold_yield > 0:
+            raw += gold_yield * _GOLD_WEIGHT
+            resources["GOLD"] = resources.get("GOLD", 0.0) + gold_yield
+            distinct += 1
+            for i, (lbl, num) in enumerate(tiles):
+                if lbl == "DESERT" and num is None:
+                    tiles[i] = ("GOLD", gold_number)
+                    break
+        diversity = _DIVERSITY_BY_COUNT.get(distinct, 1.22)
         # Pass tiles into _port_bonus so the pip-alignment guard fires
         # — a 2:1 wheat port adjacent only to a wheat 2/3/11/12 tile
         # gets half the bonus, matching the strategy v2 P1-7 plan.

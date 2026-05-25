@@ -59,6 +59,7 @@ from catanbot.bridge_economy import (
     _knights_played,
     _affordable_builds,
     _closest_missing_build,
+    _gold_resource_pick,
     _is_dev_stash_risk,
     _one_short_vp_build,
     _pieces_for_color,
@@ -104,7 +105,7 @@ from catanbot.bridge_postmortem import (
 # Seafarers) stay suppressed because the recommender doesn't model
 # their state machine.
 _RECS_SAFE_VARIANTS: frozenset[str] = frozenset(
-    {"classic", "twirl", "scanned", "black_forest"})
+    {"classic", "twirl", "scanned", "black_forest", "volcano"})
 
 
 def _build_app(jsonl_path: Path | None = None,
@@ -1745,6 +1746,33 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         # play monopoly; {"resource", "count"} otherwise.
         "monopoly_risk": mono_risk,
     }
+    # Gold/volcano pick advisor (Volcano map): when there's a gold hex,
+    # tell Noah which resource to take if it rolls. ``owned`` flags
+    # whether self actually has a building on it (more relevant), but we
+    # surface the advice either way since the choice is the same.
+    gold_node_ids = getattr(cat_game.state.board.map, "gold_node_ids",
+                            frozenset())
+    if gold_node_ids:
+        try:
+            prod_by_res = ((snap["self"].get("production") or {})
+                           .get("by_resource") or {})
+            pick = _gold_resource_pick(hand, prod_by_res)
+            if pick:
+                owned = False
+                try:
+                    from catanatron import Color as _Color
+                    c_enum = _Color[self_color.upper()]
+                    owned = any(
+                        cat_game.state.board.buildings.get(n, (None,))[0]
+                        == c_enum for n in gold_node_ids)
+                except Exception:  # noqa: BLE001
+                    pass
+                pick["owned"] = owned
+                pick["number"] = getattr(
+                    cat_game.state.board.map, "gold_number", None)
+                snap["gold_pick"] = pick
+        except Exception as e:  # noqa: BLE001
+            print(f"[advisor] gold_pick failed: {e!r}", flush=True)
     # Enrich the last-roll with self's yield breakdown: what the dice
     # actually delivered from self's buildings, plus what was blocked
     # by the robber. Only when the last roll is a non-7 (7s don't

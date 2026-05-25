@@ -33,8 +33,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from catanbot.colonist_map import (
-    FOG_TILE_TYPES, KNOWN_CLASSIC_TILE_TYPES, MapMapping, build_mapping,
-    corner_tile_signature, is_fog_tile, tile_resource,
+    FOG_TILE_TYPES, GOLD_TILE_TYPES, KNOWN_CLASSIC_TILE_TYPES, MapMapping,
+    build_mapping, corner_tile_signature, is_fog_tile, tile_resource,
 )
 from catanbot.events import (
     BankSyncEvent, BuildEvent, DevCardBuyEvent, DevCardSelfBuyTypedEvent,
@@ -437,6 +437,17 @@ class LiveSession:
                 and self.non_classic_tiles <= FOG_TILE_TYPES
                 and set(nonzero) <= {"mapSetting"}):
             return "black_forest"
+        # Volcano (mapSetting 34) — gold/volcano hex (type 6) plus the
+        # Black Forest fog hexes (7/8), nothing else exotic. The gold hex
+        # builds as a non-producing tile but its nodes are valued as a
+        # wildcard by the opening scorer (annotate_gold_nodes), and fog
+        # reveal is handled like Black Forest, so geometry-scored recs are
+        # safe. The gate whitelists "volcano".
+        if (self.non_classic_tiles
+                and self.non_classic_tiles <= (GOLD_TILE_TYPES | FOG_TILE_TYPES)
+                and self.non_classic_tiles & GOLD_TILE_TYPES
+                and set(nonzero) == {"mapSetting"}):
+            return "volcano"
         parts = []
         for k, v in nonzero.items():
             parts.append(f"{k.replace('Setting','')}={v}")

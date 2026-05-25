@@ -83,10 +83,27 @@ KNOWN_CLASSIC_TILE_TYPES = frozenset(COLONIST_TILE_RESOURCE)
 # live recs.
 FOG_TILE_TYPES = frozenset({7, 8})
 
+# Gold / volcano hex type int. On the weekly Volcano map (mapSetting 34)
+# the centre is a single gold hex (type 6) carrying a real dice number:
+# when it rolls, every adjacent settlement/city produces a resource of
+# the owner's choice (Seafarers Gold River rule). catanatron has no
+# "gold" resource, and yield_resources() would choke on a numbered tile
+# whose resource is None, so we build the gold hex as a non-producing
+# tile (resource None, number None) and instead record its nodes +
+# number on the CatanMap via ``annotate_gold_nodes`` so the opening
+# scorer can value it as a wildcard. Distinct from fog: fog reveals into
+# a real tile, gold stays gold all game.
+GOLD_TILE_TYPES = frozenset({6})
+
 
 def is_fog_tile(type_int: int) -> bool:
     """True when ``type_int`` is a Black Forest unrevealed fog hex."""
     return int(type_int) in FOG_TILE_TYPES
+
+
+def is_gold_tile(type_int: int) -> bool:
+    """True when ``type_int`` is a gold/volcano wildcard hex."""
+    return int(type_int) in GOLD_TILE_TYPES
 
 # Port type int → resource name. Type 1 is the generic 3:1 port (no
 # resource lock); types 2..6 are the resource-specific 2:1 ports,
@@ -286,6 +303,7 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
         _attach_variant_ports(tiles, port_states, hex_states)
 
     cat_map = CatanMap.from_tiles(tiles)
+    annotate_gold_nodes(cat_map, hex_states)
 
     # Augment catanatron's module-level STATIC_GRAPH with this variant
     # map's edges. The static graph is built ONCE at import time from
@@ -302,6 +320,32 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
     _augment_static_graph_for_map(cat_map)
 
     return cat_map
+
+
+def annotate_gold_nodes(cat_map, hex_states: dict) -> None:
+    """Record gold-hex node ids + dice number on a built CatanMap.
+
+    catanatron can't model a "gold" resource, so the opening scorer reads
+    ``cat_map.gold_node_ids`` (every land node touching a gold hex) and
+    ``cat_map.gold_number`` (the gold hex's roll number) to add a wildcard
+    bonus. No-op when the board has no gold hex. Sets empty defaults so
+    callers can read the attrs unconditionally.
+    """
+    gold_nodes: set[int] = set()
+    gold_number: int | None = None
+    for tid, t in hex_states.items():
+        if not isinstance(t, dict) or not is_gold_tile(int(t.get("type", 0))):
+            continue
+        coord = axial_to_cube(t["x"], t["y"])
+        tile = cat_map.land_tiles.get(coord)
+        if tile is None:
+            continue
+        gold_nodes.update(int(n) for n in tile.nodes.values())
+        dn = int(t.get("diceNumber", 0)) or None
+        if dn is not None:
+            gold_number = dn
+    cat_map.gold_node_ids = frozenset(gold_nodes)
+    cat_map.gold_number = gold_number
 
 
 def _augment_static_graph_for_map(cat_map) -> None:
