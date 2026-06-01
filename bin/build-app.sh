@@ -26,6 +26,7 @@ command -v sips >/dev/null && command -v iconutil >/dev/null || {
 
 # --- .icns from the brand art: upscale once to 1024, derive every slot.
 WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 ICONSET="$WORK/CatanBot.iconset"
 BIG="$WORK/icon-1024.png"
 mkdir -p "$ICONSET"
@@ -44,6 +45,10 @@ iconutil -c icns "$ICONSET" -o "$C/Resources/CatanBot.icns"
 #     Finder double-click resolves the repo regardless of working dir).
 cat > "$C/MacOS/CatanBot" <<EOF
 #!/usr/bin/env bash
+# Finder launches with a minimal PATH (no Homebrew, no shell profile).
+# Add the common interpreter locations so bin/catanbot-tray can find
+# python3.11+ if it needs to bootstrap the venv on first run.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\$PATH"
 exec "$REPO_ROOT/bin/catanbot-tray"
 EOF
 chmod +x "$C/MacOS/CatanBot"
