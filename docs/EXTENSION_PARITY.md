@@ -155,9 +155,10 @@ Open (want a live bridge-vs-standalone comparison to tune safely):
 - `_bestLanding` halves a road landing's production whenever any
   neighbor is built (including the near anchor), where the bridge
   excludes blocked landings instead, so standalone road scores run low.
-- `strategy.js` PORT_TRADE eligibility uses different near-port
-  thresholds than `strategy_select.py`, so the archetype banner can
-  disagree.
+- `strategy.js` PORT_TRADE near-port thresholds. DONE (v0.40.0): the
+  post-placement near branch now matches `strategy_select.py` (produced-
+  resource gate 0.20, near score 0.85, no 3:1-near credit). The
+  JS-only pre-placement board-affinity branch is left as is.
 - `_proposeTradeRecs` does not reserve resources across other blocked
   builds before offering a surplus, where the bridge does.
 - `_bankTradeRecs` uses fixed base scores rather than the unlocked

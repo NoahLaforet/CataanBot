@@ -177,17 +177,19 @@ function _scorePortTrade(state, nodeIds, prod) {
                 if ((t.pip || 0) >= 3) direct = Math.max(direct, 0.6);
             }
         }
-        // Near: port on a neighbour node (1-hop expansion target).
+        // Near: a 2:1 port on a neighbour node (1-hop expansion target)
+        // for a resource we already produce. Mirrors strategy_select.py
+        // _score_port_trade so the standalone archetype banner agrees
+        // with the bridge: 3:1 ports get no near credit, the produced-
+        // resource gate is 0.20 (not 0.10), and the near score is 0.85
+        // (not 0.55).
         for (const nb of n.neighbors) {
             const nbn = board.nodes[nb];
             if (!nbn || !nbn.port) continue;
             const p = nbn.port;
-            if (p.kind === '3:1') {
-                near = Math.max(near, 0.35);
-                continue;
-            }
-            if (p.resource && (prod[p.resource] || 0) >= 0.10) {
-                near = Math.max(near, 0.55);
+            if (p.kind === '3:1' || !p.resource) continue;
+            if ((prod[p.resource] || 0) >= 0.20) {
+                near = Math.max(near, 0.85);
             }
         }
     }
