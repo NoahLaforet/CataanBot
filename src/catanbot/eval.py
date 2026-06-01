@@ -202,8 +202,13 @@ def _rec_to_action(rec: dict[str, Any], color) -> Any | None:
         edge = rec["edge"]
         return Action(color, ActionType.BUILD_ROAD,
                       (int(edge[0]), int(edge[1])))
-    if kind == "dev_card":
-        return Action(color, ActionType.BUY_DEVELOPMENT_CARD, None)
+    # Deliberately do NOT simulate a dev-card buy. Executing
+    # BUY_DEVELOPMENT_CARD on the game copy draws the actual next card
+    # from the deterministic, seed-fixed deck, and evaluate_state then
+    # credits that specific card (a drawn VP card adds ~+21 pts), which
+    # let a blind dev buy out-rank real builds in the 1-ply search. Leave
+    # it unsearched (search_delta stays None) so it keeps its heuristic
+    # score and ranks against roads, not against a peeked-at deck.
     return None
 
 
