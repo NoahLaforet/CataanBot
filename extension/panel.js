@@ -5383,10 +5383,12 @@
         ui.devDeck.innerHTML = cells.join('');
     }
 
-    // 36-roll baseline weights — number of dice combos that produce
-    // each total. 7 is excluded because the bar wraps that case in CSS;
-    // the column's still rendered for hot-7 alarming, but the expected
-    // tick would just say "yes, 7s happen" which isn't actionable.
+    // 36-roll baseline weights: number of dice combos that produce each
+    // total. 7 is omitted here only to suppress its expected tick (its
+    // baseline is "yes, 7s happen", not actionable); the 7 bar itself
+    // still renders. 7 is also excluded from the bar-scaling max below,
+    // so the structurally-tallest 7 column (6/36) does not crush the
+    // rest of the distribution into the bottom of the chart.
     const HIST_WEIGHTS = {
         2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
         8: 5, 9: 4, 10: 3, 11: 2, 12: 1,
@@ -5404,6 +5406,11 @@
         if (ui.histTotal) ui.histTotal.textContent = String(total);
         let max = 1;
         for (let n = 2; n <= 12; n++) {
+            // Skip 7: it is the single most probable total (6/36), so it
+            // is structurally the tallest bar in nearly every game and
+            // would pin max, scaling every meaningful 2-12 bar into the
+            // bottom of the chart. Scale to the tallest non-7 bar.
+            if (n === 7) continue;
             const c = Number(hg[n] || 0);
             if (c > max) max = c;
         }
@@ -5417,7 +5424,11 @@
             const bar = col.querySelector('[data-bar]');
             const cnt = col.querySelector('[data-count]');
             const exp = col.querySelector('[data-exp]');
-            if (bar) bar.style.height = pct + '%';
+            // Clamp: with 7 excluded from max, the 7 count usually
+            // exceeds max (pct > 100), and .hist-bar-wrap has no
+            // overflow:hidden, so an unclamped 7 bar would spill past
+            // the wrapper into the count row.
+            if (bar) bar.style.height = Math.min(100, pct) + '%';
             if (cnt) cnt.textContent = c > 0 ? String(c) : '';
             // Expected tick: % of bar height where this column would sit
             // if dice obeyed the 36-roll baseline. Same denominator (max)
