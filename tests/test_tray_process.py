@@ -67,6 +67,20 @@ def test_status_state_machine(tmp_path, monkeypatch):
     assert process.status() == "starting"
 
 
+def test_tray_status_icons_present():
+    """The menu-bar app ships its four status-icon frames and _icon
+    resolves each. Guards against the generated assets being dropped from
+    the package (which would leave the tray with no icon). _icon is
+    defined before the rumps import guard, so this runs without rumps."""
+    import os
+
+    from catanbot.tray.app import _icon
+    for name in ("stopped", "running", "starting_a", "starting_b"):
+        p = _icon(name)
+        assert p and p.endswith(f"tray_{name}.png"), name
+        assert os.path.exists(p), p
+
+
 def test_stop_never_kills_a_non_bridge_pid(tmp_path, monkeypatch):
     """stop() must never signal a PID it cannot confirm is the bridge,
     guarding against a stale pidfile whose PID the OS recycled onto an

@@ -260,9 +260,20 @@ stops the bridge from the toolbar:
 ```
 
 First run bootstraps the `[bridge,tray]` extras into `.venv`, then a
-CatanBot item appears in the menu bar with a status dot (green when the
-bridge is up). It offers Start / Stop, an "Open colonist.io" action that
-brings the bridge up and opens the game, and a small settings menu. The
+branded CatanBot icon appears in the menu bar. The icon reflects bridge
+status: desaturated when off, a gentle pulse while starting, and
+full-color when up. It offers Start / Stop, an "Open colonist.io" action
+that brings the bridge up and opens the game, and a small settings menu.
+
+For a double-clickable desktop app (no terminal), build a `.app` once:
+
+```bash
+./bin/build-app.sh        # -> ~/Applications/CatanBot.app
+```
+
+Then launch it from Finder / Spotlight / the Dock like any app; it lives
+in the menu bar while running. (`bin/build-app.sh` derives the icon from
+`extension/icons/icon-128.png`; re-run it if the brand art changes.) The
 `bin/catanbot` command above stays the supported cross-platform path;
 the menu-bar app just spawns the same bridge under the hood. macOS only
 (it uses `rumps`); on Linux or Windows use `./bin/catanbot live`.
