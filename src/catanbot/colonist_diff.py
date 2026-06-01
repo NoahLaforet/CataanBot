@@ -307,8 +307,19 @@ class LiveSession:
                     "gameType", "modeSetting", "extensionSetting",
                     "scenarioSetting", "mapSetting", "diceSetting",
                     "victoryPointsToWin", "cardDiscardLimit",
+                    "friendlyRobber",
                 ) if k in gs
             }
+            # Friendly Robber is authoritative right here in the WS
+            # GameStart payload. Latch it so the robber-target ranker
+            # filters protected (low-VP) victims without waiting on the
+            # flaky DOM-log "friendly robber is active" announcement,
+            # which goes dark on reconnects or when it scrolled past
+            # before we attached. The DOM-log latch stays a redundant
+            # fallback; it only ever flips the flag True, so it never
+            # fights this value.
+            if "friendlyRobber" in gs:
+                sess.friendly_robber_active = bool(gs.get("friendlyRobber"))
 
         # Tile-type sweep: any int outside KNOWN_CLASSIC_TILE_TYPES
         # is a variant tile (gold hex, ocean for seafarers, fog for

@@ -93,6 +93,27 @@ def test_non_classic_tiles_detected_from_map():
     assert "tiles={6}" in label
 
 
+def test_friendly_robber_latches_from_ws_game_settings():
+    """The authoritative friendlyRobber flag rides in the WS GameStart
+    gameSettings. Latch it there so the robber-target ranker filters
+    protected (low-VP) victims without depending on the flaky DOM-log
+    'friendly robber is active' announcement. Pre-fix the WS flag was
+    dropped and only the chat InfoEvent could set friendly_robber_active,
+    so a reconnect (or attaching after the announcement scrolled past)
+    left the flag False and the bot suggested illegal robs."""
+    body = _game_start_body(CAPTURE_EARLY)
+    on = {**body, "gameSettings": {
+        **(body.get("gameSettings") or {}), "friendlyRobber": True}}
+    sess_on = LiveSession.from_game_start(on)
+    assert sess_on.friendly_robber_active is True
+    assert sess_on.game_settings.get("friendlyRobber") is True
+
+    off = {**body, "gameSettings": {
+        **(body.get("gameSettings") or {}), "friendlyRobber": False}}
+    sess_off = LiveSession.from_game_start(off)
+    assert sess_off.friendly_robber_active is False
+
+
 def test_variant_label_flags_non_classic():
     """Synthetic non-zero flags should produce a 'variant: ...' label
     listing the non-zero settings — the HUD's warning hook."""

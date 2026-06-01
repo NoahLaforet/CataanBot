@@ -32,6 +32,19 @@ def _iter_payloads(path: Path):
             yield p
 
 
+def _game_start_body(path: Path) -> dict:
+    """Extract the raw GameStart body from a capture (mirrors the helper
+    in test_colonist_diff). The fort4092 early capture's GameStart frame
+    is the 5156-byte one; its inner payload is the body LiveGame boots
+    from."""
+    from catanbot.colonist_proto import load_capture
+    if not path.exists():
+        pytest.skip(f"live capture not present at {path}")
+    frames = list(load_capture(path))
+    gs = next(f for f in frames if f.raw_length == 5156)
+    return gs.payload["payload"]
+
+
 def test_variant_map_road_placement_works():
     """Critical regression: catanatron's Board.build_road validates
     against a module-global ``STATIC_GRAPH`` that's built ONCE at
@@ -423,6 +436,37 @@ def test_feed_game_start_boots_everything():
     assert len(cat_map.land_tiles) == 19
     # Color map seeded with all known players.
     assert len(game.color_map.as_dict()) == len(game.session.player_names)
+
+
+def test_five_player_lobby_degrades_to_limited_tracking():
+    """catanatron exposes only 4 colors. A 5-6 player colonist lobby (the
+    big Twirl/Volcano lobbies seat up to 6) used to leave a half-booted,
+    corrupt game: start_from_game_state set session + tracker, then
+    raised ColorMapError seeding the 5th color, so `started` read True
+    over a color_map missing a seat and every later frame naming the
+    un-seated player re-raised. Now LiveGame detects too_many_players up
+    front, keeps the session (so the snapshot can surface
+    players_unsupported), and stays un-started instead of crashing."""
+    import copy
+    from catanbot.live_game import LiveGame
+
+    body = copy.deepcopy(_game_start_body(CAPTURE_EARLY))
+    seats = list(body.get("playerUserStates") or [])
+    used = {int(s["selectedColor"]) for s in seats
+            if s.get("selectedColor") is not None}
+    extra_color = next(c for c in range(1, 9) if c not in used)
+    seats.append({"selectedColor": extra_color, "username": "FifthSeat"})
+    body["playerUserStates"] = seats
+
+    game = LiveGame()
+    # Must NOT raise (pre-fix this raised ColorMapError seeding color 5).
+    game.start_from_game_state(body)
+    assert game.session is not None
+    assert game.session.too_many_players() is True
+    # Degraded cleanly: un-started, no half-seated tracker / color map.
+    assert game.started is False
+    assert game.tracker is None
+    assert game.color_map is None
 
 
 def test_feed_midgame_capture_builds_and_rolls_apply():
