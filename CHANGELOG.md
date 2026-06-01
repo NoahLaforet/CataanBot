@@ -4,6 +4,35 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.40.0 (2026-06-01)
+
+Second audit pass: a visible dice-stats fix, three recommender bug
+fixes, a branded clickable launcher, and HUD polish.
+
+- **Dice histogram no longer looks squashed.** The roll histogram scaled
+  every bar against the busiest column including 7, and 7 is the single
+  most likely total (6/36), so it always pinned the scale and crushed
+  the 2-12 distribution into the bottom of the chart. The 7 column is
+  now excluded from the scale (and its bar clamped), so the real spread
+  uses the full height.
+- **Three recommender fixes.** An incoming trade that strips a resource
+  unlocking a higher build (when the best move was a trade toward a
+  city) is no longer mis-read as an upgrade and wrongly accepted. The
+  1-ply search no longer simulates a dev-card buy, which had been
+  peeking at the next deck card and ranking a blind buy above real
+  builds. The endgame re-sort keeps the search ordering instead of
+  discarding it.
+- **Engine weights re-validated.** Swept the eval weights over 200
+  fixed-seed self-play games against every available bot; no change beat
+  noise, so the defaults stand (the engine already wins 67-80%).
+- **Branded, clickable launcher.** The menu-bar app now uses a custom
+  icon derived from the brand art that reflects bridge status (dim when
+  off, a pulse while starting, full-color when up), and
+  `bin/build-app.sh` assembles a double-clickable CatanBot.app so it
+  launches from Finder without a terminal.
+- **HUD readability.** Bumped the dim and label text colors to pass WCAG
+  AA contrast on the dark panel.
+
 ## v0.39.0 (2026-05-31)
 
 Audit-and-fix pass: two long-standing bugs squashed, plus a one-click
