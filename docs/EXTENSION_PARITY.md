@@ -133,6 +133,42 @@ Only catanatron-tier lookahead is left:
 3. **latest_postmortem** — bridge writes HTML to disk; standalone
    has no filesystem.
 
+## Standalone recommender divergences (2026-05-31 audit)
+
+The bridge is the source of truth; these are places the standalone JS
+recommender scored or ranked a move differently. Closing one means the
+no-bridge score badge and #1 pick match what the bridge would show.
+
+Closed in v0.39.0:
+- Settlement display score and ranking now use wheat-weighted production
+  with no diversity multiplier, matching recommender.py
+  `_score_settlement(_node_pip_production_weighted)`. The old JS baked a
+  1.0 / 1.08 / 1.22 diversity factor into the score and dropped the
+  wheat weight, so the same corner showed a different score (and
+  sometimes a different #1 pick), which also skewed move-quality grading.
+
+Open (want a live bridge-vs-standalone comparison to tune safely):
+- Third-settle (x1.25 at 2 footprints), endgame (+1.5/+2.5 past
+  close-to-win), and per-archetype score bumps are applied by the bridge
+  in `recommend_actions` but not by `recommendActions`, so the rec order
+  can differ in those phases.
+- `_bestLanding` halves a road landing's production whenever any
+  neighbor is built (including the near anchor), where the bridge
+  excludes blocked landings instead, so standalone road scores run low.
+- `strategy.js` PORT_TRADE eligibility uses different near-port
+  thresholds than `strategy_select.py`, so the archetype banner can
+  disagree.
+- `_proposeTradeRecs` does not reserve resources across other blocked
+  builds before offering a surplus, where the bridge does.
+- `_bankTradeRecs` uses fixed base scores rather than the unlocked
+  build's production curve minus one.
+- The standalone knight robber window relies on the chat-log "used
+  Knight" line; a WS-frame backstop (a mechanicKnightState increment)
+  would make it fire even when that chat line is missed.
+- `events.js` `_findKey` runs about 17 independent tree walks per WS
+  frame; a single-pass key collector would cut the per-frame cost
+  (behavior-identical refactor).
+
 Closed in v0.37.35:
 - ~~move_history~~ — chess-style grading via `lib/move_quality.js`
   + per-tick rec cache.

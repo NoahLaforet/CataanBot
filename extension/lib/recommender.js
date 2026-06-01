@@ -30,16 +30,33 @@ const COSTS = {
 
 function _clip(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-/** Settlement 1-10 score from corner production. Mirrors the
- *  opening-pick calibration: production-weighted base × diversity
- *  multiplier (more resources covered = more valuable). */
+// Per-resource weight for settlement scoring and ranking. Mirrors
+// _RESOURCE_WEIGHT in advisor.py (Reddit finding #2: wheat is in every
+// major build, so a wheat corner edges out an equal-pip non-wheat one).
+const _RESOURCE_WEIGHT = {
+    WHEAT: 1.10, WOOD: 1.0, BRICK: 1.0, SHEEP: 1.0, ORE: 1.0,
+};
+
+/** Wheat-weighted production sum. Mirrors recommender.py's
+ *  _node_pip_production_weighted. */
+function _weightedProd(prod) {
+    let w = 0;
+    for (const [r, v] of Object.entries(prod || {})) {
+        w += (v || 0) * (_RESOURCE_WEIGHT[r] || 1.0);
+    }
+    return w;
+}
+
+/** Settlement 1-10 score. Mirrors recommender.py: _score_settlement
+ *  applied to the WHEAT-WEIGHTED production, with no diversity
+ *  multiplier. The bridge has no diversity term here, so the old JS
+ *  (raw total times a 1.0/1.08/1.22 diversity factor) showed a
+ *  different score, and sometimes a different #1 pick, for the same
+ *  corner, which also skewed move-quality grading against it.
+ *  clip(weighted * 12 + 2, 2, 10). */
 function _scoreSettlement(prod) {
-    const total = Object.values(prod).reduce((s, v) => s + v, 0);
-    const distinct = Object.values(prod).filter(v => v > 0).length;
-    const diversity = distinct >= 3 ? 1.22
-        : (distinct === 2 ? 1.08 : 1.0);
-    return Math.round(_clip(total * 12.0 * diversity + 2.0,
-        2.0, 10.0) * 10) / 10;
+    return Math.round(
+        _clip(_weightedProd(prod) * 12.0 + 2.0, 2.0, 10.0) * 10) / 10;
 }
 
 /** City 1-10 score: doubled production + 3 base. */
@@ -288,7 +305,12 @@ function _settleRecs(state, hand, opts) {
             port: board.nodes[nid]?.port || null,
         });
     }
-    recs.sort((a, b) => b.score - a.score);
+    // Rank by wheat-weighted production, matching recommender.py's
+    // scored.sort(key=-weighted). The displayed score is monotonic in
+    // the weighted prod, but sorting on the weight directly keeps ties
+    // at the clip bounds ordered the way the bridge orders them.
+    recs.sort((a, b) =>
+        _weightedProd(b.resources) - _weightedProd(a.resources));
     return recs.slice(0, 3);
 }
 
@@ -655,4 +677,4 @@ export function recommendRobberTargets(state, opts = {}) {
     return targets.slice(0, opts.topK || 5);
 }
 
-export { COSTS };
+export { COSTS, _scoreSettlement, _weightedProd };
