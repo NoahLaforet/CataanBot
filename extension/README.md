@@ -90,13 +90,13 @@ DOM mutations on .game-log ─────► content.js
 ## Permissions justified
 
 - `sidePanel` — the whole point.
-- `storage` — reserved for future preference persistence.
-- `scripting` — reserved (currently unused) for future page-script
-  injection beyond the static `inject.js`.
-- `host_permissions` for `colonist.io` — read game state from the page.
-- `host_permissions` for `127.0.0.1:8765` / `localhost:8765` — talk
-  to the bridge running on the user's own machine. **No data leaves
-  the user's computer.**
+- `storage`: persists UI preferences (streamer mode, font scale, panel
+  collapse states) plus badge/turn state across browser sessions.
+- `host_permissions` for `colonist.io`: read game state from the page.
+  The page-world WebSocket hook ships as a static `content_scripts`
+  entry (`inject.js`, `world: MAIN`), which needs no extra permission.
+- `host_permissions` for `127.0.0.1:8765`: talk to the bridge running
+  on the user's own machine. **No data leaves the user's computer.**
 
 ## Privacy
 

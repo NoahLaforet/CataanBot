@@ -141,7 +141,6 @@ The dev-console asks for a one-line justification per permission:
 |-----------|---------------|
 | `sidePanel` | Renders the HUD in Chrome's native side panel adjacent to the colonist.io game. |
 | `storage` | Persists user preferences (streamer mode, font scale, panel toggles) across browser sessions. |
-| `scripting` | Injects the page-world WebSocket hook into the colonist.io tab. |
 | `tabs` | Auto-opens the post-game HTML report in a new tab adjacent to the game. |
 | `colonist.io host permission` | Reads the game DOM and WebSocket frames. The extension's only data source. |
 | `127.0.0.1:8765` host permission | Talks to the local Python bridge. Required for all decision-support features. |

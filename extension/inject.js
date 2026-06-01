@@ -131,6 +131,4 @@
     PatchedWebSocket.CLOSING = NativeWebSocket.CLOSING;
     PatchedWebSocket.CLOSED = NativeWebSocket.CLOSED;
     window.WebSocket = PatchedWebSocket;
-
-    console.log('[catanbot] WS interceptor (extension) installed');
 })();

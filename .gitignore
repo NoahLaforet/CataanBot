@@ -55,3 +55,8 @@ sessions/
 # they don't clutter the project's docs surface.
 RESUME.md
 TODO_VISUAL.md
+
+# Raw gameplay clip exports used to produce the docs/media GIFs. Tens of
+# MB of source video / images; the polished -wide variants shown in the
+# README already live under docs/media/, so the raw exports stay local.
+CatanBot Gameplay clips/
