@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Repo-local launcher for the CatanBot macOS menu-bar app.
+#
+# Bootstraps the .venv with the bridge + tray extras on first run, then
+# starts the rumps menu-bar app. bin/catanbot stays the canonical
+# cross-platform CLI / bridge launcher; this wrapper spawns the same
+# bridge under the hood and gives it one-click start/stop from the
+# toolbar. macOS only (rumps is a Cocoa wrapper).
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV="$REPO_ROOT/.venv"
+PY="$VENV/bin/python"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+    echo "catanbot-tray: the menu-bar app is macOS only." >&2
+    echo "  On Linux/Windows run the bridge with: ./bin/catanbot live" >&2
+    exit 1
+fi
+
+pick_python() {
+    for cand in python3.13 python3.12 python3.11 python3; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            ver=$("$cand" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+            major=${ver%.*}
+            minor=${ver#*.}
+            if [ "$major" -ge 3 ] && [ "$minor" -ge 11 ]; then
+                echo "$cand"
+                return
+            fi
+        fi
+    done
+    echo "catanbot-tray: needs Python 3.11+. Install one and re-run." >&2
+    echo "  macOS: brew install python@3.12" >&2
+    exit 1
+}
+
+# Bootstrap (or top up) the venv if the interpreter or rumps is missing.
+if [ ! -x "$PY" ] || ! "$PY" -c 'import rumps' >/dev/null 2>&1; then
+    echo "catanbot-tray: bootstrapping .venv with bridge + tray extras" >&2
+    [ -x "$PY" ] || "$(pick_python)" -m venv "$VENV"
+    "$VENV/bin/pip" install --upgrade pip >/dev/null
+    "$VENV/bin/pip" install -e "$REPO_ROOT[bridge,tray]"
+    echo "catanbot-tray: bootstrap done." >&2
+fi
+
+exec env PYTHONPATH="$REPO_ROOT/src" "$PY" -m catanbot.tray.app "$@"

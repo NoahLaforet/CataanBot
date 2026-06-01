@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "catanbot"
-version = "0.37.0"
-description = "Live Settlers of Catan advisor for colonist.io — DOM/WS bridge + Tampermonkey HUD with handcrafted heuristics over catanatron."
+version = "0.39.0"
+description = "Live Settlers of Catan advisor for colonist.io — local FastAPI bridge + Chrome side-panel HUD with handcrafted heuristics over catanatron."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later" }
@@ -33,9 +33,16 @@ bridge = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
 ]
+tray = [
+    # macOS menu-bar launcher (bin/catanbot-tray). rumps is a Cocoa
+    # wrapper, so it only installs on macOS; elsewhere the extra
+    # resolves to nothing and bin/catanbot stays the launch path.
+    "rumps>=0.4; sys_platform == 'darwin'",
+]
 
 [project.scripts]
 catanbot = "catanbot.cli:main"
+catanbot-tray = "catanbot.tray.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
