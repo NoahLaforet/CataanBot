@@ -78,10 +78,18 @@ def main(argv):
     rng = random.Random(20260524)
     seeds = [rng.randint(0, 10**9) for _ in range(games)]
     print(f"fixed-seed tuning: {games} games/config vs {opponent} bots")
+    # 2026-06-01 re-validation (200 games x random/weighted/vp): none of
+    # these moved win rate beyond noise, so the defaults stand. The
+    # engine already wins 67-80% vs every available catanatron bot; a
+    # stronger opponent would be needed to find real tuning headroom.
     for weight, factors in (
         ("prod", [0.6, 0.8, 1.3, 1.6]),
         ("vp_quad", [0.5, 0.75, 1.5, 2.0]),
         ("dev", [0.4, 0.7, 1.4, 2.0]),
+        ("hand", [0.5, 0.75, 1.5, 2.0]),
+        ("road_past3", [0.0, 2.0, 4.0]),
+        ("knight", [2.0, 4.0]),
+        ("vp_linear", [0.85, 1.2]),
     ):
         sweep(weight, factors, seeds, opponent)
     return 0
