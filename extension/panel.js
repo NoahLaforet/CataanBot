@@ -575,6 +575,14 @@
         }
 
         if (names.length) window.__catanbotRenderDirty = true;
+        // Push refresh: a chat line can carry advisor-relevant state (a
+        // self knight played, the friendly-robber announcement, a trade)
+        // that the periodic poll would only surface up to
+        // ADVISOR_POLL_MS later. Schedule one debounced (~30ms) tick so
+        // the HUD, and the robber-target list after a knight, updates
+        // promptly. No-op until startAdvisorPoll wires it; the internal
+        // _refreshTimer guard coalesces a burst into a single fetch.
+        triggerAdvisorRefresh();
         return false;
     });
 
@@ -771,6 +779,16 @@
                     }
                 }
                 if (dirty) window.__catanbotRenderDirty = true;
+                // Push refresh: the standalone state was just updated
+                // from this WS frame (and in bridge mode the bridge has
+                // already bumped its seq). Schedule a single debounced
+                // (~30ms) tick so the HUD reflects the frame now instead
+                // of waiting up to ADVISOR_POLL_MS for the next periodic
+                // poll. This is the wiring the push-refresh hook was
+                // built for and is what makes the robber-target list pop
+                // immediately after a 7 or a knight. The _refreshTimer
+                // guard coalesces frame bursts into one /advisor fetch.
+                triggerAdvisorRefresh();
             } catch (e) {
                 // Bad frame; standalone state stays as-is. Bridge
                 // mode (when active) ignores this entirely.
@@ -2761,6 +2779,41 @@
             body.classList.toggle('collapsed');
         });
 
+        // ---------- Collapsible secondary stat panels ----------------
+        // The histogram, eval sparkline, move-quality strip, and dev-
+        // deck strip are persistent panels below the live recs that add
+        // up to a lot of vertical scroll. Let the user click a panel's
+        // header to collapse just that panel, trimming the HUD's height
+        // to taste. State persists per panel in localStorage. Default is
+        // expanded, so valued panels (the live histogram, the eval line)
+        // stay visible until the user chooses to tuck them away. Wired
+        // once here against the static panel.html hosts; renderOverlay
+        // and the per-panel render functions are untouched (the data-
+        // driven `hidden` class is independent of `stat-collapsed`).
+        const _statPanels = [
+            ['hist-host', '.hist-h', 'cataan-collapse-hist'],
+            ['eval-host', '.eval-h', 'cataan-collapse-eval'],
+            ['mq-host', '.mq-h', 'cataan-collapse-mq'],
+            ['dev-deck-host', '.dev-deck-h', 'cataan-collapse-dev'],
+        ];
+        for (const [hostId, headSel, storeKey] of _statPanels) {
+            const host = document.getElementById(hostId);
+            if (!host) continue;
+            const head = host.querySelector(headSel);
+            if (!head) continue;
+            try {
+                if (localStorage.getItem(storeKey) === '1') {
+                    host.classList.add('stat-collapsed');
+                }
+            } catch (_) { /* localStorage may be blocked */ }
+            head.addEventListener('click', () => {
+                const collapsed = host.classList.toggle('stat-collapsed');
+                try {
+                    localStorage.setItem(storeKey, collapsed ? '1' : '0');
+                } catch (_) { /* localStorage may be blocked */ }
+            });
+        }
+
         // ---------- Pop-out into a separate browser window ----------
         // Uses the Document Picture-in-Picture API (Chrome 116+). The
         // HUD covers a real chunk of the colonist board when docked,
@@ -3141,7 +3194,7 @@
         const MODE_TIPS = {
             auto: 'bridge if reachable, JS recommender otherwise',
             bridge: 'always bridge — placeholder if it’s down',
-            extension: 'always JS recommender — bridge ignored',
+            extension: 'JS recommender only, bridge ignored (experimental, reduced accuracy)',
         };
         function applyMode(mode) {
             _setAdvisorMode(mode);
