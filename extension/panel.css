@@ -2369,8 +2369,8 @@ body { display: flex; flex-direction: column; }
   --line-strong: rgba(255, 255, 255, 0.10);
   --fg:       #e8ebf1;
   --fg-mute:  #9aa1b3;
-  --fg-dim:   #5b6273;
-  --fg-label: #6f7689;
+  --fg-dim:   #868ea3;
+  --fg-label: #939bb0;
   --pos:    #5cdb95;
   --alert:  #ff7676;
   --watch:  #ffc15c;
