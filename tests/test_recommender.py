@@ -1317,13 +1317,18 @@ def test_trade_decline_when_swap_loses_a_trade_unlocked_build():
     b = g.state.board
     b.build_road(Color.RED, (1, 2))
     b.build_road(Color.RED, (2, 3))
-    # Best now-rec is a propose-trade unlocking a settlement (one short of
-    # SHEEP, with surplus ORE to offer) — same setup as the accept test.
-    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "ORE": 2}
-    # They take our WHEAT (killing the settlement unlock) and give a
-    # BRICK, leaving only a road affordable. settlement -> road = down.
+    # This hand can't directly build anything (no WOOD so no road; no ORE
+    # so no dev/city), but its best now-move is a propose-trade unlocking
+    # a settlement (one short of WOOD, surplus BRICK to offer).
+    hand = {"BRICK": 2, "SHEEP": 1, "WHEAT": 1}
+    # The offer trades away the WHEAT the settlement needs and hands back
+    # WOOD, leaving only a road affordable. settlement -> road = down.
     verdict = evaluate_incoming_trade(
-        g, "RED", hand, give={"BRICK": 1}, want={"WHEAT": 1})
+        g, "RED", hand, give={"WOOD": 1}, want={"WHEAT": 1})
+    # Precondition: the before-rec really is a trade, so the _ranked_kind
+    # path is exercised (not a directly-affordable build). Without this
+    # guard the test would pass even with the bug present.
+    assert verdict["before"] in ("propose_trade", "bank_trade"), verdict
     assert verdict["verdict"] != "accept", verdict
 
 

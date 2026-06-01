@@ -37,6 +37,15 @@ def _icon(name: str) -> str | None:
     return str(p) if p.exists() else None
 
 
+# Text fallback when the icon assets are missing (e.g. a non-editable
+# install without package-data): show a status glyph rather than letting
+# the menu-bar item go invisible (the title is otherwise empty).
+_FALLBACK_TITLE = {
+    "running": "🟢", "stopped": "⚪",
+    "starting_a": "🟡", "starting_b": "🟡",
+}
+
+
 if rumps is not None:
 
     class CatanBotTray(rumps.App):
@@ -71,11 +80,17 @@ if rumps is not None:
 
         # --- status --------------------------------------------------
         def _set_icon(self, name: str) -> None:
-            if name != self._cur_icon:
-                ico = _icon(name)
-                if ico:
-                    self.icon = ico
-                self._cur_icon = name
+            if name == self._cur_icon:
+                return
+            ico = _icon(name)
+            if ico:
+                self.icon = ico
+                self.title = ""
+            else:
+                # Assets missing: keep a visible glyph so the item is
+                # never blank.
+                self.title = _FALLBACK_TITLE.get(name, "CatanBot")
+            self._cur_icon = name
 
         def _refresh(self, _sender) -> None:
             st = process.status(self.port)
