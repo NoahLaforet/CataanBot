@@ -483,6 +483,19 @@ function _proposeTradeRecs(state, hand, opts) {
         ['road', COSTS.road, 4.5, 'road'],
         ['dev_card', COSTS.dev_card, 4.0, 'dev card'],
     ];
+    // Reserve, per resource, what any near-term build (<= 2 cards short)
+    // already-held needs, so we never offer away a card another blocked
+    // build is counting on. Mirrors recommender.py's reserved_across.
+    const reservedAcross = {};
+    for (const [, c2] of wanted) {
+        const miss = _missing(hand, c2);
+        const totalMiss = Object.values(miss).reduce((s, v) => s + v, 0);
+        if (totalMiss > 2) continue;
+        for (const [r, n] of Object.entries(c2)) {
+            reservedAcross[r] = Math.max(reservedAcross[r] || 0,
+                Math.min(n, hand[r] || 0));
+        }
+    }
     for (const [target, cost, baseScore, kindWord] of wanted) {
         if (handCanAfford(hand, cost)) continue;
         const need = _missing(hand, cost);
@@ -498,8 +511,9 @@ function _proposeTradeRecs(state, hand, opts) {
         for (const surplus of RESOURCE_NAMES) {
             if (surplus === needRes) continue;
             const have = hand[surplus] || 0;
-            const reservedByCost = cost[surplus] || 0;
-            if (have - 1 < reservedByCost) continue;
+            // Only offer a card held beyond what near-term builds reserve
+            // (this build included, via reservedAcross).
+            if (have - (reservedAcross[surplus] || 0) < 1) continue;
             // Score floor at 1.5 so we don't outrank affordable
             // builds, but high enough to clearly beat the dev-card
             // fallback when a real trade unlocks a build.
@@ -677,4 +691,4 @@ export function recommendRobberTargets(state, opts = {}) {
     return targets.slice(0, opts.topK || 5);
 }
 
-export { COSTS, _scoreSettlement, _weightedProd };
+export { COSTS, _scoreSettlement, _weightedProd, _proposeTradeRecs };

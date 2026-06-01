@@ -159,8 +159,11 @@ Open (want a live bridge-vs-standalone comparison to tune safely):
   post-placement near branch now matches `strategy_select.py` (produced-
   resource gate 0.20, near score 0.85, no 3:1-near credit). The
   JS-only pre-placement board-affinity branch is left as is.
-- `_proposeTradeRecs` does not reserve resources across other blocked
-  builds before offering a surplus, where the bridge does.
+- `_proposeTradeRecs` resource reservation. DONE (v0.40.0): it now
+  computes reservedAcross over near-term builds (<= 2 cards short) and
+  only offers a surplus held beyond that, matching the bridge's
+  reserved_across so it won't trade away a card another blocked build
+  needs.
 - `_bankTradeRecs` uses fixed base scores rather than the unlocked
   build's production curve minus one.
 - The standalone knight robber window relies on the chat-log "used
