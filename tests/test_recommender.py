@@ -1301,6 +1301,32 @@ def test_trade_accept_unlocks_affordable_build():
     assert verdict["score"] > 0
 
 
+def test_trade_decline_when_swap_loses_a_trade_unlocked_build():
+    """Regression: an offer that strips the resource unlocking a higher
+    build (here a propose-trade-unlocked SETTLEMENT) for a lesser one (a
+    road) used to be ACCEPTED. evaluate_incoming_trade's kind-rank table
+    omitted bank_trade / propose_trade, so a trade-toward-settlement
+    before-rec fell to rank 0 (= no build) and the road after-rec looked
+    like an upgrade. Resolving trade recs to what they `unlocks` fixes
+    it; this must now DECLINE."""
+    from catanatron import Color
+
+    from catanbot.recommender import evaluate_incoming_trade
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    b.build_road(Color.RED, (1, 2))
+    b.build_road(Color.RED, (2, 3))
+    # Best now-rec is a propose-trade unlocking a settlement (one short of
+    # SHEEP, with surplus ORE to offer) — same setup as the accept test.
+    hand = {"WOOD": 1, "BRICK": 1, "WHEAT": 1, "ORE": 2}
+    # They take our WHEAT (killing the settlement unlock) and give a
+    # BRICK, leaving only a road affordable. settlement -> road = down.
+    verdict = evaluate_incoming_trade(
+        g, "RED", hand, give={"BRICK": 1}, want={"WHEAT": 1})
+    assert verdict["verdict"] != "accept", verdict
+
+
 def test_trade_decline_when_opponent_close_to_win():
     """Even a good-looking swap gets declined when opp is at 8+ VP —
     the offerer is close enough to closing out the game."""

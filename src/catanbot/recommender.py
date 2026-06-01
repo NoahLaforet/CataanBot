@@ -1890,8 +1890,20 @@ def recommend_actions(
                             float(rec.get("score", 0.0)) + bump, 10.0), 1)
                     kept.append(rec)
                 recs = kept
-                # Re-sort because scores changed.
-                recs.sort(key=lambda r: -float(r.get("score", 0.0)))
+                # Re-sort, but keep search_rerank's bucket order
+                # (searched-now -> other-now -> soon) so the 1-ply
+                # search_delta ranking is not discarded just because an
+                # endgame score bump changed the raw scores. Only the
+                # scores changed, not the search. Mirrors the strategy-tag
+                # re-sort key below.
+                def _eg_bucket_key(rec: dict) -> tuple[int, float]:
+                    sd = rec.get("search_delta")
+                    if sd is not None:
+                        return (0, -float(sd))
+                    if rec.get("when", "now") == "now":
+                        return (1, -float(rec.get("score", 0.0)))
+                    return (2, -float(rec.get("score", 0.0)))
+                recs.sort(key=_eg_bucket_key)
     except Exception:  # noqa: BLE001
         pass
 
@@ -2147,14 +2159,30 @@ def evaluate_incoming_trade(
     from catanbot.config import close_to_win_vp
     _CLOSE_TO_WIN_VP = close_to_win_vp()
     # Rank of build types so we can detect a kind upgrade. Score deltas
-    # alone undersell e.g. "road → settlement" (raw gap is only ~0.5)
+    # alone undersell e.g. "road -> settlement" (raw gap is only ~0.5)
     # even though it's a real upgrade in the type of move available.
-    _KIND_RANK = {None: 0, "dev_card": 1, "road": 2, "trade": 2,
+    # bank_trade / propose_trade are not builds themselves; they unlock
+    # one, and their `unlocks` field names the real target (settlement /
+    # city / dev_card). Resolve them to that target before ranking, or
+    # they fall to rank 0 (= no build): a hand whose best move is "trade
+    # toward a city" was then mis-read as having no build, so an offer
+    # that merely yields a road looked like an upgrade and got wrongly
+    # accepted.
+    def _ranked_kind(rec):
+        if not rec:
+            return None
+        k = rec.get("kind")
+        if k in ("bank_trade", "propose_trade"):
+            return rec.get("unlocks")
+        return k
+    before_rank_kind = _ranked_kind(before)
+    after_rank_kind = _ranked_kind(after)
+    _KIND_RANK = {None: 0, "dev_card": 1, "road": 2,
                   "settlement": 3, "city": 4}
-    kind_upgrade = (_KIND_RANK.get(after_kind, 0)
-                    > _KIND_RANK.get(before_kind, 0))
-    kind_downgrade = (_KIND_RANK.get(after_kind, 0)
-                      < _KIND_RANK.get(before_kind, 0))
+    kind_upgrade = (_KIND_RANK.get(after_rank_kind, 0)
+                    > _KIND_RANK.get(before_rank_kind, 0))
+    kind_downgrade = (_KIND_RANK.get(after_rank_kind, 0)
+                      < _KIND_RANK.get(before_rank_kind, 0))
 
     # Counter is only meaningful on non-accept paths. Skip entirely when
     # the opp is close to winning — any deal feeds them closer to 10 VP.
@@ -2171,13 +2199,13 @@ def evaluate_incoming_trade(
                     "reason": f"opp at {opp_vp} VP — don't feed",
                     "before": before_kind, "after": after_kind,
                     "counter": None}
-        label = _kind_label(after_kind)
+        label = _kind_label(after_rank_kind or after_kind)
         return {"verdict": "accept", "score": delta,
-                "reason": f"unlocks {label} (+{delta:.1f})",
+                "reason": f"unlocks {label} ({delta:+.1f})",
                 "before": before_kind, "after": after_kind,
                 "counter": None}
     if kind_downgrade or delta <= -1.0:
-        label = _kind_label(before_kind)
+        label = _kind_label(before_rank_kind or before_kind)
         return {"verdict": "decline", "score": delta,
                 "reason": f"blocks {label} ({delta:.1f})",
                 "before": before_kind, "after": after_kind,

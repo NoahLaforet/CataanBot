@@ -222,25 +222,32 @@ def test_search_rerank_attaches_delta_and_promotes_city_over_road():
 
 
 def test_search_rerank_puts_unsimulatable_at_tail():
-    """A propose_trade rec can't be simulated directly (not a catanatron
-    Action) — it must end up with search_delta=None and fall below any
-    real simulated move in the ordering."""
+    """A propose_trade rec is not a catanatron Action, and a dev_card buy
+    is deliberately NOT simulated (executing it would draw the actual
+    next deck card and credit it, letting a blind buy out-rank real
+    builds). Both must get search_delta=None and fall below a real
+    simulated build."""
+    from catanatron import Color
     from catanbot.eval import search_rerank
 
-    g = _red_mid_game({"SHEEP": 1, "WHEAT": 1, "ORE": 1})
+    g = _red_mid_game({"WOOD": 1, "BRICK": 1})
+    edge = next(iter(g.state.board.buildable_edges(Color.RED)))
     recs = [
         {"kind": "propose_trade", "when": "now", "score": 8.0,
          "give": {"WOOD": 1}, "get": {"SHEEP": 1}},
         {"kind": "dev_card", "when": "now", "score": 3.0},
+        {"kind": "road", "when": "now", "score": 4.0,
+         "edge": [int(edge[0]), int(edge[1])]},
     ]
     search_rerank(g, "RED", recs)
-    # dev_card simulates cleanly → search_delta is a float and it leads.
-    assert recs[0]["kind"] == "dev_card", (
-        f"dev_card should lead over unsimulatable propose_trade: "
+    # The affordable road simulates and leads; the trade and the
+    # (intentionally unsimulated) dev_card both sit behind it.
+    assert recs[0]["kind"] == "road", (
+        f"simulated road should lead: "
         f"{[(r['kind'], r.get('search_delta')) for r in recs]}")
     assert recs[0].get("search_delta") is not None
-    assert recs[1]["kind"] == "propose_trade"
-    assert recs[1].get("search_delta") is None
+    for r in recs[1:]:
+        assert r.get("search_delta") is None
 
 
 def test_search_rerank_sorts_soon_plans_below_now_recs():
@@ -251,7 +258,8 @@ def test_search_rerank_sorts_soon_plans_below_now_recs():
     from catanatron import Color
     from catanbot.eval import search_rerank
 
-    g = _red_mid_game({"SHEEP": 1, "WHEAT": 1, "ORE": 1})
+    g = _red_mid_game({"WOOD": 1, "BRICK": 1})
+    edge = next(iter(g.state.board.buildable_edges(Color.RED)))
     red_settle = next(
         n for n, (c, bt) in g.state.board.buildings.items()
         if c == Color.RED and bt == "SETTLEMENT"
@@ -259,12 +267,13 @@ def test_search_rerank_sorts_soon_plans_below_now_recs():
     recs = [
         {"kind": "city", "when": "soon", "score": 9.5,
          "node_id": int(red_settle), "missing": {"ORE": 2}},
-        {"kind": "dev_card", "when": "now", "score": 3.0},
+        {"kind": "road", "when": "now", "score": 4.0,
+         "edge": [int(edge[0]), int(edge[1])]},
     ]
     search_rerank(g, "RED", recs)
-    # 'soon' city fails execute() (no ORE in hand) → search_delta=None
-    # → bucket 2. 'now' dev_card simulates → bucket 0. Dev card leads.
-    assert recs[0]["kind"] == "dev_card", (
+    # 'soon' city fails execute() (no WHEAT/ORE in hand) → search_delta
+    # =None → bucket 2. 'now' road simulates → bucket 0. Road leads.
+    assert recs[0]["kind"] == "road", (
         f"now should beat soon: {[(r['kind'], r.get('when')) for r in recs]}")
 
 
