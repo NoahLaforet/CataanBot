@@ -84,3 +84,18 @@ def test_versions_are_in_sync():
     assert manifest_v == pyproject_v == changelog_v, (
         f"version desync: manifest={manifest_v}, "
         f"pyproject={pyproject_v}, changelog={changelog_v}")
+
+
+def test_histogram_scale_excludes_seven():
+    """Dice-stats regression. The roll histogram's bar-scaling max must
+    exclude the 7 column. 7 is the single most probable total (6/36), so
+    leaving it in max pinned the scale and squashed every other bar into
+    the bottom of the chart. The fix skips n===7 in the max loop and
+    clamps the now-possibly-overflowing 7 bar to 100%."""
+    src = _read("extension/panel.js")
+    assert re.search(r"if \(n === 7\) continue;", src), (
+        "renderHistogram's max loop must skip n===7 so the 7 column "
+        "does not pin the bar scale")
+    assert "Math.min(100, pct)" in src, (
+        "the histogram bar height must be clamped to 100% (with 7 out "
+        "of max, the 7 count can exceed it)")
