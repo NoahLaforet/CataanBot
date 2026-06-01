@@ -206,6 +206,21 @@ class LiveGame:
         order so catanatron seats match what the live game shows.
         """
         self.session = LiveSession.from_game_start(body)
+        # catanatron only has 4 player colors. A 5-6 player colonist
+        # lobby (big Twirl / Volcano lobbies seat up to 6) has no color
+        # for the 5th/6th seat, so seeding the color map below would
+        # raise ColorMapError partway through and leave a half-booted,
+        # corrupt game: started would read True (session + tracker both
+        # set) over a color_map missing seats, and every later frame
+        # naming an un-seated player would re-raise. Stop before seating
+        # catanatron. Keep the session so the snapshot can surface
+        # "limited tracking" (players_unsupported), but leave
+        # tracker/color_map unset so started stays False and the feed
+        # loop skips diffs cleanly instead of crashing on every frame.
+        if self.session.too_many_players():
+            self.tracker = None
+            self.color_map = None
+            return
         _apply_game_settings(body)
         game_state = body.get("gameState") if "gameState" in body else body
         map_state = game_state.get("mapState")

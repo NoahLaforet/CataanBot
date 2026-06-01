@@ -94,6 +94,46 @@ def test_in_game_road_sealed_fallback_still_emits_rec():
     assert "edge_from" in road and "edge_to" in road
 
 
+def test_road_fallback_never_lands_on_opponent_settlement():
+    """Bug 2: the sealed-road fallback picked its far endpoint purely by
+    self-network membership and only checked far production > 0, never
+    whether that far node already held a building. catanatron's
+    buildable_edges returns edges that run up to (but not past) an
+    opponent's settlement, so the fallback could emit a road whose
+    landing was an opponent's piece, and the HUD then drew a road
+    pointing into an opponent settlement. The fallback must skip
+    occupied far nodes while still emitting a (sealed) rec toward an
+    unoccupied direction. This reuses the full-seal setup above, which
+    plants opp settlements at 6/2/19/22/16/4 (seed=1)."""
+    from catanatron import Color
+    from catanbot.recommender import recommend_actions
+
+    g = _fresh_game_with_red_settle()
+    b = g.state.board
+    for n, col in (
+        (6, Color.BLUE), (2, Color.WHITE),
+        (19, Color.ORANGE), (22, Color.BLUE),
+        (16, Color.WHITE), (4, Color.ORANGE),
+    ):
+        try:
+            b.build_settlement(col, n, initial_build_phase=True)
+        except Exception:  # noqa: BLE001
+            continue
+    opp_nodes = {
+        nid for nid, (col, _bt) in b.buildings.items()
+        if col != Color.RED
+    }
+    out = recommend_actions(g, "RED", {"WOOD": 1, "BRICK": 1}, top=8)
+    roads = [r for r in out if r["kind"] == "road"]
+    # A sealed fallback rec must still survive (toward an empty far).
+    assert roads, "fallback must still emit at least one road rec"
+    for r in roads:
+        assert r.get("landing_node") not in opp_nodes, (
+            f"road lands on opponent settlement: {r}")
+        assert r.get("edge_to") not in opp_nodes, (
+            f"road edge_to is opponent settlement: {r}")
+
+
 def test_full_settlement_hand_picks_settlement_over_dev():
     from catanbot.recommender import recommend_actions
 

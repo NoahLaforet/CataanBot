@@ -520,8 +520,18 @@ def _best_opening_road(*, settlement: int, neighbors, scored_by_node,
     # looking at a blank rec — pointing at the highest-prod unblocked
     # far node is better than no rec at all.
     fallback: tuple[float, int] | None = None
+    # Never route an opening road into a node that already holds a
+    # building (Bug 2 class): you cannot settle there, a road cannot
+    # extend past an opponent piece, and the direction arrow would point
+    # straight into it. blocked_nodes also holds distance-2 neighbors
+    # (legal road directions), so filter on just the occupied corners.
+    occupied_nodes: set[int] = (
+        {int(n) for n in game.state.board.buildings}
+        if game is not None else set())
     for far in adj:
         far_int = int(far)
+        if far_int in occupied_nodes:
+            continue
         # Opp road on (settlement, far) — can't lay our opening road
         # through an opp piece that's already there.
         if frozenset((int(settlement), far_int)) in opp_edges:
@@ -1155,7 +1165,14 @@ def recommend_actions(
                 pb = _node_pip_production(m, bi)
                 far_fb = ai if pa >= pb else bi
             far_prod = _node_pip_production(m, far_fb)
-            if far_prod > 0:
+            # Never surface a road whose far endpoint already holds a
+            # building. catanatron's buildable_edges returns edges that
+            # run up to but not past an opponent's settlement, so far_fb
+            # can be an occupied corner; _node_pip_production is purely
+            # geometric so it still scores > 0. Emitting it made the HUD
+            # point a road straight into an opponent's piece (Bug 2).
+            # existing_buildings (line above) covers every color.
+            if far_prod > 0 and far_fb not in existing_buildings:
                 fallback_candidates.append(((ai, bi), far_prod, far_fb))
             # Look at both endpoints' neighbors for new reachable spots.
             # Rank candidate landings by diversity-weighted prod (the

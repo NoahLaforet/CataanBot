@@ -1530,6 +1530,17 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             }
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] game_over snap failed: {e!r}", flush=True)
+    # 5-6 player boards exceed catanatron's 4 colors. When that happens
+    # start_from_game_state deliberately leaves the game un-started (no
+    # tracker / color map) rather than booting a half-seated, corrupt
+    # one, so flag it here, before the not-started early return below, so
+    # the HUD shows "limited tracking" instead of a blank waiting frame.
+    try:
+        _us_sess = game.session
+        snap["players_unsupported"] = bool(
+            _us_sess is not None and _us_sess.too_many_players())
+    except Exception:  # noqa: BLE001
+        snap["players_unsupported"] = False
     if not game.started:
         return snap
     sess = game.session
