@@ -567,9 +567,17 @@ export function recommendRobberTargets(state, opts = {}) {
             }
         }
         let oppAdj = adj.filter(x => !x.isSelf);
-        const hasSelfAdj = adj.some(x => x.isSelf);
+        const selfAdj = adj.filter(x => x.isSelf);
+        // No opponent building on this tile means no steal value, so it
+        // can't be a robber target. But do NOT drop a tile just because
+        // we also touch it: the bridge keeps self-adjacent tiles
+        // (own_blocked is a score penalty, not a drop), and dropping
+        // them here meant that on boards where every opp-adjacent
+        // productive tile also touches one of our own settlements the
+        // whole list came back empty and the panel rendered no robber
+        // table at all (Bug 1, standalone). Keep the tile and penalize
+        // its score below instead.
         if (oppAdj.length === 0) continue;
-        if (hasSelfAdj) continue;
         // Friendly Robber filter: colonist's optional rule protects
         // any player at ≤ 2 VP from being the rob target. When
         // active, drop opps below the threshold from the victim
@@ -589,6 +597,14 @@ export function recommendRobberTargets(state, opts = {}) {
         for (const a of oppAdj) {
             pieceValue += a.kind === 'CITY' ? 2 : 1;
             oppByColor[a.color] = (oppByColor[a.color] || 0) + 1;
+        }
+        // Self-block penalty: parking the robber on a tile we also
+        // produce from costs us pips, so a self-adjacent tile sinks in
+        // the ranking (mirrors the bridge's own_blocked weighting) while
+        // still appearing rather than vanishing from the list.
+        let selfPieceValue = 0;
+        for (const a of selfAdj) {
+            selfPieceValue += a.kind === 'CITY' ? 2 : 1;
         }
         // Build the victims array — each adjacent opp w/ vp + card count
         // + suggested flag set on the highest-card holder. Mirrors the
@@ -621,7 +637,8 @@ export function recommendRobberTargets(state, opts = {}) {
             cards: state.handTotal[c] || 0,
             suggested: c === bestVictim,
         }));
-        const score = pip * pieceValue + (bestVictimCards || 0) * 1.5;
+        const score = pip * pieceValue + (bestVictimCards || 0) * 1.5
+            - pip * selfPieceValue;
         targets.push({
             tile_id: tid,
             number: tile.number,

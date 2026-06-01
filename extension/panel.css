@@ -3324,3 +3324,38 @@ table.robber.robber-urgent {
   border-bottom: 1px solid var(--line) !important;
   font-size: 12px !important;
 }
+
+/* --- HUD declutter: collapsible secondary stat panels ---------------
+   The histogram / eval / move-quality / dev-deck hosts get a click-to-
+   collapse header so the user can shrink the HUD's vertical footprint.
+   panel.js wires the click and persists state per panel. This block is
+   at the end of the file so it wins the v0.27 !important cascade.
+   Default is expanded; the `stat-collapsed` class is opt-in per panel. */
+.hist-host .hist-h,
+.eval-host .eval-h,
+.mq-host .mq-h,
+.dev-deck-host .dev-deck-h {
+  cursor: pointer;
+  user-select: none;
+}
+.hist-host .hist-h::after,
+.eval-host .eval-h::after,
+.mq-host .mq-h::after,
+.dev-deck-host .dev-deck-h::after {
+  content: " \25BE";
+  opacity: 0.45;
+  font-size: 9px;
+}
+.hist-host.stat-collapsed .hist-h::after,
+.eval-host.stat-collapsed .eval-h::after,
+.mq-host.stat-collapsed .mq-h::after,
+.dev-deck-host.stat-collapsed .dev-deck-h::after {
+  content: " \25B8";
+}
+.hist-host.stat-collapsed .hist,
+.eval-host.stat-collapsed .eval-graph,
+.mq-host.stat-collapsed .mq-tally,
+.mq-host.stat-collapsed .mq-last,
+.dev-deck-host.stat-collapsed .dev-deck {
+  display: none !important;
+}
