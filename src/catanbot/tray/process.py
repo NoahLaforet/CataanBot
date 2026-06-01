@@ -78,6 +78,28 @@ def _pid_alive(pid: int | None) -> bool:
     return True
 
 
+def _pid_is_bridge(pid: int | None) -> bool:
+    """True when ``pid`` is alive AND its process command looks like our
+    bridge. Guards against a stale pidfile whose PID the OS recycled onto
+    an unrelated process: we never signal a PID we cannot confirm is a
+    catanbot bridge. Matches the actual launch forms (the python
+    ``-m catanbot.cli ... live/bridge`` invocation, or the bin/catanbot
+    bash wrapper before it execs) and deliberately does NOT match on the
+    repo path alone, which contains 'CatanBot'."""
+    if not _pid_alive(pid):
+        return False
+    try:
+        out = subprocess.run(
+            ["ps", "-p", str(int(pid)), "-o", "command="],
+            capture_output=True, text=True, timeout=2,
+        ).stdout.lower()
+    except Exception:  # noqa: BLE001
+        return False
+    if "catanbot.cli" in out:
+        return True
+    return "bin/catanbot" in out and ("live" in out or "bridge" in out)
+
+
 def bridge_command(port: int = DEFAULT_PORT) -> list[str]:
     """argv to launch the bridge with the live advisor, via the
     repo-local launcher (which owns the venv bootstrap + PYTHONPATH)."""
@@ -90,7 +112,7 @@ def status(port: int = DEFAULT_PORT) -> str:
     that is alive but the port is not up yet), or 'stopped'."""
     if port_open(port):
         return "running"
-    if _pid_alive(read_pid()):
+    if _pid_is_bridge(read_pid()):
         return "starting"
     return "stopped"
 
@@ -102,6 +124,11 @@ def start(port: int = DEFAULT_PORT,
     user launched by hand), adopt it instead of spawning a duplicate."""
     if port_open(port):
         return "running"
+    # Already spawned and still binding the port: do not double-spawn (a
+    # second process would fail to bind and orphan the pidfile from the
+    # live one).
+    if _pid_is_bridge(read_pid()):
+        return "starting"
     full_env = {**os.environ, **(env or {})}
     proc = subprocess.Popen(
         bridge_command(port), cwd=str(REPO_ROOT), env=full_env,
@@ -115,7 +142,7 @@ def stop(timeout: float = 5.0) -> None:
     """Terminate the launcher-spawned bridge (SIGTERM, then SIGKILL on
     timeout) and clear the pidfile. No-op when nothing is tracked."""
     pid = read_pid()
-    if pid and _pid_alive(pid):
+    if pid and _pid_is_bridge(pid):
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
