@@ -29,3 +29,23 @@ jobs:
 
       - name: Run pytest
         run: pytest
+
+  extension-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax-check extension JS (node --check)
+        run: |
+          node --check extension/panel.js
+          node --check extension/background.js
+          node --check extension/content.js
+          node --check extension/inject.js
+
+      - name: Run standalone JS unit tests (node --test)
+        run: node --test tests/js/*.test.mjs
