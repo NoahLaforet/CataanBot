@@ -33,6 +33,11 @@ launcher, a tidier HUD, and release hygiene across the repo.
   opponent-adjacent productive tile also touched one of your own
   settlements, the standalone ranking dropped every candidate and the
   table vanished. Self-adjacent tiles are now kept with a score penalty.
+- **No-bridge settlement scores match the bridge.** The standalone
+  recommender now scores and ranks settlement spots by wheat-weighted
+  production with no diversity multiplier, matching the Python engine,
+  so the same corner reads the same score and the same number-one pick
+  on both paths.
 - **Collapsible HUD panels.** The roll histogram, eval sparkline,
   move-quality strip, and dev-deck strip each get a click-to-collapse
   header (persisted) so you can trim the panel's height to taste.
