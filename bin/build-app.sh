@@ -72,6 +72,18 @@ cat > "$C/Info.plist" <<'EOF'
 </plist>
 EOF
 
+# Ad-hoc codesign so Gatekeeper on modern macOS will launch a locally
+# built app. Strip xattrs first: iCloud / FinderInfo metadata makes
+# codesign fail. An unsigned bundle is rejected outright ("no usable
+# signature"); ad-hoc signing makes it launchable (you may still need to
+# approve it once in System Settings > Privacy & Security on first run).
+xattr -cr "$APP" 2>/dev/null || true
+if codesign --force --deep --sign - "$APP" >/dev/null 2>&1; then
+    echo "ad-hoc signed"
+else
+    echo "warning: codesign failed; approve it in System Settings > Privacy & Security" >&2
+fi
+
 touch "$APP"   # nudge Finder/Dock to pick up the icon
 echo "built  $APP"
 echo "launch by double-clicking it in Finder, or:  open \"$APP\""
