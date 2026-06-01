@@ -53,15 +53,30 @@ def test_pidfile_roundtrip(tmp_path, monkeypatch):
 def test_status_state_machine(tmp_path, monkeypatch):
     monkeypatch.setenv("CATANBOT_STATE_DIR", str(tmp_path))
     from catanbot.tray import process
-    # stopped: nothing listening and no live pid.
+    # stopped: nothing listening and no tracked bridge pid.
     monkeypatch.setattr(process, "port_open", lambda *a, **k: False)
-    monkeypatch.setattr(process, "_pid_alive", lambda pid: False)
+    monkeypatch.setattr(process, "_pid_is_bridge", lambda pid: False)
     assert process.status() == "stopped"
     # running: the port answers.
     monkeypatch.setattr(process, "port_open", lambda *a, **k: True)
     assert process.status() == "running"
-    # starting: we have a live pid but the port is not up yet.
+    # starting: a tracked bridge pid is alive but the port is not up yet.
     monkeypatch.setattr(process, "port_open", lambda *a, **k: False)
     monkeypatch.setattr(process, "read_pid", lambda: 4242)
-    monkeypatch.setattr(process, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(process, "_pid_is_bridge", lambda pid: True)
     assert process.status() == "starting"
+
+
+def test_stop_never_kills_a_non_bridge_pid(tmp_path, monkeypatch):
+    """stop() must never signal a PID it cannot confirm is the bridge,
+    guarding against a stale pidfile whose PID the OS recycled onto an
+    unrelated process. Point the pidfile at THIS pytest process (clearly
+    not a catanbot bridge) and confirm stop() leaves it running and only
+    clears the pidfile."""
+    import os
+    monkeypatch.setenv("CATANBOT_STATE_DIR", str(tmp_path))
+    from catanbot.tray import process
+    process.write_pid(os.getpid())
+    process.stop()
+    os.kill(os.getpid(), 0)  # raises if stop() had signalled us; it must not
+    assert process.read_pid() is None

@@ -1536,7 +1536,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # one, so flag it here, before the not-started early return below, so
     # the HUD shows "limited tracking" instead of a blank waiting frame.
     try:
-        _us_sess = game.session
+        _us_sess = getattr(game, "session", None)
         snap["players_unsupported"] = bool(
             _us_sess is not None and _us_sess.too_many_players())
     except Exception:  # noqa: BLE001

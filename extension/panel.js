@@ -4774,8 +4774,14 @@
                 // table column width. Rescale within the visible
                 // batch so the top score reads as ~10 and others
                 // are proportional. Underlying ranking is preserved.
+                // Divide by the max POSITIVE score only. A self-adjacent
+                // tile can now carry a negative score (the standalone
+                // self-block penalty); taking abs() here would let such a
+                // negative outlier inflate the divisor and shrink the real
+                // top target's displayed number. Ranking (sorted on raw
+                // score) is unaffected either way.
                 const maxScore = Math.max(...snap.robber_targets
-                    .map(x => Math.abs(x.score || 0)), 1);
+                    .map(x => x.score || 0), 1);
                 const norm = maxScore > 10
                     ? Math.round((t.score / maxScore) * 100) / 10
                     : t.score;
