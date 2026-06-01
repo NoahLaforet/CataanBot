@@ -40,8 +40,10 @@ if [ ! -x "$PY" ]; then
     echo "catanbot: bootstrapping .venv (first run, ~30s)" >&2
     BOOTSTRAP_PY="$(pick_python)"
     "$BOOTSTRAP_PY" -m venv "$VENV"
-    "$VENV/bin/pip" install --upgrade pip >/dev/null
-    "$VENV/bin/pip" install -e "$REPO_ROOT[bridge]"
+    # Use `python -m pip`, not the pip script, so a venv that was moved
+    # from its original path (stale pip shebang) still bootstraps.
+    "$PY" -m pip install --upgrade pip >/dev/null
+    "$PY" -m pip install -e "$REPO_ROOT[bridge]"
     echo "catanbot: bootstrap done." >&2
 fi
 

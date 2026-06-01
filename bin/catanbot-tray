@@ -38,8 +38,11 @@ pick_python() {
 if [ ! -x "$PY" ] || ! "$PY" -c 'import rumps' >/dev/null 2>&1; then
     echo "catanbot-tray: bootstrapping .venv with bridge + tray extras" >&2
     [ -x "$PY" ] || "$(pick_python)" -m venv "$VENV"
-    "$VENV/bin/pip" install --upgrade pip >/dev/null
-    "$VENV/bin/pip" install -e "$REPO_ROOT[bridge,tray]"
+    # Use `python -m pip`, not the pip script: if the venv was created
+    # under one path and later moved, the pip script's shebang goes stale
+    # (bad interpreter) while the python symlink still works.
+    "$PY" -m pip install --upgrade pip >/dev/null
+    "$PY" -m pip install -e "$REPO_ROOT[bridge,tray]"
     echo "catanbot-tray: bootstrap done." >&2
 fi
 
