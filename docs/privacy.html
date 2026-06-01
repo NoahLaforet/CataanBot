@@ -159,7 +159,8 @@
     </li>
     <li>
       <strong>Bridge-side:</strong> per-game WebSocket frame
-      mirrors in <code>~/Desktop/CatanBot/sessions/active.jsonl</code>
+      mirrors in a <code>sessions/active.jsonl</code> file inside the
+      directory you launch the bridge from
       (rotates per game, capped at the active session), and an
       HTML post-mortem of each finished game in
       <code>postmortems/</code>. These files are written by the
@@ -181,10 +182,6 @@
       <tr>
         <td><code>storage</code></td>
         <td>Persists UI preferences across browser sessions.</td>
-      </tr>
-      <tr>
-        <td><code>scripting</code></td>
-        <td>Injects the WebSocket observer into colonist.io.</td>
       </tr>
       <tr>
         <td><code>tabs</code></td>

@@ -4,6 +4,51 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.39.0 (2026-05-31)
+
+Audit-and-fix pass: two long-standing bugs squashed, plus a one-click
+launcher, a tidier HUD, and release hygiene across the repo.
+
+- **Robber targets appear instantly.** The HUD's push-refresh hook was
+  built but never wired, so the panel only redrew on the 500ms poll and
+  the robber-target list could lag up to a full poll behind a 7 or a
+  played knight. The hook now fires on every WebSocket frame and chat
+  line, cutting mid-turn latency from up to 500ms to about 30ms for
+  both the bridge and the no-bridge paths.
+- **Road recs never point into an opponent's settlement.** The bridge's
+  sealed-road fallback picked a far endpoint by network reach and only
+  checked production, so it could surface a road running into an
+  opponent's piece. It now skips occupied far nodes (both the mid-game
+  fallback and the opening-road follow-up) while still emitting a sealed
+  rec toward open ground.
+- **5-6 player lobbies degrade cleanly.** A 5th or 6th seat exceeds
+  catanatron's four colors and used to leave a half-booted, corrupt
+  game that re-raised on every later frame. The bridge now detects this
+  up front and shows "limited tracking" instead of failing.
+- **Friendly Robber auto-detects from the WS game settings.** The
+  authoritative `friendlyRobber` flag in the GameStart payload is now
+  read directly, so protected (low-VP) victims are filtered out even
+  when the chat-log announcement is missed or scrolled past.
+- **No-bridge robber list no longer goes empty.** On boards where every
+  opponent-adjacent productive tile also touched one of your own
+  settlements, the standalone ranking dropped every candidate and the
+  table vanished. Self-adjacent tiles are now kept with a score penalty.
+- **Collapsible HUD panels.** The roll histogram, eval sparkline,
+  move-quality strip, and dev-deck strip each get a click-to-collapse
+  header (persisted) so you can trim the panel's height to taste.
+- **One-click bridge launcher (macOS).** `./bin/catanbot-tray` starts a
+  menu-bar app that starts/stops the local bridge with a status dot,
+  opens colonist.io, and exposes a couple of settings. `bin/catanbot`
+  stays the cross-platform launch path.
+- **Release hygiene.** Dropped the unused `scripting` permission and the
+  dead `localhost` host grant; synced the version across manifest,
+  pyproject, and this changelog; added the first standalone JS tests
+  and a node --check syntax pass for the extension; corrected the
+  privacy/store/README permission notes; removed a stray duplicate
+  test file; and
+  quieted the page-console logging. The no-bridge mode is now labeled
+  experimental in the panel.
+
 ## v0.38.0 — 2026-05-18
 
 Black Forest variant support. The all-wood-centre map with fog hexes

@@ -607,7 +607,6 @@
     }
 
     function attach(scroller) {
-        console.log(LOG_PREFIX, 'attached to log scroller');
         scroller.querySelectorAll(ENTRY_SELECTOR_FALLBACK).forEach(processEntry);
 
         const observer = new MutationObserver((mutations) => {
@@ -726,6 +725,4 @@
             { childList: true, subtree: true });
     }
     attachAdObserver();
-
-    console.log(LOG_PREFIX, 'content script loaded');
 })();

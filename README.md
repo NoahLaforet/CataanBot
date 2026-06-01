@@ -250,6 +250,23 @@ To update: `git pull`, then reload ⟳ on the CatanBot card in
 > machine. Game state never leaves `127.0.0.1`. The extension's
 > only network destination is the local bridge.
 
+## One-click launcher (macOS, optional)
+
+If you would rather not keep a terminal open, a menu-bar app starts and
+stops the bridge from the toolbar:
+
+```bash
+./bin/catanbot-tray
+```
+
+First run bootstraps the `[bridge,tray]` extras into `.venv`, then a
+CatanBot item appears in the menu bar with a status dot (green when the
+bridge is up). It offers Start / Stop, an "Open colonist.io" action that
+brings the bridge up and opens the game, and a small settings menu. The
+`bin/catanbot` command above stays the supported cross-platform path;
+the menu-bar app just spawns the same bridge under the hood. macOS only
+(it uses `rumps`); on Linux or Windows use `./bin/catanbot live`.
+
 ## Manual install (if the launcher gives you trouble)
 
 ```bash
