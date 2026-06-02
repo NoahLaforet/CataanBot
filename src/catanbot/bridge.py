@@ -1559,6 +1559,15 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     # when catanatron's own turn machinery transitions into mid-game,
     # and our event-driven dispatch doesn't always trigger that.
     cat_game = game.tracker.game
+    # Re-derive gold-hex nodes from the live map so a gold tile that only
+    # revealed mid-game (Gold Rush: the gold starts hidden under fog, so
+    # the GameStart annotate pass misses it) feeds the opening scorer and
+    # the gold-pick advisor. No-op on classic boards and a cheap scan.
+    try:
+        from catanbot.colonist_map import refresh_gold_nodes
+        refresh_gold_nodes(cat_game.state.board.map)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] refresh_gold_nodes failed: {e!r}", flush=True)
     # Setup-phase detection: count settlements+cities per seat directly.
     # Must include cities — when a settlement upgrades, catanatron
     # rewrites the building's type, so a seat with 2 openings that
