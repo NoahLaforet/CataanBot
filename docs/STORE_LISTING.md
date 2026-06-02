@@ -49,8 +49,9 @@ WHAT IT DOES
   sparkline (chess-style position graph), per-build
   move-quality grading, opponent hand inference, production
   rate.
-• Variant board support — works on layout-only variants like
-  Pond and Twirl, not just the standard board.
+• Variant board support. Runs on the weekly-rotation variants
+  too: the Pond and Twirl layouts, the Gold Rush fog board, and
+  the Volcano gold-and-fog map, not just the standard board.
 • Auto-postmortem — when a game ends, a self-contained HTML
   report opens automatically: winner, final VP breakdown, dice
   fairness, hand dynamics, trade quality, 7-roll impact, and
@@ -61,11 +62,15 @@ CatanBot is local-only. The extension talks to a Python bridge
 running on your own machine at 127.0.0.1:8765 and nothing else.
 Your colonist.io game data never leaves your computer.
 
-REQUIREMENTS
-You need to install and run the open-source Python bridge once
-on your own machine — full instructions at the project page.
-Python 3.11+, macOS or Linux. The bridge handles all the heavy
-lifting; the extension is the rendering surface.
+HOW IT RUNS
+The core advisor runs entirely in the extension, no install
+required (experimental, reduced accuracy). For full-accuracy
+recommendations, the 1-ply lookahead search, the strategy lab,
+and auto-generated post-game reports, install the optional
+open-source Python bridge once on your machine (Python 3.11+,
+macOS or Linux). The extension detects it automatically and
+lights up the advanced panels. Full instructions are on the
+project page.
 
 WHAT IT IS NOT
 CatanBot is a decision-support tool, not an autoplay bot. It
@@ -123,6 +128,11 @@ GPL-3.0. Full source on GitHub. Issues and contributions welcome.
 Full text lives at `PRIVACY.md` (markdown for the repo) and
 `docs/privacy.html` (styled HTML for hosting). The CWS field
 takes a hosted URL.
+
+**Status: live.** GitHub Pages is already publishing it at
+`https://noahlaforet.github.io/CatanBot/privacy.html` (verified). Paste
+that URL straight into the CWS privacy-policy field. The one-time setup
+that produced it is recorded below for reference.
 
 **To host (one-time setup):**
 1. Open the repo's GitHub settings → Pages.
