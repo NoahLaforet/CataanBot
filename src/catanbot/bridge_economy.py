@@ -93,6 +93,40 @@ def _knights_played(game, color: str) -> int:
         return 0
 
 
+# Played dev cards are public the moment they are played (colonist reveals
+# the type), so catanatron tracks PLAYED_{type} per color. VP cards are
+# excluded: they are never "played", they sit hidden in hand.
+_PLAYED_DEV_KEYS = {
+    "KNIGHT": "PLAYED_KNIGHT",
+    "MONOPOLY": "PLAYED_MONOPOLY",
+    "YEAR_OF_PLENTY": "PLAYED_YEAR_OF_PLENTY",
+    "ROAD_BUILDING": "PLAYED_ROAD_BUILDING",
+}
+
+
+def _played_dev_by_type(game, color) -> dict[str, int]:
+    """Per-type dev cards `color` has already PLAYED this game.
+
+    All public info (a played card is revealed by the rules), so this is
+    fair to surface: it shows what each opponent has burned and, by
+    elimination against their bought count, what dev-card threats might
+    still be in their hand. Accepts a catanatron Color or a color name.
+    """
+    out = {k: 0 for k in _PLAYED_DEV_KEYS}
+    try:
+        from catanatron import Color
+        my_enum = color if isinstance(color, Color) else Color[str(color).upper()]
+        idx = game.tracker.game.state.color_to_index.get(my_enum)
+        if idx is None:
+            return out
+        ps = game.tracker.game.state.player_state
+        for label, key in _PLAYED_DEV_KEYS.items():
+            out[label] = int(ps.get(f"P{idx}_{key}", 0))
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 # Build cost table used by _affordable_builds. Kept local to avoid
 # coupling the opp-afford snapshot to discard-plan ordering, which is
 # priority-sorted rather than impact-sorted. Order here is VP-impact
