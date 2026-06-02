@@ -60,3 +60,11 @@ TODO_VISUAL.md
 # MB of source video / images; the polished -wide variants shown in the
 # README already live under docs/media/, so the raw exports stay local.
 CatanBot Gameplay clips/
+
+# Dev HUD harness (dev/hud/): the harness page, no-cache server, and
+# fixture dumper are committed, but the generated snapshot fixtures
+# (derived from ws_captures via dump_hud_fixtures.py) and the rendered
+# screenshots / Playwright scratch are throwaway local artifacts.
+dev/hud/fixtures/
+/.playwright-mcp/
+/hud-*.png

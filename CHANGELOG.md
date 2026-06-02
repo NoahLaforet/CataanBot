@@ -4,6 +4,22 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.41.0 (2026-06-01)
+
+HUD layout: a grouped, collapsible side panel that trades one long
+scroll for a few tidy sections.
+
+- **Grouped + collapsible HUD.** The sections now sort into a pinned
+  hero zone (the win-this-turn call and any urgent alert stay always
+  visible) plus four collapsible groups: YOU, RECOMMENDATIONS, PLAYERS,
+  and ROLLS & STATS. PLAYERS and ROLLS & STATS start collapsed, and each
+  group's open/closed state persists. The render path is unchanged: the
+  grouping is a post-render pass, so nothing is dropped and it degrades
+  to the flat layout if anything goes wrong.
+- **Opponent count** on the PLAYERS header.
+- **Cleaner extension name and description** (removed em-dashes from the
+  user-facing manifest text).
+
 ## v0.40.0 (2026-06-01)
 
 Second audit pass: a visible dice-stats fix, three recommender bug

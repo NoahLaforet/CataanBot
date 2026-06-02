@@ -3773,6 +3773,118 @@
             .join('');
     }
 
+    // ---------- Grouped + collapsible HUD (direction B) ----------
+    // renderOverlay emits roughly 25 section nodes straight into
+    // #content. applyHudGroups runs immediately after that innerHTML
+    // rebuild and sorts those nodes into a pinned hero zone (urgent
+    // signals stay always visible) plus four collapsible groups, so the
+    // HUD reads as a few tidy sections instead of one long scroll. It is
+    // a pure DOM reorganization: the render code is untouched, any
+    // unmatched node stays visible in the top flow, and a throw degrades
+    // to the flat layout. Collapse state persists per group in
+    // localStorage, mirroring the stat-panel pattern wired at init.
+    const _HUD_GROUPS = [
+        ['you', 'YOU', 'catanbot.grp.you', true],
+        ['recs', 'RECOMMENDATIONS', 'catanbot.grp.recs', true],
+        ['players', 'PLAYERS', 'catanbot.grp.players', false],
+        ['stats', 'ROLLS & STATS', 'catanbot.grp.stats', false],
+    ];
+
+    // Urgent signals that bypass grouping and pin to the top hero zone.
+    function _isHudHero(el) {
+        const c = el.classList;
+        return c.contains('winning-move')
+            || (c.contains('threat') && c.contains('imminent'))
+            || c.contains('robber-on-me')
+            || c.contains('discard-hint');
+    }
+
+    // Map a rendered section node to a group key by class. Returns null
+    // for nodes that should stay in the always-visible top flow (the
+    // standalone banner, game-progress line, off-turn ribbon, game-over
+    // frame, strategy banner).
+    function _hudGroupFor(el) {
+        const c = el.classList;
+        if (c.contains('card') && c.contains('self')) return 'you';
+        if (c.contains('recs-flow') || c.contains('game-plan')
+            || c.contains('plan') || c.contains('knight-hint')
+            || c.contains('dev-hint') || c.contains('trade-offer')
+            || c.contains('turn-hint')) return 'recs';
+        if (c.contains('opps') || c.contains('sec-opps')) return 'players';
+        if (c.contains('roll') || c.contains('yield-sum')
+            || c.contains('lr-race') || c.contains('la-race')
+            || c.contains('win-prox') || c.contains('engine-deficit')
+            || c.contains('milestone')) return 'stats';
+        return null;
+    }
+
+    function applyHudGroups(content) {
+        if (!content) return;
+        const kids = Array.from(content.children);
+        if (!kids.length) return;
+        try {
+            const hero = document.createElement('div');
+            hero.className = 'hud-hero';
+            const groups = {};
+            for (const [key, label, storeKey, defOpen] of _HUD_GROUPS) {
+                const g = document.createElement('div');
+                g.className = 'hud-group';
+                g.dataset.grp = key;
+                let collapsed = !defOpen;
+                try {
+                    const v = localStorage.getItem(storeKey);
+                    if (v === '1') collapsed = true;
+                    else if (v === '0') collapsed = false;
+                } catch (_) { /* localStorage may be blocked */ }
+                if (collapsed) g.classList.add('grp-collapsed');
+                const head = document.createElement('div');
+                head.className = 'hud-group-h';
+                head.innerHTML = '<span class="grp-caret"></span>'
+                    + '<span class="grp-label">' + label + '</span>';
+                head.addEventListener('click', () => {
+                    const now = g.classList.toggle('grp-collapsed');
+                    try {
+                        localStorage.setItem(storeKey, now ? '1' : '0');
+                    } catch (_) { /* localStorage may be blocked */ }
+                });
+                const gbody = document.createElement('div');
+                gbody.className = 'hud-group-body';
+                g.appendChild(head);
+                g.appendChild(gbody);
+                groups[key] = { el: g, body: gbody, head };
+            }
+            for (const el of kids) {
+                if (_isHudHero(el)) { hero.appendChild(el); continue; }
+                const key = _hudGroupFor(el);
+                if (key && groups[key]) groups[key].body.appendChild(el);
+                // else: leave it in #content as an always-visible leftover
+            }
+            // #content now holds only the leftovers, in order. Pin the
+            // hero above them, then append the populated groups below.
+            if (hero.children.length) {
+                content.insertBefore(hero, content.firstChild);
+            }
+            // Surface a real opponent count on the PLAYERS header. The
+            // node count would be meaningless (a header node plus the
+            // row wrapper), so count the actual opponent rows instead.
+            const pg = groups['players'];
+            if (pg && pg.body.children.length) {
+                const n = pg.body.querySelectorAll('.opp').length;
+                if (n) {
+                    pg.head.querySelector('.grp-label').textContent =
+                        'PLAYERS · ' + n;
+                }
+            }
+            for (const [key] of _HUD_GROUPS) {
+                const g = groups[key];
+                if (!g.body.children.length) continue;
+                content.appendChild(g.el);
+            }
+        } catch (e) {
+            console.warn(LOG_PREFIX, 'applyHudGroups failed', e);
+        }
+    }
+
     function renderOverlay(ui, snap, live) {
         ui.dot.classList.toggle('live', !!live);
         // Standalone "no game data yet" path — synthesized by the
@@ -5341,6 +5453,7 @@
             parts.push('</div>');
         }
         ui.content.innerHTML = parts.join('');
+        applyHudGroups(ui.content);
         renderHistogram(ui, snap);
         renderEvalGraph(ui, snap);
         renderMoveQuality(ui, snap);
