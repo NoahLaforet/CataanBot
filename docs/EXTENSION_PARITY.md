@@ -6,7 +6,7 @@ source of truth). The bridge is primary and supported; the standalone
 mirrors its heuristics so the HUD works with zero local install, and
 when a bridge is reachable the advanced panels light up on top.
 
-Last refresh: 2026-06-02 (v0.42.0).
+Last refresh: 2026-06-02 (v0.43.0).
 
 ## How the two engines relate
 
@@ -67,7 +67,7 @@ Last refresh: 2026-06-02 (v0.42.0).
 - Authoritative opponent hand tracking: the bridge runs a hand tracker
   with drift; the standalone has chat-inferred totals only.
 
-## Closed in v0.42.0 (Phase 1 standalone parity)
+## Closed in v0.43.0 (Phase 1 standalone parity)
 
 - Bank/port trade scoring moved from flat base scores to the unlocked
   build's production curve minus one, in the bridge's target order with

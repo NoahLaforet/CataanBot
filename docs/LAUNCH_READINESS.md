@@ -1,4 +1,4 @@
-# Launch readiness (v0.42.0)
+# Launch readiness (v0.43.0)
 
 Last audit: 2026-06-02, by a 4-dimension adversarial pass (privacy and
 security, no-cheat invariant, correctness and parity, release hygiene).
@@ -64,7 +64,7 @@ at the bottom.
    (`bin/build-bridge-bundle.sh` on each OS; macOS is verified), wrap and
    sign them (`SIGNING.md`), and publish as release assets, then flip on
    the extension download buttons (`docs/BRIDGE_INSTALLER.md`).
-4. Upload `dist/catanbot-extension-v0.42.0.zip` plus the promo tile and
+4. Upload `dist/catanbot-extension-v0.43.0.zip` plus the promo tile and
    screenshots in the CWS dev console; submit unlisted.
 5. Flip the listing public once the installer assets are live, then post
    the announcement (`docs/LAUNCH_POST.md`).

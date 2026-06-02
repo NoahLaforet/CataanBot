@@ -1,4 +1,4 @@
-# Manual smoke test (v0.42.0)
+# Manual smoke test (v0.43.0)
 
 Automated coverage (pytest, the standalone JS tests via `node --test
 tests/js/`, and `node --check`) is green, but a few things only show
