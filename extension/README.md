@@ -35,22 +35,28 @@ The Web Store path costs **$5 one-time** for developer registration.
 After that, every push to the store auto-updates installed copies
 within ~24 hours.
 
-## What's NOT in v0.26.0 yet
+## What it renders
 
-The userscript HUD (v0.25.4) has more polish than this extension's
-MVP panel:
+This side panel is now the full-featured, supported HUD. (The
+Tampermonkey userscript under `legacy/userscript/` is archived and
+frozen.) Everything the old userscript did renders here, all driven by
+the same local bridge:
 
-- Full dragon's-tail of HUD principles (drag, opacity slider, fonts).
-- Roll histogram, eval sparkline, move-quality strip.
-- Robber target ranking with victim pills.
-- Trade-offer evaluator banner.
-- Strategic options + win-this-turn callout.
-- Knight / monopoly / YoP / road-building hints.
-- Per-opp ports + production breakdowns.
+- Roll histogram (colonist's authoritative dice counts), eval
+  sparkline, and a per-build move-quality strip.
+- Robber target ranking with victim pills, friendly-robber aware.
+- Trade-offer evaluator with an accept / reject verdict and the EV
+  delta in line.
+- Win-this-turn callout plus the ranked build recommendations.
+- Knight / Monopoly / Year of Plenty / Road-Building play-or-hold
+  hints.
+- Per-opponent ports, production rates, and a played dev-card
+  breakdown.
+- Variant boards (Pond, Twirl) and the Gold Rush fog board.
 
-Those will land in 0.26.x patches once the basics are confirmed
-working. The userscript continues to be the full-featured option for
-now; both can run simultaneously since they talk to the same bridge.
+The HUD also groups into pinned + collapsible sections (YOU,
+RECOMMENDATIONS, PLAYERS, ROLLS & STATS) so it stays compact during a
+game.
 
 ## Architecture
 

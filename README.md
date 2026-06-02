@@ -100,10 +100,13 @@ machine. The Chrome extension's only network destination is
   optional **Friendly Robber** rule and filters protected (≤2 VP)
   victims out of the suggestions. Auto-detects when the robber sits
   on one of your own tiles.
-- **Live HUD overlay.** Roll histogram with 36-roll baseline, eval
-  sparkline (chess-style position graph), per-build move-quality
-  annotation (`!! / ! / ?! / ? / ??` chess grading vs the bot's top
-  picks at decision time), opponent hand inference + production rate.
+- **Live HUD overlay.** Roll histogram with 36-roll baseline (counts
+  read from colonist's authoritative dice stats, so the spread matches
+  colonist's Dice Stats tab exactly), eval sparkline (chess-style
+  position graph), per-build move-quality annotation (`!! / ! / ?! / ?
+  / ??` chess grading vs the bot's top picks at decision time),
+  opponent hand inference, production rate, and a per-opponent
+  breakdown of the dev cards each rival has played (public info).
 - **Variant board support.** Same Catan rules, different layouts —
   weekly-rotation maps like **Pond** (24 tiles, interior lake) and
   **Twirl** (42 tiles, swirl-shape) build a fresh catanatron CatanMap
@@ -111,6 +114,15 @@ machine. The Chrome extension's only network destination is
   recommender, and 2:1 port trade rates all work on the actual
   geometry. Auto-detects colonist's dual-GameStart pattern (placeholder
   19-tile frame followed by the real shape) and rebuilds cleanly.
+- **Gold Rush (fog board).** Full support for colonist's fog variant,
+  where most hexes start hidden and only reveal as you build toward
+  them. Roads into the fog ring are credited with fog-reveal value so
+  they surface in recs (you are paying to uncover free, scarce-biased
+  resources on strong numbers); under `restrictedStartingPlacement` the
+  first two settlements are held to the shown, non-fog corners; Road
+  Building is timed to crack open the fog when a free road can reach it;
+  and the gold hex that surfaces mid-game is valued as a wildcard, with
+  the snapshot naming which resource to take.
 - **Strategy biases backed by data.** Five tunings in the recommender
   inspired by [u/Hot-Rooster1675's 36k-game simulation](https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/):
   3rd-settle expansion bump (winners build #3 ~7 turns earlier),
@@ -344,7 +356,7 @@ each tagged release without needing the manual reload step above.
 ```
 src/catanbot/        bridge, recommender, tracker, render, advisor
 extension/            Chrome side-panel extension (Manifest V3)
-tests/                pytest, ~690 tests covering parsing, dispatch,
+tests/                pytest, ~740 tests covering parsing, dispatch,
                       tracker arithmetic, recommender heuristics,
                       strategy selector + pivot triggers,
                       bridge snapshot shapes
@@ -359,7 +371,7 @@ postmortems/          auto-generated game-end HTML (gitignored)
 ## Development
 
 ```bash
-.venv/bin/python -m pytest        # ~2s, ~690 tests
+.venv/bin/python -m pytest        # ~2s, ~740 tests
 node --check extension/panel.js
 ```
 
