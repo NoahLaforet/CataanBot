@@ -45,26 +45,54 @@ const _VP_WEIGHTS = { 0: 1, 1: 2, 2: 1, 4: 2, 5: 2 };
 
 const _BUILDING_BY_TYPE = { 1: 'SETTLEMENT', 2: 'CITY' };
 
-/** Walk a decoded msgpack tree and find any dict that contains `key`.
- *  Returns the value at that key, or null. Bounded depth so a
- *  pathological frame can't blow the stack. */
-function _findKey(o, key, depth = 0) {
-    if (depth > 8) return null;
-    if (o && typeof o === 'object' && !Array.isArray(o)
-            && !ArrayBuffer.isView(o)) {
-        if (key in o) return o[key];
-        for (const v of Object.values(o)) {
-            const r = _findKey(v, key, depth + 1);
-            if (r != null) return r;
+// Top-level snapshot keys applySnapshot pulls out of a decoded frame.
+// They're harvested in ONE depth-bounded tree walk per frame
+// (_collectKeys) instead of one independent DFS per key (the old
+// _findKey ran ~17 walks per frame).
+const _WANTED_KEYS = new Set([
+    'playerColor', 'playerStates', 'gameSettings', 'currentState',
+    'mechanicRobberState', 'tileCornerStates', 'tileEdgeStates',
+    'mechanicLongestRoadState', 'mechanicLargestArmyState',
+    'mechanicSettlementState', 'mechanicCityState', 'mechanicRoadState',
+    'tradeState', 'diceState', 'winnerPlayerColor', 'tileHexStates',
+]);
+
+/** Walk a decoded msgpack tree ONCE and harvest the first non-null
+ *  value for each wanted key. Pre-order (a dict's own keys are checked
+ *  before descending into its values), depth-bounded at 8, recurses
+ *  into both objects and arrays, and skips ArrayBuffer views. Resolves
+ *  to the same value as the old per-key _findKey DFS on every real
+ *  colonist frame (each key lives at one canonical spot). It differs
+ *  only on a shape colonist never emits: a wanted key present as a null
+ *  placeholder shadowing a deeper non-null copy, where this version
+ *  recovers the deeper value instead of stopping at the null. Returns a
+ *  Map<key, value>; absent keys are simply missing. */
+function _collectKeys(root, wanted) {
+    const out = new Map();
+    let remaining = wanted.size;
+    const visit = (o, depth) => {
+        if (remaining === 0 || depth > 8) return;
+        if (o && typeof o === 'object' && !Array.isArray(o)
+                && !ArrayBuffer.isView(o)) {
+            for (const k of Object.keys(o)) {
+                if (wanted.has(k) && !out.has(k) && o[k] != null) {
+                    out.set(k, o[k]);
+                    if (--remaining === 0) return;
+                }
+            }
+            for (const v of Object.values(o)) {
+                visit(v, depth + 1);
+                if (remaining === 0) return;
+            }
+        } else if (Array.isArray(o)) {
+            for (const v of o) {
+                visit(v, depth + 1);
+                if (remaining === 0) return;
+            }
         }
-    }
-    if (Array.isArray(o)) {
-        for (const v of o) {
-            const r = _findKey(v, key, depth + 1);
-            if (r != null) return r;
-        }
-    }
-    return null;
+    };
+    visit(root, 0);
+    return out;
 }
 
 /** Resolve a colonist tile (x, y, z) to a node id in the JS board.
@@ -153,6 +181,15 @@ export function applySnapshot(state, decoded) {
     if (!state || !decoded) return false;
     let dirty = false;
 
+    // One pass harvests every top-level key this function reads; K(k)
+    // returns the first non-null value found, or null (drop-in for the
+    // old K(k)).
+    const _keys = _collectKeys(decoded, _WANTED_KEYS);
+    const K = (k) => {
+        const v = _keys.get(k);
+        return v == null ? null : v;
+    };
+
     // --- Self color id (latched once on GameStart, or via the
     //     resourceCards-typed sniff if we joined mid-game and
     //     missed the GameStart frame). The bridge mirrors this:
@@ -160,14 +197,14 @@ export function applySnapshot(state, decoded) {
     //     for the viewer's own slot only; opps see zero-fills,
     //     so any slot with a non-zero card int is necessarily
     //     the self-player (see colonist_diff.py:818-822).
-    const pc = _findKey(decoded, 'playerColor');
+    const pc = K('playerColor');
     if (typeof pc === 'number' && state.selfColorId == null) {
         state.selfColorId = pc;
         state.selfColor = String(pc);
         _ensureColor(state, pc);
         dirty = true;
     } else if (state.selfColorId == null) {
-        const ps = _findKey(decoded, 'playerStates');
+        const ps = K('playerStates');
         if (ps && typeof ps === 'object') {
             for (const [cidStr, pstate] of Object.entries(ps)) {
                 if (!pstate || typeof pstate !== 'object') continue;
@@ -191,7 +228,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Game settings (VP target, discard limit). ----------------
-    const gs = _findKey(decoded, 'gameSettings');
+    const gs = K('gameSettings');
     if (gs && typeof gs === 'object') {
         const vpw = Number(gs.victoryPointsToWin);
         if (vpw && vpw !== state.vpTarget) {
@@ -204,7 +241,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Whose turn is it? ----------------------------------------
-    const cs = _findKey(decoded, 'currentState');
+    const cs = K('currentState');
     if (cs && typeof cs === 'object'
             && cs.currentTurnPlayerColor != null) {
         const ctp = Number(cs.currentTurnPlayerColor);
@@ -235,7 +272,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Robber tile. ---------------------------------------------
-    const robber = _findKey(decoded, 'mechanicRobberState');
+    const robber = K('mechanicRobberState');
     if (robber && typeof robber === 'object'
             && robber.locationTileIndex != null) {
         const tid = String(Number(robber.locationTileIndex));
@@ -255,7 +292,7 @@ export function applySnapshot(state, decoded) {
     // the touched corners. Both are handled by the same loop —
     // mutated corners get owner/buildingType, untouched stay.
     if (state.map) {
-        const corners = _findKey(decoded, 'tileCornerStates');
+        const corners = K('tileCornerStates');
         if (corners && typeof corners === 'object') {
             for (const [cid, c] of Object.entries(corners)) {
                 if (!c || typeof c !== 'object') continue;
@@ -308,7 +345,7 @@ export function applySnapshot(state, decoded) {
         }
 
         // --- Roads from tileEdgeStates. ---------------------------
-        const edges = _findKey(decoded, 'tileEdgeStates');
+        const edges = K('tileEdgeStates');
         if (edges && typeof edges === 'object') {
             for (const [eidColonist, e] of Object.entries(edges)) {
                 if (!e || typeof e !== 'object') continue;
@@ -337,7 +374,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Per-player resource hands + dev cards + VP. --------------
-    const playerStates = _findKey(decoded, 'playerStates');
+    const playerStates = K('playerStates');
     if (playerStates && typeof playerStates === 'object') {
         for (const [cidStr, pstate] of Object.entries(playerStates)) {
             if (!pstate || typeof pstate !== 'object') continue;
@@ -465,7 +502,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Longest Road / Largest Army holders. ---------------------
-    const lr = _findKey(decoded, 'mechanicLongestRoadState');
+    const lr = K('mechanicLongestRoadState');
     if (lr && typeof lr === 'object') {
         let holder = null;
         for (const [cidStr, st] of Object.entries(lr)) {
@@ -484,7 +521,7 @@ export function applySnapshot(state, decoded) {
         }
         if (state.hasRoad !== holder) { state.hasRoad = holder; dirty = true; }
     }
-    const la = _findKey(decoded, 'mechanicLargestArmyState');
+    const la = K('mechanicLargestArmyState');
     if (la && typeof la === 'object') {
         let holder = null;
         for (const [cidStr, st] of Object.entries(la)) {
@@ -496,7 +533,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Bank counts (settlements / cities / roads remaining). ----
-    const ms2 = _findKey(decoded, 'mechanicSettlementState');
+    const ms2 = K('mechanicSettlementState');
     if (ms2 && typeof ms2 === 'object') {
         for (const [cidStr, st] of Object.entries(ms2)) {
             if (!st || typeof st !== 'object') continue;
@@ -511,7 +548,7 @@ export function applySnapshot(state, decoded) {
             }
         }
     }
-    const mc2 = _findKey(decoded, 'mechanicCityState');
+    const mc2 = K('mechanicCityState');
     if (mc2 && typeof mc2 === 'object') {
         for (const [cidStr, st] of Object.entries(mc2)) {
             if (!st || typeof st !== 'object') continue;
@@ -526,7 +563,7 @@ export function applySnapshot(state, decoded) {
             }
         }
     }
-    const mr2 = _findKey(decoded, 'mechanicRoadState');
+    const mr2 = K('mechanicRoadState');
     if (mr2 && typeof mr2 === 'object') {
         for (const [cidStr, st] of Object.entries(mr2)) {
             if (!st || typeof st !== 'object') continue;
@@ -552,7 +589,7 @@ export function applySnapshot(state, decoded) {
     // offeredResources + wantedResources populated; partial-update
     // frames (just playerResponses) reuse the cached payload.
     if (state.tradeOffers == null) state.tradeOffers = {};
-    const tradeState = _findKey(decoded, 'tradeState');
+    const tradeState = K('tradeState');
     if (tradeState && typeof tradeState === 'object') {
         const active = tradeState.activeOffers;
         if (active && typeof active === 'object') {
@@ -622,7 +659,7 @@ export function applySnapshot(state, decoded) {
     // point at least one player has a settlement on the board.
     // Gate on Object.keys(state.buildings).length > 0 so the
     // pre-placement order roll is silently dropped.
-    const dice = _findKey(decoded, 'diceState');
+    const dice = K('diceState');
     const anyBuildings = Object.keys(state.buildings || {}).length > 0;
     if (dice && typeof dice === 'object'
             && dice.dice1 != null && dice.dice2 != null
@@ -672,7 +709,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // --- Game-over detection. -------------------------------------
-    const winner = _findKey(decoded, 'winnerPlayerColor');
+    const winner = K('winnerPlayerColor');
     if (typeof winner === 'number' && winner > 0) {
         if (!state.gameOver || state.gameOver.winnerColor !== String(winner)) {
             state.gameOver = { winnerColor: String(winner) };
@@ -681,7 +718,7 @@ export function applySnapshot(state, decoded) {
     }
 
     // GameStart latch — once we've seen mapState we're started.
-    if (!state.started && _findKey(decoded, 'tileHexStates')) {
+    if (!state.started && K('tileHexStates')) {
         state.started = true;
         dirty = true;
     }
