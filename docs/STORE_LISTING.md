@@ -9,7 +9,7 @@ https://chrome.google.com/webstore/devconsole.
 ## Listing fields
 
 ### Item name
-`CatanBot — Colonist Advisor HUD`
+`CatanBot · Colonist Advisor HUD`
 
 ### Short description (132 char max)
 `Live Catan advisor for colonist.io: move recs, robber targets, dev-card timing, opponent inference, post-game analysis.`
@@ -18,41 +18,41 @@ https://chrome.google.com/webstore/devconsole.
 ```
 CatanBot is a side-panel HUD for colonist.io that runs alongside
 your Catan game and surfaces decision-support information in real
-time — the way a chess engine's analysis bar sits next to a chess
+time, the way a chess engine's analysis bar sits next to a chess
 board.
 
 WHAT IT DOES
-• Opening picks — ranks every legal corner for both your 1st and
+• Opening picks · ranks every legal corner for both your 1st and
   2nd settlement using complement-aware production scoring,
   port adjacency, denial value, and resource diversity. Pairs
   each pick with a follow-up road suggestion.
-• In-game recommendations — top-N action ranking with score
+• In-game recommendations · top-N action ranking with score
   breakdowns. Settlement, city, road, dev card, port trade,
   player-trade proposal. Each rec carries a 1-ply lookahead
   delta showing how much better the bot's pick is than the
   alternative.
-• Dev-card play hints — Knight, Monopoly, Year of Plenty, Road
+• Dev-card play hints · Knight, Monopoly, Year of Plenty, Road
   Building each get a typed PLAY/HOLD verdict with conversational
-  reasoning ("an opp is close to Largest Army — play to deny",
-  "robber's on you — play to clear it").
-• Robber & 7-roll telemetry — top robber targets ranked by
+  reasoning ("an opp is close to Largest Army · play to deny",
+  "robber's on you · play to clear it").
+• Robber & 7-roll telemetry · top robber targets ranked by
   blocking value × victim VP × hand size × resource scarcity.
   Auto-detects colonist's optional Friendly Robber rule.
-• Strategy archetype tracker — once your opening settlements
+• Strategy archetype tracker · once your opening settlements
   land, the bot detects which archetype you're playing
   (Ore-Wheat-Sheep, Longest Road rush, Port trader, Road
   Builder, or Balanced) and biases its recommendations
   accordingly. Mid-game pivot triggers (hot numbers, dev cards
   drawn, opponents closing on Largest Army) keep the strategy
   responsive.
-• Live HUD — roll histogram with 36-roll baseline, eval
+• Live HUD · roll histogram with 36-roll baseline, eval
   sparkline (chess-style position graph), per-build
   move-quality grading, opponent hand inference, production
   rate.
 • Variant board support. Runs on the weekly-rotation variants
   too: the Pond and Twirl layouts, the Gold Rush fog board, and
   the Volcano gold-and-fog map, not just the standard board.
-• Auto-postmortem — when a game ends, a self-contained HTML
+• Auto-postmortem · when a game ends, a self-contained HTML
   report opens automatically: winner, final VP breakdown, dice
   fairness, hand dynamics, trade quality, 7-roll impact, and
   the full game-progression charts.

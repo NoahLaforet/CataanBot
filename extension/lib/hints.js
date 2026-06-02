@@ -90,12 +90,12 @@ export function knightHint(state) {
     const willClaimLA = !haveLA && (myKnights + 1 >= 3);
 
     let should_play = false;
-    let reason = 'hold — no urgent trigger';
-    if (robberOnUs) { should_play = true; reason = 'robber on us — clear it'; }
+    let reason = 'hold · no urgent trigger';
+    if (robberOnUs) { should_play = true; reason = 'robber on us · clear it'; }
     else if (willClaimLA) {
         should_play = true; reason = `take Largest Army (+2 VP)`;
     } else if (oppCloseToLA && have >= 2) {
-        should_play = true; reason = 'opp closing on LA — race';
+        should_play = true; reason = 'opp closing on LA · race';
     }
     return {
         have, should_play, reason,
@@ -308,7 +308,7 @@ function _rbHintImpl(state) {
     let should_play = goodLanding;
     let reason = goodLanding
         ? 'opens up a strong landing'
-        : 'no high-value landing — hold';
+        : 'no high-value landing · hold';
     // Longest-road race: if we're 1 road behind LR holder + LR is
     // contested, prefer to play.
     const myLen = state.roadLength[state.selfColor] || 0;
