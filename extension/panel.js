@@ -2254,11 +2254,14 @@
                     robber_reason: (() => {
                         if (!st) return null;
                         if (st.robberPending) return 'forced';
-                        // 'knight' window — self chat-detected to
-                        // have played a knight this turn AND the
-                        // robber rec table still has targets. Clears
-                        // when the turn changes (handled above by
-                        // resetting _selfKnightPlayedThisTurn).
+                        // 'knight' window — self played a knight this
+                        // turn AND the robber rec table still has
+                        // targets. Two signals: the fast chat-log path
+                        // (_selfKnightPlayedThisTurn) and a WS-frame
+                        // backstop (st.knightRobberPending, set in
+                        // events.js from a mechanicKnightState increment)
+                        // so a missed chat line still opens the window.
+                        // Both clear on turn change.
                         const stillThisTurn =
                             _selfKnightPlayedAtTurn != null
                             && _standalone.currentTurnPlayerColor
@@ -2266,7 +2269,8 @@
                         if (!stillThisTurn) {
                             _selfKnightPlayedThisTurn = false;
                         }
-                        if (_selfKnightPlayedThisTurn && myTurn
+                        if ((_selfKnightPlayedThisTurn || st.knightRobberPending)
+                                && myTurn
                                 && (robberTargets || []).length) {
                             return 'knight';
                         }

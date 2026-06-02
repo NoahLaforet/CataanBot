@@ -166,9 +166,13 @@ Open (want a live bridge-vs-standalone comparison to tune safely):
   needs.
 - `_bankTradeRecs` uses fixed base scores rather than the unlocked
   build's production curve minus one.
-- The standalone knight robber window relies on the chat-log "used
-  Knight" line; a WS-frame backstop (a mechanicKnightState increment)
-  would make it fire even when that chat line is missed.
+- Standalone knight robber window. DONE (v0.40.0): events.js now sets a
+  WS-frame backstop (`state.knightRobberPending`) when self's
+  mechanicKnightState played-knight count rises by exactly 1 on our turn
+  (guarded so a mid-game join's 0 -> N sync does not false-fire), cleared
+  on turn change, and panel.js ORs it into the chat-driven knight window.
+  So the robber-target list opens after a knight even when the chat-log
+  "used Knight" line is missed.
 - `events.js` `_findKey` runs about 17 independent tree walks per WS
   frame; a single-pass key collector would cut the per-frame cost
   (behavior-identical refactor).
