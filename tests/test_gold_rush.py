@@ -430,6 +430,33 @@ def test_capture_gold_reveals_and_feeds_pick():
     assert _node_gold_value(cat_map, nid) > 0
 
 
+def test_capture_dice_histogram_matches_authoritative_dicestats():
+    """The bridge tallies rolls incrementally, so missed frames or a
+    reconnect drop rolls and the histogram drifts behind colonist's own
+    Dice Stats. colonist ships the authoritative per-number distribution
+    in endGameState.diceStats; once captured, the advisor snapshot must
+    use it verbatim so the histogram matches exactly no matter what was
+    missed live (the long-standing 'dice stats behind' bug)."""
+    cap = _find_capture(_GOLDRUSH_LIVE)
+    if cap is None:
+        pytest.skip("Gold Rush live capture not present")
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live import ColorMap
+    from catanbot.tracker import Tracker
+
+    g = _replay(cap)
+    ds = getattr(g.session, "dice_stats", None)
+    assert ds and len(ds) == 11, "endGameState.diceStats should be captured"
+    st = {"seq": 0, "game": g, "ws_count": 0, "log_count": 0,
+          "last_roll": None, "robber_pending": False, "robber_snapshot": None,
+          "display_colors": {}, "pm_tracker": Tracker(),
+          "pm_color_map": ColorMap()}
+    snap = _build_advisor_snapshot(st)
+    assert snap["total_rolls"] == sum(ds)
+    assert snap["roll_histogram"] == {i + 2: ds[i] for i in range(11)}
+    assert snap["roll_histogram"][7] == ds[5]  # sevens land at index 5
+
+
 def test_capture_snapshot_builds_with_fog_and_gold():
     """End-to-end: a full advisor snapshot off the real capture builds
     without error and exposes the fog hint while fog remains."""
