@@ -171,10 +171,10 @@ def _compute_seven_prep_hint(
     # gives them a concrete handle on what's at stake.
     drops, _preserve = _compute_discard_plan(hand, expected_discard)
     if level == "consider":
-        msg = (f"7 overdue — consider trading down to {DISCARD_LIMIT} "
+        msg = (f"7 overdue · consider trading down to {DISCARD_LIMIT} "
                f"(would lose {expected_discard} cards)")
     else:
-        msg = (f"DUMP TO {DISCARD_LIMIT} BEFORE YOU ROLL — "
+        msg = (f"DUMP TO {DISCARD_LIMIT} BEFORE YOU ROLL · "
                f"a 7 right now costs you {expected_discard} cards")
     return {
         "level": level,
@@ -1340,9 +1340,9 @@ def _compute_strategic_options(
         if eligible:
             vp_swing = 2 if not opp_lr_holder else 4  # take + denial
             phase_label = "commit" if commit_phase else "setup"
-            verb = ("commit — rush"
+            verb = ("commit · rush"
                     if commit_phase else
-                    "setup — ready to grab")
+                    "setup · ready to grab")
             options.append({
                 "kind": "longest_road_push",
                 "label": "LR push",
@@ -1396,7 +1396,7 @@ def _compute_strategic_options(
             "kind": "la_defend",
             "label": "LA defend",
             "detail": (
-                "buy dev cards — opp at 2+ knights threatens your LA"),
+                "buy dev cards · opp at 2+ knights threatens your LA"),
             "vp_swing": 2,
             "pieces": 0,
         })
@@ -1411,7 +1411,7 @@ def _compute_strategic_options(
                  and opp_knights_max == la_threshold - 1)
         if snipe:
             label = "LA snipe"
-            detail = (f"opp 1 from LA — play {needed_plays} knight"
+            detail = (f"opp 1 from LA · play {needed_plays} knight"
                       f"{'s' if needed_plays > 1 else ''} to snipe")
         else:
             label = "LA push"
@@ -1577,7 +1577,7 @@ def _compute_knight_hint(
     top_target = top_targets[0] if top_targets else None
     top_score = float(top_target["score"]) if top_target else 0.0
 
-    # Self's own progress toward Largest Army — needed for the
+    # Self's own progress toward Largest Army · needed for the
     # "you're close to LA" copy variant. Also figure out who currently
     # holds LA (if anyone) so the suggestion accounts for "stealing"
     # an already-held LA (which requires EXCEEDING the holder's count,
@@ -1623,7 +1623,7 @@ def _compute_knight_hint(
     # play. The reasons below name a concrete situation (robber on
     # you / opp close to LA / you close to LA / a tile worth blocking)
     # so the verdict reads as advice, not a stat dump.
-    reason = "no urgent reason — hold for now"
+    reason = "no urgent reason · hold for now"
     # Knight-hold rule (chalks777, see strategy_v2_plan.md P1-4):
     # with one knight in hand, only play proactively when the robber
     # is on a meaningful tile (pip > 2 — i.e. NOT 2/3/11/12) AND it's
@@ -1645,30 +1645,30 @@ def _compute_knight_hint(
         # the play.
         if weak_robber_tile and not knight_stack_ok:
             reason = (f"robber's on you but on a weak tile "
-                      f"(pip {robber_tile_pip}) — hold knight")
+                      f"(pip {robber_tile_pip}) · hold knight")
         else:
             should = True
             # Translate "pips" into expected cards blocked per roll.
             cards_per_roll = self_blocked_pips / 36.0
-            reason = (f"robber's on you — play to clear it "
+            reason = (f"robber's on you · play to clear it "
                       f"(~{cards_per_roll:.2f} cards/roll blocked)")
     elif largest_army_threat:
         should = True
-        reason = "an opp is close to Largest Army — play to deny"
+        reason = "an opp is close to Largest Army · play to deny"
     elif knight_secures_la:
         should = True
         if la_held_by_someone:
             reason = ("playing this knight steals Largest Army "
                       "from the current holder (+2 VP)")
         else:
-            reason = ("you're 1 knight from Largest Army — "
+            reason = ("you're 1 knight from Largest Army · "
                       "play it to grab the +2 VP")
     elif top_score >= 4.0:
         # Strong block is available — but with only 1 knight in early
         # game and no LA pressure, holding (concealment) usually beats
         # spending. Loosen on stack >= 2 OR late-game.
         if not knight_stack_ok:
-            reason = ("a block exists but you only hold 1 knight — "
+            reason = ("a block exists but you only hold 1 knight · "
                       "hold for a clearer trigger")
         else:
             should = True

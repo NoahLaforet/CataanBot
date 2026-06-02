@@ -361,19 +361,19 @@ def _compute_leader_threat(
     if "vp_build" in vector:
         means_parts.append(f"can {'/'.join(vp_builds)}")
     if "dev_storm" in vector:
-        means_parts.append(f"{dev_cards} dev — storm")
+        means_parts.append(f"{dev_cards} dev · storm")
     elif "dev_vp" in vector:
         means_parts.append(f"{dev_cards} dev")
     means = f" ({', '.join(means_parts)})" if means_parts else ""
 
     if level == "imminent":
-        msg = (f"{leader.get('username')} can WIN NEXT TURN — "
+        msg = (f"{leader.get('username')} can WIN NEXT TURN · "
                f"{leader_vp} VP{means}")
     elif level == "close":
-        msg = (f"{leader.get('username')} at {leader_vp} VP — "
+        msg = (f"{leader.get('username')} at {leader_vp} VP · "
                f"one build away{means}")
     elif level == "win":
-        msg = f"{leader.get('username')} at {leader_vp} VP — game over"
+        msg = f"{leader.get('username')} at {leader_vp} VP · game over"
     else:
         msg = f"{leader.get('username')} leads at {leader_vp} VP{means}"
     return {
@@ -428,17 +428,17 @@ def _compute_win_proximity(
     else:
         level = "close"
     if level == "win":
-        msg = f"you reached {vp} VP — game over"
+        msg = f"you reached {vp} VP · game over"
     elif level == "close-1":
         if vp_builds:
-            msg = f"1 VP to win — {'/'.join(vp_builds)} ready"
+            msg = f"1 VP to win · {'/'.join(vp_builds)} ready"
         elif dev_cards_held > 0:
-            msg = f"1 VP to win — {dev_cards_held} dev in hand"
+            msg = f"1 VP to win · {dev_cards_held} dev in hand"
         else:
             msg = "1 VP to win"
     else:
         if vp_builds:
-            msg = (f"{gap_to_win} VP to win — "
+            msg = (f"{gap_to_win} VP to win · "
                    f"{'/'.join(vp_builds)} ready")
         else:
             msg = f"{gap_to_win} VP to win"
@@ -514,7 +514,7 @@ def _compute_winning_move(
                 "vp": vp,
                 "vp_after": vp,
                 "confidence": "high",
-                "detail": (f"VP cards in hand bring you to {vp} — "
+                "detail": (f"VP cards in hand bring you to {vp} · "
                            f"play any move to claim"),
                 "message": "WIN THIS TURN",
                 "alternatives": [],
@@ -538,7 +538,7 @@ def _compute_winning_move(
                 "kind": "settle",
                 "confidence": "high",
                 "vp_after": vp + 1,
-                "detail": "settle now — +1 VP",
+                "detail": "settle now · +1 VP",
             })
 
     # +1 VP path: city upgrade on an existing self settlement.
@@ -552,7 +552,7 @@ def _compute_winning_move(
                 "kind": "city",
                 "confidence": "high",
                 "vp_after": vp + 1,
-                "detail": "upgrade to city — +1 VP",
+                "detail": "upgrade to city · +1 VP",
             })
 
     # +2 VP path: road that flips longest road.
@@ -629,5 +629,5 @@ def _compute_winning_move(
             {"kind": c["kind"], "detail": c["detail"]}
             for c in candidates[1:]
         ],
-        "message": "WIN THIS TURN — " + top["detail"],
+        "message": "WIN THIS TURN · " + top["detail"],
     }

@@ -1086,7 +1086,7 @@ def _track_active_plan(
           "score": float,
           "turns_held": int,
           "ready": bool,
-          "summary": "save for city — need 1 ore"
+          "summary": "save for city · need 1 ore"
         }
 
     Returns None when there's nothing to plan (no soon recs OR self
@@ -1187,11 +1187,11 @@ def _track_active_plan(
     # instruction, not data.
     label = active["kind"] if active["kind"] != "dev_card" else "dev card"
     if active["ready"]:
-        active["summary"] = f"PLAN READY — build {label} now"
+        active["summary"] = f"PLAN READY · build {label} now"
     else:
         miss_str = " + ".join(
             f"{n} {r.lower()}" for r, n in missing.items() if n > 0)
-        active["summary"] = f"saving for {label} — need {miss_str}"
+        active["summary"] = f"saving for {label} · need {miss_str}"
 
     st["active_plan"] = active
     # Return a slim copy for the snapshot (avoid round-tripping mutable
@@ -1523,10 +1523,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                             and winner_name
                             == _go_sess.player_names.get(
                                 _go_sess.self_color_id)),
-                "message": (f"GAME OVER · {winner_name} won — "
+                "message": (f"GAME OVER · {winner_name} won · "
                             f"waiting for next game"
                             if winner_name
-                            else "GAME OVER — waiting for next game"),
+                            else "GAME OVER · waiting for next game"),
             }
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] game_over snap failed: {e!r}", flush=True)
@@ -2643,7 +2643,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                     missing[r] = d
             snap["milestone"] = {
                 "kind": "third_settle",
-                "headline": "settle #3 — biggest predictor",
+                "headline": "settle #3 · biggest predictor",
                 "detail": ("the 36k-game data: winners build #3 ~7 "
                            "turns earlier than losers"),
                 "missing": missing,
@@ -3095,9 +3095,9 @@ def _event_oneliner(event: Any) -> str:
         return f"{event.player} +{event.vp_delta} VP ({event.reason}){frm}"
     if isinstance(event, RollBlockedEvent):
         prob = f" (prob {event.prob})" if event.prob is not None else ""
-        return f"robber blocks {event.tile_label}{prob} — no production"
+        return f"robber blocks {event.tile_label}{prob} · no production"
     if isinstance(event, GameOverEvent):
-        return f"GAME OVER — {event.winner} won"
+        return f"GAME OVER · {event.winner} won"
     if isinstance(event, InfoEvent):
         return f"info: {event.text}"
     if isinstance(event, DisconnectEvent):

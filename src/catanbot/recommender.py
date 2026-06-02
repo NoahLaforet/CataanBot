@@ -933,7 +933,7 @@ def _road_rationale(state, color, self_len: int, has_lr: bool) -> str:
             return f"extends to {next_len} → FLIPS LR (+2 VP)"
         return f"extends to {next_len} → claims LR (+2 VP)"
     if not has_lr and next_len >= 5 and next_len == opp_max:
-        return f"extends to {next_len} — ties LR"
+        return f"extends to {next_len} · ties LR"
     if has_lr and next_len > opp_max + 1:
         return f"extends to {next_len}, pads LR"
     if self_len >= 3:
@@ -2102,7 +2102,7 @@ def evaluate_incoming_trade(
     """
     if not want:
         return {"verdict": "consider", "score": 0.0,
-                "reason": "open offer — no ask", "before": None,
+                "reason": "open offer · no ask", "before": None,
                 "after": None, "counter": None}
     for r, n in want.items():
         if self_hand.get(r, 0) < int(n):
@@ -2127,7 +2127,7 @@ def evaluate_incoming_trade(
     # screams WIN NEXT TURN.
     if opp_imminent:
         return {"verdict": "decline", "score": -10.0,
-                "reason": f"opp can win NEXT TURN — don't feed",
+                "reason": f"opp can win NEXT TURN · don't feed",
                 "before": None, "after": None, "counter": None}
 
     new_hand = dict(self_hand)
@@ -2196,7 +2196,7 @@ def evaluate_incoming_trade(
     if kind_upgrade or delta >= 1.0:
         if opp_vp >= _CLOSE_TO_WIN_VP:
             return {"verdict": "decline", "score": delta,
-                    "reason": f"opp at {opp_vp} VP — don't feed",
+                    "reason": f"opp at {opp_vp} VP · don't feed",
                     "before": before_kind, "after": after_kind,
                     "counter": None}
         label = _kind_label(after_rank_kind or after_kind)
@@ -2212,13 +2212,13 @@ def evaluate_incoming_trade(
                 "counter": _maybe_counter()}
     if want_total > give_total:
         return {"verdict": "decline", "score": delta,
-                "reason": f"lopsided — give {want_total}, "
+                "reason": f"lopsided · give {want_total}, "
                           f"get {give_total}",
                 "before": before_kind, "after": after_kind,
                 "counter": _maybe_counter()}
     if opp_vp >= _CLOSE_TO_WIN_VP:
         return {"verdict": "decline", "score": delta,
-                "reason": f"opp at {opp_vp} VP — hold cards",
+                "reason": f"opp at {opp_vp} VP · hold cards",
                 "before": before_kind, "after": after_kind,
                 "counter": None}
     return {"verdict": "consider", "score": delta,

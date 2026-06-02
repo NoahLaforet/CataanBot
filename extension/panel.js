@@ -114,7 +114,7 @@
         bankRemaining: {},
         // Most recent currentTurnPlayerColor. Tells us whose turn
         // it currently is (color id) so the panel can render an
-        // "opp's turn — watching" hint when it's not us.
+        // "opp's turn · watching" hint when it's not us.
         currentTurnPlayerColor: null,
         // Full game state — populated by events.applySnapshot()
         // on every WS frame. Carries hands, buildings, roads,
@@ -1652,7 +1652,7 @@
                             leader_username: name,
                             leader_vp: topOpp.vp,
                             message: `${name} at ${topOpp.vp}/${target} VP`
-                                + ` — ${gap} from win`,
+                                + ` · ${gap} from win`,
                         };
                     }
                 }
@@ -1693,7 +1693,7 @@
                             winningMove = {
                                 confidence: 'high',
                                 kind: wm.kind,
-                                message: `WIN — ${wm.kind} now`,
+                                message: `WIN · ${wm.kind} now`,
                                 detail: wm.detail,
                                 alternatives: [],
                             };
@@ -1724,7 +1724,7 @@
                         discardHint = {
                             need,
                             drop,
-                            rationale: 'on a 7 you discard half — '
+                            rationale: 'on a 7 you discard half · '
                                 + 'feed the largest stacks first',
                         };
                     } else if (total >= limit - 1 && total >= 6) {
@@ -1753,7 +1753,7 @@
                             would_drop: wouldDrop,
                             message: total === limit
                                 ? `at the cliff (${total} cards) `
-                                + '— spend before next 7'
+                                + '· spend before next 7'
                                 : `${total} cards · 1 more = discard risk`,
                         };
                     }
@@ -1784,7 +1784,7 @@
                             count: sevens,
                             window: recent.length,
                             message: `${sevens} sevens in last `
-                                + `${recent.length} rolls — robber-heavy`,
+                                + `${recent.length} rolls · robber-heavy`,
                         };
                     }
                 }
@@ -2040,7 +2040,7 @@
                         }
                         milestone = {
                             kind: 'third_settle',
-                            headline: 'Settle #3 — biggest predictor',
+                            headline: 'Settle #3 · biggest predictor',
                             missing: need,
                         };
                     }
@@ -2125,7 +2125,7 @@
                         winnerUsername: winnerName,
                         is_self: isSelf,
                         message: isSelf
-                            ? `${winnerName} wins — that's you!`
+                            ? `${winnerName} wins · that's you!`
                             : `${winnerName} wins`,
                     };
                 }
@@ -2188,7 +2188,7 @@
                             const parts = Object.entries(missing)
                                 .map(([r, n]) => `${n} ${r.toLowerCase()}`)
                                 .join(' + ');
-                            summary = `${missingCount} short — need ${parts}`;
+                            summary = `${missingCount} short · need ${parts}`;
                         }
                         return {
                             goal_kind: pick.kind,
@@ -2843,7 +2843,7 @@
             if (!w.documentPictureInPicture
                 || !w.documentPictureInPicture.requestWindow) {
                 console.warn('[catanbot] documentPictureInPicture not '
-                    + 'available — pop-out needs Chrome 116+ or Edge.');
+                    + 'available · pop-out needs Chrome 116+ or Edge.');
                 popoutBtn.title = 'Pop-out unavailable in this browser';
                 popoutBtn.disabled = true;
                 return;
@@ -3197,7 +3197,7 @@
         const modeStatus = document.getElementById('advisor-mode-status');
         const MODE_TIPS = {
             auto: 'bridge if reachable, JS recommender otherwise',
-            bridge: 'always bridge — placeholder if it’s down',
+            bridge: 'always bridge · placeholder if it’s down',
             extension: 'JS recommender only, bridge ignored (experimental, reduced accuracy)',
         };
         function applyMode(mode) {
@@ -3578,7 +3578,7 @@
     };
     const STRAT_TAG_TOOLTIPS = {
         OWS: 'Cities + dev cards. Hold dev cards for flexibility, '
-            + 'not just knights — they conceal your real VP and let '
+            + 'not just knights · they conceal your real VP and let '
             + 'you pivot.',
         LR_RUSH: 'Wood + brick footprint with expansion room. Set up '
             + 'via placements, then rush the last roads in 1-2 turns '
@@ -3590,7 +3590,7 @@
             + 'settlements / cities normally; use roads to block '
             + 'opponents inside your zone, claim LR in the last 2 '
             + 'rounds.',
-        BALANCED: 'No dominant archetype — keep options open. The '
+        BALANCED: 'No dominant archetype · keep options open. The '
             + 'default when nothing else fits.',
     };
     const STRAT_TAG_ICONS = {
@@ -3618,7 +3618,7 @@
             // what the ranking means before settlements land.
             out.push(
                 `<div class="strategy-banner preview" `
-                + `title="Board affinity scoring — these are how `
+                + `title="Board affinity scoring · these are how `
                 + `well each archetype fits THIS board's tile / `
                 + `port / number layout. Pick your first settle to `
                 + `align with one of the strong contenders.">`
@@ -3915,7 +3915,7 @@
                 + `rel="noopener">colonist.io</a>. Mid-game recs, `
                 + `dev-card hints, robber targets, opp inference, `
                 + `and the strategy banner will all light up within `
-                + `a second of the game starting — no bridge needed.`
+                + `a second of the game starting · no bridge needed.`
                 + `</div>`
                 + `<div class="nb-footnote">`
                 + `If you'd rather have the Python bridge running `
@@ -4029,8 +4029,8 @@
                 ui.variantBadge.title = '';
             } else if (snap.variant_recs_disabled) {
                 ui.panel.dataset.variant = 'non-classic';
-                ui.variantBadge.textContent = 'variant — recs OFF';
-                ui.variantBadge.title = `${variant} — bot can't track this map's node IDs reliably (catanatron underneath only models classic). Recommendations suppressed to avoid suggesting occupied corners. Histogram + opp tracking still work.`;
+                ui.variantBadge.textContent = 'variant · recs OFF';
+                ui.variantBadge.title = `${variant} · bot can't track this map's node IDs reliably (catanatron underneath only models classic). Recommendations suppressed to avoid suggesting occupied corners. Histogram + opp tracking still work.`;
             } else if (variant === 'scanned') {
                 ui.panel.dataset.variant = 'non-classic';
                 ui.variantBadge.textContent = 'scanned map';
@@ -4038,7 +4038,7 @@
             } else {
                 ui.panel.dataset.variant = 'non-classic';
                 ui.variantBadge.textContent = 'variant map';
-                ui.variantBadge.title = `${variant} — same Catan rules, different board shape. Opening picks, recommender, and port 2:1 trade rates all work on the actual geometry.`;
+                ui.variantBadge.title = `${variant} · same Catan rules, different board shape. Opening picks, recommender, and port 2:1 trade rates all work on the actual geometry.`;
             }
         }
         // Scan-map button. Bridge sets snap.scan_eligible when the
@@ -4090,7 +4090,7 @@
             parts.push(
                 '<div class="standalone-banner">'
                 + '<span class="sb-pill">STANDALONE</span> '
-                + '<span class="sb-meta">no bridge — '
+                + '<span class="sb-meta">no bridge · '
                 + 'JS recommender</span>'
                 + '<span class="sb-diag" '
                 + 'title="ws: WS broadcasts received · dec: decode '
@@ -4297,7 +4297,7 @@
             parts.push(
                 '<div class="off-turn-ribbon">'
                 + '<span class="b-ico">⏳</span> '
-                + `${escapeHtml(turnUser)}'s turn — watching</div>`);
+                + `${escapeHtml(turnUser)}'s turn · watching</div>`);
         }
         // Game-over frame — when the session flagged a winner, the
         // post-game stats screen is up on colonist's side. Surface a
@@ -4448,7 +4448,7 @@
                 const fbHtml = `<span class="fb-row">`
                     + `<button class="fb fb-down" `
                     + `data-rec='${escapeHtml(fbPayload)}' `
-                    + `title="this rec was bad — log it">👎</button>`
+                    + `title="this rec was bad · log it">👎</button>`
                     + `</span>`;
                 parts.push(`<div class="rec${topCls}${planCls}${tradeCls}${buildCls}${altCls}">`
                     + optHtml
@@ -4620,7 +4620,7 @@
                     + `(${devVpHeld} VP, ${devNonVp} playable)</span>`;
             } else if (devVpHeld > 0 && devNonVp === 0) {
                 pill += ` <span class="dev-summary-pl">`
-                    + `(all VP — nothing to play)</span>`;
+                    + `(all VP · nothing to play)</span>`;
             }
             if (devJust > 0) {
                 pill += ` <span class="dev-summary-j">`
@@ -4958,7 +4958,7 @@
                 // the postmortem reconstruction also flags drift.
                 const uncertainTag = (o.unknown || 0) >= 2
                     ? ` <span class="hand-uncertain" `
-                    + `title="${o.unknown} unknown cards — `
+                    + `title="${o.unknown} unknown cards · `
                     + `inferred hand may be wrong">~${o.unknown}?</span>`
                     : '';
                 // Dev-card tag: uniform grey at low VP, amber/bold
@@ -5307,7 +5307,7 @@
                 anonName(ed.leader_username || 'opp'));
             parts.push(`<div class="engine-deficit">`
                 + `<span class="b-ico">⚙️</span> `
-                + `engine gap — ${leader} `
+                + `engine gap · ${leader} `
                 + `${ed.leader_per_roll}/roll vs your ${ed.self_per_roll} `
                 + `(${ed.ratio}× ahead)`
                 + '</div>');
