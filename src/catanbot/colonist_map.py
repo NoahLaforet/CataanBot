@@ -304,6 +304,17 @@ def _build_variant_catanatron_map(map_state: dict[str, Any]):
 
     cat_map = CatanMap.from_tiles(tiles)
     annotate_gold_nodes(cat_map, hex_states)
+    annotate_fog_nodes(cat_map, hex_states)
+    # Restricted opening placement (Gold Rush / fog boards): colonist
+    # marks fog-adjacent corners with ``restrictedStartingPlacement`` so
+    # the first two settlements can only land on shown-tile corners. Latch
+    # a board-level flag the opening recommender reads to drop fog-adjacent
+    # nodes from its legal pool. Defaults False on every other board.
+    corner_states = map_state.get("tileCornerStates", {}) or {}
+    cat_map.restricted_starting_placement = any(
+        isinstance(c, dict) and c.get("restrictedStartingPlacement")
+        for c in corner_states.values()
+    )
 
     # Augment catanatron's module-level STATIC_GRAPH with this variant
     # map's edges. The static graph is built ONCE at import time from
@@ -378,6 +389,63 @@ def refresh_gold_nodes(cat_map) -> None:
     elif not getattr(cat_map, "gold_node_ids", None):
         cat_map.gold_node_ids = frozenset()
         cat_map.gold_number = None
+
+
+def annotate_fog_nodes(cat_map, hex_states: dict) -> None:
+    """Record the node ids that touch an unrevealed fog hex.
+
+    On a Gold Rush / Black Forest board the outer ring starts hidden under
+    fog (colonist tile types 7/8). A road whose far end lands on a fog
+    corner REVEALS that hex into a free resource (capture analysis: reveals
+    skew toward scarce/absent resources on strong numbers), so the opening
+    scorer and the road-landing scorer want to value a fog corner as a
+    wildcard reveal. catanatron has no fog tile, so a fog hex builds as a
+    resource-less, number-less LandTile that looks exactly like a desert at
+    the map level. The only authoritative fog signal is the colonist tile
+    type, which is why this reads ``hex_states`` rather than scanning the
+    built tiles. Sets an empty default so callers can read the attr
+    unconditionally; no-op on classic boards.
+    """
+    fog_nodes: set[int] = set()
+    for _tid, t in hex_states.items():
+        if not isinstance(t, dict) or not is_fog_tile(int(t.get("type", 0))):
+            continue
+        coord = axial_to_cube(t["x"], t["y"])
+        tile = cat_map.land_tiles.get(coord)
+        if tile is None:
+            continue
+        fog_nodes.update(int(n) for n in tile.nodes.values())
+    cat_map.fog_node_ids = frozenset(fog_nodes)
+
+
+def refresh_fog_nodes(cat_map, mapping) -> None:
+    """Re-derive fog-corner nodes from the live mapping, catching reveals.
+
+    annotate_fog_nodes runs once at GameStart, but fog reveals mid-game as
+    roads push into the ring: colonist flips the revealed tile's type from
+    a fog int (7/8) to a real resource int. The live ``mapping.tile_types``
+    tracks those flips, so re-deriving each snapshot shrinks fog_node_ids as
+    the board opens up. A corner stops being a "reveal" candidate the moment
+    its hex is shown. ``mapping.tile_coord`` gives the cube coord for each
+    colonist tile id so we can find the matching built LandTile.
+
+    No-op (empty frozenset) once every fog tile has revealed, so the fog
+    bonus naturally fades out late game.
+    """
+    fog_nodes: set[int] = set()
+    tile_types = getattr(mapping, "tile_types", None) or {}
+    tile_coord = getattr(mapping, "tile_coord", None) or {}
+    for tid, ty in tile_types.items():
+        if not is_fog_tile(int(ty)):
+            continue
+        coord = tile_coord.get(int(tid))
+        if coord is None:
+            continue
+        tile = cat_map.land_tiles.get(coord)
+        if tile is None:
+            continue
+        fog_nodes.update(int(n) for n in tile.nodes.values())
+    cat_map.fog_node_ids = frozenset(fog_nodes)
 
 
 def _augment_static_graph_for_map(cat_map) -> None:

@@ -837,6 +837,52 @@ def _suggest_rb_placement(
     return out
 
 
+def _free_road_reaches_fog(game, my_enum) -> int:
+    """How many unrevealed fog tiles a free road from self could reveal.
+
+    Road Building hands out two free roads, so a fog hex is in reach when
+    one of self's buildable edges already touches a fog corner (1 road) or
+    when a buildable-edge endpoint is one node-hop from a fog corner (2
+    roads). Counts the distinct fog tiles those reachable fog corners belong
+    to so the hint can say how much there is to reveal. Returns 0 on a
+    classic board, when fog has fully revealed, or when no road reaches it.
+    """
+    state = game.tracker.game.state
+    m = state.board.map
+    fog_nodes = getattr(m, "fog_node_ids", frozenset()) or frozenset()
+    if not fog_nodes:
+        return 0
+    from catanbot.advisor import _build_node_neighbors
+    neighbors = _build_node_neighbors(m)
+    try:
+        edges = list(state.board.buildable_edges(my_enum))
+    except Exception:  # noqa: BLE001
+        return 0
+    reachable_fog_nodes: set[int] = set()
+    for (a, b) in edges:
+        for end in (int(a), int(b)):
+            if end in fog_nodes:
+                reachable_fog_nodes.add(end)
+            # One more node-hop out covers the 2nd free road.
+            for nb in neighbors.get(end, ()):
+                if int(nb) in fog_nodes:
+                    reachable_fog_nodes.add(int(nb))
+    if not reachable_fog_nodes:
+        return 0
+    # Collapse reachable fog corners to distinct fog tiles: a fog hex builds
+    # resource-less and number-less with every corner inside fog_nodes.
+    fog_tiles = 0
+    for tile in m.land_tiles.values():
+        if (getattr(tile, "resource", None) is None
+                and getattr(tile, "number", None) is None):
+            tnodes = set(int(n) for n in tile.nodes.values())
+            if tnodes <= fog_nodes and tnodes & reachable_fog_nodes:
+                fog_tiles += 1
+    # If we couldn't resolve any tile (signature mismatch) but a fog corner
+    # is reachable, still report at least one reveal.
+    return fog_tiles if fog_tiles > 0 else 1
+
+
 def _compute_rb_hint(game, self_color: str,
                      playable_count: int = 0,
                      ) -> dict[str, Any] | None:
@@ -916,6 +962,22 @@ def _compute_rb_hint(game, self_color: str,
         # Almost out of roads — card loses value the longer you hold it.
         should = True
         reason = f"low on roads · {roads_left} left"
+    else:
+        # Fog board (Black Forest / Gold Rush): even with no longest-road
+        # swing, two free roads into the fog ring reveal free, scarce-biased
+        # resources, so RB is +EV while fog remains in reach. Without this
+        # the hint says HOLD forever on a fog board. No-op on classic
+        # boards (no fog) and once the reachable fog has revealed.
+        fog_reach = 0
+        try:
+            fog_reach = _free_road_reaches_fog(game, my_enum)
+        except Exception:  # noqa: BLE001
+            fog_reach = 0
+        if fog_reach > 0:
+            should = True
+            reason = (f"reveals fog · {fog_reach} fog tile"
+                      + ("s" if fog_reach != 1 else "")
+                      + " in reach of 2 free roads")
 
     out: dict[str, Any] = {
         "have": held,

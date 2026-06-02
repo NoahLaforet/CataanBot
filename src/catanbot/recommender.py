@@ -212,6 +212,16 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
     num_players = len(game.state.colors)
     m = game.state.board.map
     neighbors = _build_node_neighbors(m)
+    # Restricted opening placement (Gold Rush / fog boards): the
+    # first two settlements may only land on corners of SHOWN tiles,
+    # so drop every fog-adjacent node from the legal pool. The flag
+    # and the fog corners are stamped on the map by colonist_map
+    # (restricted_starting_placement + fog_node_ids). Empty set on
+    # any board without the restriction so this is a no-op there.
+    restricted_fog: set[int] = set()
+    if getattr(m, "restricted_starting_placement", False):
+        restricted_fog = {int(n) for n in
+                          getattr(m, "fog_node_ids", frozenset())}
     # Opening-road scoring reuses the settlement scores: the best road
     # points toward an expansion corridor. Score per-node via the full
     # board (not restricted to `legal`) so we can weigh the 2-hop
@@ -277,7 +287,12 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         )
         F_prod = {r: float(m.node_production.get(my_first, {}).get(r, 0.0))
                   for r in RESOURCES}
-        pair_scored = score_second_settlements(game, my_first, color=c.name)
+        legal_r2 = None
+        if restricted_fog:
+            from catanbot.advisor import legal_nodes_after_picks as _lnp
+            legal_r2 = _lnp(game, placed) - restricted_fog
+        pair_scored = score_second_settlements(
+            game, my_first, color=c.name, legal_nodes=legal_r2)
         for s in pair_scored[:top]:
             new_res = _resources_added(F_prod, s.resources)
             coverage = len(_resources_covered(F_prod, s.resources))
@@ -324,6 +339,8 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
 
     # --- Round 1: rank F, attach best paired N as plan.second ------------
     legal = legal_nodes_after_picks(game, placed)
+    if restricted_fog:
+        legal = legal - restricted_fog
     if not legal:
         return []
     scored = score_opening_nodes(game, legal_nodes=legal)
@@ -338,6 +355,8 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
         # even though the board is still empty at this point in round 1.
         legal_after_f = legal_nodes_after_picks(
             game, placed + [int(s.node_id)])
+        if restricted_fog:
+            legal_after_f = legal_after_f - restricted_fog
         pair_scored = score_second_settlements(
             game, int(s.node_id), color=pair_color,
             legal_nodes=legal_after_f,
@@ -810,9 +829,35 @@ def _format_missing(missing: dict[str, int]) -> str:
     return "need " + " ".join(parts)
 
 
+def _node_gold_value(m, node_id: int) -> float:
+    """Wildcard yield a node gets from touching the gold hex, else 0.
+
+    catanatron has no gold resource, so a gold-adjacent corner shows zero
+    production in ``node_production`` even though the gold hex pays a card
+    of your choice on its number. Mirror the opening scorer: value the
+    gold roll as a wildcard weighted just above wheat. Read off the
+    annotated ``map.gold_node_ids`` / ``map.gold_number`` (refreshed each
+    snapshot so a mid-game fog reveal lights it up). Zero on classic boards.
+    """
+    gold_nodes = getattr(m, "gold_node_ids", frozenset()) or frozenset()
+    if int(node_id) not in gold_nodes:
+        return 0.0
+    gold_number = getattr(m, "gold_number", None)
+    if not gold_number:
+        return 0.0
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER, _GOLD_WEIGHT
+    gold_yield = PIP_DOTS_BY_NUMBER.get(int(gold_number), 0) / 36.0
+    return gold_yield * _GOLD_WEIGHT
+
+
 def _node_pip_production(m, node_id: int) -> float:
-    """Sum of pip-weighted resource yield for a node, including desert (0)."""
-    return float(sum(m.node_production.get(node_id, {}).values()))
+    """Sum of pip-weighted resource yield for a node, including desert (0).
+
+    Adds the gold-hex wildcard yield so a gold-adjacent settle/city is
+    valued for the resource-of-your-choice payout catanatron can't model
+    (no-op on boards without a gold hex)."""
+    return float(sum(m.node_production.get(node_id, {}).values())
+                 + _node_gold_value(m, node_id))
 
 
 def _node_pip_production_weighted(m, node_id: int) -> float:
@@ -822,11 +867,13 @@ def _node_pip_production_weighted(m, node_id: int) -> float:
     Used for ranking / scoring in mid-game settlement recs so a wheat-
     bearing corner outranks an equal-pip non-wheat one. The unweighted
     value is what we still surface as "+0.42/roll" so the hint reads
-    as cards-per-roll, not a fudged number."""
+    as cards-per-roll, not a fudged number. The gold wildcard counts
+    here too so a gold-adjacent corner ranks for its payout."""
     from catanbot.advisor import _RESOURCE_WEIGHT
     return float(sum(
         v * _RESOURCE_WEIGHT.get(r, 1.0)
-        for r, v in m.node_production.get(node_id, {}).items()))
+        for r, v in m.node_production.get(node_id, {}).items())
+        + _node_gold_value(m, node_id))
 
 
 def _tile_label(m, node_id: int) -> list[tuple[str, int | None]]:
@@ -1137,8 +1184,17 @@ def recommend_actions(
                     owned_resources.add(r)
         # Port-label index — used to detect when a candidate landing
         # node lands on a 2:1 of a resource self already produces.
-        from catanbot.advisor import _build_node_port_labels
+        from catanbot.advisor import (
+            _build_node_port_labels, _fog_reveal_nodes, _fog_reveal_value,
+        )
         node_to_port = _build_node_port_labels(m)
+        # Fog-reveal EV (Black Forest / Gold Rush): a road whose far end
+        # touches an unrevealed fog hex reveals it into a free, scarce-
+        # biased resource. Fog corners have no production so they would
+        # otherwise vanish from both edge_scores and fallback_candidates;
+        # crediting the reveal keeps fog-bound roads in the rec list while
+        # fog remains. Empty (and a no-op) on classic boards.
+        fog_nodes = _fog_reveal_nodes(m)
         # (edge, raw_prod, landing_node, rank). raw_prod feeds
         # _score_road for the displayed UI value; rank is the
         # diversity-weighted prod used for ordering the recs.
@@ -1165,6 +1221,11 @@ def recommend_actions(
                 pb = _node_pip_production(m, bi)
                 far_fb = ai if pa >= pb else bi
             far_prod = _node_pip_production(m, far_fb)
+            # Fog reveal at the far end: a fog corner produces nothing yet,
+            # but the road reveals it. Fold the reveal EV into far_prod so
+            # a fog-bound road still registers as a fallback / extension.
+            far_fog = _fog_reveal_value(m, far_fb, fog_nodes)
+            far_prod_with_fog = far_prod + far_fog
             # Never surface a road whose far endpoint already holds a
             # building. catanatron's buildable_edges returns edges that
             # run up to but not past an opponent's settlement, so far_fb
@@ -1172,8 +1233,9 @@ def recommend_actions(
             # geometric so it still scores > 0. Emitting it made the HUD
             # point a road straight into an opponent's piece (Bug 2).
             # existing_buildings (line above) covers every color.
-            if far_prod > 0 and far_fb not in existing_buildings:
-                fallback_candidates.append(((ai, bi), far_prod, far_fb))
+            if far_prod_with_fog > 0 and far_fb not in existing_buildings:
+                fallback_candidates.append(
+                    ((ai, bi), far_prod_with_fog, far_fb))
             # Look at both endpoints' neighbors for new reachable spots.
             # Rank candidate landings by diversity-weighted prod (the
             # same heuristic the opening-road logic uses on its 2-hop
@@ -1192,13 +1254,23 @@ def recommend_actions(
             best_rank = 0.0
             best_land_prod = 0.0
             best_land_node: int | None = None
+            # Fog far end with no settle landing past it: the road still
+            # reveals the hex. Seed the candidate so the reveal alone keeps
+            # the road in edge_scores (pointed at the fog corner itself).
+            if far_fog > 0 and far_fb not in existing_buildings:
+                best_rank = far_fog
+                best_land_prod = far_fog
+                best_land_node = far_fb
             for end in (a, b):
                 for nb in neighbors.get(end, ()):
                     if nb in blocked or nb not in land:
                         continue
                     nb_prods = m.node_production.get(nb, {})
                     raw = float(sum(nb_prods.values()))
+                    raw += _fog_reveal_value(m, nb, fog_nodes)
                     distinct = sum(1 for v in nb_prods.values() if v > 0)
+                    if nb in fog_nodes:
+                        distinct += 1
                     diversity = (1.15 if distinct >= 3
                                  else 1.05 if distinct == 2 else 1.0)
                     # Port-match bonus. A 2:1 port on a resource self
@@ -1243,6 +1315,19 @@ def recommend_actions(
                 return ""
             return f" · {res.lower()} port"
 
+        def _fog_detail_suffix(edge_pair, landing) -> str:
+            """' · reveals fog' when this road pushes into the fog ring.
+
+            A road whose far endpoint (or 2-hop landing) sits on an
+            unrevealed fog hex flips it into a free resource, so flag the
+            reveal in the rec text. Empty on classic boards (no fog)."""
+            if not fog_nodes:
+                return ""
+            on_fog = any(int(x) in fog_nodes for x in (edge_pair or ()))
+            if landing is not None and int(landing) in fog_nodes:
+                on_fog = True
+            return " · reveals fog" if on_fog else ""
+
         # Build the primary road rec from edge_scores[0], plus up to 2
         # landing-target alternates from edge_scores[1:3]. After that,
         # if we still have <3 road recs, top up with LR-extension
@@ -1264,7 +1349,9 @@ def recommend_actions(
                 "edge": list(edge),
                 "landing_node": landing,
                 "score": _score_road(prod),
-                "detail": f"→ {prod:.2f}-prod spot{_port_detail_suffix(landing)}",
+                "detail": (f"→ {prod:.2f}-prod spot"
+                           f"{_port_detail_suffix(landing)}"
+                           f"{_fog_detail_suffix(edge, landing)}"),
                 "tiles": _edge_tiles(m, edge[0], edge[1]),
             }
             # Landing-target alternates: edges with their own future
@@ -1285,7 +1372,8 @@ def recommend_actions(
                     "landing_node": alt_landing,
                     "score": _score_road(alt_prod),
                     "detail": (f"→ {alt_prod:.2f}-prod spot"
-                               f"{_port_detail_suffix(alt_landing)}"),
+                               f"{_port_detail_suffix(alt_landing)}"
+                               f"{_fog_detail_suffix(alt_edge, alt_landing)}"),
                     "tiles": _edge_tiles(m, alt_edge[0], alt_edge[1]),
                     "alt": True,
                 })

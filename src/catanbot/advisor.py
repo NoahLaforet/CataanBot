@@ -77,6 +77,18 @@ _RESOURCE_WEIGHT: dict[str, float] = {
 # ``map.gold_number`` annotated by colonist_map.annotate_gold_nodes().
 _GOLD_WEIGHT = 1.25
 
+# Fog-reveal weight for an unrevealed fog hex (Black Forest / Gold Rush).
+# A road whose far end lands on a fog corner reveals the hex into a free
+# resource. Capture analysis of real Gold Rush games: reveals skew toward
+# scarce/absent resources (~77%) on strong numbers (~65% land on 5/6/8/9),
+# so a fog corner behaves like a wildcard that fills whatever you're
+# missing. We model each adjacent fog tile as a ~5/9 wildcard yield
+# (4 pip-dots out of 36) weighted just like gold, since the reveal pays a
+# resource of (effectively) your choice. Read off ``map.fog_node_ids``
+# annotated by colonist_map.annotate_fog_nodes / refresh_fog_nodes.
+_FOG_REVEAL_NUMBER = 5  # 5/6/8/9-class strong number; 4 pip-dots
+_FOG_WEIGHT = 1.25
+
 
 # Pip-dot table: each Catan number's odds out of 36 = "pips" — referenced
 # both by the robber scorer (further down) and the port-pip-alignment
@@ -271,6 +283,28 @@ def score_opening_nodes(game: "Game",
     gold_yield = (PIP_DOTS_BY_NUMBER.get(int(gold_number), 0) / 36.0
                   if gold_number else 0.0)
 
+    # Fog-reveal wildcard (Black Forest / Gold Rush). Nodes touching an
+    # unrevealed fog hex get a per-fog-tile wildcard yield, since a road
+    # there reveals a free, scarce-biased resource. Empty on classic maps
+    # and shrinks to empty as the fog reveals over the game.
+    fog_node_ids = getattr(m, "fog_node_ids", frozenset())
+    fog_yield = PIP_DOTS_BY_NUMBER.get(_FOG_REVEAL_NUMBER, 0) / 36.0
+    # Tile ids of the unrevealed fog hexes. A fog hex builds as a resource-
+    # less, number-less LandTile whose every corner was added to
+    # fog_node_ids by annotate_fog_nodes, so we recover the set by matching
+    # that signature. Lets a single node count >1 reveal when it sits on
+    # the seam between two fog hexes.
+    fog_tile_ids: set[int] = set()
+    if fog_node_ids:
+        for tile in m.land_tiles.values():
+            if (getattr(tile, "resource", None) is None
+                    and getattr(tile, "number", None) is None
+                    and set(int(n) for n in tile.nodes.values())
+                    <= fog_node_ids):
+                tid = getattr(tile, "id", None)
+                if tid is not None:
+                    fog_tile_ids.add(int(tid))
+
     # Pass 1: compute base_score per node.
     base_by_node: dict[int, float] = {}
     scratch: dict[int, dict] = {}
@@ -296,6 +330,32 @@ def score_opening_nodes(game: "Game",
                 if lbl == "DESERT" and num is None:
                     tiles[i] = ("GOLD", gold_number)
                     break
+        # Fog adjacency: each unrevealed fog tile this node touches is a
+        # wildcard reveal. Add its yield to raw, expose a FOG resource,
+        # bump diversity once (a reveal covers a missing resource), and
+        # relabel a DESERT slot (fog hexes build resource-less) per fog
+        # tile. catanatron has no fog tile, so adjacency comes off the
+        # annotated fog_node_ids rather than the tile labels.
+        if node_id in fog_node_ids and fog_yield > 0:
+            fog_tiles_here = sum(
+                1 for tile in m.adjacent_tiles.get(node_id, [])
+                if getattr(tile, "id", None) in fog_tile_ids
+            )
+            # Fall back to a single reveal when we can't pin tile ids: the
+            # node is in fog_node_ids so at least one fog tile is adjacent.
+            if fog_tiles_here <= 0:
+                fog_tiles_here = 1
+            raw += fog_yield * _FOG_WEIGHT * fog_tiles_here
+            resources["FOG"] = (resources.get("FOG", 0.0)
+                                + fog_yield * fog_tiles_here)
+            distinct += 1
+            relabelled = 0
+            for i, (lbl, num) in enumerate(tiles):
+                if relabelled >= fog_tiles_here:
+                    break
+                if lbl == "DESERT" and num is None:
+                    tiles[i] = ("FOG", _FOG_REVEAL_NUMBER)
+                    relabelled += 1
         diversity = _DIVERSITY_BY_COUNT.get(distinct, 1.22)
         # Pass tiles into _port_bonus so the pip-alignment guard fires
         # — a 2:1 wheat port adjacent only to a wheat 2/3/11/12 tile
@@ -703,6 +763,39 @@ def _build_node_neighbors(m) -> dict[int, set[int]]:
     return neighbors
 
 
+def _fog_reveal_nodes(m) -> frozenset:
+    """The node ids that touch an unrevealed fog hex, defaulting to empty."""
+    return getattr(m, "fog_node_ids", frozenset()) or frozenset()
+
+
+def _fog_reveal_value(m, node_id: int,
+                      fog_nodes: frozenset | None = None) -> float:
+    """Reveal EV for a node that sits on the fog ring.
+
+    A road landing on a fog corner reveals each adjacent fog hex into a
+    free, scarce-biased resource, so we treat every fog tile this node
+    touches as a ~5/9 wildcard yield. Returns 0.0 when the node touches no
+    fog or the board has no fog. ``fog_nodes`` may be passed to avoid the
+    repeated attribute read in a hot loop.
+    """
+    if fog_nodes is None:
+        fog_nodes = _fog_reveal_nodes(m)
+    if not fog_nodes or int(node_id) not in fog_nodes:
+        return 0.0
+    fog_yield = PIP_DOTS_BY_NUMBER.get(_FOG_REVEAL_NUMBER, 0) / 36.0
+    # Count fog hexes adjacent to this node: a fog hex builds resource-less
+    # and number-less with every corner inside fog_nodes.
+    count = 0
+    for tile in m.adjacent_tiles.get(int(node_id), []):
+        if (getattr(tile, "resource", None) is None
+                and getattr(tile, "number", None) is None
+                and set(int(n) for n in tile.nodes.values()) <= fog_nodes):
+            count += 1
+    if count <= 0:
+        count = 1
+    return fog_yield * _FOG_WEIGHT * count
+
+
 def _best_opening_road(
     m, first_node: int, second_node: int,
     neighbors: dict[int, set[int]],
@@ -722,16 +815,23 @@ def _best_opening_road(
 
     fn_neighbors = neighbors.get(first_node, set()) | {first_node}
     sn_neighbors = neighbors.get(second_node, set()) | {second_node}
+    fog_nodes = _fog_reveal_nodes(m)
 
     best: OpeningRoad | None = None
     for edge in out_edges:
         far = edge[1]
+        # Reveal EV the road itself buys: pushing into a fog hex flips it,
+        # so a road whose far end touches fog is worth the wildcard reveal
+        # even before any 3rd-settle landing. Added to every candidate (and
+        # the no-landing fallback) so fog-bound roads surface in recs.
+        far_fog = _fog_reveal_value(m, far, fog_nodes)
         candidates = []
         for landing in neighbors.get(far, ()):
             if landing == second_node or landing in fn_neighbors \
                     or landing in sn_neighbors or landing not in land_nodes:
                 continue
             prod = float(sum(m.node_production.get(landing, {}).values()))
+            prod += far_fog + _fog_reveal_value(m, landing, fog_nodes)
             tiles = []
             for tile in m.adjacent_tiles.get(landing, []):
                 label = tile.resource if tile.resource else "DESERT"
@@ -740,6 +840,10 @@ def _best_opening_road(
         if candidates:
             candidates.sort(key=lambda c: -c[0])
             prod, landing, tiles = candidates[0]
+        elif far_fog > 0:
+            # No legal 3rd-settle landing past this far node, but the road
+            # still reveals fog, so keep it as a direction with reveal value.
+            prod, landing, tiles = far_fog, None, []
         else:
             prod, landing, tiles = 0.0, None, []
         road = OpeningRoad(edge=edge, far_node=far, landing_node=landing,
