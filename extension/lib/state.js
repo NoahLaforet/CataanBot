@@ -108,6 +108,13 @@ export function newGameState() {
         //   changed. Drives the "placed" review-window display.
         robberPending: false,
         robberMovedAtRolls: null,
+        // WS-frame backstop for the self-knight robber window: set when
+        // mechanicKnightState shows self's played-knight count rise by 1
+        // on our turn (events.js), cleared on turn change. Complements
+        // the chat-log knight detection in panel.js so the robber-target
+        // list still opens when the chat line is missed.
+        knightRobberPending: false,
+        knightRobberTurn: null,
         // Active trade offers, keyed by offer_id. Each entry:
         // {creator: cidStr, give: {res:int}, want: {res:int}, ts}.
         // Mirrors Python's pending_trade_offer flow — populated from

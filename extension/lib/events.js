@@ -209,6 +209,13 @@ export function applySnapshot(state, decoded) {
             && cs.currentTurnPlayerColor != null) {
         const ctp = Number(cs.currentTurnPlayerColor);
         if (ctp !== state.currentTurn) {
+            // A turn change ends the self-knight robber window (mirrors
+            // the chat path, which also clears on turn change).
+            if (state.knightRobberTurn != null
+                    && ctp !== state.knightRobberTurn) {
+                state.knightRobberPending = false;
+                state.knightRobberTurn = null;
+            }
             state.currentTurn = ctp;
             dirty = true;
         }
@@ -434,7 +441,22 @@ export function applySnapshot(state, decoded) {
                     && typeof pstate.mechanicKnightState === 'object'
                     && pstate.mechanicKnightState.knightsPlayed != null) {
                 const k = Number(pstate.mechanicKnightState.knightsPlayed);
-                if (state.playedKnights[key] !== k) {
+                const prevK = state.playedKnights[key];
+                if (prevK !== k) {
+                    // Self just played a knight this frame (exactly +1
+                    // while it's our turn) means we owe a robber move.
+                    // Set a WS-driven flag so the robber-target list
+                    // surfaces even when the chat-log "X used a Knight"
+                    // line is missed (the chat path stays the fast
+                    // signal; this is the reliability backstop). Require
+                    // exactly +1 so a mid-game join (0 -> N in one sync
+                    // frame) does not false-fire. Cleared on turn change.
+                    if (cid === state.selfColorId
+                            && k === prevK + 1
+                            && state.currentTurn === state.selfColorId) {
+                        state.knightRobberPending = true;
+                        state.knightRobberTurn = state.currentTurn;
+                    }
                     state.playedKnights[key] = k;
                     dirty = true;
                 }
