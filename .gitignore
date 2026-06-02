@@ -9,6 +9,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+catanbot-bridge.spec
 .venv/
 venv/
 env/

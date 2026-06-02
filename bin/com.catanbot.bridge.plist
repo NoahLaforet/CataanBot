@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- macOS LaunchAgent template for the bundled bridge. Install to
+     ~/Library/LaunchAgents/com.catanbot.bridge.plist, edit the binary
+     path if needed, then: launchctl load ~/Library/LaunchAgents/com.catanbot.bridge.plist
+     The bridge starts on login and listens on 127.0.0.1:8765. Unload
+     with: launchctl unload ~/Library/LaunchAgents/com.catanbot.bridge.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.catanbot.bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/catanbot-bridge</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/catanbot-bridge.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/catanbot-bridge.err.log</string>
+</dict>
+</plist>
