@@ -57,6 +57,7 @@ from catanbot.bridge_economy import (
     _compute_production,
     _owned_ports,
     _knights_played,
+    _played_dev_by_type,
     _affordable_builds,
     _closest_missing_build,
     _gold_resource_pick,
@@ -2350,6 +2351,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             "dev_stash_risk": dev_stash_risk,
             "pieces": _pieces_for_color(game, c),
             "knights_played": _knights_played(game, c),
+            # Public per-type dev cards this opp has PLAYED (revealed once
+            # played). Shows what threats they have already burned and, by
+            # elimination against the held count, what may still be in hand.
+            "played_dev": _played_dev_by_type(game, c),
             # Builds the inferred hand definitely covers. Conservative:
             # unknowns don't count, so this underestimates. Useful to
             # pre-warn about an opp's likely next-turn VP jump.
