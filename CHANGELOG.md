@@ -4,6 +4,33 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.42.0 (2026-06-02)
+
+Gold Rush (fog board) strategy support, an authoritative dice-stats
+fix, and a per-opponent played dev-card breakdown.
+
+- **Gold Rush fog board.** Full support for colonist's fog variant.
+  Roads into the fog ring are credited with fog-reveal value so they
+  surface in recs (you pay to uncover free, scarce-biased resources on
+  strong numbers); under restricted starting placement the first two
+  settlements are held to the shown corners; Road Building is timed to
+  crack open the fog when a free road can reach it; and the gold hex
+  that surfaces mid-game is valued as a wildcard, with the snapshot
+  naming which resource to take.
+- **Dice histogram matches colonist exactly.** The roll counts were
+  tallied incrementally, so a frame missed on a reconnect or restart
+  dropped a roll for good and the distribution drifted low over a game.
+  The histogram now reads colonist's authoritative end-of-game dice
+  stats, so it matches colonist's Dice Stats tab exactly.
+- **Per-opponent played dev cards.** The PLAYERS section now breaks
+  down which dev cards each rival has played (knights, monopolies, and
+  the rest), all public information from the game log.
+- **Trade sanity fix.** The live recommendation path was not passing
+  opponent hands, so the propose-trade supply guard never ran and could
+  surface a trade for a resource nobody holds. It now passes hands and
+  filters those out (verified zero unsuppliable propose-trades across a
+  full captured game).
+
 ## v0.41.0 (2026-06-01)
 
 HUD layout: a grouped, collapsible side panel that trades one long
