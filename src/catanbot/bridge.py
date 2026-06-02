@@ -126,7 +126,12 @@ def _build_app(jsonl_path: Path | None = None,
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        # Loopback-only socket, but a wildcard origin still let any site
+        # the user visits read /advisor cross-origin through their
+        # browser. Restrict to the colonist page and the extension
+        # (any id, dev or published).
+        allow_origins=["https://colonist.io"],
+        allow_origin_regex=r"chrome-extension://.*",
         allow_methods=["*"],
         allow_headers=["*"],
     )
