@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CatanBot HUD harness</title>
+<!-- The real panel stylesheet. The harness renders the actual panel.js
+     against a captured snapshot fixture so layout work can be reviewed
+     without a live colonist game or the bridge. Dev-only, not shipped. -->
+<link rel="stylesheet" href="../../extension/panel.css">
+<style>
+  /* Center the panel on a neutral backdrop and pin the side-panel
+     width so screenshots match the real Chrome side panel. */
+  html, body { margin: 0; background: #05060a; }
+  #harness-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
+    font: 12px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #aab; background: #0c0f16; border-bottom: 1px solid #222838;
+    padding: 6px 10px; display: flex; gap: 10px; align-items: center;
+  }
+  #harness-bar a { color: #7fb0ff; text-decoration: none; padding: 2px 6px;
+    border: 1px solid #2a3450; border-radius: 4px; }
+  #harness-bar a.on { background: #1b2540; color: #cfe0ff; }
+  #stage { padding-top: 40px; display: flex; justify-content: center; }
+  /* Match a typical Chrome side-panel width so the layout reads true. */
+  /* !important: panel.css styles #panel by id (higher specificity), so
+     a plain class rule here loses and the panel renders full width. */
+  #stage > .panel { width: 360px !important; }
+</style>
+</head>
+<body>
+<div id="harness-bar">
+  <span>HUD harness</span>
+  <a href="?fixture=early" id="lk-early">early</a>
+  <a href="?fixture=midgame" id="lk-midgame">midgame</a>
+  <span id="hb-status"></span>
+</div>
+<div id="stage"></div>
+
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const fixture = params.get('fixture') || 'midgame';
+  document.getElementById('lk-' + fixture)?.classList.add('on');
+
+  // 1. Load the snapshot fixture with the native fetch before we stub it.
+  let snap;
+  try {
+    snap = await (await fetch(`./fixtures/${fixture}.json`)).json();
+  } catch (e) {
+    document.getElementById('hb-status').textContent =
+      'fixture load failed: ' + e;
+    throw e;
+  }
+
+  // 2. Stub the tiny chrome.* surface panel.js touches.
+  const store = {};
+  window.chrome = {
+    runtime: {
+      sendMessage: (_msg, cb) => { if (typeof cb === 'function') cb(undefined);
+        return Promise.resolve(undefined); },
+      getURL: (p) => '../../extension/' + p,
+      onMessage: { addListener: () => {}, removeListener: () => {} },
+      lastError: null,
+    },
+    storage: {
+      local: {
+        get: (keys, cb) => {
+          const out = {};
+          const want = Array.isArray(keys) ? keys
+            : (keys && typeof keys === 'object') ? Object.keys(keys)
+            : keys == null ? Object.keys(store) : [keys];
+          for (const k of want) out[k] = (k in store) ? store[k]
+            : (keys && typeof keys === 'object' && !Array.isArray(keys) ? keys[k] : undefined);
+          if (typeof cb === 'function') { cb(out); return; }
+          return Promise.resolve(out);
+        },
+        set: (obj, cb) => { Object.assign(store, obj);
+          if (typeof cb === 'function') cb(); return Promise.resolve(); },
+      },
+    },
+  };
+
+  // 3. Stub fetch so the bridge endpoints resolve from the fixture.
+  const realFetch = window.fetch.bind(window);
+  const json = (obj) => new Response(JSON.stringify(obj),
+    { status: 200, headers: { 'Content-Type': 'application/json' } });
+  window.fetch = (url, opts) => {
+    const u = String(url);
+    if (u.includes('/advisor')) return Promise.resolve(json(snap));
+    if (u.includes('/config')) return Promise.resolve(json({
+      vp_target: snap.vp_target || 10, discard_limit: snap.discard_limit || 7 }));
+    if (u.includes('/postmortem')) return Promise.resolve(json(
+      snap.latest_postmortem || {}));
+    if (/\/(ws|log|feedback|reset|scan_map|streamer-anon)/.test(u))
+      return Promise.resolve(json({ ok: true }));
+    return realFetch(url, opts); // fixtures + lib/*.js assets
+  };
+
+  // 4. Inject the real panel skeleton from panel.html (no duplication).
+  const html = await (await realFetch('../../extension/panel.html')).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const panel = doc.getElementById('panel');
+  document.getElementById('stage').appendChild(panel);
+
+  // 5. Boot the real panel. It polls /advisor (our fixture) and renders.
+  document.getElementById('hb-status').textContent = 'fixture: ' + fixture;
+  await import('../../extension/panel.js');
+</script>
+</body>
+</html>
