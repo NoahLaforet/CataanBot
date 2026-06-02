@@ -1568,6 +1568,17 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         refresh_gold_nodes(cat_game.state.board.map)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] refresh_gold_nodes failed: {e!r}", flush=True)
+    # Re-derive fog-corner nodes from the live mapping so the road and
+    # opening scorers value a road into the fog ring for its reveal EV.
+    # Fog reveals mid-game (a road into a fog hex flips its type to a real
+    # resource), so this shrinks fog_node_ids as the board opens and fades
+    # the bonus out late game. No-op on classic boards.
+    try:
+        from catanbot.colonist_map import refresh_fog_nodes
+        if sess is not None and getattr(sess, "mapping", None) is not None:
+            refresh_fog_nodes(cat_game.state.board.map, sess.mapping)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] refresh_fog_nodes failed: {e!r}", flush=True)
     # Setup-phase detection: count settlements+cities per seat directly.
     # Must include cities — when a settlement upgrades, catanatron
     # rewrites the building's type, so a seat with 2 openings that
@@ -2137,12 +2148,37 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 snap["variant_recs_disabled"] = True
             else:
                 strat_snap = snap.get("strategy") or {}
+                # Opponent hands (lower-bound inference from the tracker),
+                # keyed by catanatron color name. Passing this in is what
+                # lets recommend_actions run its propose-trade supply guard:
+                # without opp_hands the guard is skipped entirely, so the
+                # live recs path surfaced "trade for a wheat nobody has"
+                # whenever no opponent held the wanted resource. The
+                # per-resource accounting inside the guard also covers the
+                # bank-count off-by-one (self holding the only in-play copy).
+                opp_hands_for_recs: dict[str, dict[str, int]] = {}
+                try:
+                    for _ocid in sess.hand_card_counts:
+                        if _ocid == sess.self_color_id:
+                            continue
+                        _ouser = sess.player_names.get(_ocid)
+                        if not _ouser:
+                            continue
+                        _ce = game.color_map.get(_ouser)
+                        if _ce is None:
+                            continue
+                        opp_hands_for_recs[_ce.name] = {
+                            r: int(n) for r, n
+                            in dict(game.tracker.hand(_ce)).items()}
+                except Exception:  # noqa: BLE001
+                    opp_hands_for_recs = {}
                 full_recs = recommend_actions(
                     cat_game, self_color, hand, top=10,
                     bank_supply=bank_for_recs,
                     dev_deck_remaining=dev_deck_for_recs,
                     strategy_tag=strat_snap.get("active"),
-                    strategy_phase=strat_snap.get("phase"))
+                    strategy_phase=strat_snap.get("phase"),
+                    opp_hands=opp_hands_for_recs)
             snap["recommendations"] = full_recs[:4]
             if full_recs:
                 st["last_recs_for_self"] = full_recs
