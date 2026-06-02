@@ -32,8 +32,11 @@
        single archetype (3px left-edge bar + uniform dark bg).
      - 14px body base with a 4px spacing grid. Generous line-height.
      -------------------------------------------------------------- */
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
+  /* Fonts: system stack only (see --font / --font-mono below). No
+     webfont fetch, so the panel's only network destinations stay
+     colonist.io and the local bridge. Local Inter / JetBrains Mono are
+     used automatically if the user has them installed. */
   :host, * { box-sizing: border-box; }
 
   .panel {

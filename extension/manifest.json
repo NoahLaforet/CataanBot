@@ -51,7 +51,7 @@
   "web_accessible_resources": [
     {
       "resources": ["lib/*.js"],
-      "matches": ["<all_urls>"]
+      "matches": ["https://colonist.io/*"]
     }
   ]
 }

@@ -75,7 +75,8 @@
         // Page-world cannot talk to chrome.* APIs. Hand off via
         // postMessage; content.js listens for the same source-origin
         // message and forwards to the extension's service worker.
-        window.postMessage({ source: 'catanbot-ws', frame }, '*');
+        window.postMessage({ source: 'catanbot-ws', frame },
+            window.location.origin);
     }
 
     function recordFrame(dir, data, wsId) {

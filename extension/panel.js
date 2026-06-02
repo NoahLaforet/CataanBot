@@ -2369,7 +2369,7 @@
     let _diagTicks = 0;
     const _diagTimer = setInterval(() => {
         _diagTicks += 1;
-        console.log('[catanbot] diag t+' + (_diagTicks * 10) + 's',
+        console.debug('[catanbot] diag t+' + (_diagTicks * 10) + 's',
             JSON.stringify(_diag));
         if (_diagTicks >= 3) clearInterval(_diagTimer);
     }, 10000);
@@ -2807,16 +2807,8 @@
                     height: 920,
                 });
                 pipWindowRef = pip;
-                // Mirror the font preconnect into the PiP document so
-                // JetBrains Mono / Inter render the same way they do
-                // in the original tab.
-                const fontLink = pip.document.createElement('link');
-                fontLink.rel = 'stylesheet';
-                fontLink.href = 'https://fonts.googleapis.com/css2'
-                    + '?family=Inter:wght@400;500;600;700;800;900'
-                    + '&family=JetBrains+Mono:wght@400;500;600;700'
-                    + '&display=swap';
-                pip.document.head.appendChild(fontLink);
+                // The panel uses the system font stack (panel.css), so
+                // the PiP window renders it with no remote font fetch.
                 // Reset the PiP body — Chrome ships with default
                 // margin/padding that cuts our 660px width otherwise.
                 pip.document.body.style.cssText = 'margin:0;padding:0;'
