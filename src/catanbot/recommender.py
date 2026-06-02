@@ -1644,19 +1644,30 @@ def recommend_actions(
             # may be None pre-inference). Strongest possible guard.
             if need_res not in board_resources:
                 continue
-            # Bank-derived hard skip: if the bank still holds all 19 of
-            # the resource we'd be asking for, nobody can have it
-            # (known or unknown). 19 - bank == sum across all hands; if
-            # that's 0, it's 0 across all hands. Catches the case where
-            # opp_has_unknown is True but the unknowns physically can't
-            # be need_res — propose-trade for sheep when no sheep have
-            # been distributed yet is dead on arrival.
+            # Bank hard skip: all 19 of the resource still in the bank
+            # means nobody holds it (known or unknown), so the proposal
+            # is dead on arrival.
             if (bank_supply is not None
                     and bank_remaining(need_res, 0) >= 19):
                 continue
-            if opp_hands is not None and not opp_has_unknown:
-                if opp_resource_total.get(need_res, 0) <= 0:
-                    # Nobody has this — no point asking for it.
+            # Per-resource supply guard. Only ask for what an opponent
+            # could actually hand over: a resource some opp is known to
+            # hold, or one with cards unaccounted for that could be
+            # sitting in an opp's unknown pile. When bank inference has
+            # not latched (bank_supply None) we cannot reason about the
+            # unknowns, so we require a known holder. The old code
+            # bypassed this check whenever ANY opp held an unknown card,
+            # which let "trade for a wheat nobody owns" recs through
+            # early game before the bank latched.
+            if opp_hands is not None:
+                known_supply = opp_resource_total.get(need_res, 0) > 0
+                unaccounted_possible = False
+                if opp_has_unknown and bank_supply is not None:
+                    in_play = 19 - bank_remaining(need_res, 19)
+                    accounted = (hand.get(need_res, 0)
+                                 + opp_resource_total.get(need_res, 0))
+                    unaccounted_possible = (in_play - accounted) > 0
+                if not (known_supply or unaccounted_possible):
                     continue
             # Candidate variants (give_count, get_count, label, score_adj).
             # 1:1 is the friendliest; 2:1 is a concession offer; 2:2 is

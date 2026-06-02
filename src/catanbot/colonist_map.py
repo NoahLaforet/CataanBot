@@ -348,6 +348,38 @@ def annotate_gold_nodes(cat_map, hex_states: dict) -> None:
     cat_map.gold_number = gold_number
 
 
+def refresh_gold_nodes(cat_map) -> None:
+    """Re-derive gold-hex nodes from the live map, catching mid-game reveals.
+
+    annotate_gold_nodes runs once at GameStart off colonist tile types, but
+    on a fog board (Gold Rush) the gold hex starts hidden under fog and only
+    reveals mid-game, so the build-time pass misses it and gold_node_ids
+    stays empty. catanatron has no gold resource, so a revealed gold hex
+    shows up as a tile carrying a real dice number but no resource (a desert
+    has neither). Scan for that signature each snapshot so the opening
+    scorer and the gold-pick advisor light up the moment the gold reveals,
+    regardless of the board label (volcano or black_forest / gold rush).
+
+    A found signature wins; otherwise any build-time annotation is left
+    intact (the Volcano build path stores its gold hex as number None with
+    gold_number recorded separately, which this scan deliberately skips).
+    """
+    gold_nodes: set[int] = set()
+    gold_number: int | None = None
+    for tile in cat_map.land_tiles.values():
+        res = getattr(tile, "resource", None)
+        num = getattr(tile, "number", None)
+        if res is None and num:
+            gold_nodes.update(int(n) for n in tile.nodes.values())
+            gold_number = num
+    if gold_nodes:
+        cat_map.gold_node_ids = frozenset(gold_nodes)
+        cat_map.gold_number = gold_number
+    elif not getattr(cat_map, "gold_node_ids", None):
+        cat_map.gold_node_ids = frozenset()
+        cat_map.gold_number = None
+
+
 def _augment_static_graph_for_map(cat_map) -> None:
     """Replace the variant slice of catanatron's module-level
     STATIC_GRAPH with this map's nodes and edges.
