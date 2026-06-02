@@ -20,6 +20,8 @@
 
 import { newHand, RESOURCE_NAMES } from './state.js';
 import { nodeProduction, pipsForNumber } from './board.js';
+import { planBankTrades } from './trades.js';
+import { computeStrategy } from './strategy.js';
 
 const COSTS = {
     settlement: { WOOD: 1, BRICK: 1, SHEEP: 1, WHEAT: 1 },
@@ -27,6 +29,10 @@ const COSTS = {
     road: { WOOD: 1, BRICK: 1 },
     dev_card: { SHEEP: 1, WHEAT: 1, ORE: 1 },
 };
+
+// Flat dev-card score, mirrors recommender.py _DEV_CARD_SCORE. Used as
+// the unlocked-build base for a bank trade that buys a dev card.
+const _DEV_CARD_SCORE = 3.0;
 
 function _clip(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -216,40 +222,60 @@ function _legalRoadEdges(state) {
     return out;
 }
 
-/** Compute the best landing-node production for an edge — used by
- *  the road score. The "landing" is whichever endpoint is currently
- *  not anchored to your network (the new ground you'd reach). */
-function _bestLanding(state, edgeId) {
+/** Best settleable landing this road brings into reach. Mirrors
+ *  recommender.py's best-landing walk: for each edge endpoint, scan
+ *  its neighbours (the distance-2 nodes a follow-up road could settle)
+ *  and keep the highest-ranked UNBLOCKED, on-land one. "Blocked" = any
+ *  occupied node or a node adjacent to one (the distance-2 settlement
+ *  rule), so blocked landings are EXCLUDED, not discounted. The old
+ *  code scored the edge endpoint itself (distance-1, almost always
+ *  blocked off your own settle) and halved it, which ran road scores
+ *  low. Ranking uses raw production × diversity × a 2:1-port bonus on
+ *  an owned resource, but the stored `total` is the raw production so
+ *  the road score stays comparable to settlement scores. */
+function _bestLanding(state, edgeId, blocked, ownedResources) {
     const board = state.map;
     const edge = board.edges[edgeId];
     if (!edge) return { prod: {}, total: 0, nodeId: null };
-    const ownNet = new Set();
-    for (const nid of _ownNodes(state)) ownNet.add(nid);
-    for (const eid of _ownEdges(state)) {
-        const e = board.edges[eid];
-        if (!e) continue;
-        ownNet.add(e.a); ownNet.add(e.b);
-    }
-    const allNodes = _allNodes(state);
-    const candidates = [edge.a, edge.b].filter(n => !ownNet.has(n));
-    const lookAt = candidates.length ? candidates : [edge.a, edge.b];
     let best = { prod: {}, total: -1, nodeId: null };
-    for (const nid of lookAt) {
-        // Distance-rule blocked? If yes, the landing is worth less
-        // (still place value on opening up the *next* hop).
-        const node = board.nodes[nid];
-        if (!node) continue;
-        let nbBuilt = false;
-        for (const nb of node.neighbors) {
-            if (allNodes.has(nb) && nb !== nid) { nbBuilt = true; break; }
+    let bestRank = -1;
+    for (const end of [edge.a, edge.b]) {
+        const endNode = board.nodes[end];
+        if (!endNode) continue;
+        for (const nb of endNode.neighbors) {
+            if (blocked.has(nb)) continue;
+            if (!board.landNodes.has(nb)) continue;
+            const prod = nodeProduction(board, nb);
+            const raw = Object.values(prod).reduce((s, v) => s + v, 0);
+            let distinct = 0;
+            for (const v of Object.values(prod)) if (v > 0) distinct += 1;
+            const diversity = distinct >= 3 ? 1.15
+                : distinct === 2 ? 1.05 : 1.0;
+            let portBonus = 1.0;
+            const port = board.nodes[nb] && board.nodes[nb].port;
+            if (port && port.resource && ownedResources.has(port.resource)) {
+                portBonus = 1.4;
+            }
+            const rank = raw * diversity * portBonus;
+            if (rank > bestRank) {
+                bestRank = rank;
+                best = { prod, total: raw, nodeId: nb };
+            }
         }
-        const prod = nodeProduction(board, nid);
-        let total = Object.values(prod).reduce((s, v) => s + v, 0);
-        if (allNodes.has(nid)) total = 0;
-        if (nbBuilt) total *= 0.5;
-        if (total > best.total) best = { prod, total, nodeId: nid };
     }
     return best;
+}
+
+/** Resources self currently produces (>0 cards/roll), for the road
+ *  landing's 2:1-port bonus. */
+function _ownedResources(state) {
+    const out = new Set();
+    const board = state.map;
+    for (const nid of _ownNodes(state)) {
+        const prod = nodeProduction(board, nid);
+        for (const [r, v] of Object.entries(prod)) if (v > 0) out.add(r);
+    }
+    return out;
 }
 
 /** Rank own-settle nodes for city upgrade. Returns up to top-3 recs
@@ -320,9 +346,20 @@ function _roadRecs(state, hand, opts) {
     const roadBank = (state.bank[state.selfColor] || {}).roads;
     if (roadBank === 0) return [];
     const legal = _legalRoadEdges(state);
+    // Blocked = every occupied node plus its distance-1 neighbours (the
+    // distance-2 settlement rule), across all colors. Computed once and
+    // shared by every edge's best-landing search.
+    const allNodes = _allNodes(state);
+    const blocked = new Set(allNodes);
+    for (const bnid of allNodes) {
+        const bn = board.nodes[bnid];
+        if (!bn) continue;
+        for (const nb of bn.neighbors) blocked.add(nb);
+    }
+    const ownedResources = _ownedResources(state);
     const recs = [];
     for (const eid of legal) {
-        const landing = _bestLanding(state, eid);
+        const landing = _bestLanding(state, eid, blocked, ownedResources);
         if (landing.total <= 0) continue;
         const score = _scoreRoad(landing.prod);
         const tiles = _edgeTiles(board, eid);
@@ -343,100 +380,114 @@ function _roadRecs(state, hand, opts) {
     return recs.slice(0, 3);
 }
 
-/** Bank/port trades that unlock a useful build this turn. Returns
- *  up to 3 recs. Now handles multi-swap trades (e.g. 2 separate
- *  port/bank trades to get 2 missing resources). */
+const _BANK_KIND_LABEL = {
+    settlement: 'settlement', city: 'city', dev_card: 'dev card',
+};
+
+/** Best buildable settlement spot: ranked by wheat-weighted production
+ *  (matching the bridge), but the returned raw production drives the
+ *  score. Returns {nodeId, raw, prodMap} or null. */
+function _bestSettleSpot(state) {
+    const board = state.map;
+    let best = null;
+    let bestW = -1;
+    for (const nid of _legalSettleNodes(state)) {
+        const prod = nodeProduction(board, nid);
+        const w = _weightedProd(prod);
+        if (w > bestW) {
+            bestW = w;
+            const raw = Object.values(prod).reduce((s, v) => s + v, 0);
+            best = { nodeId: nid, raw, prodMap: prod };
+        }
+    }
+    return best;
+}
+
+/** Highest-production own settlement — the city-upgrade target. */
+function _bestOwnedSettleSpot(state) {
+    const board = state.map;
+    let best = null;
+    let bestRaw = -1;
+    for (const nid of _ownNodes(state)) {
+        const b = state.buildings[nid];
+        if (!b || b.kind !== 'SETTLEMENT') continue;
+        const prod = nodeProduction(board, nid);
+        const raw = Object.values(prod).reduce((s, v) => s + v, 0);
+        if (raw > bestRaw) {
+            bestRaw = raw;
+            best = { nodeId: nid, raw, prodMap: prod };
+        }
+    }
+    return best;
+}
+
+/** Detail string for a bank-trade rec. Mirrors recommender.py's
+ *  single-hop vs multi-hop formatting with the dot separator. */
+function _bankTradeDetail(planned, kind) {
+    const label = _BANK_KIND_LABEL[kind] || kind;
+    const steps = planned.plan.map(([src, rate, tgt]) =>
+        `${rate} ${src.toLowerCase()} → 1 ${tgt.toLowerCase()}`);
+    if (planned.plan.length === 1) {
+        return `${steps[0]} · unlocks ${label}`;
+    }
+    const fmtPack = (pack) => Object.entries(pack)
+        .filter(([, n]) => n)
+        .map(([r, n]) => `${n} ${r.toLowerCase()}`).join(' + ');
+    return `${fmtPack(planned.give)} → ${fmtPack(planned.get)} `
+        + `· unlocks ${label}`;
+}
+
+/** The single best bank/port trade that unlocks a blocked build this
+ *  turn. Mirrors recommender.py: targets in priority order
+ *  settlement > city > dev_card (road is NOT a bank-trade target); the
+ *  FIRST reachable one is emitted, scored from the unlocked build's own
+ *  production curve minus one (clamped to [2, 9]). The planning is the
+ *  shared planBankTrades (trades.js). Returns a one-element array (or
+ *  empty), matching the bridge's single bank_trade rec. The bridge also
+ *  suppresses the dev_card target once the dev deck is empty; the
+ *  standalone has no public deck count (colonist hides it), so that
+ *  gate is intentionally absent. */
 function _bankTradeRecs(state, hand, opts) {
     const board = state.map;
-    const recs = [];
-    if (!hand) return recs;
-    // What ports do we touch? Pull from owned settlements + cities.
-    const ownPorts = new Set();   // resource set with 2:1 access
-    let has31 = false;
-    for (const nid of _ownNodes(state)) {
-        const port = board.nodes[nid]?.port;
-        if (!port) continue;
-        if (port.kind === '3:1') { has31 = true; continue; }
-        if (port.resource) ownPorts.add(port.resource);
-    }
-    const ratioFor = (res) => {
-        if (ownPorts.has(res)) return 2;
-        if (has31) return 3;
-        return 4;
-    };
-    // Cheapest swaps to satisfy `need` from `hand`. Returns null if
-    // no combination of port/bank trades can cover the missing
-    // resources, or {give, get, totalSpent} when feasible.
-    function planSwaps(hand, need) {
-        const give = {};
-        const get = { ...need };
-        const remaining = { ...hand };
-        for (const [r, n] of Object.entries(need)) {
-            let stillNeed = n;
-            // Each iteration spends `ratio` of some surplus to gain 1.
-            while (stillNeed > 0) {
-                let bestSurplus = null;
-                let bestRatio = Infinity;
-                for (const sr of RESOURCE_NAMES) {
-                    if (sr === r) continue;
-                    const have = remaining[sr] || 0;
-                    const rt = ratioFor(sr);
-                    if (have >= rt && rt < bestRatio) {
-                        bestSurplus = sr;
-                        bestRatio = rt;
-                    }
-                }
-                if (!bestSurplus) return null;
-                give[bestSurplus] = (give[bestSurplus] || 0) + bestRatio;
-                remaining[bestSurplus] -= bestRatio;
-                stillNeed -= 1;
-            }
-        }
-        return { give, get,
-                 totalSpent: Object.values(give)
-                    .reduce((s, v) => s + v, 0) };
-    }
-    // Identify the highest-VP build target reachable via trades.
-    const wanted = [
-        ['city', COSTS.city, 7.5],
-        ['settlement', COSTS.settlement, 7.0],
-        ['dev_card', COSTS.dev_card, 5.5],
-        ['road', COSTS.road, 5.0],
+    if (!hand) return [];
+    const bankSupply = opts && opts.bankSupply;
+    const planOpts = bankSupply ? { bankSupply } : {};
+    const targets = [
+        ['settlement', COSTS.settlement, () => _bestSettleSpot(state),
+            (sp) => Math.round(
+                _clip(sp.raw * 12.0 + 2.0, 2.0, 10.0) * 10) / 10],
+        ['city', COSTS.city, () => _bestOwnedSettleSpot(state),
+            (sp) => _scoreCity(sp.prodMap)],
+        ['dev_card', COSTS.dev_card, null, () => _DEV_CARD_SCORE],
     ];
-    for (const [target, cost, baseScore] of wanted) {
+    for (const [kind, cost, spotFn, scoreFn] of targets) {
         if (handCanAfford(hand, cost)) continue;
-        const need = _missing(hand, cost);
-        // Verify trading away resources doesn't leave us short on
-        // anything still needed for the build itself.
-        const plan = planSwaps(hand, need);
-        if (!plan) continue;
-        // Confirm post-trade hand can pay the build cost.
-        const postHand = { ...hand };
-        for (const [r, n] of Object.entries(plan.give)) {
-            postHand[r] = (postHand[r] || 0) - n;
+        let spot = null;
+        if (spotFn) {
+            spot = spotFn();
+            if (!spot) continue;
         }
-        for (const [r, n] of Object.entries(plan.get)) {
-            postHand[r] = (postHand[r] || 0) + n;
-        }
-        if (!handCanAfford(postHand, cost)) continue;
-        // Score: base − 0.5 per extra trade beyond the first.
-        const swaps = plan.totalSpent;
-        const score = Math.max(2.0,
-            baseScore - 0.5 * (swaps - Object.keys(plan.give).length));
-        recs.push({
+        const planned = planBankTrades(state, hand, cost, planOpts);
+        if (!planned || !planned.plan.length) continue;
+        const base = scoreFn(spot);
+        const score = Math.round(_clip(base - 1.0, 2.0, 9.0) * 10) / 10;
+        const rec = {
             kind: 'bank_trade',
             when: 'now',
-            score: Math.round(score * 10) / 10,
-            detail: swaps === Object.keys(plan.give).length
-                ? `trade → unlock ${target}`
-                : `${swaps}-card trade → ${target}`,
-            give: plan.give,
-            get: plan.get,
-            target_kind: target,
-        });
+            score,
+            give: planned.give,
+            get: planned.get,
+            unlocks: kind,
+            target_kind: kind,
+            detail: _bankTradeDetail(planned, kind),
+        };
+        if (spot && spot.nodeId != null) {
+            rec.node_id = spot.nodeId;
+            rec.tiles = _nodeTiles(board, spot.nodeId);
+        }
+        return [rec];
     }
-    recs.sort((a, b) => b.score - a.score);
-    return recs.slice(0, 3);
+    return [];
 }
 
 /** Dev-card buy rec. Score scales with how stuck the player is
@@ -537,7 +588,95 @@ function _proposeTradeRecs(state, hand, opts) {
     return recs.slice(0, 3);
 }
 
-/** Build a ranked rec list. opts: { topK, includeSoon }. */
+/** Phase- and strategy-dependent score adjustments, applied to the
+ *  assembled rec list in place before de-dupe/sort. Mirrors the three
+ *  late passes in recommender.py recommend_actions:
+ *    1. third-settle  — settlement recs ×1.25 at exactly 2 footprints.
+ *    2. endgame       — VP-advancing "now" recs +2.5 (1 VP out) / +1.5,
+ *                       dev cards halved (dropped entirely at gap 1),
+ *                       once self is at the close-to-win threshold.
+ *    3. per-archetype — OWS/LR_RUSH/PORT_TRADE/RB_CARVED_TILES nudges
+ *                       from the JS strategy port (computeStrategy). */
+function _applyPhaseBumps(state, recs) {
+    const board = state.map;
+    // Self footprint counts (settlements + cities).
+    let settleCount = 0;
+    let cityCount = 0;
+    for (const b of Object.values(state.buildings || {})) {
+        if (b.color !== state.selfColor) continue;
+        if (b.kind === 'CITY') cityCount += 1;
+        else if (b.kind === 'SETTLEMENT') settleCount += 1;
+    }
+
+    // 1. Third-settle bump.
+    if (settleCount + cityCount === 2) {
+        for (const r of recs) {
+            if (r.kind !== 'settlement') continue;
+            r.score = Math.round(r.score * 1.25 * 10) / 10;
+            if (!/settle #3/.test(r.detail || '')) {
+                r.detail = `${r.detail || ''} · settle #3`;
+            }
+        }
+    }
+
+    // 2. Endgame VP push.
+    const vpTarget = state.vpTarget || 10;
+    const selfVp = (state.vp && state.vp[state.selfColor]) || 0;
+    const closeVp = Math.max(2, Math.round(vpTarget * 0.80));
+    if (selfVp >= closeVp) {
+        const gap = Math.max(1, vpTarget - selfVp);
+        const bump = gap === 1 ? 2.5 : 1.5;
+        const dropDev = gap === 1;
+        for (let i = recs.length - 1; i >= 0; i--) {
+            const r = recs[i];
+            if (r.when !== 'now') continue;
+            if (r.kind === 'dev_card') {
+                if (dropDev) { recs.splice(i, 1); continue; }
+                r.score = Math.round(r.score * 0.5 * 10) / 10;
+                continue;
+            }
+            const advances = r.kind === 'settlement' || r.kind === 'city'
+                || r.unlocks === 'settlement' || r.unlocks === 'city'
+                || r.target_kind === 'settlement' || r.target_kind === 'city';
+            if (advances) {
+                r.score = Math.round(Math.min(r.score + bump, 10.0) * 10) / 10;
+            }
+        }
+    }
+
+    // 3. Per-archetype bias (from the JS strategy port).
+    let strat = null;
+    try { strat = computeStrategy(state); } catch (e) { strat = null; }
+    const tag = strat && (strat.active || strat.primary);
+    if (tag && tag !== 'BALANCED') {
+        const late = strat.phase === 'late' || strat.phase === 'endgame';
+        for (const r of recs) {
+            if (r.when !== 'now') continue;
+            if ((r.score || 0) <= 1.0) continue;
+            let bump = 0;
+            if (tag === 'OWS') {
+                if (r.kind === 'dev_card') bump = 0.5;
+                else if (r.kind === 'city') bump = 0.3;
+            } else if (tag === 'LR_RUSH') {
+                if (r.kind === 'road') bump = late ? 0.6 : 0.2;
+            } else if (tag === 'PORT_TRADE') {
+                if (r.kind === 'road' && r.landing_node_id != null
+                        && board.nodes[r.landing_node_id]
+                        && board.nodes[r.landing_node_id].port) {
+                    bump = 0.4;
+                }
+            } else if (tag === 'RB_CARVED_TILES') {
+                if (r.kind === 'road') bump = late ? 0.8 : -0.4;
+            }
+            if (bump !== 0) {
+                r.score = Math.round(
+                    Math.min(Math.max(r.score + bump, 1.0), 10.0) * 10) / 10;
+            }
+        }
+    }
+}
+
+/** Build a ranked rec list. opts: { topK, includeSoon, bankSupply }. */
 export function recommendActions(state, opts = {}) {
     if (!state || !state.selfColor || !state.map) return [];
     const hand = state.hands[state.selfColor] || newHand();
@@ -548,6 +687,10 @@ export function recommendActions(state, opts = {}) {
     recs.push(..._bankTradeRecs(state, hand, opts));
     recs.push(..._proposeTradeRecs(state, hand, opts));
     recs.push(_devCardRec(state, hand, recs));
+
+    // Phase + strategy score bumps (third-settle, endgame VP push,
+    // per-archetype bias) before de-dupe/sort so they re-order the list.
+    _applyPhaseBumps(state, recs);
 
     // Filter out duplicates by (kind, node_id|edge|target).
     const seen = new Set();
