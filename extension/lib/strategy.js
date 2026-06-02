@@ -249,11 +249,11 @@ function _within2Hops(board, a, b) {
 }
 
 const RATIONALE = {
-    OWS: 'ore + wheat lean — city-rush w/ dev-card flex.',
-    LR_RUSH: 'wood + brick footprint w/ expansion runway — push roads.',
-    PORT_TRADE: 'port aligned with produced resource — leverage trades.',
-    RB_CARVED_TILES: 'isolated cluster of producing tiles — RoadBuilder.',
-    BALANCED: 'no dominant archetype — keep options open.',
+    OWS: 'ore + wheat lean · city-rush w/ dev-card flex.',
+    LR_RUSH: 'wood + brick footprint w/ expansion runway · push roads.',
+    PORT_TRADE: 'port aligned with produced resource · leverage trades.',
+    RB_CARVED_TILES: 'isolated cluster of producing tiles · RoadBuilder.',
+    BALANCED: 'no dominant archetype · keep options open.',
 };
 
 /** Pivot trigger detectors. Each fires at most one trigger; the
@@ -287,7 +287,7 @@ function _detectHotNumber(state, nodeIds) {
         if (c >= 4 && myNumbers.has(Number(num))) {
             return {
                 name: 'hot_number',
-                detail: `${num} rolled ${c}× in last 10 — lean in`,
+                detail: `${num} rolled ${c}× in last 10 · lean in`,
                 override_tag: null,
             };
         }
@@ -304,7 +304,7 @@ function _detectOppCloseToLA(state) {
         if (k >= 2 && k > myK && vp >= 4) {
             return {
                 name: 'opp_close_to_la',
-                detail: `opp on ${k} knights — race to LA or commit to denial`,
+                detail: `opp on ${k} knights · race to LA or commit to denial`,
                 override_tag: null,
             };
         }
@@ -320,7 +320,7 @@ function _detectOppCloseToWin(state) {
         if (vp >= closeAt) {
             return {
                 name: 'opp_close_to_win',
-                detail: `opp at ${vp} VP — tighten trades, deny resources`,
+                detail: `opp at ${vp} VP · tighten trades, deny resources`,
                 override_tag: null,
             };
         }
@@ -336,7 +336,7 @@ function _detectSevenOverdue(state) {
     if (recent.some(r => r.total === 7)) return null;
     return {
         name: 'seven_overdue',
-        detail: `hand at ${myHand}, no 7 in 10 rolls — trade down `
+        detail: `hand at ${myHand}, no 7 in 10 rolls · trade down `
             + 'before the next 7',
         override_tag: null,
     };
