@@ -1923,69 +1923,8 @@
                         }
                     }
                     if (bestOffer) {
-                        // Can self pay the want?
-                        let canPay = true;
-                        for (const [r, n] of Object.entries(
-                                bestOffer.want || {})) {
-                            if ((selfHand[r] || 0) < n) {
-                                canPay = false; break;
-                            }
-                        }
-                        // Post-trade hypothetical hand.
-                        const post = { ...selfHand };
-                        for (const [r, n] of Object.entries(
-                                bestOffer.want || {})) {
-                            post[r] = (post[r] || 0) - n;
-                        }
-                        for (const [r, n] of Object.entries(
-                                bestOffer.give || {})) {
-                            post[r] = (post[r] || 0) + n;
-                        }
-                        // Does post-trade unlock any build self
-                        // can't currently afford?
-                        const COSTS = {
-                            settlement: { WOOD: 1, BRICK: 1,
-                                SHEEP: 1, WHEAT: 1 },
-                            city: { WHEAT: 2, ORE: 3 },
-                            road: { WOOD: 1, BRICK: 1 },
-                            'dev card': { SHEEP: 1, WHEAT: 1, ORE: 1 },
-                        };
-                        let unlocks = null;
-                        for (const [name, cost] of Object.entries(COSTS)) {
-                            const canBefore = Object.entries(cost)
-                                .every(([r, n]) => (selfHand[r] || 0) >= n);
-                            if (canBefore) continue;
-                            const canAfter = Object.entries(cost)
-                                .every(([r, n]) => (post[r] || 0) >= n);
-                            if (canAfter) { unlocks = name; break; }
-                        }
-                        // Critical-resource check: would we drop a
-                        // 6+ stack to 0? Probably DECLINE.
-                        let drainsCritical = false;
-                        for (const [r, n] of Object.entries(
-                                bestOffer.want || {})) {
-                            const before = selfHand[r] || 0;
-                            if (before >= 6 && before - n <= 1) {
-                                drainsCritical = true;
-                                break;
-                            }
-                        }
-                        let verdict = 'consider';
-                        let reason = 'no clear unlock or downside';
-                        if (!canPay) {
-                            verdict = 'decline';
-                            reason = `can't afford `
-                                + Object.entries(bestOffer.want || {})
-                                    .map(([r, n]) => `${n} ${r.toLowerCase()}`)
-                                    .join(' + ');
-                        } else if (unlocks) {
-                            verdict = 'accept';
-                            reason = `unlocks ${unlocks}`;
-                        } else if (drainsCritical) {
-                            verdict = 'decline';
-                            reason = 'drains a critical stack';
-                        }
-                        // Find offerer's color id from username.
+                        // Find offerer's color id from username (for the
+                        // close-to-win guard + display).
                         let offererColorId = null;
                         for (const c of st.colors) {
                             const u = _bestUsernameFor(c);
@@ -1993,14 +1932,26 @@
                                 offererColorId = c; break;
                             }
                         }
+                        const offererVp = offererColorId
+                            ? (st.vp[offererColorId] || 0) : 0;
+                        // Score with the shared evaluator (mirrors the
+                        // bridge's evaluate_incoming_trade): EV from the
+                        // best-now rec before vs after, build-kind
+                        // upgrade/downgrade, lopsided + close-to-win
+                        // guards. recommendActions is injected so the
+                        // before/after hand is valued exactly like the
+                        // rec list.
+                        const ev = lib.evaluateIncomingTrade(
+                            st, selfHand,
+                            bestOffer.give || {}, bestOffer.want || {},
+                            { recommend: lib.recommendActions,
+                              oppVp: offererVp, vpTarget: st.vpTarget });
                         const offererColorName = offererColorId
                             ? _colorName(offererColorId) : null;
                         const offererCss = offererColorId
                             ? (_standaloneNames.byUser[bestOffer.user]
                                 || _colorHex(offererColorId))
                             : null;
-                        const offererVp = offererColorId
-                            ? (st.vp[offererColorId] || 0) : 0;
                         incomingTrade = {
                             offerer: bestOffer.user,
                             offerer_color: offererColorName,
@@ -2008,8 +1959,10 @@
                             offerer_vp: offererVp,
                             give: bestOffer.give || {},
                             want: bestOffer.want || {},
-                            verdict, reason,
+                            verdict: ev.verdict,
+                            reason: ev.reason,
                         };
+                        if (ev.counter) incomingTrade.counter = ev.counter;
                     }
                 }
 
