@@ -634,18 +634,18 @@ def _rationale_for(tag: str, prod: dict[str, float],
     HUD so the user understands the strategy framing."""
     if tag == "OWS":
         return (f"ore {prod.get('ORE', 0):.2f}/r + wheat "
-                f"{prod.get('WHEAT', 0):.2f}/r — city + dev engine")
+                f"{prod.get('WHEAT', 0):.2f}/r · city + dev engine")
     if tag == "LR_RUSH":
         return (f"wood {prod.get('WOOD', 0):.2f}/r + brick "
-                f"{prod.get('BRICK', 0):.2f}/r — road runway open")
+                f"{prod.get('BRICK', 0):.2f}/r · road runway open")
     if tag == "PORT_TRADE":
         return "relevant port reachable; settle near, route on settle #2"
     if tag == "RB_CARVED_TILES":
         iso = _isolation_score(game, my_color, nodes)
-        return (f"corridor carved out (~{int(iso*100)}% isolation) — "
+        return (f"corridor carved out (~{int(iso*100)}% isolation) · "
                 f"hold roads, claim LR late")
     distinct = sum(1 for v in prod.values() if v > 0.05)
-    return f"balanced base ({distinct}/5 resources) — keep options open"
+    return f"balanced base ({distinct}/5 resources) · keep options open"
 
 
 # --- pivot triggers --------------------------------------------------
@@ -692,7 +692,7 @@ def _detect_hot_number(roll_history: list[dict[str, Any]],
         if count >= 4 and num in my_settlement_numbers:
             return PivotTrigger(
                 name="hot_number",
-                detail=f"{num} rolled {count}× in last 10 — lean in",
+                detail=f"{num} rolled {count}× in last 10 · lean in",
                 # Informational only — we don't know which strategy
                 # leverages this without knowing the resource.
                 override_tag=None,
@@ -719,13 +719,13 @@ def _detect_dev_card_drawn(self_dev_just_bought: list[int] | None,
         if tid_i == 14:  # ROAD_BUILDING
             out.append(PivotTrigger(
                 name="road_builder_drawn",
-                detail="road-building drawn — LR rush now reachable",
+                detail="road-building drawn · LR rush now reachable",
                 override_tag="LR_RUSH",
             ))
         elif tid_i == 12:  # MONOPOLY
             out.append(PivotTrigger(
                 name="monopoly_drawn",
-                detail="monopoly drawn — hold for hot resource",
+                detail="monopoly drawn · hold for hot resource",
                 # No override — monopoly doesn't change the active
                 # strategy, just tells the player to hold the card.
                 override_tag=None,
@@ -750,7 +750,7 @@ def _detect_opp_close(game: "Game", my_color) -> list[PivotTrigger]:
         if vp >= close_vp:
             out.append(PivotTrigger(
                 name="opp_close_to_win",
-                detail=f"opp at {vp} VP — tighten trades, deny resources",
+                detail=f"opp at {vp} VP · tighten trades, deny resources",
                 override_tag=None,
             ))
             break  # one is enough
@@ -764,7 +764,7 @@ def _detect_opp_close(game: "Game", my_color) -> list[PivotTrigger]:
                 and vp >= la_threat_vp - 1):
             out.append(PivotTrigger(
                 name="opp_close_to_la",
-                detail=(f"opp on {played} knights — race to LA "
+                detail=(f"opp on {played} knights · race to LA "
                         f"or commit to denial"),
                 override_tag=None,
             ))
@@ -787,7 +787,7 @@ def _detect_seven_overdue(roll_history: list[dict[str, Any]],
         return None
     return PivotTrigger(
         name="seven_overdue",
-        detail=(f"hand at {self_hand_size}, no 7 in 10 rolls — "
+        detail=(f"hand at {self_hand_size}, no 7 in 10 rolls · "
                 "trade down before the next 7"),
         override_tag=None,
     )

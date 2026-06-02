@@ -214,7 +214,7 @@ def _gold_resource_pick(
         _GOLD_UTILITY_ORDER,
         key=lambda r: (prod.get(r, 0.0), _GOLD_UTILITY_ORDER.index(r)),
     )[0]
-    return {"resource": res, "reason": "your thinnest resource — bank toward a city",
+    return {"resource": res, "reason": "your thinnest resource · bank toward a city",
             "toward": None}
 
 

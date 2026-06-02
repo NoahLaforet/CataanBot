@@ -717,11 +717,11 @@ class Tracker:
         who = "/".join(status["leaders"])
         top = status["top"]
         if callout == "winner":
-            return f"*** {who} at {top} VP — GAME OVER ***"
+            return f"*** {who} at {top} VP · GAME OVER ***"
         if callout == "one_away":
-            return f"!! {who} at {top} VP — one turn from winning !!"
+            return f"!! {who} at {top} VP · one turn from winning !!"
         if callout == "two_away":
-            return f"{who} at {top} VP — two from winning"
+            return f"{who} at {top} VP · two from winning"
         return f"Leader: {who} at {top} VP"
 
     def summary(self) -> str:
