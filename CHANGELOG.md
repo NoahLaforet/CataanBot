@@ -4,6 +4,28 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.43.0 (2026-06-02)
+
+Standalone no-bridge parity, a one-download bridge installer, and a
+pre-launch security pass.
+
+- **Standalone JS recommender at bridge parity.** The no-bridge HUD now
+  matches the Python bridge on bank/port trade planning and scoring,
+  incoming-trade evaluation (accept / decline / counter with a
+  rebalanced counter), road best-landing scoring, and the third-settle /
+  endgame / per-archetype score bumps. WS frames are parsed in a single
+  pass instead of one tree walk per field.
+- **One-download bridge installer.** A PyInstaller recipe builds a
+  self-contained bridge binary that needs no Python install (verified on
+  macOS); see docs/BRIDGE_INSTALLER.md and SIGNING.md.
+- **Privacy and security hardening.** Dropped the Google Fonts fetch, so
+  the panel's only network destinations are colonist.io and the local
+  bridge; restricted the bridge CORS to colonist.io and the extension;
+  and tightened the page-message and web-accessible-resource scopes.
+- **Docs.** Rewrote the extension-to-bridge parity tracker, refreshed
+  the smoke test for the Gold Rush, Volcano, and no-bridge paths, and
+  added a launch-readiness report.
+
 ## v0.42.0 (2026-06-02)
 
 Gold Rush (fog board) strategy support, an authoritative dice-stats
