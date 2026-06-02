@@ -705,6 +705,20 @@ def _feed_ws_payload(game, payload: dict[str, Any]):
     frame = decode_frame(data, direction)
     if frame.error or not isinstance(frame.payload, dict):
         return None
+    # Capture colonist's authoritative dice distribution when it arrives.
+    # It lives at frame.payload.payload.endGameState.diceStats (11-element
+    # list, index i = count of total i+2) and only appears around game
+    # over. Stash it on the session so the snapshot can override the
+    # incremental roll tally, which loses rolls on missed frames.
+    try:
+        _inner = frame.payload.get("payload")
+        _eg = _inner.get("endGameState") if isinstance(_inner, dict) else None
+        _ds = _eg.get("diceStats") if isinstance(_eg, dict) else None
+        _sess = getattr(game, "session", None)
+        if isinstance(_ds, list) and len(_ds) == 11 and _sess is not None:
+            _sess.dice_stats = [int(x) for x in _ds]
+    except Exception:  # noqa: BLE001
+        pass
     return game.feed(frame.payload)
 
 
@@ -1434,6 +1448,20 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # the per-poll _compute_robber_snapshot cost.
             st["robber_snapshot_retry"] = False
             st["robber_snapshot_retry_n"] = 0
+    # Authoritative dice distribution. colonist ships the exact per-number
+    # tally in endGameState.diceStats (captured onto the session by
+    # _feed_ws_payload, indexed totals 2..12). When present it overrides
+    # the incremental roll count, which drifts behind on missed frames or
+    # reconnects; otherwise fall back to the incremental tally.
+    _ds_sess = getattr(game, "session", None)
+    _ds = getattr(_ds_sess, "dice_stats", None) if _ds_sess is not None else None
+    if isinstance(_ds, list) and len(_ds) == 11:
+        _roll_hist = {i + 2: int(_ds[i]) for i in range(11)}
+        _roll_total = sum(int(x) for x in _ds)
+    else:
+        _roll_hist = dict(st.get("roll_histogram")
+                          or {i: 0 for i in range(2, 13)})
+        _roll_total = int(st.get("total_rolls") or 0)
     snap: dict[str, Any] = {
         "seq": st["seq"],
         "game_started": game.started,
@@ -1449,9 +1477,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "opps": [],
         "last_roll": st.get("last_roll"),
         "roll_history": list(st.get("roll_history") or []),
-        "total_rolls": int(st.get("total_rolls") or 0),
-        "roll_histogram": dict(st.get("roll_histogram")
-                               or {i: 0 for i in range(2, 13)}),
+        "total_rolls": _roll_total,
+        "roll_histogram": _roll_hist,
         # Per-roll eval samples. Userscript renders as a sparkline; last
         # entry is "current eval." Empty list before self latches.
         "eval_history": list(st.get("eval_history") or []),

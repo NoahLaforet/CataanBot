@@ -245,6 +245,13 @@ class LiveSession:
     # bankState deltas (just the changed resource). Mirrored into the
     # tracker via BankSyncEvent so the freqdeck never drifts negative.
     bank_resources: dict[int, int] = field(default_factory=dict)
+    # Authoritative per-number dice distribution from colonist's
+    # endGameState.diceStats (11-element list, index i = count of total
+    # i+2, so index 5 = sevens). Captured by _feed_ws_payload when a
+    # frame carrying it arrives (end of game); the advisor snapshot uses
+    # it to override the incremental roll tally, which drifts behind on
+    # missed frames or reconnects. None until colonist sends it.
+    dice_stats: list[int] | None = None
 
     @classmethod
     def from_game_start(cls, body: dict[str, Any]) -> "LiveSession":
