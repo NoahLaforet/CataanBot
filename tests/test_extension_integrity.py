@@ -51,6 +51,16 @@ def test_manifest_drops_unused_permissions():
         "all 127.0.0.1")
 
 
+def test_manifest_description_within_cws_limit():
+    """The Chrome Web Store rejects an upload whose manifest 'description'
+    exceeds 132 characters (the field doubles as the listing summary). A
+    243-char description slipped through once and bounced the first upload,
+    so pin the limit here."""
+    desc = json.loads(_read("extension/manifest.json"))["description"]
+    assert len(desc) <= 132, (
+        f"manifest description is {len(desc)} chars; CWS caps it at 132")
+
+
 def test_no_console_log_in_page_and_content_scripts():
     """inject.js runs in the colonist.io page's own console and content.js
     in the content-script context; an unconditional console.log there is
