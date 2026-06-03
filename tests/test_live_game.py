@@ -2113,6 +2113,48 @@ def test_compute_monopoly_hint_picks_resource_with_largest_total():
     assert h["totals"][h["resource"]] == max_total
 
 
+def test_compute_monopoly_hint_holds_on_a_one_card_unlock_pot():
+    """A 1-card pot is never worth burning Monopoly, even when grabbing
+    it would technically unlock a build — a single trade gets there
+    without spending the one-shot card. Regression for the playtest
+    'steal only 1 brick' recommendation."""
+    from catanbot.bridge import _compute_monopoly_hint
+    from catanatron import Color
+    from types import SimpleNamespace
+
+    def _game(opp_brick):
+        state = SimpleNamespace(
+            color_to_index={Color.RED: 0, Color.BLUE: 1},
+            player_state={
+                "P0_MONOPOLY_IN_HAND": 1,
+                "P0_SETTLEMENTS_AVAILABLE": 3,
+                "P0_CITIES_AVAILABLE": 4,
+                "P0_ROADS_AVAILABLE": 13,
+            },
+        )
+        hands = {Color.BLUE.value: {"BRICK": opp_brick}}
+        tracker = SimpleNamespace(
+            game=SimpleNamespace(state=state),
+            hand=lambda cv: dict(hands.get(cv, {})),
+        )
+        return SimpleNamespace(tracker=tracker)
+
+    # Self is 1 brick short of a settlement; grabbing brick "unlocks" it.
+    self_hand = {"WOOD": 1, "BRICK": 0, "SHEEP": 1, "WHEAT": 1, "ORE": 0}
+
+    # Opp holds exactly 1 brick -> 1-card pot -> HOLD (save the card).
+    h1 = _compute_monopoly_hint(_game(1), "RED", dict(self_hand))
+    assert h1 is not None
+    assert h1["resource"] == "BRICK"
+    assert h1["should_play"] is False
+    assert "small pot" in h1["reason"]
+
+    # Opp holds 2 brick -> a real pot that unlocks -> PLAY.
+    h2 = _compute_monopoly_hint(_game(2), "RED", dict(self_hand))
+    assert h2["should_play"] is True
+    assert "unlocks settlement" in h2["reason"]
+
+
 def test_compute_yop_hint_suggests_pair_to_unlock_build():
     """YoP should identify a 2-card pickup that unlocks a build."""
     from catanbot.bridge import _compute_yop_hint

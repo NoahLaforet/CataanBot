@@ -407,15 +407,21 @@ def _compute_monopoly_hint(
     # letting opps accumulate. The 4-card threshold is intentionally
     # slightly above a single-opp production spike so we don't fire
     # PLAY on a one-roll lucky stack.
+    # Monopoly takes ALL of one resource from every opponent and is a
+    # one-shot card, so a tiny pot is a waste even when it technically
+    # unlocks a build (a single 4:1 trade or one more turn gets there
+    # without burning the card). Require at least 2 cards to PLAY on an
+    # unlock, and 4+ for a no-unlock tempo swing. A 1-card pot is never
+    # worth the card.
     should_play = False
-    if unlock_reason:
+    if unlock_reason and best_count >= 2:
         should_play = True
-        reason = unlock_reason
+        reason = f"{unlock_reason} · {best_count} cards"
     elif best_count >= 4:
         should_play = True
         reason = f"large pot · {best_count} cards"
     else:
-        reason = f"small pot · {best_count}"
+        reason = f"small pot · {best_count} · save it"
 
     # Top holder: the single opp contributing the most to best_count.
     # Used by the overlay to render "drains 4 from noah" as a sub-line.
@@ -948,6 +954,21 @@ def _compute_rb_hint(game, self_color: str,
     projected = self_len + min(2, roads_left)
     qualify = 5  # base-game longest-road threshold
 
+    # Concrete free-road placement, computed up front so the expansion
+    # case below can see whether two free roads open a new settlement
+    # spot (not just a longest-road swing).
+    placement = None
+    try:
+        placement = _suggest_rb_placement(
+            game.tracker.game, my_enum,
+            max_edges=(free_pending if free_pending > 0 else 2),
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] rb placement failed: {e!r}", flush=True)
+    opens_settle = bool(
+        isinstance(placement, dict)
+        and str(placement.get("placement_reason", "")).startswith("unlocks"))
+
     should = False
     reason = "no clear swing yet"
     if not self_has and projected >= max(qualify, opp_max + 1):
@@ -965,9 +986,8 @@ def _compute_rb_hint(game, self_color: str,
     else:
         # Fog board (Black Forest / Gold Rush): even with no longest-road
         # swing, two free roads into the fog ring reveal free, scarce-biased
-        # resources, so RB is +EV while fog remains in reach. Without this
-        # the hint says HOLD forever on a fog board. No-op on classic
-        # boards (no fog) and once the reachable fog has revealed.
+        # resources, so RB is +EV while fog remains in reach. No-op on
+        # classic boards (no fog) and once the reachable fog has revealed.
         fog_reach = 0
         try:
             fog_reach = _free_road_reaches_fog(game, my_enum)
@@ -978,6 +998,14 @@ def _compute_rb_hint(game, self_color: str,
             reason = (f"reveals fog · {fog_reach} fog tile"
                       + ("s" if fog_reach != 1 else "")
                       + " in reach of 2 free roads")
+        elif opens_settle:
+            # No LR swing and no fog, but two free roads would open a new
+            # settlement spot. Surface that as the actionable option so the
+            # hint stops reading "hold forever" with no guidance. Kept as
+            # HOLD by default (RB is often best saved for a longest-road
+            # swing); the placement names where you could expand now.
+            reason = (f"hold for LR · or play to open a settle spot "
+                      f"({placement['placement_reason']})")
 
     out: dict[str, Any] = {
         "have": held,
@@ -998,18 +1026,8 @@ def _compute_rb_hint(game, self_color: str,
         out["reason"] = (
             f"place {free_pending} free road"
             + ("s" if free_pending > 1 else ""))
-    try:
-        # Limit the placement suggestion to the number of roads still
-        # pending — when only one is left, returning a 2-edge plan
-        # would mis-describe the situation.
-        placement = _suggest_rb_placement(
-            game.tracker.game, my_enum,
-            max_edges=(free_pending if free_pending > 0 else 2),
-        )
-        if placement is not None:
-            out["placement"] = placement
-    except Exception as e:  # noqa: BLE001
-        print(f"[advisor] rb placement failed: {e!r}", flush=True)
+    if placement is not None:
+        out["placement"] = placement
     return out
 
 
