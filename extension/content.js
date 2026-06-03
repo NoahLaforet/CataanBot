@@ -344,9 +344,26 @@
     function _setStreamerHtmlFlag(on) {
         document.documentElement.dataset.cataanStreamer = on ? '1' : '0';
     }
+    // Synchronous bootstrap: chrome.storage.local.get is async, so at
+    // document_start it returns AFTER colonist paints the first player
+    // names — real names flashed for a frame (or a full turn) before the
+    // anti-flash CSS engaged. Mirror the toggle into colonist.io's own
+    // localStorage on every change so the NEXT document_start can read it
+    // synchronously and set data-cataan-streamer before first paint.
+    const _STREAMER_LS_KEY = 'cataan.streamer';
+    try {
+        if (localStorage.getItem(_STREAMER_LS_KEY) === '1') {
+            streamerOn = true;
+            _setStreamerHtmlFlag(true);
+        }
+    } catch (_) { /* localStorage may be unavailable this early */ }
     try {
         chrome.storage.local.get(['streamer'], (res) => {
             streamerOn = !!(res && res.streamer);
+            try {
+                localStorage.setItem(_STREAMER_LS_KEY,
+                    streamerOn ? '1' : '0');
+            } catch (_) {}
             _setStreamerHtmlFlag(streamerOn);
             if (streamerOn) {
                 _refreshSelfName();
@@ -356,6 +373,10 @@
         chrome.storage.onChanged.addListener((changes, area) => {
             if (area !== 'local' || !changes.streamer) return;
             streamerOn = !!changes.streamer.newValue;
+            try {
+                localStorage.setItem(_STREAMER_LS_KEY,
+                    streamerOn ? '1' : '0');
+            } catch (_) {}
             _setStreamerHtmlFlag(streamerOn);
             if (streamerOn) {
                 _refreshSelfName();
