@@ -14,7 +14,7 @@ search, no ML.
 
 ## See it in action
 
-Clipped from a real 4-player game (15-VP target, won 15-5):
+Clipped from a real player game (15-VP target, won 15-5):
 
 **Pre-placement — board affinity scoring picks the strongest archetype on this board, then ranks the top opening picks A/B/C with their tiles, scores, and 2nd-pick complement tags.**
 
