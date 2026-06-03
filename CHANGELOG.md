@@ -4,6 +4,15 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.44.1 (2026-06-03)
+
+Chrome Web Store packaging fix.
+
+- **Manifest description fits the store limit.** It was 243 characters;
+  the Chrome Web Store caps the manifest `description` at 132 and rejected
+  the upload. Trimmed to a 124-char summary that keeps the local-only
+  hook. A new integrity test pins the 132-char limit so it cannot regress.
+
 ## v0.44.0 (2026-06-03)
 
 Playtest bugfixes from two live 1v1 games.
