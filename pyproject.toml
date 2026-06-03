@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "catanbot"
-version = "0.43.0"
+version = "0.44.0"
 description = "Live Settlers of Catan advisor for colonist.io. Local FastAPI bridge plus a Chrome side-panel HUD with handcrafted heuristics over catanatron."
 readme = "README.md"
 requires-python = ">=3.11"

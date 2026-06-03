@@ -4,6 +4,26 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.44.0 (2026-06-03)
+
+Playtest bugfixes from two live 1v1 games.
+
+- **Monopoly holds a tiny pot.** It no longer recommends PLAY to steal a
+  1-card stack even when that card would unlock a build; PLAY now needs
+  2+ cards on an unlock, 4+ otherwise.
+- **Road Building names the expansion option.** Instead of "hold forever
+  / no clear swing", when two free roads would open a new settlement
+  spot the hint surfaces that option.
+- **Knight count fixed.** A self knight play was counted twice (a
+  DevCardPlayEvent from both the DOM-log and the WS path), doubling the
+  displayed knight count and skewing the recommender. PLAYED_KNIGHT is
+  now reconciled to colonist's authoritative count each frame.
+- **Opening banner.** The board-affinity headline reads "second settle"
+  on the second opening placement instead of always "first settle".
+- **Streamer startup leak.** The name anonymizer now applies before
+  colonist's first paint; it read the toggle async before, so real names
+  could flash for a turn at game start.
+
 ## v0.43.0 (2026-06-02)
 
 Standalone no-bridge parity, a one-download bridge installer, and a
