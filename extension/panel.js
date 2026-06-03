@@ -3560,13 +3560,17 @@
         const out = [];
         if (previewMode) {
             // No banner row in preview mode — just a header explaining
-            // what the ranking means before settlements land.
+            // what the ranking means before settlements land. If the
+            // first settle is already down (>=1 VP in the opening) this
+            // is the SECOND pick, so the copy reads "second", not "first".
+            const settleWord =
+                (snap.self && (snap.self.vp || 0) >= 1) ? 'second' : 'first';
             out.push(
                 `<div class="strategy-banner preview" `
                 + `title="Board affinity scoring · these are how `
                 + `well each archetype fits THIS board's tile / `
-                + `port / number layout. Pick your first settle to `
-                + `align with one of the strong contenders.">`
+                + `port / number layout. Pick your ${settleWord} settle `
+                + `to align with one of the strong contenders.">`
                 + `<div class="sb-head">`
                 + `<span class="b-ico">🧭</span> `
                 + `<span class="strat-tag">board affinity</span>`
@@ -3575,7 +3579,7 @@
                         + escapeHtml(st.phase) + `</span>` : '')
                 + `</div>`
                 + `<div class="strat-why">`
-                + `pick your first settle to align with a strong `
+                + `pick your ${settleWord} settle to align with a strong `
                 + `archetype below`
                 + `</div>`
                 + `</div>`);
