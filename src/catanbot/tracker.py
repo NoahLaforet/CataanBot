@@ -507,6 +507,22 @@ class Tracker:
             self._recompute_largest_army()
             self._recompute_vp()
 
+    def set_played_knights(self, color, count: int) -> None:
+        """Overwrite a color's PLAYED_KNIGHT with colonist's authoritative
+        ``mechanicKnightState.knightsPlayed``. A self knight play fires a
+        ``DevCardPlayEvent`` from BOTH the DOM-log parser and the WS
+        ``developmentCardsUsed`` path, so the incremental count
+        double-counts; this snaps it back to colonist's number. HAS_ARMY
+        is synced separately (authoritative ``mechanicLargestArmyState``
+        -> VPEvent), so it is left untouched here."""
+        if color is None:
+            return
+        state = self.game.state
+        idx = state.color_to_index.get(self._color(color))
+        if idx is None:
+            return
+        state.player_state[f"P{idx}_PLAYED_KNIGHT"] = int(count)
+
     def dev_counts(self, color: str) -> dict[str, dict[str, int]]:
         """Return {type: {'hand': n, 'played': n}} for one color."""
         state = self.game.state

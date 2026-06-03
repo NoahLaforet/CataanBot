@@ -459,7 +459,51 @@ class LiveGame:
             if (result.status == "applied"
                     and isinstance(result.event, BuildEvent)):
                 self._debit_build(result.event)
+        # Snap played-knight counts to colonist's authoritative
+        # mechanicKnightState.knightsPlayed. A self knight play fires a
+        # DevCardPlayEvent from BOTH the DOM-log parser and the WS
+        # developmentCardsUsed path, so catanatron's PLAYED_KNIGHT
+        # double-counts; overwrite it after the whole frame is applied.
+        # HAS_ARMY is synced authoritatively elsewhere, so this only
+        # corrects the count (which drives the display + recommender sim).
+        try:
+            self._sync_knight_counts(
+                (payload.get("payload") or {}).get("diff") or {})
+        except Exception:  # noqa: BLE001
+            pass
         return results
+
+    def _sync_knight_counts(self, diff: dict[str, Any]) -> None:
+        """Overwrite each player's PLAYED_KNIGHT with colonist's
+        authoritative knightsPlayed (read from a top-level
+        mechanicKnightState and/or one nested under playerStates),
+        deduping the double-count from the dual DOM-log + WS knight-play
+        event sources."""
+        if (self.tracker is None or self.session is None
+                or not isinstance(diff, dict)):
+            return
+        per_cid: dict[str, int] = {}
+        top = diff.get("mechanicKnightState")
+        if isinstance(top, dict):
+            for cid_str, ps in top.items():
+                if isinstance(ps, dict) and ps.get("knightsPlayed") is not None:
+                    per_cid[str(cid_str)] = int(ps["knightsPlayed"])
+        pstates = diff.get("playerStates")
+        if isinstance(pstates, dict):
+            for cid_str, ps in pstates.items():
+                mk = (ps.get("mechanicKnightState")
+                      if isinstance(ps, dict) else None)
+                if isinstance(mk, dict) and mk.get("knightsPlayed") is not None:
+                    per_cid[str(cid_str)] = int(mk["knightsPlayed"])
+        for cid_str, count in per_cid.items():
+            try:
+                color = (self.color_map.get(
+                    self.session.player_for(int(cid_str)))
+                    if self.color_map else None)
+            except Exception:  # noqa: BLE001
+                color = None
+            if color is not None:
+                self.tracker.set_played_knights(color, count)
 
     def _resync_from_replay(self, body: dict[str, Any]) -> None:
         """Reapply just the hand state from a reconnect's full gameState.

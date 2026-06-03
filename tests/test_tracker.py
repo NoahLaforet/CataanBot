@@ -28,6 +28,26 @@ def _road_edge_from(t: Tracker, node_id: int) -> tuple[int, int]:
     raise AssertionError("no edge found from node")
 
 
+def test_set_played_knights_overrides_double_count():
+    """A self knight play emits a DevCardPlayEvent from BOTH the DOM-log
+    parser and the WS developmentCardsUsed path, so PLAYED_KNIGHT
+    double-counts (displayed = 2x actual). set_played_knights snaps it to
+    colonist's authoritative mechanicKnightState.knightsPlayed, which the
+    live_game frame reconciliation calls after applying each diff."""
+    from catanatron import Color
+    t = Tracker(seed=99)
+    state = t.game.state
+    idx = state.color_to_index[Color.RED]
+    key = f"P{idx}_PLAYED_KNIGHT"
+    # Two event sources incremented the count to 4 for only 2 real plays.
+    state.player_state[key] = 4
+    t.set_played_knights("RED", 2)
+    assert state.player_state[key] == 2
+    # None color is a safe no-op (color_map.get may miss a seat).
+    t.set_played_knights(None, 9)
+    assert state.player_state[key] == 2
+
+
 def test_settle_places_building(tracker):
     node = _any_legal_node(tracker, "RED")
     tracker.settle("RED", node)
