@@ -278,6 +278,15 @@ function _ownedResources(state) {
     return out;
 }
 
+/** Per-roll expected cards for a production map, formatted like the
+ *  bridge's `+{prod:.2f}/roll` detail (the values are pip/36 shares, so
+ *  their sum is the node's expected cards per roll). */
+export function _perRoll(prodMap) {
+    let s = 0;
+    for (const v of Object.values(prodMap || {})) s += v;
+    return s.toFixed(2);
+}
+
 /** Rank own-settle nodes for city upgrade. Returns up to top-3 recs
  *  sorted desc by score. */
 function _cityRecs(state, hand, opts) {
@@ -296,7 +305,7 @@ function _cityRecs(state, hand, opts) {
             kind: 'city',
             when: can ? 'now' : 'soon',
             score,
-            detail: 'upgrade settlement → city',
+            detail: `+${_perRoll(prod)}/roll · +1 VP`,
             node_id: nid,
             tiles,
             missing: can ? null : _missing(hand, COSTS.city),
@@ -323,7 +332,7 @@ function _settleRecs(state, hand, opts) {
             kind: 'settlement',
             when: can ? 'now' : 'soon',
             score,
-            detail: 'place settlement',
+            detail: `+${_perRoll(prod)}/roll`,
             node_id: nid,
             tiles,
             missing: can ? null : _missing(hand, COSTS.settlement),
@@ -368,7 +377,7 @@ function _roadRecs(state, hand, opts) {
             kind: 'road',
             when: can ? 'now' : 'soon',
             score,
-            detail: 'extend road',
+            detail: `→ ${_perRoll(landing.prod)}-prod spot`,
             edge: eid,
             tiles,
             missing: can ? null : _missing(hand, COSTS.road),
