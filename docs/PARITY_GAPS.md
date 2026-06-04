@@ -50,7 +50,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - bridge: bridge_hints.py _compute_rb_hint:1001-1008   when there is no LR swing and no fog, it calls _suggest_rb_placement, and if the placement's placement_reason startswith 'unlocks' it sets reason = `hold for LR · or play to open a settle spot ({
   - standalone: hints.js _rbHintImpl:236-340   never computes an 'open a settle spot' HOLD reason. With no good landing it emits the flat reason 'no high-value landing · hold'; with a good landing it says 'opens up a strong landing'. It never names which n
   - files: bridge: src/catanbot/bridge_hints.py:892-1031 (+ _suggest_rb_placement:605-843); JS: extension/lib/hints.js:236-340 _rbHintImpl. JS already has board.nodes/edges/tiles/pip and a landing scorer, so a d
-- [ ] **[high]** Road Building 'secures LR' / 'catches opp LR' / 'low on roads' PLAY reasons and projected-length math
+- [x] **[high]** Road Building 'secures LR' / 'catches opp LR' / 'low on roads' PLAY reasons and projected-length math  (closed: tests/js/hints.rb.test.mjs)
   - bridge: _compute_rb_hint:954-985 computes projected = self_len + min(2, roads_left), qualify=5, and emits three distinct reasons: 'secures LR · {self_len}→{projected} vs {opp_max}' (when !self_has and projected>=max(5,opp_max+1)); 'catches opp LR ·
   - standalone: hints.js _rbHintImpl:320-331 only has one LR branch: should_play=True with reason 'race for Longest Road' when hasRoad!=self AND myLen+2>=oppMax+1 AND oppMax>=4. Different threshold (oppMax>=4 vs bridge qualify=5 / opp_max>=5), different pr
   - files: bridge: src/catanbot/bridge_hints.py:954-1031; JS: extension/lib/hints.js:320-339. roadLength/hasRoad are already in JS state; only road-piece-supply (for the 'low on roads' case) needs a public-info 
