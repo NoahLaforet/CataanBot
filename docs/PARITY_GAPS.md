@@ -240,7 +240,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
 
 ### strategy
 
-- [ ] **[high]** pivot_details payload shape breaks pivot-trigger text in the HUD
+- [x] **[high]** pivot_details payload shape breaks pivot-trigger text in the HUD  (closed: tests/js/strategy.pivot.test.mjs)
   - bridge: bridge_strategy.py:79 sets pivot_details = [t.detail for t in triggers], a list of strings. Panel reads triggerDetails[i] (panel.js:3686-3694) and escapeHtml()s it directly, rendering the human detail line.
   - standalone: strategy.js:420-422 sets pivot_details: triggers.map(t => ({name, detail})), a list of objects. Panel escapeHtml(detail) (panel.js:3693; escapeHtml :5704 does String(obj)) renders each fired trigger as the literal [object Object].
   - note: One-line fix: emit pivot_details as plain detail strings (triggers.map(t => t.detail)) to match the bridge contract the panel expects.
