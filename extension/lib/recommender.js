@@ -289,6 +289,15 @@ export function _perRoll(prodMap) {
 
 /** Rank own-settle nodes for city upgrade. Returns up to top-3 recs
  *  sorted desc by score. */
+/** "need 1 sheep 1 ore" prefix for a soon-plan rec detail (text form,
+ *  matching the standalone's detail convention; the bridge's
+ *  _format_missing uses emoji). Empty when nothing is missing. */
+function _formatMissing(missing) {
+    const parts = Object.entries(missing || {})
+        .map(([r, n]) => `${n} ${String(r).toLowerCase()}`);
+    return parts.length ? `need ${parts.join(' ')}` : '';
+}
+
 function _cityRecs(state, hand, opts) {
     const board = state.map;
     const out = [];
@@ -301,14 +310,17 @@ function _cityRecs(state, hand, opts) {
         const score = _scoreCity(prod);
         const tiles = _nodeTiles(board, nid);
         const can = handCanAfford(hand, COSTS.city);
+        const miss = can ? null : _missing(hand, COSTS.city);
         out.push({
             kind: 'city',
             when: can ? 'now' : 'soon',
             score,
-            detail: `+${_perRoll(prod)}/roll · +1 VP`,
+            detail: can
+                ? `+${_perRoll(prod)}/roll · +1 VP`
+                : `${_formatMissing(miss)} · +${_perRoll(prod)}/roll · +1 VP`,
             node_id: nid,
             tiles,
-            missing: can ? null : _missing(hand, COSTS.city),
+            missing: miss,
             resources: prod,
         });
     }
@@ -345,14 +357,17 @@ function _settleRecs(state, hand, opts) {
         const score = _scoreSettlement(prod);
         const tiles = _nodeTiles(board, nid);
         const can = handCanAfford(hand, COSTS.settlement);
+        const miss = can ? null : _missing(hand, COSTS.settlement);
         recs.push({
             kind: 'settlement',
             when: can ? 'now' : 'soon',
             score,
-            detail: `+${_perRoll(prod)}/roll${settle3}`,
+            detail: can
+                ? `+${_perRoll(prod)}/roll${settle3}`
+                : `${_formatMissing(miss)} · +${_perRoll(prod)}/roll${settle3}`,
             node_id: nid,
             tiles,
-            missing: can ? null : _missing(hand, COSTS.settlement),
+            missing: miss,
             resources: prod,
             port: board.nodes[nid]?.port || null,
         });
@@ -589,7 +604,8 @@ function _devCardRec(state, hand, otherRecs) {
         kind: 'dev_card',
         when: can ? 'now' : 'soon',
         score: Math.round(score * 10) / 10,
-        detail: 'buy dev card',
+        detail: can ? 'buy dev card'
+            : _formatMissing(_missing(hand, COSTS.dev_card)),
         missing: can ? null : _missing(hand, COSTS.dev_card),
     };
 }
