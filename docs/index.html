@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CatanBot — live Settlers of Catan advisor for colonist.io</title>
+<title>CatanBot · live Settlers of Catan advisor for colonist.io</title>
 <meta name="description" content="Chrome extension + local Python bridge that runs a tournament-grade live advisor on top of colonist.io. Strategy archetypes, dev-card play timing, robber EV, opp inference.">
-<meta property="og:title" content="CatanBot — live Catan advisor">
+<meta property="og:title" content="CatanBot · live Catan advisor">
 <meta property="og:description" content="Chrome side-panel HUD + local Python bridge. Real-time recs, dev-card hints, robber-target EV, opp inference, postmortem.">
 <meta property="og:image" content="https://noahlaforet.github.io/CatanBot/media/04_trade_accept_wide.gif">
 <meta property="og:url" content="https://noahlaforet.github.io/CatanBot/">
@@ -218,15 +218,15 @@ footer a { color: var(--fg-dim); }
   <div class="brand">
     <span class="logo">C</span>
     <span>CatanBot</span>
-    <span class="tag">v0.37 · 2026-05-04</span>
+    <span class="tag">v0.44.1 · 2026-06-03</span>
   </div>
   <h1>A live Catan advisor that watches the game with you.</h1>
   <p class="lede">
-    Chrome side-panel HUD + a local Python bridge that ingests
+    Chrome side-panel HUD plus a local Python bridge that ingests
     every WebSocket frame from <a href="https://colonist.io">colonist.io</a>,
-    runs handcrafted recommender + dev-card hints + robber EV on
+    runs a handcrafted recommender with dev-card hints and robber EV on
     top of <a href="https://github.com/bcollazo/catanatron">catanatron</a>,
-    and renders the verdict in real time. No ML, no cloud — game
+    and renders the verdict in real time. No ML, no cloud. Your game
     state never leaves your machine.
   </p>
   <div class="cta-row">
@@ -242,10 +242,10 @@ footer a { color: var(--fg-dim); }
 
 <section>
   <h2>See it in action</h2>
-  <p>Clipped from a real 4-player ranked game (15-VP target, 30 minutes, won 15-5).</p>
+  <p>Clipped from a real 4-player ranked game (15-VP target, 30 minutes, won 15 to 5).</p>
 
   <div class="clip">
-    <img src="media/01_opening_picks_wide.gif" alt="Pre-placement strategy ranking + top opening picks ranked A B C D">
+    <img src="media/01_opening_picks_wide.gif" alt="Pre-placement strategy ranking and top opening picks ranked A B C D">
     <div class="clip-caption">
       <strong>Pre-placement strategy.</strong> Board affinity ranks
       the five archetypes (Port trader leading at 0.85), then top
@@ -255,13 +255,13 @@ footer a { color: var(--fg-dim); }
   </div>
 
   <div class="clip">
-    <img src="media/02_early_recs_wide.gif" alt="Round-5 recommender — settle hero score 6.0 with milestone banner">
+    <img src="media/02_early_recs_wide.gif" alt="Round-5 recommender, settle hero score 6.0 with milestone banner">
     <div class="clip-caption">
       <strong>Early-game recommender.</strong> Round 5, BALANCED
       archetype banner, settle rec at 6.0 with the actual tiles
-      visible, and a "settle #3 — biggest predictor — ready to
+      visible, and a "settle #3, biggest predictor, ready to
       build" milestone (per the 36k-game Reddit data: winners
-      build #3 ~7 turns earlier than losers).
+      build #3 about 7 turns earlier than losers).
     </div>
   </div>
 
@@ -282,7 +282,7 @@ footer a { color: var(--fg-dim); }
       11 VP and leading. PORT TRADER active. KNIGHT lights up
       <em>PLAY</em> with a strong block on wheat 4. An incoming
       trade gets an <em>ACCEPT</em> verdict with the EV gain
-      ("unlocks trade proposal +3.4"). Roll histogram shows the
+      ("unlocks trade proposal +3.4"). The roll histogram shows the
       dice bias for the whole game.
     </div>
   </div>
@@ -290,9 +290,9 @@ footer a { color: var(--fg-dim); }
 
 <section id="install">
   <h2>Install</h2>
-  <p>You need both pieces — the Chrome extension renders the HUD,
-  the bridge does the heavy lifting. Or just the extension if you
-  want a leaner setup.</p>
+  <p>You need both pieces for the full advisor: the Chrome extension
+  renders the HUD, the bridge does the heavy lifting. The extension
+  alone works too, with a leaner standalone engine.</p>
 
   <div class="grid-2">
 
@@ -300,17 +300,18 @@ footer a { color: var(--fg-dim); }
       <h3>Chrome extension</h3>
       <div class="meta">
         <span class="pill green">stable</span>
-        <span class="pill">v0.37.26</span>
-        <span class="pill">~144 KB</span>
+        <span class="pill">v0.44.1</span>
+        <span class="pill">~177 KB</span>
       </div>
       <p>Side-panel HUD on the right of every colonist.io tab.
-      Manifest V3, no Tampermonkey, no extension-store install
-      required. Loads the JS recommender for full mid-game advisor
-      out of the box (no bridge needed).</p>
+      Manifest V3, no Tampermonkey. Ships a standalone JS recommender
+      so it runs with zero install (experimental, reduced accuracy);
+      add the bridge below for full-accuracy recs. A one-click Chrome
+      Web Store install is on the way (listing submitted for review).</p>
       <ul class="compact-list">
-        <li>Download <a href="https://github.com/NoahLaforet/CatanBot/releases/tag/extension-v0.37.26">extension-v0.37.26.zip</a> and extract.</li>
+        <li>Download the <a href="https://github.com/NoahLaforet/CatanBot/releases/latest">latest release</a> zip and extract it.</li>
         <li>Open <code>chrome://extensions</code>, toggle <b>Developer mode</b>.</li>
-        <li><b>Load unpacked</b> → pick the <code>extension/</code> folder.</li>
+        <li><b>Load unpacked</b> → pick the extracted <code>extension/</code> folder.</li>
         <li>Pin the icon, click it, open colonist.io.</li>
       </ul>
     </div>
@@ -319,7 +320,7 @@ footer a { color: var(--fg-dim); }
       <h3>Local bridge (Python)</h3>
       <div class="meta">
         <span class="pill green">optional</span>
-        <span class="pill">v0.37.0</span>
+        <span class="pill">v0.44.1</span>
         <span class="pill">FastAPI</span>
       </div>
       <p>Unlocks 1-ply search-delta annotations, postmortem
@@ -330,7 +331,7 @@ cd CatanBot
 ./bin/catanbot live</pre>
       <p style="font-size:13px; margin-top:14px;">
         First run auto-creates a <code>.venv</code> and installs the
-        bridge — about 30 s. Needs Python 3.11+. <b>Windows users:</b>
+        bridge in about 30 s. Needs Python 3.11+. <b>Windows users:</b>
         clone the repo, then double-click <code>bin\setup-windows.cmd</code>
         to install WSL2 + Ubuntu and bootstrap the bridge inside it.
       </p>
@@ -344,24 +345,25 @@ cd CatanBot
 
   <h3>Live recs and verdicts</h3>
   <ul class="feature-list">
-    <li><strong>Opening picks</strong> — every legal corner ranked by complement-aware production, port adjacency, distance-2 denial, and resource diversity. Pairs each pick with a follow-up road suggestion.</li>
-    <li><strong>In-game recommender</strong> — top-N ranked actions: settlement / city / road / dev card / port trade. Each rec carries a 1-ply EV delta when the bridge is running so you see <em>how much</em> better the bot's pick is than doing nothing.</li>
-    <li><strong>Dev-card play timing</strong> — knight / monopoly / year-of-plenty / road-building each get a typed PLAY/HOLD verdict with conversational reasoning. VP cards are tracked but not surfaced as playable. Catan's no-play-on-buy rule is respected.</li>
-    <li><strong>Robber + 7-roll telemetry</strong> — top targets ranked by blocking value × victim VP × hand size. Auto-detects colonist's optional Friendly Robber rule and filters protected (≤2 VP) victims.</li>
+    <li><strong>Opening picks.</strong> Every legal corner ranked by complement-aware production, port adjacency, distance-2 denial, and resource diversity. Pairs each pick with a follow-up road suggestion.</li>
+    <li><strong>In-game recommender.</strong> Top-N ranked actions: settlement, city, road, dev card, port trade. Each rec carries a 1-ply EV delta when the bridge is running so you see <em>how much</em> better the bot's pick is than doing nothing.</li>
+    <li><strong>Dev-card play timing.</strong> Knight, monopoly, year-of-plenty, and road-building each get a typed PLAY/HOLD verdict with plain-language reasoning. VP cards are tracked but not surfaced as playable. Catan's no-play-on-buy rule is respected.</li>
+    <li><strong>Robber and 7-roll telemetry.</strong> Top targets ranked by blocking value, victim VP, and hand size. Auto-detects colonist's optional Friendly Robber rule and filters protected (2-VP-or-under) victims.</li>
+    <li><strong>Incoming trades.</strong> An opponent's offer gets an ACCEPT / DECLINE / CONSIDER verdict with the reason, so you are not eyeballing whether a swap helps them more than you.</li>
   </ul>
 
   <h3>Strategy-aware</h3>
   <ul class="feature-list">
-    <li><strong>Five archetypes</strong> — OWS / LR rush / Port trader / Road Builder / Balanced. Once both opening settles land, the bot detects which archetype your placements actually enable and biases recommendations toward it.</li>
-    <li><strong>Pivot triggers</strong> — hot-number streaks, road-building dev card drawn, opp closing on Largest Army, opp crossing close-to-win VP, sevens overdue with a heavy hand. Each fires a named trigger that adapts the bias mid-game.</li>
-    <li><strong>Backed by data</strong> — five tunings in the recommender are inspired by <a href="https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/">u/Hot-Rooster1675's 36k-game simulation</a>, including 3rd-settle expansion bumps and wheat-priority weights.</li>
+    <li><strong>Five archetypes.</strong> Ore-Wheat-Sheep, Longest Road rush, Port trader, Road Builder, Balanced. Once both opening settles land, the bot detects which archetype your placements actually enable and biases recommendations toward it.</li>
+    <li><strong>Pivot triggers.</strong> Hot-number streaks, road-building dev card drawn, an opp closing on Largest Army, an opp crossing close-to-win VP, sevens overdue with a heavy hand. Each fires a named trigger that adapts the bias mid-game.</li>
+    <li><strong>Backed by data.</strong> Several tunings in the recommender are inspired by <a href="https://www.reddit.com/r/boardgames/comments/1ssk2y0/i_simulated_36000_games_of_catan_some/">u/Hot-Rooster1675's 36k-game simulation</a>, including 3rd-settle expansion bumps and wheat-priority weights.</li>
   </ul>
 
   <h3>HUD details</h3>
   <ul class="feature-list">
-    <li><strong>Live overlay</strong> — roll histogram with 36-roll baseline, eval sparkline, per-build move-quality (<code>!! / ! / ?! / ? / ??</code>), opp hand inference + production rate.</li>
-    <li><strong>Variant boards</strong> — same Catan rules, different layouts: Pond (24 tiles, interior lake), Twirl (42 tiles, swirl) build a fresh CatanMap from colonist's authoritative geometry.</li>
-    <li><strong>Streamer mode</strong> — every username in the HUD is replaced with "Opp 1 / Opp 2" so screen recordings don't expose real handles.</li>
+    <li><strong>Live overlay.</strong> Roll histogram with a 36-roll baseline, eval sparkline, per-build move-quality (<code>!! / ! / ?! / ? / ??</code>), opp hand inference, and production rate.</li>
+    <li><strong>Variant boards.</strong> Same Catan rules, different layouts: the Pond and Twirl maps, the Gold Rush fog board, and the Volcano gold-and-fog map all build a fresh CatanMap from colonist's authoritative geometry.</li>
+    <li><strong>Streamer mode.</strong> Every opponent username in the HUD is swapped for a neutral fantasy name (Aria, Bram, ...) before colonist's first paint, so screen recordings never expose real handles.</li>
   </ul>
 </section>
 
@@ -369,8 +371,8 @@ cd CatanBot
   <h2>Privacy</h2>
   <p>The bridge runs locally. Game state never leaves your
   machine. The Chrome extension's only network destination is
-  <code>127.0.0.1:8765</code> — the bridge listens on localhost
-  only and the extension's <code>host_permissions</code> in
+  <code>127.0.0.1:8765</code>, the bridge listening on localhost
+  only, and the extension's <code>host_permissions</code> in
   <code>manifest.json</code> reflects that. Full privacy
   policy: <a href="privacy.html">privacy.html</a>.</p>
 </section>
