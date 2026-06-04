@@ -120,7 +120,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
 
 ### recommender
 
-- [ ] **[high]** settlement / city / road rec detail strings + rationale line
+- [~] **[high]** settlement / city / road rec detail strings + rationale line  (partial: per-roll detail done via _perRoll; port/fog/plan suffixes + rationale line deferred)
   - bridge: Detail carries concrete production: settlement '+{prod:.2f}/roll' (recommender.py:1116) optionally '· settle #3', city '+{prod:.2f}/roll · +1 VP' (recommender.py:1141), road '→ {prod:.2f}-prod spot' with '· {res} port' / '· reveals fog' / '
   - standalone: Static placeholder details: 'place settlement' (recommender.js:325), 'upgrade settlement → city' (recommender.js:299), 'extend road' (recommender.js:372). No per-roll number, no port/fog/plan suffix, and no 'rationale' field is emitted anyw
   - note: nodeProduction and tile data are already available in JS (used for scoring); formatting the same '+X.XX/roll' detail and a per-resource rationale is pure presentation logic over public board info.
