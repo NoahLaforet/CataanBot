@@ -186,7 +186,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - bridge: _detect_imminent_opp_color (bridge_robber.py:12-79) flags any opp who could take Largest Army (+1 knight in hand reaches max(3, opp_max_played+1) and vp+2>=target) or Longest Road (+1 road reaches max(5, opp_max_roads+1) and vp+2>=target). 
   - standalone: absent. recommendRobberTargets has no imminent detection and no per-color multiplier; an opp about to flip LA/LR for the win gets no extra robber priority over any other opp.
   - files: src/catanbot/bridge_robber.py:12-79 (_detect_imminent_opp_color), advisor.py:591-596; extension/lib/recommender.js:727-835. All inputs (played knights, knight-in-hand, longest-road length, has-army/ha
-- [ ] **[medium]** resource_need_bonus and monopoly_setup_bonus (resource-control scoring)
+- [x] **[medium]** resource_need_bonus and monopoly_setup_bonus (resource-control scoring)  (closed: tests/js/recommender.robber_bonus.test.mjs)
   - bridge: Adds resource_need_bonus = 1.0 + 0.2*pip_dots when the tile produces a resource self owes for its next planned build (advisor.py:615-616; needed_resources derived in bridge_robber.py:169-178 from _closest_missing_build), and monopoly_setup_
   - standalone: absent. recommendRobberTargets emits no resource_need_bonus or monopoly_setup_bonus fields and the score never accounts for self's build needs or production share, so the panel can show no resource-control tags in standalone mode.
   - files: src/catanbot/advisor.py:611-635, bridge_robber.py:146-178,249-252; extension/lib/recommender.js:819-831. JS already has per-node production (nodeProduction/board.js) and hand state, so closest-missing

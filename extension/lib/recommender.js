@@ -775,10 +775,54 @@ export function detectImminentOpp(state) {
     return null;
 }
 
+/** Resources self owes for its cheapest unaffordable build. Blocking a
+ *  tile of one of these denies an opp AND sets up a steal of the exact
+ *  resource (mirrors the bridge's needed_resources input). */
+function _closestMissingResources(state) {
+    const hand = (state.hands && state.hands[state.selfColor]) || {};
+    let best = null;
+    let bestGap = Infinity;
+    for (const cost of Object.values(COSTS)) {
+        const miss = _missing(hand, cost);
+        let gap = 0;
+        for (const v of Object.values(miss)) gap += v;
+        if (gap > 0 && gap < bestGap) { bestGap = gap; best = miss; }
+    }
+    return new Set(best ? Object.keys(best) : []);
+}
+
+/** Per-resource per-roll production for self and each opponent from
+ *  public buildings (settlement 1x, city 2x). Feeds the monopoly-setup
+ *  bonus. */
+function _productionByResource(state) {
+    const board = state.map;
+    const selfProd = {};
+    const oppProd = {};
+    if (!board || !board.nodes) return { selfProd, oppProd };
+    for (const [nid, b] of Object.entries(state.buildings || {})) {
+        const node = board.nodes[nid];
+        if (!node) continue;
+        const mult = b.kind === 'CITY' ? 2 : 1;
+        const bag = (b.color === state.selfColor)
+            ? selfProd
+            : (oppProd[b.color] = oppProd[b.color] || {});
+        for (const tid of node.tiles) {
+            const t = board.tiles[tid];
+            if (!t || !t.resource) continue;
+            bag[t.resource] = (bag[t.resource] || 0) + (t.pip / 36) * mult;
+        }
+    }
+    return { selfProd, oppProd };
+}
+
 export function recommendRobberTargets(state, opts = {}) {
     if (!state || !state.map) return [];
     const imminentColor = (opts.imminentColor != null)
         ? opts.imminentColor : detectImminentOpp(state);
+    // Resource-control inputs (Strategy v2 P1-5): resources self owes for
+    // its next build, and per-resource production maps for self + opps.
+    const neededResources = _closestMissingResources(state);
+    const { selfProd, oppProd } = _productionByResource(state);
     const tiles = state.map.tiles || {};
     const targets = [];
     const buildings = state.buildings || {};
@@ -887,13 +931,40 @@ export function recommendRobberTargets(state, opts = {}) {
                 && String(imminentColor) === String(c)) ? 2.0 : 1.0;
             weighted += victimPipsByColor[c] * vpWeight(vvp) * mult;
         }
-        const score = weighted - pip * selfPieceValue;
+        // Resource-control bonuses (advisor.score_robber_targets):
+        // blocking a tile of a resource we owe is worth +1.0+0.2*pip;
+        // locking a tile we already dominate concentrates it further.
+        let resourceNeedBonus = 0;
+        let monopolySetupBonus = 0;
+        const tileRes = tile.resource;
+        if (tileRes) {
+            if (neededResources.has(tileRes)) {
+                resourceNeedBonus = 1.0 + 0.2 * pip;
+            }
+            const selfP = selfProd[tileRes] || 0;
+            let oppTotal = 0;
+            for (const c of Object.keys(victimPipsByColor)) {
+                oppTotal += (oppProd[c] && oppProd[c][tileRes]) || 0;
+            }
+            const tableTotal = selfP + oppTotal;
+            if (tableTotal > 0) {
+                const selfShare = selfP / tableTotal;
+                const nPlayers = 1 + Object.keys(victimPipsByColor).length;
+                const evenShare = 1.0 / Math.max(1, nPlayers);
+                const surplus = Math.max(0, selfShare - evenShare);
+                monopolySetupBonus = Math.min(1.0, surplus * pip * 0.6);
+            }
+        }
+        const score = weighted - pip * selfPieceValue
+            + resourceNeedBonus + monopolySetupBonus;
         targets.push({
             tile_id: tid,
             number: tile.number,
             resource: tile.resource,
             pip,
             score,
+            resource_need_bonus: Math.round(resourceNeedBonus * 100) / 100,
+            monopoly_setup_bonus: Math.round(monopolySetupBonus * 100) / 100,
             opp_pieces: oppAdj.length,
             steal_from_color: bestVictim,
             victim_hand_size: bestVictimCards >= 0 ? bestVictimCards : 0,
