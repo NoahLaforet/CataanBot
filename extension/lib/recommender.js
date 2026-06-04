@@ -316,12 +316,29 @@ function _cityRecs(state, hand, opts) {
     return out.slice(0, 3);
 }
 
+/** A 2:1-port detail suffix (" · wheat port") when the node carries a
+ *  port for a resource self already produces; else "". Mirrors the
+ *  bridge's _port_detail_suffix. */
+function _portSuffix(state, nodeId, ownedResources) {
+    if (nodeId == null || !state.map.nodes) return '';
+    const node = state.map.nodes[nodeId];
+    const port = node && node.port;
+    if (!port || !port.resource || port.kind === '3:1') return '';
+    if (!ownedResources.has(port.resource)) return '';
+    return ` · ${String(port.resource).toLowerCase()} port`;
+}
+
 /** Rank legal new-settle nodes. Returns up to top-3 recs. */
 function _settleRecs(state, hand, opts) {
     const board = state.map;
     const settleBank = (state.bank[state.selfColor] || {}).settles;
     if (settleBank === 0) return [];
     const legal = _legalSettleNodes(state);
+    // At exactly two footprints the next settle is the 3rd, the single
+    // biggest winner-vs-loser predictor (bridge tags it " · settle #3").
+    const footprints = Object.values(state.buildings || {})
+        .filter(b => b.color === state.selfColor).length;
+    const settle3 = footprints === 2 ? ' · settle #3' : '';
     const recs = [];
     for (const nid of legal) {
         const prod = nodeProduction(board, nid);
@@ -332,7 +349,7 @@ function _settleRecs(state, hand, opts) {
             kind: 'settlement',
             when: can ? 'now' : 'soon',
             score,
-            detail: `+${_perRoll(prod)}/roll`,
+            detail: `+${_perRoll(prod)}/roll${settle3}`,
             node_id: nid,
             tiles,
             missing: can ? null : _missing(hand, COSTS.settlement),
@@ -384,7 +401,8 @@ export function _roadRecs(state, hand, opts) {
             kind: 'road',
             when: can ? 'now' : 'soon',
             score: _scoreRoad(landing.prod),
-            detail: `→ ${_perRoll(landing.prod)}-prod spot`,
+            detail: `→ ${_perRoll(landing.prod)}-prod spot`
+                + _portSuffix(state, landing.nodeId, ownedResources),
             edge: eid,
             tiles: _edgeTiles(board, eid),
             missing: can ? null : _missing(hand, COSTS.road),
@@ -1065,4 +1083,5 @@ export function recommendRobberTargets(state, opts = {}) {
     return targets.slice(0, opts.topK || 5);
 }
 
-export { COSTS, _scoreSettlement, _weightedProd, _proposeTradeRecs };
+export { COSTS, _scoreSettlement, _weightedProd, _proposeTradeRecs,
+         _settleRecs };
