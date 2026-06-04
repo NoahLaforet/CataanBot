@@ -135,12 +135,12 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - standalone: _proposeTradeRecs (recommender.js:527-589) applies none of these guards   it offers a trade for the missing resource purely from self's surplus, regardless of whether any opponent could supply it or whether the board even produces it.
   - note: opp hand estimates, bank supply, and the board tile set are all public info the standalone already tracks (used elsewhere in the panel); porting the three guards is pure logic.
   - files: bridge src/catanbot/recommender.py:1733-1759; JS extension/lib/recommender.js:550-587 (_proposeTradeRecs loop)
-- [ ] **[medium]** endgame VP-push close-to-win threshold
+- [x] **[medium]** endgame VP-push close-to-win threshold  (verified false positive: JS _applyPhaseBumps already uses close_to_win_vp()=round(target*0.8) and the full gap-based 2.5/1.5 bump + dev halve/drop; the audit misread the docstring examples as target-2)
   - bridge: close_to_win_vp() (config) drives the endgame bump; default is VP_TARGET - 2 (e.g. 8 on a 10 game) per the docstring at recommender.py:1939-1941 ('10 VP target -> >= 8 VP').
   - standalone: _applyPhaseBumps (recommender.js:625) computes closeVp = max(2, round(vpTarget*0.80)) = 8 on a 10-target, which matches for 10 but diverges on other targets   e.g. a 12-VP game gives round(9.6)=10 in JS but the bridge docstring says 12->10,
   - note: VP target is public; this is just two different threshold formulas. Aligning JS to the bridge's close_to_win_vp (VP_TARGET - 2) is a one-line change.
   - files: bridge src/catanbot/recommender.py:1939-1962 (and config.close_to_win_vp); JS extension/lib/recommender.js:625-629 (_applyPhaseBumps)
-- [ ] **[medium]** 'save for X' soon-plans (settlement/city/dev one-to-two cards away)
+- [~] **[medium]** 'save for X' soon-plans (settlement/city/dev one-to-two cards away)  (partial: soon settle/city/dev details now lead with the missing cards via _formatMissing, tests/js/recommender.soon_detail.test.mjs; the <=2-missing gate + single dedicated rec + rationale deferred)
   - bridge: When a build is unaffordable but only 1-2 cards short, emits a when='soon' rec with missing-cards detail (recommender.py:1498-1547): settlement, city, and dev_card soon-plans, each with _format_missing detail and rationale.
   - standalone: _settleRecs/_cityRecs set when='soon' with a missing field when unaffordable (recommender.js:297,321), but they ONLY appear if the node is already in the legal/owned set; there is no dedicated single best 'save for X' rec with the bridge's 
   - note: Missing-card math and _format_missing emoji formatting are pure logic over public hand+cost; _missing already exists in recommender.js:92-99.
