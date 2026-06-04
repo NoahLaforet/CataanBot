@@ -25,7 +25,7 @@ export { decodeMsgpack, decodeIncomingFrame, decodeOutgoingFrame,
          MsgpackError, toUint8Array }
     from './msgpack.js';
 export { recommendActions, recommendRobberTargets,
-         handCanAfford, COSTS }
+         handCanAfford, COSTS, detectImminentOpp }
     from './recommender.js';
 export { knightHint, monopolyHint, yopHint, rbHint }
     from './hints.js';

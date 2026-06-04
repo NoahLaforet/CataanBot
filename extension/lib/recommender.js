@@ -730,7 +730,7 @@ export function recommendActions(state, opts = {}) {
  *  within 2 VP. An opp's knight-in-hand is hidden public info (the
  *  standalone reads 0 for opps), so the LA path rarely fires for an
  *  opponent, matching the bridge. */
-function _detectImminentOpp(state) {
+export function detectImminentOpp(state) {
     if (!state || !state.colors) return null;
     const target = state.vpTarget || 10;
     for (const c of state.colors) {
@@ -769,7 +769,7 @@ function _detectImminentOpp(state) {
 export function recommendRobberTargets(state, opts = {}) {
     if (!state || !state.map) return [];
     const imminentColor = (opts.imminentColor != null)
-        ? opts.imminentColor : _detectImminentOpp(state);
+        ? opts.imminentColor : detectImminentOpp(state);
     const tiles = state.map.tiles || {};
     const targets = [];
     const buildings = state.buildings || {};
