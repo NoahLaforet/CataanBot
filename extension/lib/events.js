@@ -238,6 +238,16 @@ export function applySnapshot(state, decoded) {
         if (dl && dl !== state.discardLimit) {
             state.discardLimit = dl; dirty = true;
         }
+        // Friendly Robber optional rule, latched authoritatively from
+        // the WS gameSettings (the bridge reads the same flag). The
+        // robber ranker uses it to drop protected (<=2 VP) victims; the
+        // chat path is only a fallback when this is absent.
+        if (gs.friendlyRobber != null) {
+            const fr = !!gs.friendlyRobber;
+            if (fr !== state.friendlyRobber) {
+                state.friendlyRobber = fr; dirty = true;
+            }
+        }
     }
 
     // --- Whose turn is it? ----------------------------------------

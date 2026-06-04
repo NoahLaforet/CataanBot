@@ -86,6 +86,8 @@ export function newGameState() {
         // standard Catan.
         vpTarget: 10,
         discardLimit: 7,
+        // Friendly Robber optional rule, latched from the WS gameSettings.
+        friendlyRobber: false,
         // True after GameStart; flips false on game over until next
         // start.
         started: false,
