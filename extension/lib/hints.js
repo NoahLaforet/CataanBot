@@ -384,43 +384,56 @@ function _rbHintImpl(state) {
     const ranked = candidateEdges
         .map(e => ({ edge: e, score: landingScore(e) }))
         .sort((a, b) => b.score - a.score);
-    if (ranked.length === 0) {
-        return {
-            have: state.devCardsByType[state.selfColor]?.ROAD_BUILDING || 0,
-            should_play: false,
-            reason: 'no legal road extensions',
-        };
-    }
+    // No legal extension still gets a verdict: the LR / road-supply
+    // logic below does not depend on a placement (the bridge computes
+    // should_play independently of its placement search).
     const pick = ranked.slice(0, 2);
     const have = state.devCardsByType[state.selfColor]?.ROAD_BUILDING || 0;
-    // PLAY when the pair lands at a node we could plausibly settle —
-    // either a landing scores >= 0.30 (decent corner) or we already
-    // know the road race matters (longest-road threat).
-    const goodLanding = pick[0]?.score >= 0.25;
-    let should_play = goodLanding;
-    let reason = goodLanding
-        ? 'opens up a strong landing'
-        : 'no high-value landing · hold';
-    // Longest-road race: if we're 1 road behind LR holder + LR is
-    // contested, prefer to play.
-    const myLen = state.roadLength[state.selfColor] || 0;
-    let oppMax = 0;
+    // should_play / reason mirror bridge_hints.py _compute_rb_hint: the
+    // value is in a longest-road swing (qualifying self, or catching an
+    // opp about to take it), or playing before you run out of road
+    // pieces. The landing pick above stands in for the bridge's
+    // placement search; fog-reveal and the settle-opening HOLD naming
+    // are bridge-only / a later wave.
+    const self_len = state.roadLength[state.selfColor] || 0;
+    const self_has = state.hasRoad === state.selfColor;
+    let opp_max = 0;
+    let opp_has = false;
     for (const c of state.colors) {
         if (c === state.selfColor) continue;
-        const l = state.roadLength[c] || 0;
-        if (l > oppMax) oppMax = l;
+        const ln = state.roadLength[c] || 0;
+        if (ln > opp_max) opp_max = ln;
+        if (state.hasRoad === c) opp_has = true;
     }
-    if (state.hasRoad !== state.selfColor && myLen + 2 >= oppMax + 1
-            && oppMax >= 4) {
+    // Roads left is public: 15 starting pieces minus self's placements.
+    let placedRoads = 0;
+    for (const col of Object.values(state.roads || {})) {
+        if (col === state.selfColor) placedRoads += 1;
+    }
+    const roads_left = Math.max(0, 15 - placedRoads);
+    const projected = self_len + Math.min(2, roads_left);
+    const qualify = 5;  // base-game longest-road threshold
+
+    let should_play = false;
+    let reason = 'no clear swing yet';
+    if (roads_left <= 0) {
+        reason = 'no road pieces left · hold';
+    } else if (!self_has && projected >= Math.max(qualify, opp_max + 1)) {
         should_play = true;
-        reason = 'race for Longest Road';
+        reason = `secures LR · ${self_len}→${projected} vs ${opp_max}`;
+    } else if (opp_has && opp_max >= qualify && projected >= opp_max) {
+        should_play = true;
+        reason = `catches opp LR · proj ${projected} ≥ ${opp_max}`;
+    } else if (roads_left <= 2) {
+        should_play = true;
+        reason = `low on roads · ${roads_left} left`;
     }
     return {
         have,
         edges: pick.map(p => p.edge),
         should_play,
         reason,
-        self_len: myLen,
-        opp_len: oppMax,
+        self_len,
+        opp_len: opp_max,
     };
 }
