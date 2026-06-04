@@ -276,7 +276,8 @@ function _selfTileNumbers(state, nodeIds) {
 }
 function _detectHotNumber(state, nodeIds) {
     const recent = (state.rollHistory || []).slice(-10);
-    if (recent.length < 5) return null;
+    // No history-length floor (matches bridge): a count >= 4 already
+    // requires at least 4 rolls of the number.
     const counts = {};
     for (const r of recent) {
         const n = r.total;
@@ -296,12 +297,17 @@ function _detectHotNumber(state, nodeIds) {
 }
 function _detectOppCloseToLA(state) {
     if (state.hasArmy) return null;  // someone already holds it
-    const myK = state.playedKnights[state.selfColor] || 0;
+    // Bridge (_detect_opp_close): opp played_knights >= 2, not has_army,
+    // and vp >= largest_army_threat_vp() - 1 = round(target*0.7) - 1 (6 at
+    // a 10-VP target). There is no "opp knights > my knights" gate; that
+    // suppressed the warning whenever self was already ahead on knights.
+    const target = state.vpTarget || 10;
+    const laFloor = Math.max(2, Math.round(target * 0.7) - 1);
     for (const c of state.colors) {
         if (c === state.selfColor) continue;
         const k = state.playedKnights[c] || 0;
         const vp = state.vp[c] || 0;
-        if (k >= 2 && k > myK && vp >= 4) {
+        if (k >= 2 && vp >= laFloor) {
             return {
                 name: 'opp_close_to_la',
                 detail: `opp on ${k} knights · race to LA or commit to denial`,
@@ -313,7 +319,9 @@ function _detectOppCloseToLA(state) {
 }
 function _detectOppCloseToWin(state) {
     const target = state.vpTarget || 10;
-    const closeAt = target - 4;  // matches bridge default close_to_win_vp
+    // Bridge close_to_win_vp() = round(target*0.8) (8 at a 10-VP target),
+    // not target-4. The old value fired this trigger two VP too early.
+    const closeAt = Math.max(2, Math.round(target * 0.8));
     for (const c of state.colors) {
         if (c === state.selfColor) continue;
         const vp = state.vp[c] || 0;
@@ -329,7 +337,8 @@ function _detectOppCloseToWin(state) {
 }
 function _detectSevenOverdue(state) {
     const recent = (state.rollHistory || []).slice(-10);
-    if (recent.length < 8) return null;
+    // No history-length floor (matches bridge): the hand>limit guard
+    // below already keeps this from firing in the opening.
     const limit = state.discardLimit || 7;
     const myHand = state.handTotal[state.selfColor] || 0;
     if (myHand <= limit) return null;
