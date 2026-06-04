@@ -273,7 +273,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
 
 ### trades
 
-- [ ] **[high]** opp_imminent (can-win-next-turn) decline short-circuit is never triggered in JS
+- [x] **[high]** opp_imminent (can-win-next-turn) decline short-circuit is never triggered in JS  (closed: tests/js/trades.imminent.test.mjs)
   - bridge: evaluate_incoming_trade takes opp_imminent and, when set by the leader-threat detector, returns verdict=decline score=-10 reason='opp can win NEXT TURN · don't feed' before any scoring (recommender.py:2227-2230).
   - standalone: trades.js:215-219 implements the identical short-circuit on opts.oppImminent, but the only caller (panel.js:1944-1948) never passes oppImminent, so it is dead code and an imminent-win opponent is scored as an ordinary swap (likely landing o
   - files: src/catanbot/recommender.py:2227-2230 vs extension/lib/trades.js:215-219 (present) + extension/panel.js:1944-1948 (caller omits oppImminent)

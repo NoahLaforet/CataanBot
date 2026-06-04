@@ -1941,11 +1941,22 @@
                         // guards. recommendActions is injected so the
                         // before/after hand is valued exactly like the
                         // rec list.
+                        // Don't feed a trade to an opponent who could win
+                        // on their next turn (mirrors the bridge's
+                        // opp_imminent short-circuit). The offerer is
+                        // imminent when the public LA/LR-flip detector
+                        // names their color.
+                        const imminentColor = lib.detectImminentOpp
+                            ? lib.detectImminentOpp(st) : null;
+                        const offererImminent = (imminentColor != null
+                            && offererColorId != null
+                            && String(imminentColor) === String(offererColorId));
                         const ev = lib.evaluateIncomingTrade(
                             st, selfHand,
                             bestOffer.give || {}, bestOffer.want || {},
                             { recommend: lib.recommendActions,
-                              oppVp: offererVp, vpTarget: st.vpTarget });
+                              oppVp: offererVp, vpTarget: st.vpTarget,
+                              oppImminent: offererImminent });
                         const offererColorName = offererColorId
                             ? _colorName(offererColorId) : null;
                         const offererCss = offererColorId
