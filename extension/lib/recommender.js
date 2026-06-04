@@ -350,7 +350,7 @@ function _settleRecs(state, hand, opts) {
 }
 
 /** Rank legal new road edges. Returns up to top-3 recs. */
-function _roadRecs(state, hand, opts) {
+export function _roadRecs(state, hand, opts) {
     const board = state.map;
     const roadBank = (state.bank[state.selfColor] || {}).roads;
     if (roadBank === 0) return [];
@@ -366,27 +366,80 @@ function _roadRecs(state, hand, opts) {
         for (const nb of bn.neighbors) blocked.add(nb);
     }
     const ownedResources = _ownedResources(state);
+    // Self network nodes (building nodes + self road endpoints) for the
+    // bridge's from->to edge labeling.
+    const myNodes = new Set();
+    for (const nid of _ownNodes(state)) myNodes.add(String(nid));
+    for (const [e, col] of Object.entries(state.roads || {})) {
+        if (col !== state.selfColor) continue;
+        const p = String(e).split('||');
+        myNodes.add(p[0]); myNodes.add(p[1]);
+    }
+    const can = handCanAfford(hand, COSTS.road);
     const recs = [];
     for (const eid of legal) {
         const landing = _bestLanding(state, eid, blocked, ownedResources);
         if (landing.total <= 0) continue;
-        const score = _scoreRoad(landing.prod);
-        const tiles = _edgeTiles(board, eid);
-        const can = handCanAfford(hand, COSTS.road);
         recs.push({
             kind: 'road',
             when: can ? 'now' : 'soon',
-            score,
+            score: _scoreRoad(landing.prod),
             detail: `→ ${_perRoll(landing.prod)}-prod spot`,
             edge: eid,
-            tiles,
+            tiles: _edgeTiles(board, eid),
             missing: can ? null : _missing(hand, COSTS.road),
             resources: landing.prod,
             landing_node_id: landing.nodeId,
+            landing_node: landing.nodeId,
         });
     }
     recs.sort((a, b) => b.score - a.score);
-    return recs.slice(0, 3);
+    let out = recs.slice(0, 3);
+    // Sealed fallback (bridge fallback_candidates[0] path): every corridor
+    // is blocked for settling, so no settle-spot rec exists. Emit one
+    // degraded "extends network" rec pointing at the best-production far
+    // end so a road direction still shows instead of nothing. Score is
+    // floored at 1.0 (the 1-10 UI contract) with a 0.6x sealed multiplier.
+    if (out.length === 0) {
+        let best = null;
+        for (const eid of legal) {
+            const p = String(eid).split('||');
+            const far = myNodes.has(p[0]) ? p[1]
+                : (myNodes.has(p[1]) ? p[0] : p[1]);
+            const prod = nodeProduction(board, far);
+            const raw = Object.values(prod).reduce((s, v) => s + v, 0);
+            if (!best || raw > best.raw) best = { eid, far, prod, raw };
+        }
+        if (best && best.raw > 0) {
+            out = [{
+                kind: 'road',
+                when: can ? 'now' : 'soon',
+                score: Math.max(1.0,
+                    Math.round(_scoreRoad(best.prod) * 0.6 * 10) / 10),
+                detail: 'extends network · no settle spot',
+                edge: best.eid,
+                tiles: _edgeTiles(board, best.eid),
+                missing: can ? null : _missing(hand, COSTS.road),
+                resources: best.prod,
+                landing_node_id: best.far,
+                landing_node: best.far,
+                sealed: true,
+            }];
+        }
+    }
+    // Flag alternates and label each edge from self's network outward.
+    for (let i = 0; i < out.length; i += 1) {
+        const rec = out[i];
+        if (i > 0) rec.alt = true;
+        const p = String(rec.edge).split('||');
+        const [a, b] = p;
+        if (myNodes.has(b) && !myNodes.has(a)) {
+            rec.edge_from = b; rec.edge_to = a;
+        } else {
+            rec.edge_from = a; rec.edge_to = b;
+        }
+    }
+    return out;
 }
 
 const _BANK_KIND_LABEL = {
