@@ -245,12 +245,12 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - standalone: strategy.js:420-422 sets pivot_details: triggers.map(t => ({name, detail})), a list of objects. Panel escapeHtml(detail) (panel.js:3693; escapeHtml :5704 does String(obj)) renders each fired trigger as the literal [object Object].
   - note: One-line fix: emit pivot_details as plain detail strings (triggers.map(t => t.detail)) to match the bridge contract the panel expects.
   - files: bridge src/catanbot/bridge_strategy.py:79; JS extension/lib/strategy.js:419-422; consumer extension/panel.js:3686-3694,5704
-- [ ] **[medium]** opp_close_to_win trigger VP threshold
+- [x] **[medium]** opp_close_to_win trigger VP threshold  (closed: tests/js/strategy.pivot.test.mjs)
   - bridge: _detect_opp_close (strategy_select.py:749-756) fires when an opp VP >= close_to_win_vp() = round(VP_TARGET*0.80) = 8 for a 10-VP game (config.py:124-133).
   - standalone: _detectOppCloseToWin (strategy.js:314-329) uses closeAt = (vpTarget||10)-4 = 6 and its comment wrongly claims it matches the bridge; fires two VP earlier (6 vs 8) and scales as target-4 not target*0.80.
   - note: Replace target-4 with Math.max(2, Math.round(vpTarget*0.80)). Pure constant fix.
   - files: bridge src/catanbot/strategy_select.py:749-756, src/catanbot/config.py:124-133; JS extension/lib/strategy.js:314-329
-- [ ] **[medium]** opp_close_to_la trigger gate (VP floor plus extra knight-lead condition)
+- [x] **[medium]** opp_close_to_la trigger gate (VP floor plus extra knight-lead condition)  (closed: tests/js/strategy.pivot.test.mjs)
   - bridge: _detect_opp_close (strategy_select.py:757-771) fires when opp played_knights >= 2 AND not has_army AND vp >= largest_army_threat_vp()-1 = round(VP_TARGET*0.70)-1 = 6 for a 10-VP game; no opp-knights>my-knights condition.
   - standalone: _detectOppCloseToLA (strategy.js:297-313) fires when k>=2 AND k>myK AND vp>=4: hard-coded VP floor of 4 instead of the scaled 6, plus an added k>myK gate the bridge lacks that suppresses the warning when self already matches the opp knight 
   - note: Use the 0.70-ratio VP floor and drop or align the k>myK gate. Constant/condition fix.
@@ -265,7 +265,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - standalone: computeStrategy sets rationale from the static RATIONALE map (strategy.js:251-257,410), e.g. 'ore + wheat lean city-rush w/ dev-card flex'; no live cards/roll figures, no isolation %. Same render path, so the standalone shows a generic blur
   - note: Standalone already computes prod (combinedProd) and an isolation-proxy reach; formatting them into the rationale string is trivial, all public-info.
   - files: bridge src/catanbot/strategy_select.py:630-648; JS extension/lib/strategy.js:251-257,410
-- [ ] **[low]** hot_number and seven_overdue detector minimum-roll floors
+- [x] **[low]** hot_number and seven_overdue detector minimum-roll floors  (closed: tests/js/strategy.pivot.test.mjs)
   - bridge: _detect_hot_number (strategy_select.py:677-700) fires on count>=4 over the last 10 rolls with no history-length floor. _detect_seven_overdue (:775-793) fires whenever hand>limit and no 7 in the last 10 rolls, also with no length floor.
   - standalone: _detectHotNumber (strategy.js:277-296) additionally requires recent.length>=5; _detectSevenOverdue (strategy.js:330-343) additionally requires recent.length>=8. Early-game the standalone suppresses both triggers where the bridge already fir
   - note: Adjust or remove the length floors to match the bridge. Pure logic, public-info.
