@@ -417,9 +417,11 @@ export function computeStrategy(state) {
         scores,
         ranking,
         pivot_triggers: triggers.map(t => t.name),
-        pivot_details: triggers.map(t => ({
-            name: t.name, detail: t.detail,
-        })),
+        // Flat list of detail strings, matching bridge_strategy.py
+        // (pivot_details = [t.detail for t in triggers]). The panel
+        // escapeHtml()s each entry directly, so emitting {name, detail}
+        // objects rendered every fired trigger as "[object Object]".
+        pivot_details: triggers.map(t => t.detail),
         override_tag: overrideTag,
     };
 }
