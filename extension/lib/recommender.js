@@ -898,15 +898,31 @@ export function recommendRobberTargets(state, opts = {}) {
             '3': '#e29a4a', '4': '#f0f0f0',
             '5': '#7ac74f', '6': '#a07045',
         };
-        let bestVictim = null;
-        let bestVictimCards = -1;
-        for (const c of Object.keys(oppByColor)) {
+        // Suggested victim: card count dominates (best steal EV), a
+        // near-winner is weighted up by VP tier, and pips are a small
+        // nudge. Mirrors bridge_robber._compute_robber_snapshot's
+        // _victim_priority. Prefer a victim holding >= 1 card.
+        const _closeVp = Math.max(2, Math.round((state.vpTarget || 10) * 0.8));
+        const _midVp = Math.max(1, Math.round((state.vpTarget || 10) * 0.6));
+        const _victimPriority = (c) => {
             const cards = state.handTotal[c] || 0;
-            if (cards > bestVictimCards) {
-                bestVictimCards = cards;
-                bestVictim = c;
-            }
+            const vp = state.vp[c] || 0;
+            const pips = victimPipsByColor[c] || 0;
+            const w = vp >= _closeVp ? 3.0 : (vp >= _midVp ? 1.8 : 1.0);
+            return cards * w + pips * 0.3;
+        };
+        const _victimColors = Object.keys(oppByColor);
+        const _withCards = _victimColors.filter(
+            c => (state.handTotal[c] || 0) > 0);
+        const _pool = _withCards.length ? _withCards : _victimColors;
+        let bestVictim = null;
+        let bestPriority = -Infinity;
+        for (const c of _pool) {
+            const pr = _victimPriority(c);
+            if (pr > bestPriority) { bestPriority = pr; bestVictim = c; }
         }
+        const bestVictimCards = bestVictim != null
+            ? (state.handTotal[bestVictim] || 0) : -1;
         const victims = Object.keys(oppByColor).map((c) => ({
             username: COLONIST_COLOR_NAME[String(c)] || `P${c}`,
             color: COLONIST_COLOR_NAME[String(c)] || `P${c}`,
