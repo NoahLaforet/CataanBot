@@ -590,6 +590,22 @@ function _proposeTradeRecs(state, hand, opts) {
     const board = state.map;
     if (!board) return [];
     const recs = [];
+    // Public-info supply gates (the bridge gates the ask on
+    // board_resources / bank-19 / known-holder). The standalone can check
+    // the board even produces the resource, and that some opponent holds
+    // at least one card (its proxy for "someone can supply it"; the
+    // per-resource opp holder check needs the hand tracker, deferred).
+    const boardResources = new Set();
+    for (const t of Object.values(board.tiles || {})) {
+        if (t && t.resource) boardResources.add(t.resource);
+    }
+    // Default permissive: only suppress on opponent supply when we
+    // actually have opponent hand-total data (else we can't prove nobody
+    // holds it). Mirrors the bridge falling through when it lacks info.
+    const _opps = (state.colors || []).filter(c => c !== state.selfColor);
+    const anyOppHasCards = (!_opps.length || !state.handTotal)
+        ? true
+        : _opps.some(c => (state.handTotal[c] || 0) > 0);
     const wanted = [
         ['city', COSTS.city, 6.5, 'city'],
         ['settlement', COSTS.settlement, 6.0, 'settlement'],
@@ -619,6 +635,11 @@ function _proposeTradeRecs(state, hand, opts) {
         if (needKeys.length !== 1) continue;
         const needRes = needKeys[0];
         if (need[needRes] !== 1) continue;
+        // Don't propose a trade for a resource the board never makes
+        // (variant maps can omit one) or when no opponent holds a card.
+        // Gate only when we actually have the board / opp info.
+        if (boardResources.size > 0 && !boardResources.has(needRes)) continue;
+        if (!anyOppHasCards) continue;
         // Find a surplus we'd offer. Has to NOT be needed by the
         // build itself.
         for (const surplus of RESOURCE_NAMES) {
