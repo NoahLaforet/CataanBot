@@ -6,7 +6,7 @@ source of truth). The bridge is primary and supported; the standalone
 mirrors its heuristics so the HUD works with zero local install, and
 when a bridge is reachable the advanced panels light up on top.
 
-Last refresh: 2026-06-02 (v0.43.0).
+Last refresh: 2026-06-03 (v0.44.1 parity catch-up, in progress).
 
 ## How the two engines relate
 
@@ -66,6 +66,30 @@ Last refresh: 2026-06-02 (v0.43.0).
   standalone is classic-only and falls back to bridge mode on variants.
 - Authoritative opponent hand tracking: the bridge runs a hand tracker
   with drift; the standalone has chat-inferred totals only.
+
+## v0.44.x parity catch-up (in progress)
+
+The two bridge commits since v0.43.0 (`38e6546`, `6837c1f`) were audited
+against `extension/lib/`:
+
+- **Monopoly tiny-pot hold: closed.** The bridge stopped recommending PLAY
+  to steal a 1-card pot even when it unlocks a build (a one-shot card is
+  wasted on 1 card). Ported to `monopolyHint`: PLAY now needs an estimated
+  2+ cards on an unlock and 4+ for a no-unlock tempo swing, else HOLD with
+  "small pot . save it". Locked by `tests/js/hints.monopoly.test.mjs`.
+- **Knight played-count double-count: not applicable to the standalone.**
+  The bridge bug came from catanatron's `PLAYED_KNIGHT` being incremented
+  by two event sources (DOM-log parser + WS), which the bridge now snaps to
+  `mechanicKnightState.knightsPlayed`. The standalone already reads that
+  authoritative count as an absolute value (`events.js`, the
+  `state.playedKnights[key] = k` write) and never had an incremental path,
+  so both engines land on colonist's number. No port needed.
+- **Road Building expansion naming: open.** The bridge HOLD reason now names
+  the settle spot two free roads would open ("hold for LR . or play to open
+  a settle spot (...)"). The standalone `rbHint` is structurally different
+  (it already gives actionable reasons and uses different should_play
+  semantics) and is classic-only, so this is tracked as an open gap for the
+  full rec/hint parity pass, not a one-line port.
 
 ## Closed in v0.43.0 (Phase 1 standalone parity)
 
