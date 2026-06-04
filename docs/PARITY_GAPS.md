@@ -190,7 +190,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - bridge: Adds resource_need_bonus = 1.0 + 0.2*pip_dots when the tile produces a resource self owes for its next planned build (advisor.py:615-616; needed_resources derived in bridge_robber.py:169-178 from _closest_missing_build), and monopoly_setup_
   - standalone: absent. recommendRobberTargets emits no resource_need_bonus or monopoly_setup_bonus fields and the score never accounts for self's build needs or production share, so the panel can show no resource-control tags in standalone mode.
   - files: src/catanbot/advisor.py:611-635, bridge_robber.py:146-178,249-252; extension/lib/recommender.js:819-831. JS already has per-node production (nodeProduction/board.js) and hand state, so closest-missing
-- [ ] **[medium]** suggested_victim / steal-from selection
+- [x] **[medium]** suggested_victim / steal-from selection  (closed: tests/js/recommender.robber_victim.test.mjs)
   - bridge: _victim_priority = cards * vp_weight + pips * 0.3, where vp_weight = 3.0 if vp>=close_to_win_vp else 1.8 if vp>=mid_late_vp else 1.0 (bridge_robber.py:224-240). It also restricts the pool to victims holding >=1 card before taking the max (l
   - standalone: recommendRobberTargets picks the victim with strictly the most cards (state.handTotal[c]), ties broken by iteration order, with no VP or pip weighting and no >=1-card pool restriction (recommender.js:801-809). bestVictim drives steal_from_c
   - files: src/catanbot/bridge_robber.py:221-240; extension/lib/recommender.js:801-809. close_to_win_vp = round(vpTarget*0.80), mid_late_vp = round(vpTarget*0.60) are pure config; handTotal and vp are already in
