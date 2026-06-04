@@ -130,7 +130,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - standalone: _roadRecs (recommender.js:344-381) emits up to 3 road recs each from _bestLanding, but every rec requires landing.total>0 (recommender.js:363) so there is NO sealed/fallback/no-settle-spot road rec and no 'extends network' wording; no alt f
   - note: Buildable edges, neighbor graph, and production are all public and already computed in JS; the alternates, sealed-fallback, edge ordering, and field rename are pure logic ports.
   - files: bridge src/catanbot/recommender.py:1331-1476; JS extension/lib/recommender.js:344-381 (_roadRecs), 236-267 (_bestLanding)
-- [ ] **[medium]** propose_trade ask-supply gating (board_produces / bank-19 / known-holder)
+- [~] **[medium]** propose_trade ask-supply gating (board_produces / bank-19 / known-holder)  (partial: board-produces + any-opp-holds-a-card gates done via tests/js/recommender.propose_gate.test.mjs; bank-19 + per-resource known-holder need the hand tracker, deferred)
   - bridge: Suppresses a propose_trade ask unless the resource physically exists on the board (recommender.py:1733), the bank doesn't still hold all 19 (recommender.py:1738-1740), and an opp is known to hold it or it is plausibly in an unknown pile (re
   - standalone: _proposeTradeRecs (recommender.js:527-589) applies none of these guards   it offers a trade for the missing resource purely from self's surplus, regardless of whether any opponent could supply it or whether the board even produces it.
   - note: opp hand estimates, bank supply, and the board tile set are all public info the standalone already tracks (used elsewhere in the panel); porting the three guards is pure logic.
@@ -277,7 +277,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - bridge: evaluate_incoming_trade takes opp_imminent and, when set by the leader-threat detector, returns verdict=decline score=-10 reason='opp can win NEXT TURN · don't feed' before any scoring (recommender.py:2227-2230).
   - standalone: trades.js:215-219 implements the identical short-circuit on opts.oppImminent, but the only caller (panel.js:1944-1948) never passes oppImminent, so it is dead code and an imminent-win opponent is scored as an ordinary swap (likely landing o
   - files: src/catanbot/recommender.py:2227-2230 vs extension/lib/trades.js:215-219 (present) + extension/panel.js:1944-1948 (caller omits oppImminent)
-- [ ] **[medium]** propose_trade recommendations have no opponent-supply / board-resource / bank guards in JS
+- [~] **[medium]** propose_trade recommendations have no opponent-supply / board-resource / bank guards in JS  (partial: board-produces + any-opp-holds-a-card gates done via tests/js/recommender.propose_gate.test.mjs; bank-19 + per-resource known-holder need the hand tracker, deferred)
   - bridge: _propose path (recommender.py:1733-1759) gates every propose_trade on: need_res in board_resources (variant maps can omit a resource), bank not holding all 19 of need_res (else nobody owns it), AND a known holder (opp_resource_total>0) or u
   - standalone: _proposeTradeRecs (recommender.js:527-589) gates only on handCanAfford, exactly-1-card-short, and self surplus beyond reservedAcross. It never inspects opponent hands, board resources, or bank supply, so it can recommend proposing a trade f
   - files: src/catanbot/recommender.py:1733-1759 vs extension/lib/recommender.js:550-587 (_proposeTradeRecs)
