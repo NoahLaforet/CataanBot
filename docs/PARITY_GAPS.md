@@ -93,7 +93,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - bridge: LiveSession seeds bank_resources from GameStart bankState.resourceCards and patches it from every partial bankState delta in a diff, emitting a merged BankSyncEvent that overwrites the tracker's freqdeck (colonist_diff.py:247, 364-373, 674-
   - standalone: absent for the resource bank   events.js _WANTED_KEYS (events.js:52-58) does not include bankState and applySnapshot never reads it. state has no resource-bank field. The panel approximates a bank as 19 - sum(self hand + chat-inferred opp h
   - files: src/catanbot/colonist_diff.py:674-698 / extension/lib/events.js _WANTED_KEYS (52-58) + panel.js:1323-1368
-- [ ] **[medium]** Friendly Robber rule latched from WS gameSettings
+- [x] **[medium]** Friendly Robber rule latched from WS gameSettings  (closed: tests/js/events.friendly_robber.test.mjs)
   - bridge: from_game_start latches friendly_robber_active = bool(gameSettings.friendlyRobber) authoritatively from the WS GameStart payload (colonist_diff.py:230, 320-329); the robber-target ranker filters protected (<=2 VP) victims out using this WS-
   - standalone: absent from WS path   events.js reads gameSettings only for victoryPointsToWin and cardDiscardLimit (events.js:231-241); it never reads gameSettings.friendlyRobber. The standalone robber ranker (recommender.js:765-771) does honor friendly r
   - files: src/catanbot/colonist_diff.py:320-329 / extension/lib/events.js gameSettings block (231-241)

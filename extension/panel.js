@@ -1032,8 +1032,11 @@
                     try {
                         robberTargets = lib.recommendRobberTargets
                             ? lib.recommendRobberTargets(st, {
-                                friendlyRobber: _chatFlags
-                                    .friendlyRobberActive,
+                                // Prefer the WS-latched gameSettings flag
+                                // (authoritative); fall back to the chat
+                                // path when GameStart didn't carry it.
+                                friendlyRobber: st.friendlyRobber
+                                    || _chatFlags.friendlyRobberActive,
                             })
                             : [];
                     } catch (_) {}
