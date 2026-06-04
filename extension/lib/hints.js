@@ -289,18 +289,42 @@ export function yopHint(state) {
         }
     }
     if (!bestTarget) {
+        // No unlock within reach: HOLD, but point the pair at the two
+        // resources most in demand across all builds (priority-weighted),
+        // matching bridge_hints.py's demand fallback. Default ORE+WHEAT.
+        const demand = { WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0 };
+        for (const [, cost, val] of targets) {
+            for (const [r, n] of Object.entries(cost)) {
+                const d = n - (selfHand[r] || 0);
+                if (d > 0) demand[r] += val * d;
+            }
+        }
+        const ranked = Object.entries(demand).sort((a, b) => b[1] - a[1]);
+        const topR = (ranked[0] && ranked[0][1] > 0) ? ranked[0][0] : 'ORE';
+        const secondR = (ranked[1] && ranked[1][1] > 0)
+            ? ranked[1][0] : 'WHEAT';
+        const holdPair = (topR !== secondR) ? [topR, secondR] : [topR, topR];
         return {
-            have, take: ['WHEAT', 'ORE'],
+            have,
             should_play: false,
             reason: 'no build within reach',
+            pair: holdPair,
+            unlock: null,
+            bank_ok: true,
         };
     }
+    // Field shape matches bridge_hints.py (pair / unlock / bank_ok); the
+    // panel renderer reads those names. Bank-supply gating stays off in
+    // the standalone (the bank estimate is chat-inferred and best-effort),
+    // so bank_ok is always true here, matching the bridge when the bank
+    // is unconstrained.
     return {
         have,
-        take: bestPair,
         should_play: true,
         reason: `unlocks ${bestTarget}`,
-        target_kind: bestTarget,
+        pair: bestPair,
+        unlock: bestTarget,
+        bank_ok: true,
     };
 }
 
