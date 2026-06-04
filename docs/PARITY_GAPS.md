@@ -125,7 +125,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - standalone: Static placeholder details: 'place settlement' (recommender.js:325), 'upgrade settlement → city' (recommender.js:299), 'extend road' (recommender.js:372). No per-roll number, no port/fog/plan suffix, and no 'rationale' field is emitted anyw
   - note: nodeProduction and tile data are already available in JS (used for scoring); formatting the same '+X.XX/roll' detail and a per-resource rationale is pure presentation logic over public board info.
   - files: bridge src/catanbot/recommender.py:1116,1141,1352-1354,887-988; JS extension/lib/recommender.js:299,325,372 (_cityRecs/_settleRecs/_roadRecs)
-- [ ] **[medium]** Road landing-target alternates, fallback/sealed roads, edge_from/edge_to, landing_node
+- [~] **[medium]** Road landing-target alternates, fallback/sealed roads, edge_from/edge_to, landing_node  (partial: sealed-fallback + edge_from/edge_to + landing_node done via tests/js/recommender.road.test.mjs; LR-extension top-up, 30% alt floor, LR rationale deferred)
   - bridge: Builds a primary road rec plus up to ~4 alternates: landing-target alts from edge_scores[1:4] gated at 30% of top prod (recommender.py:1365-1379), LR-extension top-ups from fallback_candidates at 0.6x score with detail 'extends network' (re
   - standalone: _roadRecs (recommender.js:344-381) emits up to 3 road recs each from _bestLanding, but every rec requires landing.total>0 (recommender.js:363) so there is NO sealed/fallback/no-settle-spot road rec and no 'extends network' wording; no alt f
   - note: Buildable edges, neighbor graph, and production are all public and already computed in JS; the alternates, sealed-fallback, edge ordering, and field rename are pure logic ports.
