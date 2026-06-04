@@ -142,12 +142,18 @@ export function monopolyHint(state) {
     if (!bestRes) return null;
     const realEst = _estOppResource(state, bestRes);
     let should_play, reason;
-    if (bestUnlock) {
-        should_play = true; reason = `unlocks ${bestUnlock}`;
+    // Monopoly takes ALL of one resource from every opponent and is a
+    // one-shot card, so a tiny pot is a waste even when it technically
+    // unlocks a build (a single 4:1 trade or one more turn gets there
+    // without burning the card). Require >= 2 cards to PLAY on an unlock,
+    // and 4+ for a no-unlock tempo swing; a 1-card pot is never worth it.
+    // Mirrors bridge_hints.py _compute_monopoly_hint.
+    if (bestUnlock && realEst >= 2) {
+        should_play = true; reason = `unlocks ${bestUnlock} · ~${realEst} cards`;
     } else if (realEst >= 4) {
         should_play = true; reason = `large pot · ~${realEst} cards`;
     } else {
-        should_play = false; reason = `small pot · ~${realEst}`;
+        should_play = false; reason = `small pot · ~${realEst} · save it`;
     }
     return {
         have,
