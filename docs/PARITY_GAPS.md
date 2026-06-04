@@ -209,7 +209,7 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
 
 ### snapshot-fields
 
-- [ ] **[high]** Opponent per-roll production field shape: opp block uses scalar `prod`, renderer reads `o.production.per_roll`
+- [x] **[high]** Opponent per-roll production field shape: opp block uses scalar `prod`, renderer reads `o.production.per_roll`  (closed: panel.js production shape)
   - bridge: Each opp row carries `production` = full dict {per_roll, top_resource, by_resource} from _compute_production (bridge.py:2374). Opp-row renderer panel.js:4937 reads `o.production.per_roll` for the `0.42/roll` tag.
   - standalone: oppsBlock sets `prod: oppPerRoll` (bare number) at panel.js:1284, NOT `production`. So in standalone mode the opp `x/roll` tag at panel.js:4937 never renders (o.production is undefined). engine_deficit was separately patched to read `o.prod
   - files: bridge.py:2374 + bridge_economy._compute_production; JS panel.js:1266-1285 oppsBlock builder sets `prod` not `production`; renderer panel.js:4937

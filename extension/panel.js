@@ -1817,6 +1817,12 @@
                             }
                         }
                         blk.prod = Math.round(total * 100) / 100;
+                        // Mirror the bridge snapshot's opp shape: the
+                        // opp-row renderer reads o.production.per_roll,
+                        // so without this the per-roll yield tag silently
+                        // never rendered in standalone mode (it only saw
+                        // the scalar `prod`).
+                        blk.production = { per_roll: blk.prod };
                     }
                 }
 
