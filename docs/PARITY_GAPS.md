@@ -178,11 +178,11 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
 
 ### robber
 
-- [ ] **[high]** VP-weighted blocking value (per-victim continuous weight vs flat single-victim bonus)
+- [x] **[high]** VP-weighted blocking value (per-victim continuous weight vs flat single-victim bonus)  (closed: tests/js/recommender.robber_vpweight.test.mjs)
   - bridge: score_robber_targets weights each victim's blocked pips by _vp_weight(vp) = 1.0 + 0.4*max(0, vp - early_game_baseline_vp) (advisor.py:593-597, _vp_weight at 475-487). So a near-win opponent's tile can score 3.4x an equal-pip early-game oppo
   - standalone: recommendRobberTargets ignores victim VP entirely in the block term. It computes score = pip*pieceValue + bestVictimCards*1.5 - pip*selfPieceValue (recommender.js:819). VP only enters via the friendly-robber >2 filter (line 768); a 9-VP lea
   - files: src/catanbot/advisor.py:475-487,593-597,636; extension/lib/recommender.js:819 (recommendRobberTargets). state.vp is already populated from colonist victoryPointsState (events.js:461-469), same public 
-- [ ] **[high]** Imminent-winner 2x tile-weight multiplier
+- [x] **[high]** Imminent-winner 2x tile-weight multiplier  (closed: tests/js/recommender.robber_vpweight.test.mjs)
   - bridge: _detect_imminent_opp_color (bridge_robber.py:12-79) flags any opp who could take Largest Army (+1 knight in hand reaches max(3, opp_max_played+1) and vp+2>=target) or Longest Road (+1 road reaches max(5, opp_max_roads+1) and vp+2>=target). 
   - standalone: absent. recommendRobberTargets has no imminent detection and no per-color multiplier; an opp about to flip LA/LR for the win gets no extra robber priority over any other opp.
   - files: src/catanbot/bridge_robber.py:12-79 (_detect_imminent_opp_color), advisor.py:591-596; extension/lib/recommender.js:727-835. All inputs (played knights, knight-in-hand, longest-road length, has-army/ha

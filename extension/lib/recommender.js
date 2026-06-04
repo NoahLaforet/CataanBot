@@ -724,8 +724,52 @@ export function recommendActions(state, opts = {}) {
 /** Robber-target ranking — bridge had this in advisor.score_robber_targets;
  *  the standalone advisor.js stub returns []. We fill it in here so the
  *  panel's robber-target list works after a 7. */
+/** Detect an opponent who could win on their next turn via a Largest
+ *  Army or Longest Road flip. Mirrors bridge_robber._detect_imminent_opp_color:
+ *  conservative, only the LA/LR flips, each gated on the win landing
+ *  within 2 VP. An opp's knight-in-hand is hidden public info (the
+ *  standalone reads 0 for opps), so the LA path rarely fires for an
+ *  opponent, matching the bridge. */
+function _detectImminentOpp(state) {
+    if (!state || !state.colors) return null;
+    const target = state.vpTarget || 10;
+    for (const c of state.colors) {
+        if (c === state.selfColor) continue;
+        const vp = (state.vp && state.vp[c]) || 0;
+        if (vp >= target) continue;
+        // LA path: +1 knight takes Largest Army.
+        const played = (state.playedKnights && state.playedKnights[c]) || 0;
+        const held = (state.devCardsByType && state.devCardsByType[c]
+            && state.devCardsByType[c].KNIGHT) || 0;
+        const hasArmy = state.hasArmy === c;
+        let oppMaxPlayed = 0;
+        for (const o of state.colors) {
+            if (o === c) continue;
+            oppMaxPlayed = Math.max(oppMaxPlayed,
+                (state.playedKnights && state.playedKnights[o]) || 0);
+        }
+        if (!hasArmy && held >= 1
+                && played + 1 >= Math.max(3, oppMaxPlayed + 1)
+                && vp + 2 >= target) return c;
+        // LR path: +1 road takes Longest Road.
+        const ll = (state.roadLength && state.roadLength[c]) || 0;
+        const hasRoad = state.hasRoad === c;
+        let oppMaxRoads = 0;
+        for (const o of state.colors) {
+            if (o === c) continue;
+            oppMaxRoads = Math.max(oppMaxRoads,
+                (state.roadLength && state.roadLength[o]) || 0);
+        }
+        if (!hasRoad && ll + 1 >= Math.max(5, oppMaxRoads + 1)
+                && vp + 2 >= target) return c;
+    }
+    return null;
+}
+
 export function recommendRobberTargets(state, opts = {}) {
     if (!state || !state.map) return [];
+    const imminentColor = (opts.imminentColor != null)
+        ? opts.imminentColor : _detectImminentOpp(state);
     const tiles = state.map.tiles || {};
     const targets = [];
     const buildings = state.buildings || {};
@@ -769,13 +813,16 @@ export function recommendRobberTargets(state, opts = {}) {
             });
             if (oppAdj.length === 0) continue;
         }
-        // Score: pip × oppPiecesValue × steal-EV
+        // Per-victim blocked pips (a city counts double), mirroring the
+        // bridge's victims[color] = pip * weight accumulation.
         const pip = pipsForNumber(tile.number);
-        let pieceValue = 0;
         const oppByColor = {};
+        const victimPipsByColor = {};
         for (const a of oppAdj) {
-            pieceValue += a.kind === 'CITY' ? 2 : 1;
+            const w = a.kind === 'CITY' ? 2 : 1;
             oppByColor[a.color] = (oppByColor[a.color] || 0) + 1;
+            victimPipsByColor[a.color] =
+                (victimPipsByColor[a.color] || 0) + pip * w;
         }
         // Self-block penalty: parking the robber on a tile we also
         // produce from costs us pips, so a self-adjacent tile sinks in
@@ -811,13 +858,27 @@ export function recommendRobberTargets(state, opts = {}) {
             username: COLONIST_COLOR_NAME[String(c)] || `P${c}`,
             color: COLONIST_COLOR_NAME[String(c)] || `P${c}`,
             color_css: COLONIST_COLOR_HEX[String(c)] || '#888',
-            pips: oppByColor[c] * pip,
+            pips: victimPipsByColor[c] || (oppByColor[c] * pip),
             vp: state.vp[c] || 0,
             cards: state.handTotal[c] || 0,
             suggested: c === bestVictim,
         }));
-        const score = pip * pieceValue + (bestVictimCards || 0) * 1.5
-            - pip * selfPieceValue;
+        // VP-weighted blocking value (advisor.score_robber_targets):
+        // each victim's blocked pips scale by how close they are to
+        // winning (_vp_weight, baseline ~30% of target), times 2 when
+        // they could win next turn (imminent). Card count is NOT in the
+        // tile score; it only selects the suggested victim above.
+        const target = state.vpTarget || 10;
+        const baseline = Math.max(1, Math.round(target * 0.3));
+        const vpWeight = (v) => 1.0 + 0.4 * Math.max(0, v - baseline);
+        let weighted = 0;
+        for (const c of Object.keys(victimPipsByColor)) {
+            const vvp = (state.vp && state.vp[c]) || 0;
+            const mult = (imminentColor != null
+                && String(imminentColor) === String(c)) ? 2.0 : 1.0;
+            weighted += victimPipsByColor[c] * vpWeight(vvp) * mult;
+        }
+        const score = weighted - pip * selfPieceValue;
         targets.push({
             tile_id: tid,
             number: tile.number,
