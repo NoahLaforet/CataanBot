@@ -70,11 +70,11 @@ Counts: 61 portable, 21 needs-design, 5 hard-blocked.
   - bridge: _compute_knight_hint:1639-1737 fires 'an opp is close to Largest Army · play to deny' when any opp has played>=3 OR (played>=2 AND vp>=largest_army_threat_vp config). Independent of how many knights self holds.
   - standalone: knightHint:82-98 sets oppCloseToLA when an opp has k>=2 AND k>=myKnights+1, but only fires PLAY ('opp closing on LA · race') when self also has have>=2 knights; the bridge has no such self-stack requirement and uses a played>=3-or-(>=2&vp) 
   - files: bridge: src/catanbot/bridge_hints.py:1639-1737; JS: extension/lib/hints.js:80-98. JS has state.vp and playedKnights; the only missing input is the largest_army_threat_vp config constant, which can be 
-- [ ] **[low]** YoP no-build-within-reach HOLD pair selection and pad logic
+- [x] **[low]** YoP no-build-within-reach HOLD pair selection and pad logic  (closed: tests/js/hints.yop.test.mjs)
   - bridge: _compute_yop_hint:546-573 (no unlock) picks the pair by demand-weighted-by-priority across all builds (defaulting ORE+WHEAT); when a single-resource unlock needs a 2nd slot it fills toward the next-best build (priority-ordered, ORE default)
   - standalone: yopHint:205-211 hardcodes the HOLD pair to ['WHEAT','ORE'] with reason 'no build within reach', and when padding a single-need pair it always appends 'WHEAT' (line 198) regardless of what the next build needs.
   - files: bridge: src/catanbot/bridge_hints.py:507-573; JS: extension/lib/hints.js:186-211. Pure hand+cost logic, fully reproducible in JS.
-- [ ] **[low]** YoP field name and ordering: 'pair'/'unlock'/'bank_ok' vs JS 'take'/'target_kind'
+- [x] **[low]** YoP field name and ordering: 'pair'/'unlock'/'bank_ok' vs JS 'take'/'target_kind'  (closed: tests/js/hints.yop.test.mjs)
   - bridge: returns keys have, should_play, reason, pair, unlock, bank_ok (:595-602).
   - standalone: yopHint returns have, take, should_play, reason, target_kind (:212-218)   different key names (take vs pair, target_kind vs unlock) and no bank_ok/unlock key. Any consumer expecting the bridge field names diverges.
   - files: bridge: src/catanbot/bridge_hints.py:595-602; JS: extension/lib/hints.js:206-218.
