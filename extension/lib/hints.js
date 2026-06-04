@@ -18,7 +18,7 @@
 // than gating it on per-turn purchase recency.
 
 import { newHand, RESOURCE_NAMES } from './state.js';
-import { COSTS, handCanAfford } from './recommender.js';
+import { COSTS, handCanAfford, recommendRobberTargets } from './recommender.js';
 
 /** Total inferred opponent hand size on a given resource — for the
  *  standalone path this has to be a guess (opps' resourceCards
@@ -57,51 +57,137 @@ function _estOppResource(state, resource) {
     return Math.min(19, Math.round(total));
 }
 
-/** Knight hint. */
-export function knightHint(state) {
+/** Knight hint. Mirrors bridge_hints.py _compute_knight_hint: a
+ *  weak-robber-tile hold guard (pip <= 2), deny-Largest-Army before
+ *  claim-LA ordering, a strong-block trigger off the top robber-target
+ *  score, and a knight-stack / late-game rule that gates proactive
+ *  plays when self holds only one knight. The standalone keeps the
+ *  bridge's "just bought this turn" exclusion as a known simplification
+ *  (self per-turn dev buys are not tracked here), erring toward showing
+ *  the hint. */
+export function knightHint(state, opts) {
     if (!state || !state.selfColor) return null;
     const own = state.devCardsByType[state.selfColor];
     if (!own) return null;
     const have = own.KNIGHT || 0;
     if (have <= 0) return null;
-    // Robber sitting on us? PLAY immediately.
+
+    // Robber physically on one of our tiles, and the pip-weighted
+    // production it blocks. A weak tile (pip <= 2, i.e. 2/3/11/12)
+    // hurts so little it is not worth a lone knight to clear.
+    const board = state.map;
     let robberOnUs = false;
-    if (state.robberTile && state.map) {
-        const tile = state.map.tiles[state.robberTile];
+    let robberTilePip = 0;
+    let selfBlockedPips = 0;
+    if (state.robberTile && board) {
+        const tile = board.tiles[state.robberTile];
         if (tile) {
+            if (tile.number) robberTilePip = tile.pip || 0;
             for (const nid of tile.nodes) {
                 const b = state.buildings[nid];
                 if (b && b.color === state.selfColor) {
-                    robberOnUs = true; break;
+                    robberOnUs = true;
+                    selfBlockedPips += robberTilePip;
                 }
             }
         }
     }
-    // Opponent 1 knight away from Largest Army?
+    const weakRobberTile = robberTilePip <= 2;
+
     const myKnights = state.playedKnights[state.selfColor] || 0;
-    let oppCloseToLA = false;
+    const haveLA = state.hasArmy === state.selfColor;
+    const target = state.vpTarget || 10;
+    // Config ratios from bridge config.py: threat at round(target*0.7)
+    // (10 -> 7), close-to-win at round(target*0.8) (10 -> 8).
+    const laThreatVp = Math.max(2, Math.round(target * 0.7));
+    const closeToWin = Math.max(2, Math.round(target * 0.8));
+
+    // Opp racing to Largest Army: played >= 3, OR played >= 2 at a
+    // threat-level VP.
+    let largestArmyThreat = false;
     for (const c of state.colors) {
         if (c === state.selfColor) continue;
-        const k = state.playedKnights[c] || 0;
-        if (k >= 2 && k >= myKnights + 1) { oppCloseToLA = true; break; }
+        const played = state.playedKnights[c] || 0;
+        const vp = (state.vp && state.vp[c]) || 0;
+        if (played >= 3 || (played >= 2 && vp >= laThreatVp)) {
+            largestArmyThreat = true; break;
+        }
     }
-    // Would playing this Knight win us LA outright?
-    const haveLA = state.hasArmy === state.selfColor;
-    const willClaimLA = !haveLA && (myKnights + 1 >= 3);
+
+    // Would playing this knight CLAIM Largest Army? Must strictly exceed
+    // every other player; stealing a held LA needs self+1 > the holder.
+    const laHeldBySomeone = state.hasArmy != null;
+    const laHolderPlayed = laHeldBySomeone
+        ? (state.playedKnights[state.hasArmy] || 0) : 0;
+    let oppMaxPlayed = 0;
+    for (const c of state.colors) {
+        if (c === state.selfColor) continue;
+        oppMaxPlayed = Math.max(oppMaxPlayed, state.playedKnights[c] || 0);
+    }
+    let knightSecuresLa;
+    if (haveLA) knightSecuresLa = false;
+    else if (laHeldBySomeone) knightSecuresLa = myKnights >= laHolderPlayed;
+    else knightSecuresLa = (myKnights >= 2 && (myKnights + 1) > oppMaxPlayed);
+
+    // Top robber-target score drives the "strong block available" path.
+    let topTarget = null;
+    let topScore = 0;
+    try {
+        const tt = recommendRobberTargets(state, opts || {}) || [];
+        topTarget = tt[0] || null;
+        topScore = topTarget ? (Number(topTarget.score) || 0) : 0;
+    } catch (_) { /* robber scoring needs a board; tolerate absence */ }
+
+    const selfVp = (state.vp && state.vp[state.selfColor]) || 0;
+    const lateGame = selfVp >= closeToWin - 2;
+    const knightStackOk = (have >= 2 || lateGame);
 
     let should_play = false;
-    let reason = 'hold · no urgent trigger';
-    if (robberOnUs) { should_play = true; reason = 'robber on us · clear it'; }
-    else if (willClaimLA) {
-        should_play = true; reason = `take Largest Army (+2 VP)`;
-    } else if (oppCloseToLA && have >= 2) {
-        should_play = true; reason = 'opp closing on LA · race';
+    let reason = 'no urgent reason · hold for now';
+    if (selfBlockedPips > 0) {
+        if (weakRobberTile && !knightStackOk) {
+            reason = `robber's on you but on a weak tile `
+                + `(pip ${robberTilePip}) · hold knight`;
+        } else {
+            should_play = true;
+            const cardsPerRoll = selfBlockedPips / 36;
+            reason = `robber's on you · play to clear it `
+                + `(~${cardsPerRoll.toFixed(2)} cards/roll blocked)`;
+        }
+    } else if (largestArmyThreat) {
+        should_play = true;
+        reason = 'an opp is close to Largest Army · play to deny';
+    } else if (knightSecuresLa) {
+        should_play = true;
+        reason = laHeldBySomeone
+            ? 'playing this knight steals Largest Army from the '
+                + 'current holder (+2 VP)'
+            : "you're 1 knight from Largest Army · play it to grab "
+                + 'the +2 VP';
+    } else if (topScore >= 4.0) {
+        if (!knightStackOk) {
+            reason = 'a block exists but you only hold 1 knight · '
+                + 'hold for a clearer trigger';
+        } else {
+            should_play = true;
+            if (topTarget && topTarget.resource) {
+                const tileLbl = (`${String(topTarget.resource).toLowerCase()} `
+                    + `${topTarget.number || ''}`).trim();
+                reason = `a strong block on ${tileLbl} is available`;
+            } else {
+                reason = 'a strong block is available';
+            }
+        }
     }
+
     return {
-        have, should_play, reason,
+        have,
+        should_play,
+        reason,
         played: myKnights,
         has_la: haveLA,
         robber_on_us: robberOnUs,
+        best_target: topTarget,
     };
 }
 
