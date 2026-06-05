@@ -90,7 +90,96 @@ def test_stop_never_kills_a_non_bridge_pid(tmp_path, monkeypatch):
     import os
     monkeypatch.setenv("CATANBOT_STATE_DIR", str(tmp_path))
     from catanbot.tray import process
+    # Isolate: never resolve a real listener (the adopt-aware stop() path
+    # would otherwise run lsof against a live bridge on the default port).
+    monkeypatch.setattr(process, "pid_on_port", lambda *a, **k: None)
     process.write_pid(os.getpid())
     process.stop()
     os.kill(os.getpid(), 0)  # raises if stop() had signalled us; it must not
+    assert process.read_pid() is None
+
+
+def test_status_running_skips_ps(monkeypatch):
+    """The running fast path must never spawn `ps` (the source of menu-bar
+    lag): when the port answers, status() returns 'running' without
+    touching _pid_is_bridge."""
+    from catanbot.tray import process
+    monkeypatch.setattr(process, "port_open", lambda *a, **k: True)
+    calls = {"n": 0}
+
+    def boom(pid):
+        calls["n"] += 1
+        return True
+
+    monkeypatch.setattr(process, "_pid_is_bridge", boom)
+    assert process.status() == "running"
+    assert calls["n"] == 0
+
+
+def test_pid_is_bridge_caches_ps(monkeypatch):
+    """_pid_is_bridge caches its `ps` result per pid for a short TTL so the
+    2s poll and click handlers don't spawn `ps` on every probe."""
+    from catanbot.tray import process
+    process._BRIDGE_CACHE.clear()
+    monkeypatch.setattr(process, "_pid_alive", lambda pid: True)
+    runs = {"n": 0}
+
+    class _R:
+        stdout = "python -m catanbot.cli live --port 8765"
+
+    def fake_run(*a, **k):
+        runs["n"] += 1
+        return _R()
+
+    monkeypatch.setattr(process.subprocess, "run", fake_run)
+    try:
+        assert process._pid_is_bridge(4242) is True
+        assert process._pid_is_bridge(4242) is True  # served from cache
+        assert runs["n"] == 1
+    finally:
+        process._BRIDGE_CACHE.clear()
+
+
+def test_pid_on_port_parses_lsof(monkeypatch):
+    from catanbot.tray import process
+
+    class _R:
+        stdout = "5123\n"
+
+    monkeypatch.setattr(process.subprocess, "run", lambda *a, **k: _R())
+    assert process.pid_on_port(8765) == 5123
+
+
+def test_stop_kills_adopted_bridge_by_port(tmp_path, monkeypatch):
+    """With no tracked pidfile, stop() resolves the listener on the port,
+    verifies it is our bridge, and signals it (the externally-started /
+    nohup case). It returns True and clears the pidfile. Fully mocked so it
+    never touches a real port or a real process."""
+    monkeypatch.setenv("CATANBOT_STATE_DIR", str(tmp_path))
+    from catanbot.tray import process
+    process.clear_pid()
+    monkeypatch.setattr(process, "pid_on_port", lambda *a, **k: 7777)
+    monkeypatch.setattr(process, "_pid_is_bridge", lambda pid: pid == 7777)
+    alive = {"v": True}
+    monkeypatch.setattr(process, "_pid_alive", lambda pid: alive["v"])
+    killed = []
+
+    def fake_kill(pid, sig):
+        killed.append((pid, sig))
+        alive["v"] = False  # dies on the first SIGTERM
+
+    monkeypatch.setattr(process.os, "kill", fake_kill)
+    assert process.stop(port=8765) is True
+    assert killed and killed[0][0] == 7777
+    assert process.read_pid() is None
+
+
+def test_stop_returns_false_when_nothing_running(tmp_path, monkeypatch):
+    """No pidfile and no listener on the port: stop() signals nothing and
+    reports False so the tray can say 'nothing to stop'."""
+    monkeypatch.setenv("CATANBOT_STATE_DIR", str(tmp_path))
+    from catanbot.tray import process
+    process.clear_pid()
+    monkeypatch.setattr(process, "pid_on_port", lambda *a, **k: None)
+    assert process.stop(port=8765) is False
     assert process.read_pid() is None

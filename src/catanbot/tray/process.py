@@ -12,6 +12,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -20,6 +21,12 @@ DEFAULT_PORT = 8765
 
 # src/catanbot/tray/process.py -> repo root is three parents up.
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Short-lived cache for the `ps`-based bridge check so the status poll and
+# the click handlers never spawn `ps` more than once per TTL per pid (the
+# `ps` call was the main source of menu-bar lag). Keyed by pid.
+_BRIDGE_CACHE: dict[int, tuple[float, bool]] = {}
+_BRIDGE_CACHE_TTL = 3.0
 
 
 def state_dir() -> Path:
@@ -46,7 +53,13 @@ def read_pid() -> int | None:
 
 
 def write_pid(pid: int) -> None:
-    pidfile_path().write_text(str(int(pid)))
+    # Atomic: write to a temp file then rename, so a concurrent reader
+    # never sees a half-written pidfile (a click + a background poll can
+    # touch this at the same time).
+    p = pidfile_path()
+    tmp = p.parent / (p.name + ".tmp")
+    tmp.write_text(str(int(pid)))
+    os.replace(tmp, p)
 
 
 def clear_pid() -> None:
@@ -88,21 +101,59 @@ def _pid_is_bridge(pid: int | None) -> bool:
     repo path alone, which contains 'CatanBot'."""
     if not _pid_alive(pid):
         return False
+    now = time.monotonic()
+    cached = _BRIDGE_CACHE.get(pid)
+    if cached is not None and now - cached[0] < _BRIDGE_CACHE_TTL:
+        return cached[1]
     try:
         out = subprocess.run(
             ["ps", "-p", str(int(pid)), "-o", "command="],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True, text=True, timeout=0.7,
         ).stdout.lower()
     except Exception:  # noqa: BLE001
         return False
-    if "catanbot.cli" in out:
-        return True
-    return "bin/catanbot" in out and ("live" in out or "bridge" in out)
+    result = (
+        "catanbot.cli" in out
+        # Self-contained .app: the bridge is this same frozen binary re-run
+        # with --run-bridge (see bin/tray_entry.py + bridge_command).
+        or "--run-bridge" in out
+        or ("bin/catanbot" in out and ("live" in out or "bridge" in out))
+    )
+    _BRIDGE_CACHE[pid] = (now, result)
+    return result
+
+
+def pid_on_port(port: int = DEFAULT_PORT) -> int | None:
+    """PID of the process LISTENING on host:port, via lsof, or None. Used
+    to reach a bridge that was started outside the app (no pidfile) so the
+    tray can still stop it. The caller must still confirm it is our bridge
+    with _pid_is_bridge before signaling it."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=1.0,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    for line in out.splitlines():
+        try:
+            return int(line.strip())
+        except ValueError:
+            continue
+    return None
 
 
 def bridge_command(port: int = DEFAULT_PORT) -> list[str]:
-    """argv to launch the bridge with the live advisor, via the
-    repo-local launcher (which owns the venv bootstrap + PYTHONPATH)."""
+    """argv to launch the bridge with the live advisor.
+
+    Frozen (the self-contained .app): re-run this same bundled binary in
+    bridge mode (bin/tray_entry.py --run-bridge), so no repo or venv is
+    needed and nothing under TCC-protected ~/Desktop is touched.
+
+    Source checkout: go through the repo-local launcher, which owns the
+    venv bootstrap + PYTHONPATH."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--run-bridge", "--port", str(port)]
     launcher = REPO_ROOT / "bin" / "catanbot"
     return [str(launcher), "live", "--port", str(port)]
 
@@ -123,6 +174,11 @@ def start(port: int = DEFAULT_PORT,
     resulting status. If the port is already answering (a bridge the
     user launched by hand), adopt it instead of spawning a duplicate."""
     if port_open(port):
+        # Adopt an already-listening bridge: record its (verified) pid so a
+        # later stop() can reach it even though this app did not spawn it.
+        owner = pid_on_port(port)
+        if owner and _pid_is_bridge(owner):
+            write_pid(owner)
         return "running"
     # Already spawned and still binding the port: do not double-spawn (a
     # second process would fail to bind and orphan the pidfile from the
@@ -138,11 +194,22 @@ def start(port: int = DEFAULT_PORT,
     return status(port)
 
 
-def stop(timeout: float = 5.0) -> None:
-    """Terminate the launcher-spawned bridge (SIGTERM, then SIGKILL on
-    timeout) and clear the pidfile. No-op when nothing is tracked."""
+def stop(timeout: float = 5.0, port: int = DEFAULT_PORT) -> bool:
+    """Terminate the bridge (SIGTERM, then SIGKILL on timeout) and clear
+    the pidfile. Returns True if it actually signaled a process.
+
+    Stops both a bridge this app spawned (tracked by pidfile) AND one the
+    user started outside the app: when there is no tracked pid, it resolves
+    the listener on ``port`` and verifies it is our bridge before signaling
+    so we never blind-kill an unrelated process that happens to hold the
+    port."""
     pid = read_pid()
-    if pid and _pid_is_bridge(pid):
+    if not (pid and _pid_is_bridge(pid)):
+        owner = pid_on_port(port)
+        pid = owner if owner and _pid_is_bridge(owner) else None
+    signaled = False
+    if pid and _pid_alive(pid):
+        signaled = True
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -155,4 +222,6 @@ def stop(timeout: float = 5.0) -> None:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        _BRIDGE_CACHE.pop(pid, None)
     clear_pid()
+    return signaled

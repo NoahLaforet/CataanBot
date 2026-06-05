@@ -4,6 +4,28 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.45.0 (2026-06-05)
+
+A self-contained one-click menu-bar app, a real branded icon, and a
+responsive bridge toggle.
+
+- **Download-and-run macOS app.** CatanBot now builds a self-contained
+  .app (PyInstaller) that bundles Python and the bridge, so there is no
+  repo, venv, or `pip install` to set up. Double-click it and the bridge
+  starts on 127.0.0.1:8765. It writes only under Application Support, so a
+  Finder launch is never blocked by macOS file-access protection.
+- **Branded menu-bar icon.** The status item is the brand "C" logo, vivid
+  green when the bridge is up and a clean neutral gray when it is off,
+  with a gentle pulse while it starts and a one-shot bloom the moment it
+  goes live. Rendered at retina resolution instead of a flat dot. Earlier
+  frozen builds shipped without the icon frames and fell back to a plain
+  emoji dot; the frames are now bundled.
+- **Instant Start/Stop.** The menu no longer freezes: the status probe
+  runs off the main thread, the icon reacts to a click within a frame, and
+  the `ps` check is cached so the 2s poll is cheap. "Stop bridge" can now
+  stop a bridge that was started outside the app (resolved by port and
+  verified as ours), so it is no longer a silent no-op.
+
 ## v0.44.1 (2026-06-03)
 
 Chrome Web Store packaging fix.
