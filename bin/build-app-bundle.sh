@@ -57,6 +57,19 @@ else
     echo "warning: codesign failed; approve in System Settings > Privacy & Security" >&2
 fi
 
+# --- package the download artifact. ditto (not zip) preserves the bundle
+#     layout + code signature; this CatanBot-macos.zip is exactly what the
+#     Chrome extension's Download button points at on the GitHub release.
+#     For a PUBLIC release, notarize the .app first so it opens by
+#     double-click without a Gatekeeper block: scripts/sign_and_notarize.sh
+#     (which re-runs this ditto step after stapling).
+ZIP="dist/CatanBot-macos.zip"
+rm -f "$ZIP"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+
 echo
 echo "built  $APP"
+echo "zipped $ZIP ($(du -h "$ZIP" | cut -f1))"
 echo "test   open \"$REPO_ROOT/$APP\"   # menu-bar item + bridge auto-starts on :8765"
+echo "ship   scripts/sign_and_notarize.sh   # Developer ID sign + notarize, then:"
+echo "       gh release upload <tag> $ZIP --clobber -R NoahLaforet/CatanBot"

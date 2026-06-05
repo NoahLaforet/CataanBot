@@ -69,3 +69,8 @@ CatanBot Gameplay clips/
 dev/hud/fixtures/
 /.playwright-mcp/
 /hud-*.png
+
+# Signing / notarization secrets: Developer ID identity, Apple ID, team id,
+# app-specific password. Real values live in .env (never committed); the
+# committed .env.example documents the keys.
+.env
