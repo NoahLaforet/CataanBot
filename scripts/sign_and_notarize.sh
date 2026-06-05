@@ -33,12 +33,19 @@ set -a; . ./.env; set +a
 : "${SIGN_IDENTITY:?set SIGN_IDENTITY in .env}"
 : "${NOTARY_PROFILE:?set NOTARY_PROFILE in .env}"
 
-APP="dist/CatanBot.app"
-ENT="entitlements.plist"
+SRC_APP="dist/CatanBot.app"
+ENT="$REPO_ROOT/entitlements.plist"
 ZIP="dist/CatanBot-macos.zip"
-[ -d "$APP" ] || { echo "no $APP — run ./bin/build-app-bundle.sh first" >&2; exit 1; }
+[ -d "$SRC_APP" ] || { echo "no $SRC_APP — run ./bin/build-app-bundle.sh first" >&2; exit 1; }
 
-echo "==> strip xattrs (iCloud/FinderInfo metadata breaks codesign)"
+# Sign in a temp dir OUTSIDE the repo. If the repo lives on an iCloud-managed
+# folder (e.g. ~/Desktop), the File Provider keeps re-injecting
+# com.apple.FinderInfo, which breaks the code signature mid-sign. A plain
+# temp dir is immune. The final signed + stapled app is zipped back to dist/.
+STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+APP="$STAGE/CatanBot.app"
+cp -R "$SRC_APP" "$APP"
+echo "==> staged to $APP (signing off the iCloud volume)"
 xattr -cr "$APP"
 
 # Sign INSIDE-OUT (never `codesign --deep` for signing a PyInstaller bundle):
