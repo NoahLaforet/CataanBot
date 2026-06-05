@@ -277,18 +277,28 @@ status: desaturated when off, a gentle pulse while starting, and
 full-color when up. It offers Start / Stop, an "Open colonist.io" action
 that brings the bridge up and opens the game, and a small settings menu.
 
-For a double-clickable desktop app (no terminal), build a `.app` once:
+For a double-clickable app with no setup at all, you do not need this
+repo: open the Chrome extension's panel and, when no bridge is detected,
+click **Download CatanBot.app**. Unzip it, drag it into Applications, and
+open it; the bridge starts on its own and the panel connects. That is the
+recommended path for non-developers.
+
+To build that self-contained app yourself (bundles Python and the bridge,
+so it needs no repo, venv, or `pip` to run):
 
 ```bash
-./bin/build-app.sh        # -> ~/Applications/CatanBot.app
+./bin/build-app-bundle.sh     # -> dist/CatanBot.app  (+ CatanBot-macos.zip)
 ```
 
-Then launch it from Finder / Spotlight / the Dock like any app; it lives
-in the menu bar while running. (`bin/build-app.sh` derives the icon from
-`extension/icons/icon-128.png`; re-run it if the brand art changes.) The
-`bin/catanbot` command above stays the supported cross-platform path;
-the menu-bar app just spawns the same bridge under the hood. macOS only
-(it uses `rumps`); on Linux or Windows use `./bin/catanbot live`.
+It writes only under `~/Library/Application Support/CatanBot`, so a Finder
+launch is never blocked by macOS file-access protection. For a public
+release, notarize it first so a downloaded copy opens by double-click:
+`scripts/sign_and_notarize.sh` (see `.env.example`). The older
+`./bin/build-app.sh` still builds a thin wrapper that execs this repo, but
+it only works when the repo lives outside a protected folder (not under
+`~/Desktop` or `~/Documents`). The `bin/catanbot` command above stays the
+supported cross-platform path. macOS only (it uses `rumps`); on Linux or
+Windows use `./bin/catanbot live`.
 
 ## Manual install (if the launcher gives you trouble)
 

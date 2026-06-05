@@ -2786,6 +2786,29 @@ html, body, .panel {
   letter-spacing: 0.02em;
 }
 .no-bridge-frame .nb-btn:hover { filter: brightness(1.15); }
+.nb-cta {
+  margin: 4px auto 2px;
+}
+.nb-cta .nb-btn {
+  display: inline-block;
+  padding: 9px 18px;
+  background: var(--accent);
+  color: var(--bg-0, #0a0e15) !important;
+  font-weight: 700;
+  font-size: 12.5px;
+  text-decoration: none;
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+}
+.nb-cta .nb-btn:hover { filter: brightness(1.15); }
+.nb-cta-steps {
+  margin: 10px auto 0;
+  max-width: 320px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+.bridge-down .nb-cta { margin-top: 12px; text-align: center; }
 .no-bridge-frame .nb-footnote {
   margin-top: 18px;
   font-size: 11px;

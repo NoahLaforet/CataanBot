@@ -34,6 +34,45 @@
     const ADVISOR_POLL_MS = 500;
     const LOG_PREFIX = '[catanbot]';
 
+    // One-click bridge: a self-contained macOS .app published as a GitHub
+    // release asset on the public repo. The "latest" download URL never
+    // needs editing per release, and the app is self-contained so a stale
+    // extension handing out a newer app is harmless. The 48MB app is NOT
+    // shipped inside the extension (store size + policy); this is an
+    // external download link, consistent with the "no remote code" posture.
+    const BRIDGE_DOWNLOAD_URL =
+        'https://github.com/NoahLaforet/CatanBot/releases/latest/download/'
+        + 'CatanBot-macos.zip';
+
+    function _isMac() {
+        try {
+            if (navigator.userAgentData && navigator.userAgentData.platform) {
+                return navigator.userAgentData.platform === 'macOS';
+            }
+        } catch (e) { /* userAgentData not available */ }
+        return /Mac/.test(navigator.platform || '');
+    }
+
+    // The download call-to-action shown when no bridge is reachable. The
+    // .app is macOS-only (rumps menu-bar agent), so on other platforms we
+    // fall back to the text install docs (handled by the caller). The
+    // panel re-probes /advisor every ADVISOR_POLL_MS, so once the user
+    // launches the app the next successful poll flips the panel to
+    // connected on its own (renderOverlay(..., true)); no extra wiring.
+    function _bridgeCtaHtml() {
+        if (!_isMac()) return '';
+        return '<div class="nb-cta">'
+            + `<a class="nb-btn" href="${BRIDGE_DOWNLOAD_URL}" `
+            + 'target="_blank" rel="noopener" download>'
+            + 'Download CatanBot.app</a>'
+            + '<div class="nb-cta-steps">Unzip, drag '
+            + '<b>CatanBot.app</b> into your Applications folder, and open '
+            + 'it. The bridge starts on its own and this panel connects '
+            + 'within a second · unlocks search-delta annotations and '
+            + 'post-game postmortems.</div>'
+            + '</div>';
+    }
+
     // Push-style refresh hook. Set by ``startAdvisorPoll`` to a function
     // that schedules a near-immediate /advisor poll. The /ws forwarder
     // calls this after each POST so the HUD updates within ~30ms of a
@@ -3886,10 +3925,10 @@
                 + `and the strategy banner will all light up within `
                 + `a second of the game starting · no bridge needed.`
                 + `</div>`
+                + _bridgeCtaHtml()
                 + `<div class="nb-footnote">`
-                + `If you'd rather have the Python bridge running `
-                + `(unlocks 1-ply search-delta annotations + post-`
-                + `game postmortem rendering), see the `
+                + `Prefer to build the bridge yourself, or not on a Mac? `
+                + `See the `
                 + `<a href="https://github.com/NoahLaforet/CatanBot#quick-start" `
                 + `target="_blank" rel="noopener">install docs</a>. `
                 + `Open ⚙ → source to pick which path the panel `
@@ -3942,11 +3981,12 @@
                 + '<div class="bd-body">You picked '
                 + '<b>bridge only</b> mode but the local Python '
                 + 'bridge isn’t responding on '
-                + '<code>127.0.0.1:8765</code>. Start it from the '
-                + 'project root with <code>uv run catanbot bridge</code>, '
-                + 'or switch to <b>auto</b> / <b>extension only</b> '
-                + 'in the ⚙ settings drawer to use the JS '
-                + 'recommender instead.</div>'
+                + '<code>127.0.0.1:8765</code>. Download the one-click '
+                + 'app below, or start it from the project root with '
+                + '<code>uv run catanbot bridge</code>, or switch to '
+                + '<b>auto</b> / <b>extension only</b> in the ⚙ settings '
+                + 'drawer to use the JS recommender instead.</div>'
+                + _bridgeCtaHtml()
                 + '<div class="bd-actions">'
                 + '<a href="https://github.com/NoahLaforet/CatanBot#install" '
                 + 'target="_blank" rel="noopener">install docs →</a>'

@@ -14,6 +14,12 @@ responsive bridge toggle.
   repo, venv, or `pip install` to set up. Double-click it and the bridge
   starts on 127.0.0.1:8765. It writes only under Application Support, so a
   Finder launch is never blocked by macOS file-access protection.
+- **The panel hands you the bridge.** When no bridge is detected, the side
+  panel shows a "Download CatanBot.app" button (macOS) that pulls the app
+  from the latest GitHub release; drag it to Applications, open it, and the
+  panel connects on its own within a second. No build step for the user.
+  The app is signed and notarized so a downloaded copy opens by
+  double-click without a Gatekeeper prompt.
 - **Branded menu-bar icon.** The status item is the brand "C" logo, vivid
   green when the bridge is up and a clean neutral gray when it is off,
   with a gentle pulse while it starts and a one-shot bloom the moment it
