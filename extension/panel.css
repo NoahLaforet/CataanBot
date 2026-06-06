@@ -551,6 +551,20 @@
     border-left: 0;
   }
   .opp.tracked .opp-hand { color: var(--pos); }
+  /* Probabilistic card read: the faded "+67%" tail is a chance, not a
+     count, so it stays smaller and dimmer than the guaranteed minimum
+     it rides next to. A resource we only *might* see (no guaranteed
+     floor) dims the whole cell so the eye lands on the certain cards. */
+  .opp .opp-hand .opp-prob {
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 500;
+    color: var(--fg-mute);
+    opacity: 0.85;
+  }
+  .opp .opp-hand > span.opp-maybe {
+    opacity: 0.55;
+    font-weight: 500;
+  }
   /* Untracked = at least one hidden steal/discard moved cards we
      couldn't attribute. Italicize the breakdown so Noah reads it
      as a "best guess" rather than ground truth. The total card

@@ -5458,13 +5458,37 @@
                 // are any, alongside the known resources.
                 const handParts = [];
                 const hand = o.hand || {};
-                for (const [res, n] of Object.entries(hand)) {
-                    if (n > 0) {
-                        handParts.push(`<span>${iconFor(res)} ${n}</span>`);
+                const hp = o.hand_probs;
+                if (hp) {
+                    // Probabilistic read: the guaranteed minimum plus a
+                    // faded chance of more, or — when nothing is certain —
+                    // the chance of holding one at all. Reads like
+                    // "wood 2 +67%" or a dim "ore 33%".
+                    for (const [res, b] of Object.entries(hp)) {
+                        const mn = b.min || 0;
+                        const more = b.more || 0;   // P(more than the floor)
+                        const p1 = b.p1 || 0;       // P(at least one)
+                        if (mn > 0) {
+                            const tail = more > 0.04
+                                ? ` <span class="opp-prob">+${Math.round(more * 100)}%</span>`
+                                : '';
+                            handParts.push(
+                                `<span>${iconFor(res)} ${mn}${tail}</span>`);
+                        } else if (p1 > 0.04) {
+                            handParts.push(
+                                `<span class="opp-maybe">${iconFor(res)} `
+                                + `<span class="opp-prob">${Math.round(p1 * 100)}%</span></span>`);
+                        }
                     }
-                }
-                if ((o.unknown || 0) > 0) {
-                    handParts.push(`<span>? ${o.unknown}</span>`);
+                } else {
+                    for (const [res, n] of Object.entries(hand)) {
+                        if (n > 0) {
+                            handParts.push(`<span>${iconFor(res)} ${n}</span>`);
+                        }
+                    }
+                    if ((o.unknown || 0) > 0) {
+                        handParts.push(`<span>? ${o.unknown}</span>`);
+                    }
                 }
                 const breakdown = handParts.length
                     ? `<span class="opp-hand">${handParts.join('')}</span>`
