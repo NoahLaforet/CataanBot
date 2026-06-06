@@ -3501,6 +3501,13 @@ def test_snapshot_surfaces_probabilistic_hand_when_model_synced():
             game.feed(payload)
     assert game.opp_model is not None
 
+    # Replaying the capture feeds real production into the model; reset it
+    # to a clean slate so this controlled steal scenario is deterministic.
+    from catanbot.opp_inference import OppHandModel
+    game.opp_model = OppHandModel(
+        list(game.color_map.as_dict().values()),
+        self_color=game.opp_model.self_color)
+
     sess = game.session
     # Two opponents: drive the model so one (victim) holds a known mix and
     # the other (thief) robs them with the type hidden, then set the

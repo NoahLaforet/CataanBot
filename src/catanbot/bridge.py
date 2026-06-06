@@ -686,9 +686,15 @@ def _feed_opp_model(st: dict[str, Any], payload: dict[str, Any]) -> None:
     if model is None or getattr(game, "color_map", None) is None:
         return
     try:
+        from catanbot.events import ProduceEvent
         from catanbot.parser import parse_event
         event = parse_event(payload)
-        model.apply(event, game.color_map)
+        # Production is fed from the WS stream (LiveGame.feed) so it stays
+        # in lockstep with the authoritative card counts; skip it here to
+        # avoid double-crediting. Everything else (build, steal, monopoly,
+        # trade, discard, dev cards) is DOM-log only.
+        if not isinstance(event, ProduceEvent):
+            model.apply(event, game.color_map)
     except Exception:  # noqa: BLE001 — inference is advisory, never fatal
         pass
 

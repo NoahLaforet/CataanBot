@@ -25,7 +25,9 @@ from catanbot.colonist_diff import (
     LiveSession, LiveSessionError, events_from_frame_payload,
 )
 from catanbot.colonist_map import build_catanatron_map_from_colonist
-from catanbot.events import BankSyncEvent, BuildEvent, HandSyncEvent
+from catanbot.events import (
+    BankSyncEvent, BuildEvent, HandSyncEvent, ProduceEvent,
+)
 from catanbot.live import ColorMap, DispatchResult, apply_event
 from catanbot.opp_inference import OppHandModel
 from catanbot.tracker import Tracker, TrackerError
@@ -475,9 +477,12 @@ class LiveGame:
                     and isinstance(result.event, BuildEvent)):
                 self._debit_build(result.event)
         # Anchor the opponent-hand model with the authoritative WS data:
-        # our own exact hand and the resource bank. The DOM /log handler
-        # feeds the public narrative (produce/build/steal/trade/...); the
-        # model is reconciled against per-player card sizes at read time.
+        # our own exact hand, the resource bank, and roll production.
+        # Production is taken from the WS stream (not the DOM log) so it
+        # lands in the same frame as the per-player card-count bump it
+        # causes - the DOM "got" line can lag or drop, which would leave
+        # the inferred floor short and force a reseed. The DOM /log handler
+        # feeds the rest of the public narrative (build/steal/trade/...).
         if self.opp_model is not None:
             for ev in events:
                 if isinstance(ev, HandSyncEvent):
@@ -486,6 +491,8 @@ class LiveGame:
                         self.opp_model.set_self_hand(color, ev.resources)
                 elif isinstance(ev, BankSyncEvent):
                     self.opp_model.set_bank(ev.resources)
+                elif isinstance(ev, ProduceEvent):
+                    self.opp_model.apply(ev, self.color_map)
         # Snap played-knight counts to colonist's authoritative
         # mechanicKnightState.knightsPlayed. A self knight play fires a
         # DevCardPlayEvent from BOTH the DOM-log parser and the WS
