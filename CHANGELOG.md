@@ -4,7 +4,7 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
-## Unreleased
+## v0.47.0 (2026-06-06)
 
 Probabilistic opponent card tracking on the bridge.
 
