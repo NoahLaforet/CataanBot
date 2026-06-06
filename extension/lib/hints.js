@@ -266,6 +266,31 @@ export function yopHint(state) {
         ['dev_card', COSTS.dev_card, 5],
         ['road', COSTS.road, 4],
     ];
+    // Bridge _BUILD_COSTS_MONOPOLY ordering (city, settlement, dev card,
+    // road). The pad scan below walks builds in this order to match the
+    // bridge's "next-best build" choice for the 2nd YoP slot. JS COSTS is
+    // ordered differently, so we name the order explicitly here.
+    const padOrder = [
+        ['city', COSTS.city],
+        ['settlement', COSTS.settlement],
+        ['dev_card', COSTS.dev_card],
+        ['road', COSTS.road],
+    ];
+    // Fill a single-need pick's 2nd slot toward the next-best build's
+    // deficit resource (priority-ordered, ORE default), mirroring
+    // bridge_hints.py _compute_yop_hint:527-541. Replaces the old flat
+    // WHEAT pad so the spare card aligns with a real follow-up build.
+    function padSecond(name, pick) {
+        for (const [n2, cost2] of padOrder) {
+            if (n2 === name) continue;
+            for (const [r2, n] of Object.entries(cost2)) {
+                const held = selfHand[r2] || 0;
+                const inPick = pick.filter(x => x === r2).length;
+                if (held + inPick < n) return r2;
+            }
+        }
+        return 'ORE';  // safe default
+    }
     let bestTarget = null;
     let bestPair = null;
     let bestVal = 0;
@@ -281,7 +306,7 @@ export function yopHint(state) {
         if (need.length === 0 || need.length > 2) continue;
         const pair = need.length === 2
             ? need
-            : [need[0], 'WHEAT'];  // pad with a flex resource
+            : [need[0], padSecond(name, need)];
         if (val > bestVal) {
             bestVal = val;
             bestTarget = name;
@@ -378,13 +403,35 @@ function _rbHintImpl(state) {
             candidateEdges.push(eid);
         }
     }
-    // Score each by best-landing production.
+    // Score each by best-landing production. Also report whether the
+    // best landing is a genuine settlement *unlock*: a node that
+    // respects the distance rule (no already-built neighbor) and has
+    // real production. The bridge's _suggest_rb_placement tags such a
+    // landing "unlocks settlement"; we mirror that so the no-swing case
+    // can name it as a HOLD-with-guidance reason instead of a flat
+    // "no clear swing yet" (bridge _compute_rb_hint opens_settle branch).
     const allBuilt = new Set(Object.keys(buildings));
+    // Tile label for a landing node (e.g. "ore 8 / wheat 5"), used by
+    // the opens-settle reason copy.
+    function landingTiles(nid) {
+        const node = board.nodes[nid];
+        if (!node) return '';
+        const parts = [];
+        for (const tid of node.tiles) {
+            const t = board.tiles[tid];
+            if (!t || !t.resource) continue;
+            parts.push(`${String(t.resource).toLowerCase()} `
+                + `${t.number || ''}`.trim());
+        }
+        return parts.join(' / ');
+    }
     function landingScore(edgeId) {
         const e = board.edges[edgeId];
-        if (!e) return 0;
+        if (!e) return { score: 0, unlockNode: null };
         const candidates = [e.a, e.b];
         let best = 0;
+        let unlockNode = null;  // best distance-rule-legal landing node
+        let unlockScore = 0;
         for (const nid of candidates) {
             if (allBuilt.has(nid)) continue;
             const node = board.nodes[nid];
@@ -400,14 +447,27 @@ function _rbHintImpl(state) {
                 if (!t || !t.resource) continue;
                 s += t.pip / 36;
             }
+            // A legal settle landing (distance rule satisfied) with real
+            // production is what the bridge calls an "unlocks settlement"
+            // spot. Track the best one to drive the opens-settle reason.
+            if (!nbBuilt && s > 0 && s > unlockScore) {
+                unlockScore = s;
+                unlockNode = nid;
+            }
             if (nbBuilt) s *= 0.4;
             if (s > best) best = s;
         }
-        return best;
+        return { score: best, unlockNode };
     }
     const ranked = candidateEdges
-        .map(e => ({ edge: e, score: landingScore(e) }))
+        .map((e) => {
+            const ls = landingScore(e);
+            return { edge: e, score: ls.score, unlockNode: ls.unlockNode };
+        })
         .sort((a, b) => b.score - a.score);
+    // Best genuine settle-unlock landing across all candidate edges, in
+    // score order — used by the no-swing HOLD branch below.
+    const unlockPick = ranked.find(r => r.unlockNode != null) || null;
     // No legal extension still gets a verdict: the LR / road-supply
     // logic below does not depend on a placement (the bridge computes
     // should_play independently of its placement search).
@@ -438,6 +498,15 @@ function _rbHintImpl(state) {
     const projected = self_len + Math.min(2, roads_left);
     const qualify = 5;  // base-game longest-road threshold
 
+    // opens_settle: no LR swing and not low on roads, but the two free
+    // roads would open a new settlement spot. The bridge keeps this a
+    // HOLD by default (RB is often best saved for a longest-road swing)
+    // but names where you could expand now, so the hint stops reading
+    // "hold forever" with no guidance. Fog-reveal sits between the
+    // road-supply case and this in the bridge but is a no-op on classic
+    // boards (no fog model in the standalone), so opens_settle is the
+    // next fallthrough here.
+    const opensSettle = unlockPick != null;
     let should_play = false;
     let reason = 'no clear swing yet';
     if (roads_left <= 0) {
@@ -451,6 +520,12 @@ function _rbHintImpl(state) {
     } else if (roads_left <= 2) {
         should_play = true;
         reason = `low on roads · ${roads_left} left`;
+    } else if (opensSettle) {
+        const tiles = landingTiles(unlockPick.unlockNode);
+        const where = tiles
+            ? `unlocks settlement at ${tiles}`
+            : 'unlocks settlement';
+        reason = `hold for LR · or play to open a settle spot (${where})`;
     }
     return {
         have,

@@ -23,6 +23,45 @@ const DENIAL_WEIGHT = 0.04;
 const BLOCKING_TOP_K = 3;
 const BLOCKING_WEIGHT = 0.05;
 
+// Wildcard hex valuation. Mirror of advisor.py _GOLD_WEIGHT / _FOG_WEIGHT
+// / _FOG_REVEAL_NUMBER. A gold hex pays a resource of your choice when its
+// number rolls; a fog hex reveals a free, scarce-biased resource when a
+// road lands on its corner. Both behave like wildcards that fill whatever
+// you're missing, so they're weighted just above wheat (1.25) and count as
+// an extra diversity slot (a wildcard covers a missing resource).
+const GOLD_WEIGHT = 1.25;
+const FOG_WEIGHT = 1.25;
+// Fog reveals model a ~5/9-class strong number (4 pip-dots out of 36),
+// per the Gold Rush capture analysis (~65% of reveals land on 5/6/8/9).
+const FOG_REVEAL_NUMBER = 5;
+
+/** Drop fog-adjacent nodes from a legal-node Set. Mirror of the
+ *  `legal - restricted_fog` subtraction in recommender.py:341-343.
+ *  Returns a new Set. */
+function restrictFogNodes(legal, fogNodeIds) {
+    if (!fogNodeIds || !fogNodeIds.size) return legal;
+    const out = new Set();
+    for (const n of legal) {
+        if (!fogNodeIds.has(n)) out.add(n);
+    }
+    return out;
+}
+
+/** Gold hex per-roll wildcard yield for the board, or 0 when no gold
+ *  hex (or no number yet). pip-dots(goldNumber) / 36, same as a normal
+ *  tile's per-roll yield. Mirror of advisor.py:283-284. */
+function goldYield(board) {
+    const n = board && board.goldNumber;
+    if (!n) return 0;
+    return pipsForNumber(n) / 36;
+}
+
+/** Fog reveal per-tile wildcard yield. Fixed at the FOG_REVEAL_NUMBER
+ *  strong-number class. Mirror of advisor.py:291. */
+function fogYield() {
+    return pipsForNumber(FOG_REVEAL_NUMBER) / 36;
+}
+
 function weightedRawProduction(prod) {
     let total = 0;
     for (const [r, v] of Object.entries(prod)) {
@@ -103,10 +142,28 @@ export function computeTableScarcity(board) {
  */
 export function scoreOpeningNodes(board, opts = {}) {
     if (!board || !board.nodes) return [];
-    const legal = opts.legalNodes
+    let legal = opts.legalNodes
         ? new Set([...board.landNodes].filter(n => opts.legalNodes.has(n)))
         : new Set(board.landNodes);
+    // Restricted opening placement (Gold Rush / fog boards): the first
+    // two settlements may only land on corners of SHOWN tiles, so drop
+    // every fog-adjacent node from the legal pool. Mirror of
+    // recommender.py:219-224,341-343. No-op on any board without the
+    // restriction. Caller can force-disable via opts.allowFog (used when
+    // scoring road-expansion targets, where fog corners are valuable).
+    if (board.restrictedStartingPlacement && !opts.allowFog
+            && board.fogNodeIds && board.fogNodeIds.size) {
+        legal = restrictFogNodes(legal, board.fogNodeIds);
+    }
     const scarcity = opts.tableScarcity || computeTableScarcity(board);
+
+    // Wildcard hex sets — gold pays a chosen resource, fog reveals a
+    // scarce one. Nodes touching them get a wildcard yield + a diversity
+    // slot. Empty on classic boards. Mirror of advisor.py:278-306.
+    const goldNodeIds = board.goldNodeIds || new Set();
+    const fogNodeIds = board.fogNodeIds || new Set();
+    const gYield = goldYield(board);
+    const fYield = fogYield();
 
     // Pass 1: base scores per node.
     const scratch = {};
@@ -115,19 +172,58 @@ export function scoreOpeningNodes(board, opts = {}) {
         const node = board.nodes[nodeId];
         if (!node) continue;
         const prod = nodeProduction(board, nodeId);
-        const raw = weightedRawProduction(prod);
-        const distinct = Object.values(prod).filter(v => v > 0).length;
-        const diversity = DIVERSITY_BY_COUNT[distinct] || 1.15;
+        const resources = { ...prod };
+        let raw = weightedRawProduction(prod);
+        let distinct = Object.values(prod).filter(v => v > 0).length;
         const tiles = node.tiles
             .map(tid => board.tiles[tid])
             .filter(Boolean)
             .map(t => [t.resource || 'DESERT', t.number]);
-        const pBonus = portBonus(node.port, prod, tiles, scarcity);
+        // Gold adjacency: add the wildcard yield to raw production, expose
+        // a GOLD resource, bump diversity by one (it covers any missing
+        // resource), and relabel one DESERT slot as GOLD. advisor.py:325-332.
+        if (goldNodeIds.has(nodeId) && gYield > 0) {
+            raw += gYield * GOLD_WEIGHT;
+            resources.GOLD = (resources.GOLD || 0) + gYield;
+            distinct += 1;
+            for (let i = 0; i < tiles.length; i++) {
+                if (tiles[i][0] === 'DESERT' && tiles[i][1] == null) {
+                    tiles[i] = ['GOLD', board.goldNumber];
+                    break;
+                }
+            }
+        }
+        // Fog adjacency: each unrevealed fog tile this node touches is a
+        // wildcard reveal. Add its yield per fog tile, expose a FOG
+        // resource, bump diversity once, relabel DESERT slots. The fog
+        // hex count comes off the node's actual fog tiles (a seam node can
+        // touch two). advisor.py:339-358.
+        if (fogNodeIds.has(nodeId) && fYield > 0) {
+            let fogTilesHere = 0;
+            for (const tid of node.tiles) {
+                const t = board.tiles[tid];
+                if (t && t.fog) fogTilesHere += 1;
+            }
+            if (fogTilesHere <= 0) fogTilesHere = 1;
+            raw += fYield * FOG_WEIGHT * fogTilesHere;
+            resources.FOG = (resources.FOG || 0) + fYield * fogTilesHere;
+            distinct += 1;
+            let relabelled = 0;
+            for (let i = 0; i < tiles.length; i++) {
+                if (relabelled >= fogTilesHere) break;
+                if (tiles[i][0] === 'DESERT' && tiles[i][1] == null) {
+                    tiles[i] = ['FOG', FOG_REVEAL_NUMBER];
+                    relabelled += 1;
+                }
+            }
+        }
+        const diversity = DIVERSITY_BY_COUNT[distinct] || 1.22;
+        const pBonus = portBonus(node.port, resources, tiles, scarcity);
         const base = raw * diversity + pBonus;
         baseByNode[nodeId] = base;
         scratch[nodeId] = {
             raw, diversity, portBonus: pBonus,
-            resources: prod, tiles, port: node.port || null,
+            resources, tiles, port: node.port || null,
         };
     }
 
@@ -320,8 +416,15 @@ export function scoreSecondSettlements(board, firstNodeId, opts = {}) {
         0: 0.0, 1: 0.0, 2: 0.0, 3: 0.05, 4: 0.15, 5: 0.25,
     };
     const scarcity = opts.tableScarcity || computeTableScarcity(board);
-    const legal = opts.legalNodes
+    let legal = opts.legalNodes
         || legalNodesAfterPicks(board, [firstNodeId]);
+    // Restricted opening placement bars the first TWO settlements from
+    // fog-adjacent corners, so the 2nd-settle pool drops them too. Mirror
+    // of recommender.py:291-295. No-op on classic boards.
+    if (board.restrictedStartingPlacement && !opts.allowFog
+            && board.fogNodeIds && board.fogNodeIds.size) {
+        legal = restrictFogNodes(legal, board.fogNodeIds);
+    }
     const scores = [];
     for (const nid of legal) {
         if (nid === firstNodeId) continue;
@@ -368,4 +471,8 @@ export function scoreRobberTargets(state, opts = {}) {
     return [];
 }
 
-export { DIVERSITY_BY_COUNT, RESOURCE_WEIGHT };
+export {
+    DIVERSITY_BY_COUNT, RESOURCE_WEIGHT,
+    GOLD_WEIGHT, FOG_WEIGHT, FOG_REVEAL_NUMBER,
+    goldYield, fogYield, restrictFogNodes,
+};

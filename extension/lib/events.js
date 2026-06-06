@@ -55,6 +55,7 @@ const _WANTED_KEYS = new Set([
     'mechanicLongestRoadState', 'mechanicLargestArmyState',
     'mechanicSettlementState', 'mechanicCityState', 'mechanicRoadState',
     'tradeState', 'diceState', 'winnerPlayerColor', 'tileHexStates',
+    'bankState',
 ]);
 
 /** Walk a decoded msgpack tree ONCE and harvest the first non-null
@@ -467,6 +468,95 @@ export function applySnapshot(state, decoded) {
                 if (changed) dirty = true;
             }
 
+            // Self dev-card PLAY detection from developmentCardsUsed.
+            // Colonist ships self's full play history (typed ints) each
+            // frame; multiset-diff it against the cached copy so every
+            // newly-appearing non-VP type is a play we detect from WS,
+            // even when the chat-log "X used a Knight" line is missed.
+            // Mirrors _dev_card_buy_events (colonist_diff.py:872-906).
+            // We wire the KNIGHT case to the existing self-knight robber
+            // backstop (same flag the mechanicKnightState path sets); the
+            // other plays are recorded into selfDevUsed for the panel to
+            // read but are not given a behavior-changing hook here.
+            if (cid === state.selfColorId
+                    && Array.isArray(pstate.developmentCardsUsed)) {
+                const newUsed = [];
+                for (const x of pstate.developmentCardsUsed) {
+                    const n = Number(x);
+                    if (Number.isInteger(n)) newUsed.push(n);
+                }
+                // A first sync (mid-game join) ships the whole history
+                // at once; treat that as a baseline only and never fire
+                // the knight window for plays that happened before we
+                // attached. Require a prior non-empty cache before any
+                // play counts as "new this frame".
+                const hadBaseline = state.selfDevUsed != null
+                    && state.selfDevUsed.length > 0;
+                const prevUsed = state.selfDevUsed || [];
+                // Multiset diff: count each type in new vs cached and
+                // treat the positive remainder as freshly-played cards.
+                const prevCount = {};
+                for (const t of prevUsed) {
+                    prevCount[t] = (prevCount[t] || 0) + 1;
+                }
+                const newCount = {};
+                for (const t of newUsed) {
+                    newCount[t] = (newCount[t] || 0) + 1;
+                }
+                if (hadBaseline) {
+                    for (const [tStr, n] of Object.entries(newCount)) {
+                        const added = n - (prevCount[Number(tStr)] || 0);
+                        if (added <= 0) continue;
+                        const name = _DEV_CARD_TYPE[Number(tStr)];
+                        // VP cards reveal rather than "play" — skip so we
+                        // don't spurious-fire (matches the bridge).
+                        if (!name || name === 'VICTORY_POINT') continue;
+                        // A self KNIGHT play owes a robber move; open the
+                        // same WS-driven backstop window the knightsPlayed
+                        // path uses. A play only happens on your own turn.
+                        // Cleared on turn change like the other backstop.
+                        if (name === 'KNIGHT'
+                                && state.currentTurn === state.selfColorId) {
+                            state.knightRobberPending = true;
+                            state.knightRobberTurn = state.currentTurn;
+                        }
+                    }
+                }
+                // Advance the cache (and mark dirty) only when the list
+                // changed, so an unchanged re-ship is a no-op.
+                const sameUsed = prevUsed.length === newUsed.length
+                    && prevUsed.every((v, i) => v === newUsed[i]);
+                if (!sameUsed) {
+                    state.selfDevUsed = newUsed;
+                    dirty = true;
+                }
+            }
+
+            // Self developmentCardsBoughtThisTurn carve-out. Colonist
+            // ships self's typed bought-this-turn list, clearing it to
+            // null/empty on turn flip. Mirror it so the panel can
+            // exclude a just-bought card from play-timing hints without
+            // homemade DOM-log buy/turn bookkeeping (colonist_diff.py:
+            // 859-865). Stored as a typed int list on state.
+            if (cid === state.selfColorId
+                    && 'developmentCardsBoughtThisTurn' in pstate) {
+                const bought = pstate.developmentCardsBoughtThisTurn;
+                let list = [];
+                if (Array.isArray(bought)) {
+                    for (const x of bought) {
+                        const n = Number(x);
+                        if (Number.isInteger(n)) list.push(n);
+                    }
+                }
+                const prevList = state.selfDevBoughtThisTurn || [];
+                const same = prevList.length === list.length
+                    && prevList.every((v, i) => v === list[i]);
+                if (!same) {
+                    state.selfDevBoughtThisTurn = list;
+                    dirty = true;
+                }
+            }
+
             // VP breakdown.
             const vps = pstate.victoryPointsState;
             if (vps && typeof vps === 'object') {
@@ -508,6 +598,25 @@ export function applySnapshot(state, decoded) {
                     dirty = true;
                 }
             }
+        }
+
+        // --- Too-many-players (5-6 seat) limited-tracking guard. ---
+        // playerStates keys are the WS-authoritative seat list. The
+        // standalone keys everything by colonist color id 1..6 with no
+        // 4-color cap, but the heuristics assume a <=4-player model;
+        // a 5-6 player lobby silently produces recs against a partial
+        // model. Mirror the bridge's too_many_players() check
+        // (colonist_diff.py:484-486, surfaced in live_game.py:220-223)
+        // by raising a flag so the panel can show 'limited tracking'
+        // instead of trusting the recs. Count distinct numeric seats.
+        let seatCount = 0;
+        for (const cidStr of Object.keys(playerStates)) {
+            if (Number(cidStr)) seatCount += 1;
+        }
+        const unsupported = seatCount > 4;
+        if (state.playersUnsupported !== unsupported) {
+            state.playersUnsupported = unsupported;
+            dirty = true;
         }
     }
 
@@ -583,6 +692,47 @@ export function applySnapshot(state, decoded) {
                 if (state.bank[key]?.roads !== n) {
                     state.bank[key] = state.bank[key] || {};
                     state.bank[key].roads = n;
+                    dirty = true;
+                }
+            }
+        }
+    }
+
+    // --- Authoritative resource bank (bankState.resourceCards). ---
+    // Colonist ships partial bankState deltas (only the resource types
+    // whose remaining count changed). Merge each delta into a running
+    // raw map (keyed by resource type int) and re-derive the named
+    // whole, mirroring the bridge's BankSyncEvent which overwrites the
+    // tracker's bank to ground truth instead of drifting on give/take
+    // accounting (colonist_diff.py:674-698). state.resourceBank is the
+    // named, consumable form ({WOOD,BRICK,SHEEP,WHEAT,ORE: int}); it
+    // is the authoritative replacement for the panel's flaky
+    // 19 - sum(chat-inferred hands) approximation.
+    const bankState = K('bankState');
+    if (bankState && typeof bankState === 'object') {
+        const cards = bankState.resourceCards;
+        if (cards && typeof cards === 'object') {
+            if (state._resourceBankRaw == null) state._resourceBankRaw = {};
+            let changed = false;
+            for (const [k, v] of Object.entries(cards)) {
+                const typeInt = Number(k);
+                const count = Number(v);
+                if (!Number.isFinite(typeInt) || !Number.isFinite(count)) {
+                    continue;
+                }
+                if (state._resourceBankRaw[typeInt] !== count) {
+                    state._resourceBankRaw[typeInt] = count;
+                    changed = true;
+                }
+            }
+            if (changed) {
+                const merged = {};
+                for (const [t, c] of Object.entries(state._resourceBankRaw)) {
+                    const res = _CARD_RESOURCE[Number(t)];
+                    if (res) merged[res] = c;
+                }
+                if (Object.keys(merged).length) {
+                    state.resourceBank = merged;
                     dirty = true;
                 }
             }

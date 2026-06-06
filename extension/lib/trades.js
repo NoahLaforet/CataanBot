@@ -37,6 +37,20 @@ function _round(v, n = 1) {
     return Math.round(v * f) / f;
 }
 
+// Python's round() (round-half-to-even / banker's rounding). The bridge
+// derives close_to_win_vp via config.close_to_win_vp = max(2,
+// round(VP_TARGET * 0.80)) (config.py:124-133), where round() is the
+// builtin banker's rounding. Plain JS Math.round is half-up, so to keep
+// the close-to-win boundary byte-identical to the bridge for any
+// VP_TARGET we mirror Python's rule: ties round to the nearest even int.
+function _pyRound(v) {
+    const floor = Math.floor(v);
+    const diff = v - floor;
+    if (diff < 0.5) return floor;
+    if (diff > 0.5) return floor + 1;
+    return (floor % 2 === 0) ? floor : floor + 1;
+}
+
 function _signed(v) {
     return (v >= 0 ? '+' : '') + v.toFixed(1);
 }
@@ -187,7 +201,9 @@ export function evaluateIncomingTrade(state, hand, give, want, opts = {}) {
     want = want || {};
     const oppVp = opts.oppVp || 0;
     const vpTarget = opts.vpTarget || state.vpTarget || 10;
-    const closeVp = Math.max(2, Math.round(vpTarget * 0.80));
+    // close_to_win_vp = max(2, round(VP_TARGET * 0.80)) with Python's
+    // banker's rounding, matching config.close_to_win_vp exactly.
+    const closeVp = Math.max(2, _pyRound(vpTarget * 0.80));
     const allowCounter = opts.allowCounter !== false;
 
     const wantKeys = Object.keys(want).filter(r => (want[r] || 0) > 0);
@@ -264,7 +280,15 @@ export function evaluateIncomingTrade(state, hand, give, want, opts = {}) {
     }
 
     let counter = null;
-    if (verdict !== 'accept' && allowCounter && oppVp < closeVp) {
+    // Mirror the bridge's _suggest_counter_offer gates
+    // (recommender.py:2149-2167): a counter is only meaningful on a
+    // non-accept path, is skipped entirely when the opp is close to
+    // winning (any deal feeds their win), and bails immediately when the
+    // ask is not actually lopsided (want_total <= give_total) or is a
+    // single card (want_total <= 1), since there is nothing left to trim
+    // toward a 1:1 in those cases.
+    if (verdict !== 'accept' && allowCounter && oppVp < closeVp
+        && wantTotal > giveTotal && wantTotal > 1) {
         const trimmed = _trimPack(want, giveTotal);
         const tTotal = Object.values(trimmed).reduce((s, v) => s + v, 0);
         if (tTotal > 0 && tTotal < wantTotal) {

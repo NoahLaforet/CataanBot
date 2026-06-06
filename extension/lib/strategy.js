@@ -248,13 +248,35 @@ function _within2Hops(board, a, b) {
     return false;
 }
 
-const RATIONALE = {
-    OWS: 'ore + wheat lean · city-rush w/ dev-card flex.',
-    LR_RUSH: 'wood + brick footprint w/ expansion runway · push roads.',
-    PORT_TRADE: 'port aligned with produced resource · leverage trades.',
-    RB_CARVED_TILES: 'isolated cluster of producing tiles · RoadBuilder.',
-    BALANCED: 'no dominant archetype · keep options open.',
-};
+/** Live-number rationale, mirroring strategy_select._rationale_for
+ *  (:630-648). The bridge surfaces real production figures and an
+ *  isolation %, not a static blurb, so the standalone shows the same
+ *  numbers the panel's strat-why line expects. Pre-placement has no
+ *  footprint (prod is the board-affinity proxy and isolation can't be
+ *  computed), so we fall back to a plain phrasing there. All inputs are
+ *  public board info already computed for scoring. */
+function _rationaleFor(tag, prod, scores, isPre) {
+    const f = (r) => (prod[r] || 0).toFixed(2);
+    if (tag === 'OWS') {
+        return `ore ${f('ORE')}/r + wheat ${f('WHEAT')}/r · city + dev engine`;
+    }
+    if (tag === 'LR_RUSH') {
+        return `wood ${f('WOOD')}/r + brick ${f('BRICK')}/r · road runway open`;
+    }
+    if (tag === 'PORT_TRADE') {
+        return 'relevant port reachable; settle near, route on settle #2';
+    }
+    if (tag === 'RB_CARVED_TILES') {
+        // The JS RB score is a clamp(reach/8) isolation proxy in [0,1];
+        // use it directly as the isolation fraction the bridge prints.
+        const iso = isPre ? 0 : (scores.RB_CARVED_TILES || 0);
+        return `corridor carved out (~${Math.round(iso * 100)}% isolation) · `
+            + 'hold roads, claim LR late';
+    }
+    // BALANCED (or any unmapped tag): count resources with real signal.
+    const distinct = Object.values(prod).filter(v => v > 0.05).length;
+    return `balanced base (${distinct}/5 resources) · keep options open`;
+}
 
 /** Pivot trigger detectors. Each fires at most one trigger; the
  *  list is folded into snap.strategy.pivot_triggers + may produce
@@ -393,14 +415,38 @@ export function computeStrategy(state) {
     let fallback = null;
     let active = null;
     if (!isPre) {
-        // Pick first eligible from ranking; BALANCED is the floor.
-        for (const r of ranking) {
-            if (r.eligible) {
-                if (!primary) primary = r.tag;
-                else if (!fallback) { fallback = r.tag; break; }
-            }
+        // Build the eligible list (ranking is already score-desc; the
+        // tag-order tiebreak is handled by TAGS order below to mirror
+        // strategy_select :600 RB > OWS > LR > PORT > BALANCED).
+        const eligible = ranking.filter(r => r.eligible);
+        if (eligible.length) {
+            primary = eligible[0].tag;
+            if (eligible.length > 1) fallback = eligible[1].tag;
         }
         if (!primary) primary = 'BALANCED';
+
+        // Stickiness / anti-flicker (strategy_select.select_strategy
+        // :604-619): don't flip primary on a small score wobble. The
+        // caller threads the prior snap's strategy in as state.prevStrategy
+        // ({ primary, scores }); absent it, behavior is the stateless
+        // pick above (no regression). Keep the old primary unless the new
+        // top eligible score beats the old primary's *current* score by
+        // 1.15x.
+        const prev = state.prevStrategy;
+        const prevPrimary = prev && prev.primary;
+        if (prevPrimary && prevPrimary !== primary && eligible.length) {
+            const prevScore = (prev.scores && prev.scores[prevPrimary] != null)
+                ? prev.scores[prevPrimary]
+                : (scores[prevPrimary] || 0);
+            const newScore = eligible[0].score;
+            if (newScore < prevScore * 1.15) {
+                primary = prevPrimary;
+                const nonPrimary = eligible
+                    .map(r => r.tag)
+                    .filter(t => t !== primary);
+                fallback = nonPrimary.length ? nonPrimary[0] : null;
+            }
+        }
         active = primary;
     }
     // Pivot triggers — informational signals that surface below the
@@ -416,7 +462,16 @@ export function computeStrategy(state) {
         }
     }
     const phase = _phaseFor(state.totalRolls || 0);
-    const rationale = RATIONALE[active] || RATIONALE.BALANCED;
+    const rationale = _rationaleFor(active || 'BALANCED', prod, scores, isPre);
+    // set_at_rolls carries forward while the primary is unchanged so the
+    // panel can show strategy stability across WS frames (strategy_select
+    // :617-619). Reads the prior snap when the caller threads it.
+    const rollsSoFar = state.totalRolls || 0;
+    const prevSnap = state.prevStrategy;
+    const setAtRolls = (prevSnap && prevSnap.primary === primary
+        && prevSnap.set_at_rolls != null)
+        ? prevSnap.set_at_rolls
+        : rollsSoFar;
     return {
         active,
         primary,
@@ -425,6 +480,7 @@ export function computeStrategy(state) {
         phase,
         scores,
         ranking,
+        set_at_rolls: setAtRolls,
         pivot_triggers: triggers.map(t => t.name),
         // Flat list of detail strings, matching bridge_strategy.py
         // (pivot_details = [t.detail for t in triggers]). The panel

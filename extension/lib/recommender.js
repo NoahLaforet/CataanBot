@@ -236,8 +236,8 @@ function _legalRoadEdges(state) {
 function _bestLanding(state, edgeId, blocked, ownedResources) {
     const board = state.map;
     const edge = board.edges[edgeId];
-    if (!edge) return { prod: {}, total: 0, nodeId: null };
-    let best = { prod: {}, total: -1, nodeId: null };
+    if (!edge) return { prod: {}, total: 0, nodeId: null, rank: 0 };
+    let best = { prod: {}, total: -1, nodeId: null, rank: 0 };
     let bestRank = -1;
     for (const end of [edge.a, edge.b]) {
         const endNode = board.nodes[end];
@@ -253,13 +253,20 @@ function _bestLanding(state, edgeId, blocked, ownedResources) {
                 : distinct === 2 ? 1.05 : 1.0;
             let portBonus = 1.0;
             const port = board.nodes[nb] && board.nodes[nb].port;
-            if (port && port.resource && ownedResources.has(port.resource)) {
+            // Only a 2:1 port on a resource self produces is worth the
+            // landing bump. The bridge reads node_to_port and explicitly
+            // excludes the 3:1 generic port (recommender.py 1285-1296);
+            // match that guard here rather than relying on a 3:1 having no
+            // .resource, so a board model that ever stamps a resource on a
+            // generic port can't accidentally inflate the rank.
+            if (port && port.resource && port.kind !== '3:1'
+                    && ownedResources.has(port.resource)) {
                 portBonus = 1.4;
             }
             const rank = raw * diversity * portBonus;
             if (rank > bestRank) {
                 bestRank = rank;
-                best = { prod, total: raw, nodeId: nb };
+                best = { prod, total: raw, nodeId: nb, rank };
             }
         }
     }
@@ -287,6 +294,116 @@ export function _perRoll(prodMap) {
     return s.toFixed(2);
 }
 
+// Single-letter resource labels for the per-resource rationale line.
+// Mirrors recommender.py _RES_LETTER (Sh / Wh disambiguate sheep/wheat).
+const _RES_LETTER = {
+    WOOD: 'W', BRICK: 'B', SHEEP: 'Sh', WHEAT: 'Wh', ORE: 'O',
+};
+
+/** Per-resource /roll breakdown line, biggest resource first. Mirrors
+ *  recommender.py _breakdown_per_roll: '+0.14 Wh +0.08 O +0.08 B /roll'.
+ *  Empty when the node produces nothing. */
+function _breakdownPerRoll(prodMap) {
+    const items = Object.entries(prodMap || {})
+        .map(([r, v]) => [r, Number(v) || 0])
+        .filter(([, v]) => v > 0);
+    if (!items.length) return '';
+    items.sort((a, b) => b[1] - a[1]);
+    const parts = items.map(
+        ([r, v]) => `+${v.toFixed(2)} ${_RES_LETTER[r] || r[0]}`);
+    return parts.join(' ') + ' /roll';
+}
+
+/** Settlement rationale: the per-resource breakdown plus a weak-fill hint
+ *  when the spot's biggest resource is one self barely produces (self
+ *  expected /roll <= 0.05). Mirrors recommender.py _settle_rationale.
+ *  `selfExpected` is the per-resource /roll map across self's buildings. */
+function _settleRationale(prodMap, selfExpected) {
+    let line = _breakdownPerRoll(prodMap);
+    if (!line) return '';
+    if (selfExpected) {
+        let topRes = null;
+        let topVal = -1;
+        for (const [r, v] of Object.entries(prodMap || {})) {
+            if ((Number(v) || 0) > topVal) { topVal = Number(v) || 0; topRes = r; }
+        }
+        if (topRes != null
+                && (Number(selfExpected[topRes]) || 0) <= 0.05) {
+            line += ` · fills ${_RES_LETTER[topRes] || topRes[0]} (weak)`;
+        }
+    }
+    return line;
+}
+
+/** City rationale: a city doubles the existing settle, so the marginal
+ *  add equals the current yield. Framed 'adds +X /roll'. Mirrors
+ *  recommender.py _city_rationale. */
+function _cityRationale(prodMap) {
+    const items = Object.entries(prodMap || {})
+        .map(([r, v]) => [r, Number(v) || 0])
+        .filter(([, v]) => v > 0);
+    if (!items.length) return '';
+    items.sort((a, b) => b[1] - a[1]);
+    const parts = items.map(
+        ([r, v]) => `+${v.toFixed(2)} ${_RES_LETTER[r] || r[0]}`);
+    return 'adds ' + parts.join(' ') + ' /roll';
+}
+
+/** Road rationale: longest-road progression when the +1 road crosses a
+ *  meaningful threshold (qualifies at 5, ties/beats the opp max), else
+ *  the current chain length. Mirrors recommender.py _road_rationale over
+ *  the public roadLength / hasRoad state JS already tracks. */
+function _roadRationale(state) {
+    const color = state.selfColor;
+    const selfLen = (state.roadLength && state.roadLength[color]) || 0;
+    const hasLr = state.hasRoad === color;
+    let oppMax = 0;
+    let oppHolds = false;
+    for (const c of (state.colors || [])) {
+        if (c === color) continue;
+        const ol = (state.roadLength && state.roadLength[c]) || 0;
+        if (ol > oppMax) oppMax = ol;
+        if (state.hasRoad === c) oppHolds = true;
+    }
+    const nextLen = selfLen + 1;
+    if (!hasLr && nextLen >= 5 && nextLen > oppMax) {
+        return oppHolds
+            ? `extends to ${nextLen} → FLIPS LR (+2 VP)`
+            : `extends to ${nextLen} → claims LR (+2 VP)`;
+    }
+    if (!hasLr && nextLen >= 5 && nextLen === oppMax) {
+        return `extends to ${nextLen} · ties LR`;
+    }
+    if (hasLr && nextLen > oppMax + 1) {
+        return `extends to ${nextLen}, pads LR`;
+    }
+    if (selfLen >= 3) {
+        return `extends ${selfLen}-chain to ${nextLen}`;
+    }
+    return '';
+}
+
+/** Per-resource /roll across all of self's buildings (city 2x), the
+ *  weak-fill anchor for settle rationales. Mirrors
+ *  recommender.py _compute_self_expected_per_roll. */
+function _selfExpectedPerRoll(state) {
+    const board = state.map;
+    const out = {};
+    if (!board || !board.nodes) return out;
+    for (const [nid, b] of Object.entries(state.buildings || {})) {
+        if (b.color !== state.selfColor) continue;
+        const node = board.nodes[nid];
+        if (!node) continue;
+        const mult = b.kind === 'CITY' ? 2 : 1;
+        for (const tid of node.tiles) {
+            const t = board.tiles[tid];
+            if (!t || !t.resource || !t.pip) continue;
+            out[t.resource] = (out[t.resource] || 0) + (t.pip / 36) * mult;
+        }
+    }
+    return out;
+}
+
 /** Rank own-settle nodes for city upgrade. Returns up to top-3 recs
  *  sorted desc by score. */
 /** "need 1 sheep 1 ore" prefix for a soon-plan rec detail (text form,
@@ -298,34 +415,59 @@ function _formatMissing(missing) {
     return parts.length ? `need ${parts.join(' ')}` : '';
 }
 
+// Soon-plans surface a blocked build only when it is one-to-two cards
+// away (bridge _PLAN_MAX_MISSING). A 3+ card gap is too speculative to
+// nudge toward, so the bridge emits nothing; the standalone now matches.
+const _PLAN_MAX_MISSING = 2;
+
 function _cityRecs(state, hand, opts) {
     const board = state.map;
-    const out = [];
     const cityBank = (state.bank[state.selfColor] || {}).cities;
-    if (cityBank === 0) return out;
-    for (const nid of _ownNodes(state)) {
-        const b = state.buildings[nid];
-        if (!b || b.kind !== 'SETTLEMENT') continue;
-        const prod = nodeProduction(board, nid);
-        const score = _scoreCity(prod);
-        const tiles = _nodeTiles(board, nid);
-        const can = handCanAfford(hand, COSTS.city);
-        const miss = can ? null : _missing(hand, COSTS.city);
-        out.push({
-            kind: 'city',
-            when: can ? 'now' : 'soon',
-            score,
-            detail: can
-                ? `+${_perRoll(prod)}/roll · +1 VP`
-                : `${_formatMissing(miss)} · +${_perRoll(prod)}/roll · +1 VP`,
-            node_id: nid,
-            tiles,
-            missing: miss,
-            resources: prod,
-        });
+    if (cityBank === 0) return [];
+    const can = handCanAfford(hand, COSTS.city);
+    if (can) {
+        // Now path: every own settlement is a buildable city, ranked by
+        // production, top-3 (recommender.py 1131-1144).
+        const out = [];
+        for (const nid of _ownNodes(state)) {
+            const b = state.buildings[nid];
+            if (!b || b.kind !== 'SETTLEMENT') continue;
+            const prod = nodeProduction(board, nid);
+            out.push({
+                kind: 'city',
+                when: 'now',
+                score: _scoreCity(prod),
+                detail: `+${_perRoll(prod)}/roll · +1 VP`,
+                node_id: nid,
+                tiles: _nodeTiles(board, nid),
+                missing: null,
+                resources: prod,
+                rationale: _cityRationale(prod),
+            });
+        }
+        out.sort((a, b) => b.score - a.score);
+        return out;
     }
-    out.sort((a, b) => b.score - a.score);
-    return out.slice(0, 3);
+    // Soon path: a single "save for X" plan on the best owned settlement,
+    // gated on a 1-to-2 card gap (recommender.py 1521-1537). Three-plus
+    // cards short is not surfaced.
+    const miss = _missing(hand, COSTS.city);
+    const total = Object.values(miss).reduce((s, v) => s + v, 0);
+    if (total <= 0 || total > _PLAN_MAX_MISSING) return [];
+    const best = _bestOwnedSettleSpot(state);
+    if (!best || best.nodeId == null) return [];
+    const prod = best.prodMap;
+    return [{
+        kind: 'city',
+        when: 'soon',
+        score: _scoreCity(prod),
+        detail: `${_formatMissing(miss)} · +${_perRoll(prod)}/roll · +1 VP`,
+        node_id: best.nodeId,
+        tiles: _nodeTiles(board, best.nodeId),
+        missing: miss,
+        resources: prod,
+        rationale: _cityRationale(prod),
+    }];
 }
 
 /** A 2:1-port detail suffix (" · wheat port") when the node carries a
@@ -351,34 +493,56 @@ function _settleRecs(state, hand, opts) {
     const footprints = Object.values(state.buildings || {})
         .filter(b => b.color === state.selfColor).length;
     const settle3 = footprints === 2 ? ' · settle #3' : '';
-    const recs = [];
-    for (const nid of legal) {
-        const prod = nodeProduction(board, nid);
-        const score = _scoreSettlement(prod);
-        const tiles = _nodeTiles(board, nid);
-        const can = handCanAfford(hand, COSTS.settlement);
-        const miss = can ? null : _missing(hand, COSTS.settlement);
-        recs.push({
-            kind: 'settlement',
-            when: can ? 'now' : 'soon',
-            score,
-            detail: can
-                ? `+${_perRoll(prod)}/roll${settle3}`
-                : `${_formatMissing(miss)} · +${_perRoll(prod)}/roll${settle3}`,
-            node_id: nid,
-            tiles,
-            missing: miss,
-            resources: prod,
-            port: board.nodes[nid]?.port || null,
-        });
+    const selfExpected = _selfExpectedPerRoll(state);
+    const can = handCanAfford(hand, COSTS.settlement);
+    if (can) {
+        // Now path: every legal spot, ranked by wheat-weighted production
+        // (recommender.py 1100-1127), top-3.
+        const recs = [];
+        for (const nid of legal) {
+            const prod = nodeProduction(board, nid);
+            recs.push({
+                kind: 'settlement',
+                when: 'now',
+                score: _scoreSettlement(prod),
+                detail: `+${_perRoll(prod)}/roll${settle3}`,
+                node_id: nid,
+                tiles: _nodeTiles(board, nid),
+                missing: null,
+                resources: prod,
+                port: board.nodes[nid]?.port || null,
+                rationale: _settleRationale(prod, selfExpected),
+            });
+        }
+        // Rank by wheat-weighted production, matching recommender.py's
+        // scored.sort(key=-weighted). The displayed score is monotonic in
+        // the weighted prod, but sorting on the weight directly keeps ties
+        // at the clip bounds ordered the way the bridge orders them.
+        recs.sort((a, b) =>
+            _weightedProd(b.resources) - _weightedProd(a.resources));
+        return recs.slice(0, 3);
     }
-    // Rank by wheat-weighted production, matching recommender.py's
-    // scored.sort(key=-weighted). The displayed score is monotonic in
-    // the weighted prod, but sorting on the weight directly keeps ties
-    // at the clip bounds ordered the way the bridge orders them.
-    recs.sort((a, b) =>
-        _weightedProd(b.resources) - _weightedProd(a.resources));
-    return recs.slice(0, 3);
+    // Soon path: a single "save for X" plan on the best legal spot, gated
+    // on a 1-to-2 card gap (recommender.py 1498-1520). Three-plus cards
+    // short is not surfaced.
+    const miss = _missing(hand, COSTS.settlement);
+    const total = Object.values(miss).reduce((s, v) => s + v, 0);
+    if (total <= 0 || total > _PLAN_MAX_MISSING) return [];
+    const best = _bestSettleSpot(state);
+    if (!best || best.nodeId == null) return [];
+    const prod = best.prodMap;
+    return [{
+        kind: 'settlement',
+        when: 'soon',
+        score: _scoreSettlement(prod),
+        detail: `${_formatMissing(miss)} · +${_perRoll(prod)}/roll${settle3}`,
+        node_id: best.nodeId,
+        tiles: _nodeTiles(board, best.nodeId),
+        missing: miss,
+        resources: prod,
+        port: board.nodes[best.nodeId]?.port || null,
+        rationale: _settleRationale(prod, selfExpected),
+    }];
 }
 
 /** Rank legal new road edges. Returns up to top-3 recs. */
@@ -424,10 +588,28 @@ export function _roadRecs(state, hand, opts) {
             resources: landing.prod,
             landing_node_id: landing.nodeId,
             landing_node: landing.nodeId,
+            rationale: _roadRationale(state),
+            _rank: landing.rank,   // diversity-weighted ordering key
+            _rawProd: landing.total,
         });
     }
-    recs.sort((a, b) => b.score - a.score);
+    // Order by the diversity-weighted rank, not the raw-prod score, so a
+    // 3-resource interior corner doesn't lose to a 2-resource same-pip
+    // corner and produce two recs pointing at conflicting directions off
+    // the same settlement (recommender.py 1301: edge_scores.sort by rank).
+    recs.sort((a, b) => b._rank - a._rank);
+    // Landing-target alternates floor (recommender.py 1364-1367): keep the
+    // primary plus alternates whose raw prod clears 30% of the top edge's
+    // raw prod (or any positive prod when the top is itself weak — late
+    // LR-push boards where every road only buys 0.1-0.2 prod).
     let out = recs.slice(0, 3);
+    if (out.length > 1) {
+        const topProd = out[0]._rawProd || 0;
+        const minProd = topProd > 0.5 ? 0.3 * topProd : 0.0;
+        out = [out[0], ...out.slice(1).filter(r => (r._rawProd || 0) > minProd)];
+    }
+    // Drop the internal ordering keys before returning.
+    for (const r of out) { delete r._rank; delete r._rawProd; }
     // Sealed fallback (bridge fallback_candidates[0] path): every corridor
     // is blocked for settling, so no settle-spot rec exists. Emit one
     // degraded "extends network" rec pointing at the best-production far
@@ -456,6 +638,7 @@ export function _roadRecs(state, hand, opts) {
                 resources: best.prod,
                 landing_node_id: best.far,
                 landing_node: best.far,
+                rationale: _roadRationale(state),
                 sealed: true,
             }];
         }
@@ -548,9 +731,12 @@ function _bankTradeRecs(state, hand, opts) {
     const bankSupply = opts && opts.bankSupply;
     const planOpts = bankSupply ? { bankSupply } : {};
     const targets = [
+        // Settlement target scores off the WHEAT-WEIGHTED production of the
+        // best buildable spot, mirroring the bridge's _score_settlement
+        // input (recommender.py 1114,1618). The old JS scored sp.raw
+        // (unweighted), so a wheat-heavy settle target read a touch low.
         ['settlement', COSTS.settlement, () => _bestSettleSpot(state),
-            (sp) => Math.round(
-                _clip(sp.raw * 12.0 + 2.0, 2.0, 10.0) * 10) / 10],
+            (sp) => _scoreSettlement(sp.prodMap)],
         ['city', COSTS.city, () => _bestOwnedSettleSpot(state),
             (sp) => _scoreCity(sp.prodMap)],
         ['dev_card', COSTS.dev_card, null, () => _DEV_CARD_SCORE],
@@ -590,6 +776,14 @@ function _bankTradeRecs(state, hand, opts) {
  *  it's a serious play, opening it's noise. */
 function _devCardRec(state, hand, otherRecs) {
     const can = handCanAfford(hand, COSTS.dev_card);
+    // Soon-plan gate: a blocked dev card is only surfaced when it is
+    // one-to-two cards away (recommender.py 1538-1547, _PLAN_MAX_MISSING).
+    // A 3-card gap is too speculative, so emit nothing.
+    if (!can) {
+        const miss = _missing(hand, COSTS.dev_card);
+        const total = Object.values(miss).reduce((s, v) => s + v, 0);
+        if (total <= 0 || total > _PLAN_MAX_MISSING) return null;
+    }
     // Best non-dev now-rec score, if any. If no settle/road/city
     // is even close, dev card becomes the primary play.
     const nonDevTop = (otherRecs || [])
@@ -640,6 +834,15 @@ function _proposeTradeRecs(state, hand, opts) {
     const anyOppHasCards = (!_opps.length || !state.handTotal)
         ? true
         : _opps.some(c => (state.handTotal[c] || 0) > 0);
+    // Per-resource bank-remaining map (panel.js passes opts.bankSupply =
+    // { remaining: {res:n} }; n is 19 minus all cards inferred in play).
+    // When the bank still holds all 19 of a resource, nobody owns a card,
+    // so the ask is dead on arrival. Mirrors the bridge's bank-19 skip
+    // (recommender.py 1738-1740). Only applied when the inference latched
+    // (bankSupply.tracked); an untracked / missing map leaves the gate off.
+    const bankSupply = opts && opts.bankSupply;
+    const bankRemaining = (bankSupply && bankSupply.tracked
+        && bankSupply.remaining) ? bankSupply.remaining : null;
     const wanted = [
         ['city', COSTS.city, 6.5, 'city'],
         ['settlement', COSTS.settlement, 6.0, 'settlement'],
@@ -659,6 +862,13 @@ function _proposeTradeRecs(state, hand, opts) {
                 Math.min(n, hand[r] || 0));
         }
     }
+    // Surplus held beyond what near-term builds reserve, per resource.
+    // Mirrors the bridge's `surplus` map (hand minus reserved_across).
+    const surplusMap = {};
+    for (const r of RESOURCE_NAMES) {
+        const spare = (hand[r] || 0) - (reservedAcross[r] || 0);
+        if (spare > 0) surplusMap[r] = spare;
+    }
     for (const [target, cost, baseScore, kindWord] of wanted) {
         if (handCanAfford(hand, cost)) continue;
         const need = _missing(hand, cost);
@@ -674,33 +884,59 @@ function _proposeTradeRecs(state, hand, opts) {
         // Gate only when we actually have the board / opp info.
         if (boardResources.size > 0 && !boardResources.has(needRes)) continue;
         if (!anyOppHasCards) continue;
-        // Find a surplus we'd offer. Has to NOT be needed by the
-        // build itself.
-        for (const surplus of RESOURCE_NAMES) {
-            if (surplus === needRes) continue;
-            const have = hand[surplus] || 0;
-            // Only offer a card held beyond what near-term builds reserve
-            // (this build included, via reservedAcross).
-            if (have - (reservedAcross[surplus] || 0) < 1) continue;
-            // Score floor at 1.5 so we don't outrank affordable
-            // builds, but high enough to clearly beat the dev-card
-            // fallback when a real trade unlocks a build.
-            const score = Math.max(1.5,
-                Math.min(8.0, baseScore));
+        // Bank-19 skip: if the bank still holds all 19 of needRes, no
+        // opponent can be holding any, so the proposal can never land.
+        if (bankRemaining && (bankRemaining[needRes] || 0) >= 19) continue;
+        // Candidate variants (give_count, get_count, label, score_adj).
+        // Mirrors recommender.py 1767-1772: 1:1 is the friendly offer,
+        // 2:1 concede is the give-extra offer that gets a yes. The
+        // need_n >= 2 "2:2 even" variant never fires here because the
+        // standalone only proposes when the deficit is exactly 1 card.
+        const variants = [
+            [1, 1, '1:1 fair', 0.0],
+            [2, 1, '2:1 concede', -0.6],
+        ];
+        let emittedForKind = 0;
+        for (const [giveN, getN, label, adj] of variants) {
+            // Pick the surplus with the most spare cards that can cover
+            // this variant's give_n (mirrors the bridge's best_src walk).
+            let bestSrc = null;
+            let bestSpare = 0;
+            for (const [src, spare] of Object.entries(surplusMap)) {
+                if (src === needRes || spare < giveN) continue;
+                if (spare > bestSpare) { bestSrc = src; bestSpare = spare; }
+            }
+            if (bestSrc == null) continue;
+            // Bridge score: round(min(base - 0.3 + adj, 9.5), 1), floored
+            // at 1.5, then clamped to our 1-10 UI band (<=8 so it never
+            // outranks an affordable build).
+            let score = Math.min(baseScore - 0.3 + adj, 9.5);
+            score = Math.max(1.5, Math.min(8.0, score));
+            const giveStr = giveN !== 1
+                ? `${giveN} ${bestSrc.toLowerCase()}`
+                : `1 ${bestSrc.toLowerCase()}`;
+            const getStr = getN !== 1
+                ? `${getN} ${needRes.toLowerCase()}`
+                : `1 ${needRes.toLowerCase()}`;
+            const detail = label === '2:1 concede'
+                ? `offer ${giveStr} for ${getStr} (concede) · unlocks ${kindWord}`
+                : `offer ${giveStr} for ${getStr} · unlocks ${kindWord}`;
             recs.push({
                 kind: 'propose_trade',
                 when: 'now',
                 score: Math.round(score * 10) / 10,
-                give: { [surplus]: 1 },
-                get: { [needRes]: 1 },
+                give: { [bestSrc]: giveN },
+                get: { [needRes]: getN },
                 unlocks: target,
-                variant: '1:1 fair',
-                detail: `offer 1 ${surplus.toLowerCase()} for `
-                    + `1 ${needRes.toLowerCase()} · `
-                    + `unlocks ${kindWord}`,
+                variant: label,
+                detail,
             });
-            break;  // one surplus offer per blocked build
+            emittedForKind += 1;
         }
+        // One build's worth of trade proposals is enough — the next
+        // blocked build still surfaces as a "save for X" plan (bridge
+        // breaks the target loop after the first kind that emits).
+        if (emittedForKind) break;
     }
     return recs.slice(0, 3);
 }
@@ -803,17 +1039,25 @@ export function recommendActions(state, opts = {}) {
     recs.push(..._roadRecs(state, hand, opts));
     recs.push(..._bankTradeRecs(state, hand, opts));
     recs.push(..._proposeTradeRecs(state, hand, opts));
-    recs.push(_devCardRec(state, hand, recs));
+    const devRec = _devCardRec(state, hand, recs);
+    if (devRec) recs.push(devRec);
 
     // Phase + strategy score bumps (third-settle, endgame VP push,
     // per-archetype bias) before de-dupe/sort so they re-order the list.
     _applyPhaseBumps(state, recs);
 
-    // Filter out duplicates by (kind, node_id|edge|target).
+    // Filter out duplicates by (kind, node_id|edge|target). propose_trade
+    // recs carry no node_id/edge, so include `unlocks` + `variant` in their
+    // key — the bridge keeps the 1:1-fair and 2:1-concede variants of the
+    // same build as distinct recs (recommender.py 1767-1828, no variant
+    // dedup), and collapsing them on a bare `propose_trade|` key dropped the
+    // concede offer entirely.
     const seen = new Set();
     const out = [];
     for (const r of recs) {
-        const key = `${r.kind}|${r.node_id || r.edge || r.target_kind || ''}`;
+        const key = r.kind === 'propose_trade'
+            ? `propose_trade|${r.unlocks || ''}|${r.variant || ''}`
+            : `${r.kind}|${r.node_id || r.edge || r.target_kind || ''}`;
         if (seen.has(key)) continue;
         seen.add(key);
         out.push(r);
@@ -834,6 +1078,29 @@ export function recommendActions(state, opts = {}) {
         if (a.when !== b.when) return a.when === 'now' ? -1 : 1;
         return b.score - a.score;
     });
+    // Plan-alignment annotation (recommender.py 2079-2108): when a "soon"
+    // settlement plan is in the list AND a road rec's tiles overlap the
+    // plan's tiles, tag that road's detail with "· supports plan" so Noah
+    // can see which road advances the active plan vs. opens a new corridor.
+    let soonSettleTiles = null;
+    for (const r of filtered) {
+        if (r.kind === 'settlement' && r.when === 'soon') {
+            soonSettleTiles = r.tiles || [];
+            break;
+        }
+    }
+    if (soonSettleTiles && soonSettleTiles.length) {
+        const soonSet = new Set(
+            soonSettleTiles.map(t => `${t[0]}|${t[1]}`));
+        for (const r of filtered) {
+            if (r.kind !== 'road') continue;
+            const rt = r.tiles || [];
+            const overlap = rt.some(t => soonSet.has(`${t[0]}|${t[1]}`));
+            if (overlap && !/supports plan/.test(r.detail || '')) {
+                r.detail = `${r.detail || ''} · supports plan`;
+            }
+        }
+    }
     const topK = opts.topK || 12;
     return filtered.slice(0, topK);
 }
@@ -964,13 +1231,19 @@ export function recommendRobberTargets(state, opts = {}) {
         if (oppAdj.length === 0) continue;
         // Friendly Robber filter: colonist's optional rule protects
         // any player at ≤ 2 VP from being the rob target. When
-        // active, drop opps below the threshold from the victim
+        // active, drop opps at or below the threshold from the victim
         // pool so the panel doesn't suggest moves the game won't
-        // let you make.
+        // let you make. Threshold mirrors the bridge's configurable
+        // friendly_robber_min_vp (config.get_friendly_robber_protected_vp,
+        // default 2): protected = vp <= threshold. Override via
+        // opts.friendlyRobberMinVp for house rules; default keeps the
+        // standard colonist behavior unchanged.
         if (opts.friendlyRobber) {
+            const protectVp = (opts.friendlyRobberMinVp != null)
+                ? opts.friendlyRobberMinVp : 2;
             oppAdj = oppAdj.filter(b => {
                 const vp = state.vp[b.color] || 0;
-                return vp > 2;
+                return vp > protectVp;
             });
             if (oppAdj.length === 0) continue;
         }
@@ -1081,6 +1354,19 @@ export function recommendRobberTargets(state, opts = {}) {
         }
         const score = weighted - pip * selfPieceValue
             + resourceNeedBonus + monopolySetupBonus;
+        // Tiebreak inputs (advisor.score_robber_targets sort key):
+        // opponent_blocked is the raw (unweighted) blocked pips summed
+        // across every victim on the tile; maxVictimHand is the largest
+        // single-victim hand size (best steal EV). Both are derived from
+        // data already gathered in this loop.
+        let opponentBlocked = 0;
+        for (const c of Object.keys(victimPipsByColor)) {
+            opponentBlocked += victimPipsByColor[c];
+        }
+        let maxVictimHand = 0;
+        for (const c of Object.keys(oppByColor)) {
+            maxVictimHand = Math.max(maxVictimHand, state.handTotal[c] || 0);
+        }
         targets.push({
             tile_id: tid,
             number: tile.number,
@@ -1090,12 +1376,23 @@ export function recommendRobberTargets(state, opts = {}) {
             resource_need_bonus: Math.round(resourceNeedBonus * 100) / 100,
             monopoly_setup_bonus: Math.round(monopolySetupBonus * 100) / 100,
             opp_pieces: oppAdj.length,
+            opponent_blocked: opponentBlocked,
+            max_victim_hand: maxVictimHand,
             steal_from_color: bestVictim,
             victim_hand_size: bestVictimCards >= 0 ? bestVictimCards : 0,
             victims,
         });
     }
-    targets.sort((a, b) => b.score - a.score);
+    // Sort: higher score first; tiebreak by largest single-victim hand
+    // size (more cards -> better steal EV), then by raw opponent pips.
+    // Mirrors advisor.score_robber_targets' results.sort key.
+    targets.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.max_victim_hand !== a.max_victim_hand) {
+            return b.max_victim_hand - a.max_victim_hand;
+        }
+        return b.opponent_blocked - a.opponent_blocked;
+    });
     return targets.slice(0, opts.topK || 5);
 }
 

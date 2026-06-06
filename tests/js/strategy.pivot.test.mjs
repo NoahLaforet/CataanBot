@@ -70,3 +70,99 @@ test('seven_overdue fires with a heavy hand and few rolls (no length floor)', ()
   }));
   assert.ok(strat.pivot_triggers.includes('seven_overdue'));
 });
+
+// --- post-placement rationale (live numbers, not a static blurb) ----
+// strategy_select._rationale_for emits real per-roll production for OWS,
+// e.g. "ore 0.39/r + wheat 0.39/r · city + dev engine".
+function mkOWS(over = {}) {
+  return {
+    selfColor: '1', colors: ['1', '2'], vpTarget: 10,
+    vp: { '1': 3, '2': 3 }, handTotal: { '1': 3, '2': 3 },
+    discardLimit: 7, rollHistory: [], playedKnights: {}, devCardsByType: {},
+    roadLength: {}, totalRolls: 12,
+    buildings: {
+      n1: { color: '1', kind: 'CITY' },
+      n2: { color: '1', kind: 'SETTLEMENT' },
+    },
+    map: {
+      nodes: {
+        n1: { tiles: ['t1', 't2', 't3'], neighbors: [], port: null },
+        n2: { tiles: ['t1', 't2', 't4'], neighbors: [], port: null },
+      },
+      tiles: {
+        t1: { resource: 'ORE', number: 8, pip: 5 },
+        t2: { resource: 'WHEAT', number: 6, pip: 5 },
+        t3: { resource: 'ORE', number: 5, pip: 4 },
+        t4: { resource: 'WHEAT', number: 9, pip: 4 },
+      },
+    },
+    ...over,
+  };
+}
+
+test('rationale carries live per-roll numbers, not a static blurb', () => {
+  const strat = computeStrategy(mkOWS());
+  assert.equal(strat.primary, 'OWS');
+  // Matches the bridge format: "ore X.XX/r + wheat X.XX/r · city + dev engine".
+  assert.match(strat.rationale,
+    /^ore \d+\.\d{2}\/r \+ wheat \d+\.\d{2}\/r · city \+ dev engine$/);
+});
+
+test('BALANCED rationale reports the resource count', () => {
+  // Single low-production city: no archetype clears its floor -> BALANCED.
+  const strat = computeStrategy(mk({
+    buildings: { n1: { color: '1', kind: 'CITY' } },
+    map: {
+      nodes: { n1: { tiles: ['t1', 't2'], neighbors: [], port: null } },
+      tiles: {
+        t1: { resource: 'ORE', number: 8, pip: 5 },
+        t2: { resource: 'WHEAT', number: 6, pip: 5 },
+      },
+    },
+  }));
+  assert.equal(strat.primary, 'BALANCED');
+  assert.match(strat.rationale, /^balanced base \(\d\/5 resources\) · /);
+});
+
+// --- stickiness / anti-flicker (1.15x guard) ------------------------
+// strategy_select.select_strategy :604-619 keeps the prior primary unless
+// the new top score beats the prior primary's current score by >= 1.15x.
+test('stickiness keeps prior primary on a small score wobble', () => {
+  const base = mkOWS();
+  const top = computeStrategy(base);  // OWS, some score S
+  const sOWS = top.scores.OWS;
+  // Prior was PORT_TRADE scoring just under OWS (within 1.15x) -> hold it.
+  const strat = computeStrategy({
+    ...base,
+    prevStrategy: { primary: 'PORT_TRADE', scores: { PORT_TRADE: sOWS * 0.95 } },
+  });
+  assert.equal(strat.primary, 'PORT_TRADE');
+  assert.equal(strat.active, 'PORT_TRADE');
+});
+
+test('stickiness flips primary when the new top clears 1.15x', () => {
+  const base = mkOWS();
+  // Prior PORT_TRADE far below the new OWS top -> flip to OWS.
+  const strat = computeStrategy({
+    ...base,
+    prevStrategy: { primary: 'PORT_TRADE', scores: { PORT_TRADE: 0.1 } },
+  });
+  assert.equal(strat.primary, 'OWS');
+});
+
+test('no prevStrategy means the stateless pick (no regression)', () => {
+  const strat = computeStrategy(mkOWS());
+  assert.equal(strat.primary, 'OWS');
+  // set_at_rolls defaults to the current roll count when nothing carries.
+  assert.equal(strat.set_at_rolls, 12);
+});
+
+test('set_at_rolls carries forward while primary is unchanged', () => {
+  const base = mkOWS({ totalRolls: 20 });
+  const strat = computeStrategy({
+    ...base,
+    prevStrategy: { primary: 'OWS', scores: { OWS: 0.9 }, set_at_rolls: 8 },
+  });
+  assert.equal(strat.primary, 'OWS');
+  assert.equal(strat.set_at_rolls, 8);
+});

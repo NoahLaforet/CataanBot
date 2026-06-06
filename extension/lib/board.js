@@ -54,6 +54,28 @@ const COLONIST_PORT_RESOURCE = {
     6: 'ORE',
 };
 
+// Wildcard hex tile types. Mirror of GOLD_TILE_TYPES / FOG_TILE_TYPES
+// in src/catanbot/colonist_map.py. catanatron (and this model) has no
+// "gold" or "fog" resource, so these hexes carry resource:null like a
+// desert; the wildcard value is added separately by the opening scorer
+// off goldNodeIds / fogNodeIds, not off nodeProduction.
+//   * Gold (type 6): pays a resource of your choice when its number
+//     rolls. Nodes touching it get a wildcard yield in scoreOpeningNodes.
+//   * Fog (types 7/8): hidden hex on Gold Rush / Black Forest. A road
+//     landing on a fog corner reveals a free, scarce-biased resource.
+const GOLD_TILE_TYPES = new Set([6]);
+const FOG_TILE_TYPES = new Set([7, 8]);
+
+/** True for a colonist gold hex type. */
+function isGoldTile(typeInt) {
+    return GOLD_TILE_TYPES.has(Number(typeInt) || 0);
+}
+
+/** True for a colonist fog hex type (Gold Rush / Black Forest). */
+function isFogTile(typeInt) {
+    return FOG_TILE_TYPES.has(Number(typeInt) || 0);
+}
+
 // Cube neighbour offsets for the six hex directions.
 const HEX_NEIGHBOURS = [
     [1, -1, 0], [-1, 1, 0],   // EAST, WEST
@@ -182,8 +204,15 @@ export function buildBoardFromColonistMap(mapState) {
             id: tid,
             coord: axialToCube(ax, ay),
             axial: [ax, ay],
+            type: typeInt,
             resource,
             number: resource ? dice : null,
+            // Gold hexes carry a roll number even though resource is
+            // null (they pay a wildcard). Keep it for the gold-yield
+            // valuation; fog hexes have no number until revealed.
+            goldNumber: isGoldTile(typeInt) ? (dice || null) : null,
+            gold: isGoldTile(typeInt),
+            fog: isFogTile(typeInt),
             pip: resource ? (PIP_DOTS_BY_NUMBER[dice] || 0) : 0,
             nodes: [],
             edges: [],
@@ -323,6 +352,38 @@ export function buildBoardFromColonistMap(mapState) {
         }
     }
 
+    // Wildcard hex node sets. Mirror of colonist_map.annotate_gold_nodes
+    // / annotate_fog_nodes: every node touching a gold (type 6) or fog
+    // (type 7/8) hex, keyed off the colonist tile type. The opening
+    // scorer reads these to add a wildcard yield. goldNumber is the gold
+    // hex's roll number (fog hexes are number-less until revealed).
+    // Empty sets on classic maps so callers read them unconditionally.
+    const goldNodeIds = new Set();
+    let goldNumber = null;
+    const fogNodeIds = new Set();
+    for (const t of Object.values(tiles)) {
+        if (t.gold) {
+            for (const nid of t.nodes) goldNodeIds.add(nid);
+            if (t.goldNumber) goldNumber = t.goldNumber;
+        } else if (t.fog) {
+            for (const nid of t.nodes) fogNodeIds.add(nid);
+        }
+    }
+
+    // Restricted opening placement (Gold Rush / fog boards): colonist
+    // marks fog-adjacent corners with restrictedStartingPlacement so the
+    // first two settlements may only land on shown-tile corners. Latch a
+    // board-level flag the opening scorer reads to drop fog-adjacent
+    // nodes from its legal pool. Mirror of colonist_map.py:313-317.
+    // Defaults false on every classic board.
+    let restrictedStartingPlacement = false;
+    for (const c of Object.values(cornerStates)) {
+        if (c && c.restrictedStartingPlacement) {
+            restrictedStartingPlacement = true;
+            break;
+        }
+    }
+
     return {
         tiles,
         nodes,
@@ -331,6 +392,10 @@ export function buildBoardFromColonistMap(mapState) {
         landTiles,
         desertTile,
         ports,
+        goldNodeIds,
+        goldNumber,
+        fogNodeIds,
+        restrictedStartingPlacement,
         // Id-translation maps used by events.js to apply mid-game
         // delta frames that ship corner / edge updates without
         // coords. cornerIdToNodeId: colonist tileCornerStates key
@@ -371,6 +436,10 @@ export {
     PIP_DOTS_BY_NUMBER,
     COLONIST_TILE_RESOURCE,
     COLONIST_PORT_RESOURCE,
+    GOLD_TILE_TYPES,
+    FOG_TILE_TYPES,
     HEX_NEIGHBOURS,
     axialToCube,
+    isGoldTile,
+    isFogTile,
 };

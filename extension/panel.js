@@ -277,6 +277,11 @@
     // Rec list cached at the end of the previous snap tick. The new
     // tick's diff (self placed something) classifies against this.
     let _lastRecs = [];
+    // Strategy snap cached from the previous tick. Threaded back into
+    // computeStrategy as st.prevStrategy so the 1.15x anti-flicker hold
+    // engages (mirror of select_strategy's previous-tag stickiness,
+    // strategy_select.py:604-619). Stateless without it.
+    let _lastStrategySnap = null;
     // Knight-played-this-turn flag (chat-detected). When true, the
     // standalone snap surfaces robber_reason='knight' so the urgent
     // banner fires. Cleared on next turn.
@@ -1080,6 +1085,19 @@
                             : [];
                     } catch (_) {}
                     try {
+                        // Thread the prior tick's strategy snap so the
+                        // 1.15x anti-flicker hold and set_at_rolls carry
+                        // forward (strategy.js reads st.prevStrategy). Only
+                        // the three fields the guard consumes are passed.
+                        if (_lastStrategySnap) {
+                            st.prevStrategy = {
+                                primary: _lastStrategySnap.primary,
+                                scores: _lastStrategySnap.scores,
+                                set_at_rolls: _lastStrategySnap.set_at_rolls,
+                            };
+                        } else {
+                            st.prevStrategy = null;
+                        }
                         strategy = lib.computeStrategy
                             ? lib.computeStrategy(st)
                             : null;
@@ -1290,6 +1308,10 @@
                             && (oppVp + oppDev) >= (vpTarget - 1);
                         // Production rate — same per_roll math as
                         // self, just over the opp's settlements/cities.
+                        // (Surfaced as o.production.per_roll by the
+                        // post-process block ~2050, which the opp-row
+                        // renderer reads; kept as the scalar `prod` here
+                        // for that block and the engine-deficit reader.)
                         let oppPerRoll = 0;
                         if (st.map) {
                             for (const [nid, bb] of Object.entries(
@@ -1302,6 +1324,57 @@
                                     const t = st.map.tiles[tid];
                                     if (!t || !t.resource) continue;
                                     oppPerRoll += (t.pip / 36) * mult;
+                                }
+                            }
+                        }
+                        // Per-opp affordability and one-short pre-warnings.
+                        // Mirrors bridge_economy._affordable_builds /
+                        // _one_short_vp_build over the *definitely-known*
+                        // inferred hand. Conservative: unknowns never count
+                        // toward affordable (could be anything), and a
+                        // one-short flag is marked uncertain when the opp
+                        // holds any unknown card that might already cover it.
+                        // Renderer: panel.js:5020 (can_afford) / 5035
+                        // (one_short).
+                        let canAfford = null;
+                        let oneShort = null;
+                        if (inf) {
+                            const _AFFORD = [
+                                ['city', { WHEAT: 2, ORE: 3 }],
+                                ['settlement', { WOOD: 1, BRICK: 1,
+                                    SHEEP: 1, WHEAT: 1 }],
+                                ['dev', { WHEAT: 1, SHEEP: 1, ORE: 1 }],
+                                ['road', { WOOD: 1, BRICK: 1 }],
+                            ];
+                            canAfford = [];
+                            for (const [name, cost] of _AFFORD) {
+                                if (Object.entries(cost).every(
+                                        ([r, n]) => (inf[r] || 0) >= n)) {
+                                    canAfford.push(name);
+                                }
+                            }
+                            const _alreadyAfford = new Set(canAfford);
+                            for (const [name, cost] of [
+                                ['city', { WHEAT: 2, ORE: 3 }],
+                                ['settlement', { WOOD: 1, BRICK: 1,
+                                    SHEEP: 1, WHEAT: 1 }]]) {
+                                if (_alreadyAfford.has(name)) continue;
+                                let deficit = 0;
+                                let need = null;
+                                for (const [r, n] of Object.entries(cost)) {
+                                    const have = inf[r] || 0;
+                                    if (have < n) {
+                                        deficit += n - have;
+                                        need = r;
+                                    }
+                                }
+                                if (deficit === 1 && need) {
+                                    oneShort = {
+                                        build: name,
+                                        need,
+                                        uncertain: (unknown || 0) >= 1,
+                                    };
+                                    break;
                                 }
                             }
                         }
@@ -1323,17 +1396,102 @@
                             knights_played: st.playedKnights[c] || 0,
                             pieces: oppPieces,
                             ports: oppPorts,
+                            // Scalar per-roll production. The post-process
+                            // block (~2050) reshapes this into the nested
+                            // production.per_roll the opp-row renderer reads.
                             prod: oppPerRoll,
+                            // Per-opp affordability + one-short pre-warnings
+                            // (gap: snapshot-fields). Read by the opp-row
+                            // renderer at panel.js:5426 / 5441. Not touched
+                            // by the post-process block.
+                            can_afford: canAfford,
+                            one_short: oneShort,
                         });
                     }
                 }
-                const lastRoll = st && st.rollHistory.length
+                let lastRoll = st && st.rollHistory.length
                     ? st.rollHistory[st.rollHistory.length - 1] : null;
+                // Enrich the last roll with per-color yield: what the dice
+                // actually delivered (and what the robber blocked) for self,
+                // plus a who-also-gained sub-line for opps. Mirrors the
+                // bridge's _compute_roll_yield / opponent_yields enrichment
+                // (bridge.py:1840-1878, bridge_economy.py:578-629). Pure
+                // public board math over st.buildings / st.map / robberTile,
+                // so no catanatron forward-search is needed. Builds an
+                // enriched COPY so the shared rollHistory entry stays clean.
+                if (lastRoll && lastRoll.total && lastRoll.total !== 7
+                        && st && st.map) {
+                    // Yield for one color on the given roll number: walk
+                    // every tile with that number, tally each self/opp
+                    // building's resource (city ×2) into gained, or blocked
+                    // when the robber sits on the tile.
+                    const _rollYield = (forColor, number) => {
+                        const gained = {};
+                        const blocked = {};
+                        let touched = 0;
+                        for (const [nid, bb] of Object.entries(
+                                st.buildings)) {
+                            if (bb.color !== forColor) continue;
+                            const node = st.map.nodes[nid];
+                            if (!node) continue;
+                            const mult = bb.kind === 'CITY' ? 2 : 1;
+                            for (const tid of node.tiles) {
+                                const t = st.map.tiles[tid];
+                                if (!t || !t.resource
+                                        || t.number !== number) continue;
+                                const onRobber = (t.id === st.robberTile
+                                    || tid === st.robberTile);
+                                const bucket = onRobber ? blocked : gained;
+                                bucket[t.resource] =
+                                    (bucket[t.resource] || 0) + mult;
+                                touched += 1;
+                            }
+                        }
+                        if (touched === 0) {
+                            return { gained: {}, blocked: {},
+                                total: 0, blocked_total: 0 };
+                        }
+                        const sum = (m) => Object.values(m)
+                            .reduce((s, v) => s + v, 0);
+                        return {
+                            gained, blocked,
+                            total: sum(gained),
+                            blocked_total: sum(blocked),
+                        };
+                    };
+                    const enriched = { ...lastRoll };
+                    enriched.yield = _rollYield(
+                        st.selfColor, lastRoll.total);
+                    const oppYields = [];
+                    for (const c of st.colors) {
+                        if (c === st.selfColor) continue;
+                        const oy = _rollYield(c, lastRoll.total);
+                        if (oy.total === 0 && oy.blocked_total === 0) {
+                            continue;
+                        }
+                        oppYields.push({
+                            color: _colorName(c),
+                            username: _bestUsernameFor(c) || null,
+                            gained_total: oy.total,
+                            blocked_total: oy.blocked_total,
+                        });
+                    }
+                    enriched.opponent_yields = oppYields;
+                    lastRoll = enriched;
+                }
                 // Dev-card top-level fields the hint block reader uses.
                 // Self-only typed counts are authoritative; VP and
                 // playable break down from the typed counts.
                 let devHeld = 0, devVpHeld = 0, devNonVp = 0;
                 let devPlayable = 0;
+                // Cards bought this turn that can't be played yet. Prefer
+                // the WS-authoritative typed list (events.js sets
+                // state.selfDevBoughtThisTurn from colonist's
+                // developmentCardsBoughtThisTurn, cleared on turn flip);
+                // fall back to the chat-derived _selfDevsJustBought counter
+                // when the WS field hasn't been seen. Mirrors the bridge's
+                // self_dev_bought_this_turn handling.
+                let devJustBought = _selfDevsJustBought;
                 if (st && st.selfColor) {
                     const dev = st.devCardsByType[st.selfColor]
                         || lib.newDevCardCounts();
@@ -1352,8 +1510,12 @@
                         && _standalone.currentTurnPlayerColor
                             === _selfDevsBoughtAtTurn;
                     if (!stillThisTurn) _selfDevsJustBought = 0;
-                    devPlayable = Math.max(0,
-                        devNonVp - _selfDevsJustBought);
+                    if (Array.isArray(st.selfDevBoughtThisTurn)) {
+                        devJustBought = st.selfDevBoughtThisTurn.length;
+                    } else {
+                        devJustBought = _selfDevsJustBought;
+                    }
+                    devPlayable = Math.max(0, devNonVp - devJustBought);
                 }
                 // Bank supply (per-resource cards left in the deck).
                 // Mirrors bridge_economy._compute_bank_supply. Each
@@ -1363,7 +1525,28 @@
                 // tracked=false when any opp has unknowns so the
                 // renderer can de-emphasise.
                 let bankSupply = null;
-                if (st && st.selfColor) {
+                if (st && st.resourceBank
+                        && typeof st.resourceBank === 'object'
+                        && Object.keys(st.resourceBank).length) {
+                    // Authoritative path: events.js sets state.resourceBank
+                    // from colonist's bankState (WS ground truth), mirroring
+                    // the bridge's BankSyncEvent overwrite. Prefer it over
+                    // the 19 - sum(self + chat-inferred opp) approximation,
+                    // which drifts on hidden steals. tracked=true since this
+                    // is WS-authoritative, not inferred.
+                    const remaining = {
+                        WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0,
+                    };
+                    for (const r of Object.keys(remaining)) {
+                        remaining[r] = Math.max(0,
+                            st.resourceBank[r] || 0);
+                    }
+                    const low = Object.entries(remaining)
+                        .filter(([, n]) => n <= 2)
+                        .sort((a, b) => a[1] - b[1])
+                        .map(([resource, count]) => ({ resource, count }));
+                    bankSupply = { remaining, low, tracked: true };
+                } else if (st && st.selfColor) {
                     const totals = {
                         WOOD: 0, BRICK: 0, SHEEP: 0, WHEAT: 0, ORE: 0,
                     };
@@ -2146,6 +2329,9 @@
                 // rank of any newly-placed self build against the
                 // recs that existed BEFORE the build landed.
                 _lastRecs = outRecs.slice();
+                // Cache this tick's strategy so the next call can thread
+                // it in as prevStrategy for the anti-flicker hold.
+                _lastStrategySnap = strategy || null;
                 return {
                     seq: -2,
                     _source: 'standalone',
@@ -2161,11 +2347,141 @@
                     yop_hint: yopH,
                     rb_hint: rbH,
                     strategy,
+                    strategic_options: (() => {
+                        // Longer-horizon / riskier VP-swing plays the flat
+                        // rec list misses: LR push, LA push/defend/snipe,
+                        // dev-card dive. Port of bridge_hints.
+                        // _compute_strategic_options (bridge_hints.py:
+                        // 1328-1530). Every input is public JS state
+                        // (roadLength, hasRoad, playedKnights, KNIGHT in
+                        // hand, hasArmy, vp, self hand) with no forward
+                        // search.
+                        // Renderer: panel.js:4578.
+                        if (inOpeningPhase) return null;
+                        if (!st || !selfBlock || !st.selfColor) return null;
+                        const self = st.selfColor;
+                        // Stay quiet until self has placed a 2nd settlement
+                        // (mirror of the bridge's SETTLEMENTS_AVAILABLE>=4
+                        // setup gate). selfBlock.vp_breakdown.settle+city is
+                        // the placed-building count.
+                        const vb = selfBlock.vp_breakdown || {};
+                        const placedBuildings = (vb.settle || 0)
+                            + (vb.city || 0);
+                        if (placedBuildings < 2) return null;
+                        const hand = selfBlock.hand || {};
+                        const opts = [];
+                        // ---- Longest road push ----
+                        const selfLen = st.roadLength[self] || 0;
+                        const selfHasLr = st.hasRoad === self;
+                        let oppLrMax = 0;
+                        let oppLrHolder = false;
+                        for (const c of st.colors) {
+                            if (c === self) continue;
+                            const ol = st.roadLength[c] || 0;
+                            if (ol > oppLrMax) oppLrMax = ol;
+                            if (st.hasRoad === c) oppLrHolder = true;
+                        }
+                        if (selfLen >= 3 && !selfHasLr) {
+                            const targetLen = Math.max(5, oppLrMax + 1);
+                            const roadsNeeded = targetLen - selfLen;
+                            const myVp = st.vp[self] || 0;
+                            let anyOppClose = false;
+                            for (const c of st.colors) {
+                                if (c === self) continue;
+                                if ((st.vp[c] || 0) >= 8) anyOppClose = true;
+                            }
+                            const commitPhase = myVp >= 7 || anyOppClose;
+                            const eligible = commitPhase
+                                ? (roadsNeeded >= 1 && roadsNeeded <= 2)
+                                : (roadsNeeded === 1);
+                            if (eligible) {
+                                const verb = commitPhase
+                                    ? 'commit · rush'
+                                    : 'setup · ready to grab';
+                                opts.push({
+                                    kind: 'longest_road_push',
+                                    label: 'LR push',
+                                    phase: commitPhase ? 'commit' : 'setup',
+                                    detail: `${verb} +${roadsNeeded} road`
+                                        + (roadsNeeded > 1 ? 's' : '')
+                                        + (oppLrHolder ? ' · denies opp' : ''),
+                                    vp_swing: oppLrHolder ? 4 : 2,
+                                    pieces: roadsNeeded,
+                                });
+                            }
+                        }
+                        // ---- Largest army push / defend / snipe ----
+                        const selfDev = st.devCardsByType[self]
+                            || lib.newDevCardCounts();
+                        const knightsPlayed = st.playedKnights[self] || 0;
+                        const knightsHeld = selfDev.KNIGHT || 0;
+                        const selfHasLa = st.hasArmy === self;
+                        let oppKnightsMax = 0;
+                        let oppLaHolder = false;
+                        let oppAtTwoPlus = false;
+                        for (const c of st.colors) {
+                            if (c === self) continue;
+                            const ok = st.playedKnights[c] || 0;
+                            if (ok > oppKnightsMax) oppKnightsMax = ok;
+                            if (st.hasArmy === c) oppLaHolder = true;
+                            if (ok >= 2) oppAtTwoPlus = true;
+                        }
+                        const laThreshold = Math.max(3, oppKnightsMax + 1);
+                        const neededPlays = Math.max(
+                            0, laThreshold - knightsPlayed);
+                        if (selfHasLa && oppAtTwoPlus) {
+                            opts.push({
+                                kind: 'la_defend',
+                                label: 'LA defend',
+                                detail: 'buy dev cards · opp at 2+ knights '
+                                    + 'threatens your LA',
+                                vp_swing: 2,
+                                pieces: 0,
+                            });
+                        }
+                        if (!selfHasLa && knightsHeld >= 1
+                                && knightsPlayed + knightsHeld >= laThreshold
+                                && neededPlays > 0) {
+                            const snipe = (oppKnightsMax + 1 >= 3
+                                && !oppLaHolder
+                                && oppKnightsMax === laThreshold - 1);
+                            const plural = neededPlays > 1 ? 's' : '';
+                            opts.push({
+                                kind: 'largest_army_push',
+                                label: snipe ? 'LA snipe' : 'LA push',
+                                detail: snipe
+                                    ? `opp 1 from LA · play ${neededPlays} `
+                                        + `knight${plural} to snipe`
+                                    : `play ${neededPlays} knight${plural}`
+                                        + (oppLaHolder ? ' · denies opp' : ''),
+                                vp_swing: oppLaHolder ? 4 : 2,
+                                pieces: neededPlays,
+                                snipe,
+                            });
+                        }
+                        // ---- Dev-card dive ----
+                        const bundles = Math.min(
+                            hand.ORE || 0, hand.WHEAT || 0, hand.SHEEP || 0);
+                        if (bundles >= 3) {
+                            opts.push({
+                                kind: 'dev_card_dive',
+                                label: 'dev-card dive',
+                                detail: `buy ${Math.min(bundles, 4)} dev `
+                                    + '· hidden VP',
+                                vp_swing: 1,
+                                pieces: 0,
+                            });
+                        }
+                        if (!opts.length) return null;
+                        opts.sort((a, b) => (b.vp_swing - a.vp_swing)
+                            || (a.pieces - b.pieces));
+                        return opts;
+                    })(),
                     dev_cards_held: devHeld,
                     dev_cards_vp_held: devVpHeld,
                     dev_cards_non_vp_held: devNonVp,
                     dev_cards_playable: devPlayable,
-                    dev_cards_just_bought: _selfDevsJustBought,
+                    dev_cards_just_bought: devJustBought,
                     dev_cards_type_known: true,
                     // Move-quality history. Each entry has label
                     // (!! / ! / ?! / ? / ??) + rank (1-N or null) +
@@ -2299,12 +2615,75 @@
                         return null;
                     })(),
                     last_roll: lastRoll,
+                    yield_summary: (() => {
+                        // Actual vs expected cards across the non-7 roll
+                        // window. Mirrors bridge.py:1879-1904: got = sum of
+                        // self yields, expected = per_roll × non-7 rolls,
+                        // blocked = sum of robber-blocked self cards. The
+                        // bridge sums per-entry gained/blocked stamped at
+                        // roll time; the standalone has no roll-time hand
+                        // history, so it recomputes each historical roll's
+                        // yield against self's CURRENT buildings. That is an
+                        // approximation (earlier rolls predate later builds)
+                        // but it's the same public-info substitute the
+                        // production_stall block already uses, and it gives
+                        // the "am I being starved?" read the renderer wants
+                        // (panel.js:5233). Gated on per_roll>0 like the
+                        // bridge so it stays silent pre-settlement.
+                        if (!st || !st.map || !selfBlock) return null;
+                        const perRoll = selfBlock.production
+                            && selfBlock.production.per_roll || 0;
+                        if (perRoll <= 0) return null;
+                        const hist = st.rollHistory || [];
+                        const non7 = hist.filter(r => r.total !== 7);
+                        if (!non7.length) return null;
+                        // Self self-tile yield per roll number, computed
+                        // once. selfGain[number] = cards gained, selfBlk =
+                        // cards the robber blocked on that number.
+                        const selfGain = {};
+                        const selfBlk = {};
+                        for (const [nid, b] of Object.entries(
+                                st.buildings)) {
+                            if (b.color !== st.selfColor) continue;
+                            const node = st.map.nodes[nid];
+                            if (!node) continue;
+                            const mult = b.kind === 'CITY' ? 2 : 1;
+                            for (const tid of node.tiles) {
+                                const t = st.map.tiles[tid];
+                                if (!t || !t.resource || !t.number) continue;
+                                const onRobber = (t.id === st.robberTile
+                                    || tid === st.robberTile);
+                                const tgt = onRobber ? selfBlk : selfGain;
+                                tgt[t.number] = (tgt[t.number] || 0) + mult;
+                            }
+                        }
+                        let got = 0;
+                        let blocked = 0;
+                        for (const r of non7) {
+                            got += selfGain[r.total] || 0;
+                            blocked += selfBlk[r.total] || 0;
+                        }
+                        return {
+                            window: non7.length,
+                            got,
+                            blocked,
+                            expected: Math.round(
+                                perRoll * non7.length * 10) / 10,
+                        };
+                    })(),
                     roll_history: st ? st.rollHistory.slice() : [],
                     total_rolls: st ? st.totalRolls : 0,
                     roll_histogram: st
                         ? { ...st.rollHistogram } : null,
                     vp_target: st ? st.vpTarget : 10,
                     discard_limit: st ? st.discardLimit : 7,
+                    // 5-6 player lobby guard. events.js sets
+                    // state.playersUnsupported (gap-65) when the seat count
+                    // exceeds the 4-player model the heuristics assume; the
+                    // renderer surfaces a 'limited tracking' warning so a
+                    // 5-6 player game doesn't silently show full-confidence
+                    // recs (mirror of the bridge's too_many_players guard).
+                    players_unsupported: !!(st && st.playersUnsupported),
                     game_over: gameOverObj,
                     current_turn_color: st && st.currentTurn != null
                         ? _colorName(st.currentTurn) : null,
@@ -4324,6 +4703,19 @@
                 + escapeHtml(go.message)
                 + '</div>');
         }
+        // Limited-tracking warning. 5-6 player lobbies exceed the
+        // 4-player model every heuristic assumes, so recs run against a
+        // partial board read. Surface it up top (above strategy) so Noah
+        // mentally discounts the recs instead of trusting them at full
+        // confidence. Driven by snap.players_unsupported (events.js sets
+        // state.playersUnsupported, gap-65). Hidden once the game ends.
+        if (snap.players_unsupported
+                && !(snap.game_over && snap.game_over.message)) {
+            parts.push('<div class="limited-tracking">'
+                + '<span class="b-ico">⚠️</span> '
+                + 'limited tracking · 5+ players, recs may be incomplete'
+                + '</div>');
+        }
         // Strategy banner — top of the HUD so it frames every other
         // section (opening picks, recs, threat, etc.). Renders during
         // setup AND mid-game; the backend ships board-affinity scores
@@ -4467,6 +4859,17 @@
                     + `<span class="tiles">${loc}</span> `
                     + `<span class="detail">${escapeHtml(r.detail || '')}`
                     + `</span>${fbHtml}</div>`);
+                // Rationale sub-line. Settle/city recs now carry a
+                // per-resource /roll breakdown and road recs an
+                // LR-progression note (recommender.js). The bridge HUD
+                // shows it as a dim sub-line under the detail; render the
+                // same here so standalone reaches parity. Skipped when the
+                // rec has no rationale (trades / discards / dev cards).
+                if (r.rationale) {
+                    parts.push('<div class="rec-rationale">'
+                        + escapeHtml(r.rationale)
+                        + '</div>');
+                }
                 // Opening-settlement picks include a nested road hint:
                 // "your follow-up road sits between these tiles." The
                 // tile chips are the disambiguator — compass direction

@@ -49,6 +49,16 @@ import { knightHint, monopolyHint, yopHint, rbHint } from './hints.js';
  *  fields it consumes. Returns null when the board isn't built
  *  yet (still in setup), so the panel can skip rendering until
  *  the first GameStart frame lands.
+ *
+ *  NOTE: this is a STALE/UNUSED stub. The live standalone snapshot
+ *  builder is inline in panel.js (the _standalone snap function,
+ *  panel.js ~2090). That builder is the source of truth and emits the
+ *  full renderer shape (self/opps blocks with production.per_roll,
+ *  can_afford, one_short, strategic_options, yield_summary, last_roll
+ *  yields, bank_supply, strategy, etc.). This stub only mirrors a
+ *  subset and leaves self/opps empty, so DO NOT wire it into the panel
+ *  without first porting those fields from the live builder. Kept as a
+ *  narrow import-surface example only.
  */
 export function buildStandaloneSnap({ state, hand, opts } = {}) {
     if (!state || !state.selfColor) return null;
