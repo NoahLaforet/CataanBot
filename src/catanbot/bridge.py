@@ -1427,6 +1427,66 @@ def _record_self_build_quality(st, ev) -> None:
 
 
 
+# Number of ways to roll each total with two dice (index = total - 2).
+_DICE_WAYS = (1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1)
+
+
+def _dice_expected_curve(
+    hist: dict[int, int], total_rolls: int
+) -> dict[int, dict[str, float]]:
+    """Per-total observed vs fair-dice expected counts, plus a luck
+    deviation. Expected = total_rolls * ways/36 (exact, no smoothing
+    needed); luck = observed - expected so the HUD can shade a number
+    that has over- or under-rolled relative to its odds."""
+    out: dict[int, dict[str, float]] = {}
+    for n in range(2, 13):
+        p = _DICE_WAYS[n - 2] / 36.0
+        expected = total_rolls * p
+        observed = int(hist.get(n, 0))
+        out[n] = {
+            "observed": observed,
+            "expected": round(expected, 2),
+            "luck": round(observed - expected, 2),
+            "p": round(p, 4),
+        }
+    return out
+
+
+def _steal_matrix_rows(
+    game, display_colors: dict[str, str] | None
+) -> list[dict[str, Any]]:
+    """Who-robbed-whom tally from the opponent model, as display rows
+    (thief/victim color + colonist css + username + count), busiest
+    first. Empty until the first steal lands."""
+    model = getattr(game, "opp_model", None)
+    if model is None or not getattr(model, "steal_matrix", None):
+        return []
+    sess = getattr(game, "session", None)
+    display = display_colors or {}
+    color_to_user: dict[str, str] = {}
+    if sess is not None:
+        for _cid, _user in (sess.player_names or {}).items():
+            try:
+                color_to_user[game.color_map.get(_user)] = _user
+            except Exception:  # noqa: BLE001
+                continue
+    rows: list[dict[str, Any]] = []
+    for (thief, victim), count in model.steal_matrix.items():
+        tu = color_to_user.get(thief)
+        vu = color_to_user.get(victim)
+        rows.append({
+            "thief": thief,
+            "victim": victim,
+            "thief_user": tu,
+            "victim_user": vu,
+            "thief_css": display.get(tu) if tu else None,
+            "victim_css": display.get(vu) if vu else None,
+            "count": int(count),
+        })
+    rows.sort(key=lambda r: -r["count"])
+    return rows
+
+
 def _build_advisor_snapshot(st) -> dict[str, Any]:
     """JSON payload for the userscript overlay.
 
@@ -1505,6 +1565,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "roll_history": list(st.get("roll_history") or []),
         "total_rolls": _roll_total,
         "roll_histogram": _roll_hist,
+        # Fair-dice expected counts + luck deviation per total, for the
+        # HUD to overlay an expected curve on the histogram bars.
+        "dice_expected": _dice_expected_curve(_roll_hist, _roll_total),
+        # Who-robbed-whom tally (busiest first) for a steal-matrix panel.
+        "steal_matrix": _steal_matrix_rows(game, st.get("display_colors")),
         # Per-roll eval samples. Userscript renders as a sparkline; last
         # entry is "current eval." Empty list before self latches.
         "eval_history": list(st.get("eval_history") or []),
@@ -2215,6 +2280,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 # the trade supply guard reasons about what an opponent is
                 # actually known to hold vs what is merely uncertain. Reads
                 # only when the model is in sync; tracker is the fallback.
+                # color_map.get returns the catanatron color *name* string
+                # ("RED"), which is exactly what recommend_actions keys
+                # opp_hands by. (A long-standing ".name" on this string
+                # silently raised and left opp_hands empty, disabling the
+                # supply guard entirely; keying by the string fixes it.)
                 _opp_model = getattr(game, "opp_model", None)
                 if _opp_model is not None:
                     try:
@@ -2225,7 +2295,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                             _ou = sess.player_names.get(_ocid)
                             if not _ou:
                                 continue
-                            _tb[game.color_map.get(_ou).name] = int(_ocnt)
+                            _tb[game.color_map.get(_ou)] = int(_ocnt)
                         _opp_model.reconcile(_tb)
                     except Exception:  # noqa: BLE001
                         _opp_model = None
@@ -2237,22 +2307,22 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                         if not _ouser:
                             continue
                         _ce = game.color_map.get(_ouser)
-                        if _ce is None:
+                        if not _ce:
                             continue
                         if (_opp_model is not None
                                 and _opp_model.is_synced()
-                                and _opp_model.hand_total(_ce.name)
+                                and _opp_model.hand_total(_ce)
                                 == int(sess.hand_card_counts[_ocid])):
-                            _bel = _opp_model.beliefs(_ce.name)
+                            _bel = _opp_model.beliefs(_ce)
                             _floor = {r: _bel[r].minimum for r in _bel}
                             _unknown = max(
                                 0,
                                 int(sess.hand_card_counts[_ocid])
                                 - sum(_floor.values()))
                             _floor["unknown"] = _unknown
-                            opp_hands_for_recs[_ce.name] = _floor
+                            opp_hands_for_recs[_ce] = _floor
                         else:
-                            opp_hands_for_recs[_ce.name] = {
+                            opp_hands_for_recs[_ce] = {
                                 r: int(n) for r, n
                                 in dict(game.tracker.hand(_ce)).items()}
                 except Exception:  # noqa: BLE001
@@ -2425,6 +2495,15 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         # only picks the top-VP opp, so a secondary opp with a dev
         # stash would otherwise be invisible on the HUD.
         dev_stash_risk = _is_dev_stash_risk(opp_vp, opp_dev_cards)
+        # Hidden-VP suspicion as a probability, not just a flag. Held dev
+        # cards are unplayed (played cards leave the hand), and aggressive
+        # cards tend to get played out, so a card still sitting in hand
+        # skews toward a victory-point card. P(at least one held card is a
+        # VP) = 1 - (1 - q)^held, with q a held-card VP rate a touch above
+        # the deck's 5/25. Rises with the stash; feeds the HUD threat read.
+        dev_vp_suspicion = (
+            round(1.0 - (0.72 ** opp_dev_cards), 3)
+            if opp_dev_cards > 0 else 0.0)
         snap["opps"].append({
             "username": user,
             # True when this slot's username is a synthetic
@@ -2458,6 +2537,8 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             # opp's dev stash could realistically be hiding VPs that
             # put them within 1 of the game-ending VP total.
             "dev_stash_risk": dev_stash_risk,
+            # Probability (0..1) the dev stash hides at least one VP card.
+            "dev_vp_suspicion": dev_vp_suspicion,
             "pieces": _pieces_for_color(game, c),
             "knights_played": _knights_played(game, c),
             # Public per-type dev cards this opp has PLAYED (revealed once
