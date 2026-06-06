@@ -310,15 +310,63 @@ def test_steal_expectation_tracks_composition():
 def test_reseed_recovers_from_total_desync():
     m, cm = make({"Me": ME, "Bob": BOB}, self_user="Me")
     m.apply(ProduceEvent(player="Bob", resources={"WOOD": 1}), cm)
-    # Simulate a long missed stretch: colonist now says Bob holds 6 cards.
-    # Two reconciles with no matching particle force a fresh, consistent
-    # best-guess hand rather than a stuck wrong breakdown.
+    # Simulate a long missed stretch: colonist keeps saying Bob holds 6
+    # cards while our narrative only accounts for a couple. Each poll
+    # brings fresh (still-insufficient) evidence; after the mismatch
+    # persists across polls the model reseeds to a consistent best guess
+    # rather than staying stuck on a wrong breakdown.
     m.reconcile({BOB: 6})
+    m.apply(ProduceEvent(player="Bob", resources={"WOOD": 1}), cm)
     m.reconcile({BOB: 6})
     assert m.hand_total(BOB) == 6
     assert sum(m.expected_hand(BOB).values()) == pytest.approx(6.0, abs=1e-6)
     for r in RESOURCES:
         assert m.expected_hand(BOB)[r] >= 0.0
+
+
+def test_reconcile_is_idempotent_without_new_events():
+    """Reconciling repeatedly with the same totals and no new evidence
+    must not drift the state (it would otherwise advance the desync
+    streak and reseed), so building the snapshot twice is stable."""
+    m, cm = make({"Me": ME, "Bob": BOB, "Cara": CARA}, self_user="Me")
+    m.apply(ProduceEvent(player="Bob", resources={"WOOD": 1, "BRICK": 1}), cm)
+    m.apply(StealEvent(thief="Cara", victim="Bob", resource=None), cm)
+    m.reconcile({BOB: 1, CARA: 1})
+    snap1 = {r: m.beliefs(BOB)[r].expected for r in RESOURCES}
+    for _ in range(5):
+        m.reconcile({BOB: 1, CARA: 1})
+    snap2 = {r: m.beliefs(BOB)[r].expected for r in RESOURCES}
+    assert snap1 == snap2
+
+
+def test_under_count_pads_gap_as_unknown():
+    """When colonist shows more cards than we have tracked (a missed log
+    line), the known cards stay a hard floor and the gap becomes unknown
+    mass spread by prior - anchored to the real total, never fabricated."""
+    m, cm = make({"Me": ME, "Bob": BOB}, self_user="Me")
+    m.apply(ProduceEvent(player="Bob", resources={"WOOD": 2}), cm)
+    m.reconcile({BOB: 5})
+    assert m.is_synced()
+    b = m.beliefs(BOB)
+    assert b["WOOD"].minimum == 2                 # guaranteed floor kept
+    assert sum(b[r].minimum for r in RESOURCES) == 2
+    # Expected hand stays anchored to colonist's authoritative total.
+    assert sum(m.expected_hand(BOB).values()) == pytest.approx(5.0, abs=1e-6)
+    # The 3 untyped cards give every resource some chance, none certain.
+    assert b["ORE"].p_at_least_one > 0.0
+    assert not b["ORE"].certain
+
+
+def test_over_count_trims_to_authoritative_total():
+    """When we have tracked more cards than colonist shows (a missed
+    spend or 7-discard), the model trims down to the real total instead
+    of asserting cards the opponent no longer holds."""
+    m, cm = make({"Me": ME, "Bob": BOB}, self_user="Me")
+    m.apply(ProduceEvent(player="Bob", resources={"WOOD": 3, "ORE": 2}), cm)
+    m.reconcile({BOB: 2})
+    assert m.hand_total(BOB) == 2
+    assert sum(m.beliefs(BOB)[r].minimum for r in RESOURCES) <= 2
+    assert sum(m.expected_hand(BOB).values()) == pytest.approx(2.0, abs=1e-6)
 
 
 def test_deck_cap_never_exceeds_nineteen():

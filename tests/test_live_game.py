@@ -782,6 +782,9 @@ def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
             game.feed(payload)
     assert game.started
     assert game.session.self_color_id is not None
+    # This exercises the tracker fallback trim path; disable the
+    # probabilistic model so it doesn't override the forced tracker hand.
+    game.opp_model = None
 
     # Pick an opponent — any non-self cid with a username + color.
     sess = game.session
@@ -3443,6 +3446,9 @@ def test_snapshot_populates_can_afford_on_opps():
         "display_colors": {},
         "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
     }
+    # Exercises the tracker fallback path; disable the probabilistic model
+    # so it doesn't override the forced tracker hand later in the test.
+    game.opp_model = None
     snap = _build_advisor_snapshot(st)
     assert snap["opps"], "capture should include at least one opp"
     for opp in snap["opps"]:

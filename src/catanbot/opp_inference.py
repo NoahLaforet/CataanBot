@@ -156,6 +156,11 @@ class OppHandModel:
             _Particle({c: _zero_hand() for c in self.opp_colors}, 1.0)
         ]
         self.totals: dict[str, int] = {}      # last authoritative sizes
+        # Per-opponent count of cards we cannot pin to a type: the gap
+        # between the known floor and colonist's authoritative hand size
+        # (missed log lines, hidden steals not yet resolved). Spread by
+        # prior in the beliefs so the read stays anchored to the real total.
+        self.unknown: dict[str, int] = {}
         self._desync_streak = 0
         self.drift = 0                          # impossible-event counter
         # Narrative events folded in so far. Zero means the model has only
@@ -166,6 +171,11 @@ class OppHandModel:
         # matched every opponent's authoritative count, i.e. the particle
         # set is genuinely consistent rather than reseeded or mid-desync.
         self._last_match = False
+        # Set whenever new evidence arrives; cleared by reconcile. Lets
+        # reconcile be a no-op when called repeatedly with no new events
+        # and the same totals, so building the snapshot twice is stable
+        # (and the desync streak only advances on real new information).
+        self._dirty = True
         # Part 3 analytics fed off the same stream.
         self.steal_matrix: dict[tuple[str, str], int] = {}
 
@@ -179,10 +189,16 @@ class OppHandModel:
             self._rebuild_opp_dims()
         if color.upper() != self.self_color:
             return
-        self.self_hand = {r: int(cards.get(r, 0)) for r in RESOURCES}
+        new_hand = {r: int(cards.get(r, 0)) for r in RESOURCES}
+        if new_hand != self.self_hand:
+            self.self_hand = new_hand
+            self._dirty = True
 
     def set_bank(self, resources: dict[str, int]) -> None:
-        self.bank = {r: int(resources.get(r, 0)) for r in RESOURCES}
+        new_bank = {r: int(resources.get(r, 0)) for r in RESOURCES}
+        if new_bank != self.bank:
+            self.bank = new_bank
+            self._dirty = True
 
     def apply(self, event: Event, color_map: Any) -> None:
         """Fold one public-log event into every particle.
@@ -197,6 +213,7 @@ class OppHandModel:
              DiscardEvent, MonopolyStealEvent, StealEvent, TradeCommitEvent),
         ):
             self.events_applied += 1
+            self._dirty = True
         if isinstance(event, ProduceEvent):
             self._produce(self._color(color_map, event.player), event.resources)
         elif isinstance(event, BuildEvent):
@@ -353,43 +370,69 @@ class OppHandModel:
         if every hypothesis dies."""
         if bank is not None:
             self.set_bank(bank)
-        if totals is not None:
-            self.totals = {c.upper(): int(n) for c, n in totals.items()}
+        new_totals = (
+            {c.upper(): int(n) for c, n in totals.items()}
+            if totals is not None else None)
+        # Idempotent when nothing changed: repeated reconciles with the
+        # same totals and no new evidence reuse the prior result, so the
+        # desync streak only advances on genuinely new information and
+        # building the snapshot twice is stable.
+        if (not self._dirty
+                and (new_totals is None or new_totals == self.totals)):
+            return
+        if new_totals is not None:
+            self.totals = new_totals
+        self._dirty = False
         if not self.totals:
             self._last_match = False
+            self.unknown = {}
             self._enforce_deck_cap()
             self._compact()
             return
 
-        matching: list[_Particle] = []
+        # Anchor every hypothesis to colonist's authoritative sizes. A hand
+        # bigger than the real count means we credited cards an opponent no
+        # longer holds (a missed spend or 7-discard), so trim the excess
+        # off the largest buckets rather than throwing the whole hand away.
+        # What remains is a lower bound; the gap up to the authoritative
+        # total is genuinely unknown cards, tracked as ``unknown`` mass and
+        # spread by prior in the beliefs - never dumped onto one resource
+        # or faked as certainty.
         for p in self.particles:
-            if not self._deck_ok(p):
-                continue
-            if all(
-                p.total(c) == self.totals.get(c, p.total(c))
-                for c in self.opp_colors
-            ):
-                matching.append(p)
-
-        if matching:
-            self.particles = matching
-            self._desync_streak = 0
-            self._last_match = True
-            self._compact()
-            return
-
-        self._last_match = False
-
-        # Nothing matches the authoritative totals. Could be a one-frame
-        # lag between a log line and the WS size update, or a genuine
-        # desync. Tolerate a lag; reseed only if it persists.
-        self._desync_streak += 1
-        if self._desync_streak >= _DESYNC_RESEED_AFTER:
+            for c in self.opp_colors:
+                auth = self.totals.get(c)
+                if auth is None:
+                    continue
+                excess = p.total(c) - auth
+                if excess > 0:
+                    self._trim_particle(p, c, excess)
+        self._enforce_deck_cap()
+        if not self.particles:
             self._reseed()
-            self._desync_streak = 0
-        else:
-            self._enforce_deck_cap()
-            self._compact()
+        gaps: dict[str, int] = {}
+        for c in self.opp_colors:
+            auth = self.totals.get(c)
+            if auth is None or not self.particles:
+                gaps[c] = 0
+                continue
+            known = min(p.total(c) for p in self.particles)
+            gaps[c] = max(0, auth - known)
+        self.unknown = gaps
+        self._last_match = True
+        self._desync_streak = 0
+        self._compact()
+
+    def _trim_particle(self, p: _Particle, color: str, excess: int) -> None:
+        """Remove ``excess`` cards from one opponent's hand in a single
+        hypothesis, taking from the largest buckets first (a missed spend
+        or discard most likely came off their biggest pile)."""
+        hand = p.hands[color]
+        for _ in range(excess):
+            best = max(RESOURCES, key=lambda r: hand[r])
+            if hand[best] <= 0:
+                break
+            hand[best] -= 1
+            self.drift += 1
 
     def _deck_ok(self, p: _Particle) -> bool:
         for res in RESOURCES:
@@ -406,51 +449,23 @@ class OppHandModel:
             self._renormalize()
 
     def _reseed(self) -> None:
-        """Rebuild a single best-guess hypothesis straight from the
-        authoritative totals when the particle set has fully desynced."""
-        hands: dict[str, dict[str, int]] = {}
-        # Remaining deck headroom per resource after the viewer's own hand.
-        headroom = {r: max(0, _OF_EACH - self.self_hand[r]) for r in RESOURCES}
-        for c in self.opp_colors:
-            total = max(0, self.totals.get(c, 0))
-            hands[c] = self._distribute(total, headroom)
-            for r in RESOURCES:
-                headroom[r] = max(0, headroom[r] - hands[c][r])
-        self.particles = [_Particle(hands, 1.0)]
+        """Reset to a single all-uncertain hypothesis when the particle
+        set has fully desynced (every hand over-counted). Known cards are
+        dropped to an empty floor; the full authoritative total becomes
+        ``unknown`` mass, so the beliefs honestly read "we lost track"
+        rather than asserting a fabricated breakdown. Real events then
+        re-pin the hand from there."""
+        self.particles = [
+            _Particle({c: _zero_hand() for c in self.opp_colors}, 1.0)]
+        self.unknown = {c: max(0, self.totals.get(c, 0)) for c in self.opp_colors}
         self.drift += 1
 
-    def _distribute(
-        self, total: int, headroom: dict[str, int]
-    ) -> dict[str, int]:
-        """Spread ``total`` cards over resources by the prior, clamped to
-        deck headroom. Largest-remainder rounding hits the exact total."""
-        hand = _zero_hand()
-        if total <= 0:
-            return hand
+    def _prior_norm(self) -> dict[str, float]:
+        """Resource prior normalized to sum to 1, used to spread the
+        unknown (untyped) mass across resources in the beliefs."""
         weights = {r: max(0.0, self.prior.get(r, 0.0)) for r in RESOURCES}
-        wsum = sum(weights.values()) or 1.0
-        # Ideal fractional allocation.
-        ideal = {r: total * weights[r] / wsum for r in RESOURCES}
-        floors = {r: min(headroom[r], int(ideal[r])) for r in RESOURCES}
-        assigned = sum(floors.values())
-        # Hand out the remaining cards to the largest fractional remainders
-        # that still have headroom.
-        remainder = sorted(
-            RESOURCES,
-            key=lambda r: (ideal[r] - floors[r]),
-            reverse=True,
-        )
-        hand.update(floors)
-        i = 0
-        guard = 0
-        while assigned < total and guard < total * len(RESOURCES) + len(RESOURCES):
-            r = remainder[i % len(RESOURCES)]
-            if hand[r] < headroom[r]:
-                hand[r] += 1
-                assigned += 1
-            i += 1
-            guard += 1
-        return hand
+        s = sum(weights.values()) or 1.0
+        return {r: weights[r] / s for r in RESOURCES}
 
     # -- particle-set housekeeping ----------------------------------------
 
@@ -487,7 +502,9 @@ class OppHandModel:
     # -- readouts ----------------------------------------------------------
 
     def expected_hand(self, color: str) -> dict[str, float]:
-        """Probability-weighted mean per-resource count for one color."""
+        """Probability-weighted mean per-resource count for one color,
+        including the unknown (untyped) mass spread by the prior so the
+        totals match colonist's authoritative card count."""
         color = color.upper()
         if color == self.self_color:
             return {r: float(self.self_hand[r]) for r in RESOURCES}
@@ -499,10 +516,18 @@ class OppHandModel:
                 continue
             for r in RESOURCES:
                 out[r] += p.w * hand[r]
-        return {r: out[r] / wsum for r in RESOURCES}
+        unknown = self.unknown.get(color, 0)
+        prior = self._prior_norm()
+        return {r: out[r] / wsum + unknown * prior[r] for r in RESOURCES}
 
     def beliefs(self, color: str) -> dict[str, ResourceBelief]:
-        """Full per-resource belief (min/max/expected/probabilities)."""
+        """Full per-resource belief (min/max/expected/probabilities).
+
+        The particles supply the *known* cards (the guaranteed floor); the
+        ``unknown`` gap up to colonist's authoritative total is spread over
+        resources by the prior. So a resource reads as a hard minimum plus
+        a soft chance from the untyped cards, never a fabricated certainty.
+        """
         color = color.upper()
         if color == self.self_color:
             return {
@@ -515,6 +540,8 @@ class OppHandModel:
                 for r in RESOURCES
             }
         wsum = sum(p.w for p in self.particles) or 1.0
+        unknown = self.unknown.get(color, 0)
+        prior = self._prior_norm()
         out: dict[str, ResourceBelief] = {}
         for r in RESOURCES:
             counts = [
@@ -524,14 +551,23 @@ class OppHandModel:
             if not counts:
                 out[r] = ResourceBelief()
                 continue
-            mn = min(c for c, _ in counts)
-            mx = max(c for c, _ in counts)
-            exp = sum(c * w for c, w in counts) / wsum
-            p_one = sum(w for c, w in counts if c >= 1) / wsum
-            p_above = sum(w for c, w in counts if c > mn) / wsum
+            pr = prior[r]
+            # Chance none of the `unknown` untyped cards is this resource.
+            none_unknown = (1.0 - pr) ** unknown if unknown else 1.0
+            mn = min(c for c, _ in counts)            # certain floor
+            mx = max(c for c, _ in counts) + unknown  # could all be this res
+            exp_known = sum(c * w for c, w in counts) / wsum
+            exp = exp_known + unknown * pr
+            p_known0 = sum(w for c, w in counts if c == 0) / wsum
+            p_known_eq_min = sum(w for c, w in counts if c == mn) / wsum
+            # P(holds >=1) and P(holds more than the guaranteed floor),
+            # combining the known cards with the untyped-card chance.
+            p_one = 1.0 - p_known0 * none_unknown
+            p_above = 1.0 - p_known_eq_min * none_unknown
             out[r] = ResourceBelief(
                 minimum=mn, maximum=mx, expected=exp,
-                p_at_least_one=p_one, p_above_min=p_above,
+                p_at_least_one=max(0.0, min(1.0, p_one)),
+                p_above_min=max(0.0, min(1.0, p_above)),
             )
         return out
 
