@@ -2801,6 +2801,50 @@ html, body, .panel {
   letter-spacing: 0.02em;
 }
 .nb-cta .nb-btn:hover { filter: brightness(1.15); }
+/* Two-button download row: macOS + Windows side by side. Each button
+   carries an inline platform logo (currentColor) + a label. The user's
+   own platform gets the filled accent treatment (.dl-mine); the other
+   is a quieter outline so both stay readable on the dark panel. */
+.dl-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 2px auto 0;
+}
+.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--bg-1, #131821);
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: filter 80ms ease, border-color 80ms ease;
+}
+.dl-btn:hover {
+  border-color: var(--fg-dim);
+  filter: brightness(1.1);
+}
+.dl-btn .dl-logo {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+.dl-btn .dl-label { white-space: nowrap; }
+/* Highlight the user's own platform: filled accent, dark text. */
+.dl-btn.dl-mine {
+  background: var(--accent, #16a34a);
+  color: var(--bg-0, #0a0e15);
+  border-color: var(--accent, #16a34a);
+}
+.dl-btn.dl-mine:hover { filter: brightness(1.15); }
 .nb-cta-steps {
   margin: 10px auto 0;
   max-width: 320px;
@@ -2831,6 +2875,12 @@ html, body, .panel {
   opacity: 0.7;
   letter-spacing: -0.02em;
 }
+
+/* The advisor-source row is dev-only and ships with the `hidden`
+   attribute. `.drawer-row { display: flex }` would otherwise win over
+   the attribute's default display:none, so force it here. panel.js
+   removes the attribute (revealing the row) only when _dev() is true. */
+.drawer-row#advisor-mode-row[hidden] { display: none !important; }
 
 /* Advisor-source segmented radio in the settings drawer. Three
    buttons (auto / bridge only / extension only) with the active

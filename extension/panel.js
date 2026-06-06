@@ -43,6 +43,23 @@
     const BRIDGE_DOWNLOAD_URL =
         'https://github.com/NoahLaforet/CatanBot/releases/latest/download/'
         + 'CatanBot-macos.zip';
+    const BRIDGE_DOWNLOAD_URL_WIN =
+        'https://github.com/NoahLaforet/CatanBot/releases/latest/download/'
+        + 'CatanBot-windows.zip';
+
+    // Dev flag. Off for every normal user: BRIDGE is the only mode a
+    // normal user can reach, with zero trace of the standalone /
+    // auto / extension paths. A dev opts in by running
+    // `localStorage.setItem('catanbot_dev', '1')` in the panel's
+    // console, which re-enables the advisor-source selector and the
+    // JS-recommender fallbacks for testing.
+    function _dev() {
+        try {
+            return localStorage.getItem('catanbot_dev') === '1';
+        } catch (e) {
+            return false;
+        }
+    }
 
     function _isMac() {
         try {
@@ -53,23 +70,72 @@
         return /Mac/.test(navigator.platform || '');
     }
 
-    // The download call-to-action shown when no bridge is reachable. The
-    // .app is macOS-only (rumps menu-bar agent), so on other platforms we
-    // fall back to the text install docs (handled by the caller). The
-    // panel re-probes /advisor every ADVISOR_POLL_MS, so once the user
-    // launches the app the next successful poll flips the panel to
-    // connected on its own (renderOverlay(..., true)); no extra wiring.
+    function _isWindows() {
+        try {
+            if (navigator.userAgentData && navigator.userAgentData.platform) {
+                return navigator.userAgentData.platform === 'Windows';
+            }
+        } catch (e) { /* userAgentData not available */ }
+        return /Win/.test(navigator.platform || '');
+    }
+
+    // Inline platform logos so the buttons don't depend on any image
+    // asset shipping with the extension. fill="currentColor" makes them
+    // inherit the button text color, so they read on the dark theme.
+    const _APPLE_SVG =
+        '<svg class="dl-logo" viewBox="0 0 24 24" '
+        + 'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+        + '<path fill="currentColor" d="M16.365 1.43c0 1.14-.417 '
+        + '2.22-1.253 3.014-.916.873-2.02 1.38-3.018 1.297-.116-1.11.43'
+        + '-2.27 1.21-3.01C14.087 1.93 15.31 1.4 16.365 1.43zM20.5 '
+        + '17.06c-.55 1.27-.815 1.835-1.524 2.96-.99 1.57-2.385 '
+        + '3.525-4.115 3.54-1.536.014-1.93-1.003-4.016-.99-2.085.01'
+        + '-2.52 1.008-4.057.993-1.73-.015-3.052-1.78-4.042-3.35-2.77'
+        + '-4.39-3.06-9.54-1.35-12.28 1.214-1.95 3.13-3.09 4.93-3.09 '
+        + '1.832 0 2.984 1.005 4.5 1.005 1.47 0 2.366-1.007 4.485-1.007 '
+        + '1.6 0 3.297.872 4.506 2.378-3.96 2.17-3.318 7.83.683 9.29z">'
+        + '</path></svg>';
+    const _WINDOWS_SVG =
+        '<svg class="dl-logo" viewBox="0 0 24 24" '
+        + 'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+        + '<path fill="currentColor" d="M3 5.6l8-1.1v7.2H3V5.6zm0 '
+        + '12.8l8 1.1v-7.1H3v6zm9 1.2l11 1.5v-8.6H12v7.1zm0-15.9v7.6h11'
+        + 'V2.1L12 3.7z"></path></svg>';
+
+    // The download call-to-action shown when no bridge is reachable.
+    // Renders both the macOS and Windows one-click apps side by side so
+    // a user on either platform has a live link. The user's own
+    // platform is ordered first and visually highlighted, but both are
+    // always shown. The panel re-probes /advisor every ADVISOR_POLL_MS,
+    // so once the user launches the app the next successful poll flips
+    // the panel to connected on its own (renderOverlay(..., true)); no
+    // extra wiring.
     function _bridgeCtaHtml() {
-        if (!_isMac()) return '';
+        const mac = {
+            href: BRIDGE_DOWNLOAD_URL,
+            svg: _APPLE_SVG,
+            label: 'Download for macOS',
+            mine: _isMac(),
+        };
+        const win = {
+            href: BRIDGE_DOWNLOAD_URL_WIN,
+            svg: _WINDOWS_SVG,
+            label: 'Download for Windows',
+            mine: _isWindows(),
+        };
+        // Put the user's platform first; default order (mac, win) when
+        // we can't tell or they're on something else.
+        const order = win.mine ? [win, mac] : [mac, win];
+        const btns = order.map((b) =>
+            `<a class="dl-btn${b.mine ? ' dl-mine' : ''}" `
+            + `href="${b.href}" target="_blank" rel="noopener" download>`
+            + b.svg
+            + `<span class="dl-label">${b.label}</span>`
+            + '</a>').join('');
         return '<div class="nb-cta">'
-            + `<a class="nb-btn" href="${BRIDGE_DOWNLOAD_URL}" `
-            + 'target="_blank" rel="noopener" download>'
-            + 'Download CatanBot.app</a>'
-            + '<div class="nb-cta-steps">Unzip, drag '
-            + '<b>CatanBot.app</b> into your Applications folder, and open '
-            + 'it. The bridge starts on its own and this panel connects '
-            + 'within a second · unlocks search-delta annotations and '
-            + 'post-game postmortems.</div>'
+            + `<div class="dl-row">${btns}</div>`
+            + '<div class="nb-cta-steps">Download, open it, the bridge '
+            + 'starts on its own and this panel connects.</div>'
             + '</div>';
     }
 
@@ -854,7 +920,10 @@
     // and the panel renders opening picks from the JS recommender
     // instead of the bare install-instructions placeholder.
     function _makeNoBridgeSnap() {
-        if (_standalone.board && _standalone._lib) {
+        // BRIDGE-only for normal users: never build the rich standalone
+        // snap, so the panel can only ever show the download-only frame
+        // when the bridge is down. The JS-recommender path is dev-only.
+        if (_dev() && _standalone.board && _standalone._lib) {
             try {
                 const lib = _standalone._lib;
                 _diag.snapBuildAttempts =
@@ -3569,34 +3638,39 @@
             applyStreamer(streamerInput.checked);
         });
 
-        // Advisor source mode — bridge / extension / auto. Read on
-        // mount, written on toggle. Drives `_getAdvisorMode()` in
-        // the polling tick which decides whether to skip the bridge
-        // fetch (extension), refuse fallback (bridge), or do the
-        // default behaviour (auto). Status text describes what each
-        // mode does so it's clear which source is feeding recs.
-        const modeInputs = document.querySelectorAll(
-            'input[name="advisor-mode"]');
-        const modeStatus = document.getElementById('advisor-mode-status');
-        const MODE_TIPS = {
-            auto: 'bridge if reachable, JS recommender otherwise',
-            bridge: 'always bridge · placeholder if it’s down',
-            extension: 'JS recommender only, bridge ignored (experimental, reduced accuracy)',
-        };
-        function applyMode(mode) {
-            _setAdvisorMode(mode);
+        // Advisor source mode — bridge / extension / auto. DEV-ONLY:
+        // the selector row stays hidden (zero trace) for normal users,
+        // who are always in BRIDGE mode. We only reveal and wire it
+        // when `_dev()` is true. Drives `_getAdvisorMode()` in the
+        // polling tick which decides whether to skip the bridge fetch
+        // (extension), refuse fallback (bridge), or do the default
+        // behaviour (auto). Status text describes what each mode does.
+        const modeRow = document.getElementById('advisor-mode-row');
+        if (_dev() && modeRow) {
+            modeRow.removeAttribute('hidden');
+            const modeInputs = document.querySelectorAll(
+                'input[name="advisor-mode"]');
+            const modeStatus = document.getElementById('advisor-mode-status');
+            const MODE_TIPS = {
+                auto: 'bridge if reachable, JS recommender otherwise',
+                bridge: 'always bridge · placeholder if it’s down',
+                extension: 'JS recommender only, bridge ignored (experimental, reduced accuracy)',
+            };
+            const applyMode = (mode) => {
+                _setAdvisorMode(mode);
+                for (const r of modeInputs) {
+                    r.checked = (r.value === mode);
+                }
+                if (modeStatus) {
+                    modeStatus.textContent = MODE_TIPS[mode] || '';
+                }
+            };
+            applyMode(_getAdvisorMode());
             for (const r of modeInputs) {
-                r.checked = (r.value === mode);
+                r.addEventListener('change', () => {
+                    if (r.checked) applyMode(r.value);
+                });
             }
-            if (modeStatus) {
-                modeStatus.textContent = MODE_TIPS[mode] || '';
-            }
-        }
-        applyMode(_getAdvisorMode());
-        for (const r of modeInputs) {
-            r.addEventListener('change', () => {
-                if (r.checked) applyMode(r.value);
-            });
         }
 
         // Opacity slider — applies to the host element (outside shadow)
@@ -4282,6 +4356,27 @@
         // tab, no game open." Tell the user that, not "install the
         // bridge" — the bridge is optional.
         if (snap && snap._source === 'no_bridge') {
+            // Normal user (BRIDGE-only): the panel is just not connected
+            // to the bridge yet. Show only the download CTA plus a short
+            // neutral line. No standalone recs, no "no bridge needed"
+            // copy, no source picker mention, no diag strip.
+            if (!_dev()) {
+                ui.content.innerHTML =
+                    `<div class="no-bridge-frame">`
+                    + `<div class="nb-icon">🎲</div>`
+                    + `<div class="nb-head">start CatanBot to connect</div>`
+                    + `<div class="nb-body">`
+                    + `The bridge is not running. Download and open `
+                    + `CatanBot, then this panel connects on its own.`
+                    + `</div>`
+                    + _bridgeCtaHtml()
+                    + `</div>`;
+                if (ui.histHost) ui.histHost.classList.add('hidden');
+                if (ui.evalHost) ui.evalHost.classList.add('hidden');
+                if (ui.mqHost) ui.mqHost.classList.add('hidden');
+                if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+                return;
+            }
             const d = window.__catanbotDiag || {};
             const diagText = `ws ${d.wsBroadcastsReceived || 0}`
                 + ` · dec ${d.decodeAttempts || 0}`
@@ -4354,22 +4449,36 @@
         // (training with the Python bridge) — silently swapping
         // sources would be wrong.
         if (snap._bridge_unreachable) {
-            ui.content.innerHTML =
-                '<div class="bridge-down">'
-                + '<div class="bd-h">bridge unreachable</div>'
-                + '<div class="bd-body">You picked '
-                + '<b>bridge only</b> mode but the local Python '
-                + 'bridge isn’t responding on '
-                + '<code>127.0.0.1:8765</code>. Download the one-click '
-                + 'app below, or start it from the project root with '
-                + '<code>uv run catanbot bridge</code>, or switch to '
-                + '<b>auto</b> / <b>extension only</b> in the ⚙ settings '
-                + 'drawer to use the JS recommender instead.</div>'
-                + _bridgeCtaHtml()
-                + '<div class="bd-actions">'
-                + '<a href="https://github.com/NoahLaforet/CatanBot#install" '
-                + 'target="_blank" rel="noopener">install docs →</a>'
-                + '</div></div>';
+            if (_dev()) {
+                // Dev frame keeps the technical detail (the local Python
+                // bridge endpoint + the source picker) so devs can debug.
+                ui.content.innerHTML =
+                    '<div class="bridge-down">'
+                    + '<div class="bd-h">bridge unreachable</div>'
+                    + '<div class="bd-body">You picked '
+                    + '<b>bridge only</b> mode but the local Python '
+                    + 'bridge isn’t responding on '
+                    + '<code>127.0.0.1:8765</code>. Download the one-click '
+                    + 'app below, or start it from the project root with '
+                    + '<code>uv run catanbot bridge</code>, or switch to '
+                    + '<b>auto</b> / <b>extension only</b> in the ⚙ settings '
+                    + 'drawer to use the JS recommender instead.</div>'
+                    + _bridgeCtaHtml()
+                    + '<div class="bd-actions">'
+                    + '<a href="https://github.com/NoahLaforet/CatanBot#install" '
+                    + 'target="_blank" rel="noopener">install docs →</a>'
+                    + '</div></div>';
+            } else {
+                // Normal user: neutral copy + the two download buttons.
+                ui.content.innerHTML =
+                    '<div class="bridge-down">'
+                    + '<div class="bd-h">start CatanBot to connect</div>'
+                    + '<div class="bd-body">The bridge is not running. '
+                    + 'Download and open CatanBot, then this panel '
+                    + 'connects on its own.</div>'
+                    + _bridgeCtaHtml()
+                    + '</div>';
+            }
             if (ui.histHost) ui.histHost.classList.add('hidden');
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
@@ -6170,17 +6279,18 @@
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // Advisor source mode. Reads from localStorage so the user's
-    // pick survives reloads. Three values:
-    //   'auto'      — bridge if reachable, else extension (default).
+    // Advisor source mode. BRIDGE is the only mode a normal user can
+    // reach: when `_dev()` is false this always returns 'bridge' and
+    // ignores any stored value, so the standalone / auto / extension
+    // paths leave no trace. Devs (localStorage.catanbot_dev === '1')
+    // keep the full selector. Three dev values:
+    //   'auto'      — bridge if reachable, else extension.
     //   'bridge'    — always render the bridge snap; show a clear
     //                 "bridge unreachable" placeholder if it's down.
-    //                 Use this when you're training with the Python
-    //                 bridge and don't want the JS recommender to
-    //                 "help" with possibly-different recs.
     //   'extension' — always render the JS recommender snap,
     //                 ignoring whatever the bridge is sending.
     function _getAdvisorMode() {
+        if (!_dev()) return 'bridge';
         try {
             const m = localStorage.getItem('cataan-advisor-mode');
             if (m === 'bridge' || m === 'extension') return m;

@@ -29,7 +29,11 @@
       <span class="drawer-label">advisor</span>
       <label class="toggle"><input type="checkbox" id="pause"/><span>pause banners &amp; recs</span></label>
     </div>
-    <div class="drawer-row">
+    <!-- Advisor-source selector. Hidden by default (dev-only): normal
+         users are always in BRIDGE mode and never see auto / extension.
+         panel.js removes the `hidden` attribute only when
+         localStorage.catanbot_dev === '1'. -->
+    <div class="drawer-row" id="advisor-mode-row" hidden>
       <span class="drawer-label">source</span>
       <label class="seg-radio">
         <input type="radio" name="advisor-mode" id="mode-auto" value="auto" checked/>
