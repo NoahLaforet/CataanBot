@@ -72,14 +72,13 @@ running on your own machine at 127.0.0.1:8765 and nothing else.
 Your colonist.io game data never leaves your computer.
 
 HOW IT RUNS
-The core advisor runs entirely in the extension, no install
-required (experimental, reduced accuracy). For full-accuracy
-recommendations, the 1-ply lookahead search, the strategy lab,
-and auto-generated post-game reports, install the optional
-open-source Python bridge once on your machine (Python 3.11+,
-macOS or Linux). The extension detects it automatically and
-lights up the advanced panels. Full instructions are on the
-project page.
+CatanBot pairs the extension with a small companion app that
+runs the advisor on your own machine. Install the extension,
+then download the one-click CatanBot app for macOS or Windows,
+linked right from the panel when no bridge is detected. Launch
+it once and the extension finds it automatically and lights up
+the HUD. Nothing to configure. Linux users can run the
+open-source Python bridge from source (Python 3.11+).
 
 WHAT IT IS NOT
 CatanBot is a decision-support tool, not an autoplay bot. It
