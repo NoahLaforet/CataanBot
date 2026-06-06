@@ -12,7 +12,7 @@ https://chrome.google.com/webstore/devconsole.
 `CatanBot · Colonist Advisor HUD`
 
 ### Short description (132 char max)
-`Live Catan advisor for colonist.io: move recs, robber targets, dev-card timing, opponent inference, post-game analysis.`
+`Live Catan advisor for colonist.io: move recs, robber targets, dev-card timing, opponent card tracking, post-game analysis.`
 
 ### Detailed description (suggested)
 ```
@@ -36,8 +36,17 @@ WHAT IT DOES
   reasoning ("an opp is close to Largest Army · play to deny",
   "robber's on you · play to clear it").
 • Robber & 7-roll telemetry · top robber targets ranked by
-  blocking value × victim VP × hand size × resource scarcity.
+  blocking value × victim VP × hand size × resource scarcity,
+  and a suggested victim that weighs which player is likeliest
+  to hand you a card you need or to be hiding a victory point.
   Auto-detects colonist's optional Friendly Robber rule.
+• Opponent card tracking · deduces each opponent's hand from
+  the public game log (production, builds, trades, steals,
+  monopolies, discards), shown per resource as a guaranteed
+  count plus the odds of more ("wood 2 +67%"). It branches on
+  hidden steals, prunes hypotheses a player could not afford,
+  and stays anchored to colonist's own card counts, so a
+  refresh or a missed line self-heals instead of drifting.
 • Strategy archetype tracker · once your opening settlements
   land, the bot detects which archetype you're playing
   (Ore-Wheat-Sheep, Longest Road rush, Port trader, Road
@@ -47,7 +56,7 @@ WHAT IT DOES
   responsive.
 • Live HUD · roll histogram with 36-roll baseline, eval
   sparkline (chess-style position graph), per-build
-  move-quality grading, opponent hand inference, production
+  move-quality grading, per-opponent hand read, production
   rate.
 • Variant board support. Runs on the weekly-rotation variants
   too: the Pond and Twirl layouts, the Gold Rush fog board, and
