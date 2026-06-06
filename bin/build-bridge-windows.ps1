@@ -111,6 +111,7 @@ $PyiArgs = @(
     '--noconfirm', '--clean',
     '--name', 'catanbot-bridge',
     '--onefile', '--console',
+    '--icon', 'bin/catanbot.ico',
     '--paths', 'src',
     '--collect-submodules', 'catanbot',
     '--collect-submodules', 'catanatron',

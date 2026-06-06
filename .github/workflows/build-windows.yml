@@ -38,7 +38,8 @@ jobs:
       - name: Build the bridge exe
         run: >
           python -m PyInstaller --noconfirm --clean
-          --name catanbot-bridge --onefile --console --paths src
+          --name catanbot-bridge --onefile --console
+          --icon bin/catanbot.ico --paths src
           --collect-submodules catanbot --collect-submodules catanatron
           --collect-all uvicorn
           --hidden-import uvicorn.logging
