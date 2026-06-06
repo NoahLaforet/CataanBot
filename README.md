@@ -300,6 +300,19 @@ it only works when the repo lives outside a protected folder (not under
 supported cross-platform path. macOS only (it uses `rumps`); on Linux or
 Windows use `./bin/catanbot live`.
 
+## One-click bridge (Windows, optional)
+
+Windows has the same download-and-run path, minus WSL. Grab
+**`CatanBot-windows.zip`** from the
+[latest release](https://github.com/NoahLaforet/CatanBot/releases/latest),
+unzip it, and double-click **`CatanBot.exe`**. The bridge starts on
+`127.0.0.1:8765` and the Chrome panel connects on its own.
+
+The build is unsigned, so the first launch trips Windows SmartScreen
+("Windows protected your PC"). Click **More info**, then **Run anyway** once.
+Full walkthrough plus the developer build and signing notes are in
+[`docs/WINDOWS.md`](docs/WINDOWS.md).
+
 ## Manual install (if the launcher gives you trouble)
 
 ```bash
