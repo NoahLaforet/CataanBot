@@ -334,6 +334,50 @@ def test_deck_cap_never_exceeds_nineteen():
     assert in_play <= 19 + 1e-6
 
 
+# -- end-to-end through the real DOM-log parser --------------------------
+
+def _log(parts, self_name=None):
+    return {"ts": 0, "text": "", "parts": parts, "names": [], "icons": [],
+            "self": self_name}
+
+
+def _name(n):
+    return {"kind": "name", "name": n, "color": ""}
+
+
+def _text(t):
+    return {"kind": "text", "text": t}
+
+
+def _icon(alt):
+    return {"kind": "icon", "alt": alt}
+
+
+def test_parser_feeds_model_end_to_end():
+    """The same path the live bridge uses: raw colonist log payloads run
+    through parse_event, then OppHandModel.apply. Confirms the model
+    tracks real parsed events, not just hand-built dataclasses."""
+    from catanbot.parser import parse_event
+
+    m, cm = make({"Me": ME, "Bob": BOB, "Cara": CARA}, self_user="Me")
+    # Bob collects 2 lumber + 1 grain on a roll.
+    m.apply(parse_event(_log([
+        _name("Bob"), _text("got"),
+        _icon("Lumber"), _icon("Lumber"), _icon("Grain")])), cm)
+    # Cara robs Bob, type hidden (third-party steal).
+    m.apply(parse_event(_log([
+        _name("Cara"), _text("stole  from"), _name("Bob"),
+        _icon("Resource Card")])), cm)
+    m.reconcile({BOB: 2, CARA: 1})
+
+    assert m.is_synced()
+    # Cara holds one of Bob's cards: 2/3 wood, 1/3 wheat.
+    cara = m.beliefs(CARA)
+    assert cara["WOOD"].p_at_least_one == pytest.approx(2 / 3, abs=1e-6)
+    assert cara["WHEAT"].p_at_least_one == pytest.approx(1 / 3, abs=1e-6)
+    assert m.steal_matrix[(CARA, BOB)] == 1
+
+
 # -- steal matrix (Part 3 analytics) -------------------------------------
 
 def test_steal_matrix_accumulates():

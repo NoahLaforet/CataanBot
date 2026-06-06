@@ -4,6 +4,28 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## Unreleased
+
+Probabilistic opponent card tracking on the bridge.
+
+- **Opponents are tracked by probability, not a single guess.** A new
+  particle-filter model infers each opponent's hand from the public game
+  log: hidden steals branch on the victim's composition, builds and
+  trades prune hypotheses a player could not afford, and everything is
+  reconciled against colonist's authoritative card counts so a missed log
+  line or a page refresh self-heals. The HUD now reads each opponent's
+  resources as a guaranteed minimum plus a chance of more ("wood 2 +67%")
+  instead of a point estimate with a blanket "?".
+- **Smarter robber and trade advice.** Robber victim selection prefers the
+  opponent most likely to hand over a resource you need (each victim shows
+  its expected steal yield), and the trade supply guard now reasons about
+  what an opponent is actually known to hold versus what is merely
+  uncertain. (This also turned the supply guard back on after a latent
+  bug had left it disabled.)
+- **New threat signals.** The snapshot now carries a who-robbed-whom steal
+  matrix, a per-number dice luck deviation, and a dev-card hidden-VP
+  suspicion probability that rises with an opponent's unplayed dev stash.
+
 ## v0.46.0 (2026-06-05)
 
 Bridge-only by default, and a Windows download.
