@@ -4,6 +4,22 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.46.0 (2026-06-05)
+
+Bridge-only by default, and a Windows download.
+
+- **Bridge is the only mode now.** The advisor-source selector (auto /
+  bridge only / extension only) is gone from the UI. The panel always uses
+  the local bridge; the no-bridge JS recommender is hidden behind a dev
+  flag (localStorage catanbot_dev=1) until it is ready to ship. When the
+  bridge is not running, the panel shows only the download buttons, not a
+  half-working standalone mode.
+- **Mac and Windows downloads.** The no-bridge screen offers side-by-side
+  "Download for macOS" and "Download for Windows" buttons with platform
+  logos, each pulling the self-contained app from the latest GitHub
+  release. The Windows build is a self-contained console exe
+  (bin/build-bridge-windows.ps1); see docs/WINDOWS.md.
+
 ## v0.45.0 (2026-06-05)
 
 A self-contained one-click menu-bar app, a real branded icon, and a
