@@ -22,9 +22,15 @@ Probabilistic opponent card tracking on the bridge.
   what an opponent is actually known to hold versus what is merely
   uncertain. (This also turned the supply guard back on after a latent
   bug had left it disabled.)
-- **New threat signals.** The snapshot now carries a who-robbed-whom steal
-  matrix, a per-number dice luck deviation, and a dev-card hidden-VP
-  suspicion probability that rises with an opponent's unplayed dev stash.
+- **New threat signals.** Opponent rows flag how many times that player
+  has robbed you (from a who-robbed-whom steal matrix) and show a hidden-VP
+  suspicion that rises with their unplayed dev stash (on hover, and inline
+  past 50%); a likely-hidden-VP player is also nudged up the robber target
+  list. The snapshot also carries a per-number dice luck deviation.
+- **Verified on real games.** Replaying full game captures through the
+  bridge, the model reaches the opponent's exact hand when the log is
+  complete and stays honestly uncertain (anchored to the real card count)
+  when it is not, never asserting cards it has not actually deduced.
 
 ## v0.46.0 (2026-06-05)
 
