@@ -278,6 +278,7 @@ def _build_app(jsonl_path: Path | None = None,
         if jsonl_path is not None:
             with jsonl_path.open("a") as f:
                 f.write(json.dumps(payload) + "\n")
+        _feed_opp_model(st, payload)
         _feed_postmortem(st, payload)
         return {"ok": True, "received": st["log_count"]}
 
@@ -671,6 +672,25 @@ def _build_app(jsonl_path: Path | None = None,
                 pass
 
     return app
+
+
+def _feed_opp_model(st: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Fold one DOM game-log line into the probabilistic opponent-hand
+    model. The log is the full public narrative (produce, build, trade,
+    steal, monopoly, year-of-plenty, discard); the WS path anchors the
+    model with our own exact hand, the bank, and per-player card counts.
+    Best-effort: a parse or apply hiccup must never break the bridge.
+    """
+    game = st.get("game")
+    model = getattr(game, "opp_model", None)
+    if model is None or getattr(game, "color_map", None) is None:
+        return
+    try:
+        from catanbot.parser import parse_event
+        event = parse_event(payload)
+        model.apply(event, game.color_map)
+    except Exception:  # noqa: BLE001 — inference is advisory, never fatal
+        pass
 
 
 def _feed_ws_payload(game, payload: dict[str, Any]):
@@ -2248,6 +2268,28 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 0, 19 - int(freqdeck[idx]) - int(hand.get(r, 0)))
     except Exception:  # noqa: BLE001
         opp_res_cap = {}
+    # Reconcile the probabilistic opponent-hand model against colonist's
+    # authoritative per-player card counts, once, before the opp loop.
+    # When it agrees with the totals we read its per-resource beliefs
+    # below; on any error or disagreement we fall back to the tracker's
+    # point estimate, so this is a strict, safe upgrade.
+    opp_model = getattr(game, "opp_model", None)
+    if opp_model is not None:
+        totals_by_color: dict[str, int] = {}
+        for _cid, _cnt in sess.hand_card_counts.items():
+            if _cid == sess.self_color_id:
+                continue
+            _user = sess.player_names.get(_cid)
+            if not _user:
+                continue
+            try:
+                totals_by_color[game.color_map.get(_user)] = int(_cnt)
+            except Exception:  # noqa: BLE001
+                continue
+        try:
+            opp_model.reconcile(totals_by_color)
+        except Exception:  # noqa: BLE001
+            opp_model = None
     for cid, count in sorted(sess.hand_card_counts.items()):
         if cid == sess.self_color_id:
             continue
@@ -2298,6 +2340,32 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             inferred = trimmed
             inferred_total = sum(inferred.values())
         unknown = max(0, real_total - inferred_total)
+        # Probabilistic upgrade: when the particle model agrees with this
+        # opp's authoritative total, replace the point estimate with its
+        # guaranteed per-resource minimums (a genuine floor, not a
+        # trim-largest guess) and surface the full belief so the HUD can
+        # render "2 (67%)". ``unknown`` becomes the mass not pinned to any
+        # type. Falls back to the tracker estimate above on any mismatch.
+        hand_probs: dict[str, dict[str, float]] | None = None
+        if opp_model is not None and opp_model.is_synced():
+            try:
+                if opp_model.hand_total(c) == real_total:
+                    bel = opp_model.beliefs(c)
+                    inferred = {r: bel[r].minimum for r in bel}
+                    inferred_total = sum(inferred.values())
+                    unknown = max(0, real_total - inferred_total)
+                    hand_probs = {
+                        r: {
+                            "min": bel[r].minimum,
+                            "max": bel[r].maximum,
+                            "exp": round(bel[r].expected, 2),
+                            "p1": round(bel[r].p_at_least_one, 3),
+                            "more": round(bel[r].p_above_min, 3),
+                        }
+                        for r in bel
+                    }
+            except Exception:  # noqa: BLE001
+                hand_probs = None
         # Affordable builds computed once and reused — _one_short_vp_build
         # needs the same list to avoid double-surfacing (don't flag "1
         # short of city" when the opp can already city).
@@ -2337,6 +2405,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             "color_css": st["display_colors"].get(user),
             "cards": real_total,
             "hand": inferred,
+            # Per-resource belief (min/max/expected/probabilities) from the
+            # particle model; None when the model is unavailable or out of
+            # sync and we're showing the tracker point estimate instead.
+            "hand_probs": hand_probs,
             "unknown": unknown,
             # True when we know every card: breakdown sums to the total.
             "hand_tracked": (unknown == 0 and real_total > 0),

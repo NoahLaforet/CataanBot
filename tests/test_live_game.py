@@ -3481,6 +3481,71 @@ def test_snapshot_populates_can_afford_on_opps():
         f"city should be affordable with 2w/3ore, got {updated['can_afford']}")
 
 
+def test_snapshot_surfaces_probabilistic_hand_when_model_synced():
+    """When the probabilistic opponent model has folded in real log
+    events and matches colonist's authoritative counts, the advisor opp
+    row carries a ``hand_probs`` belief and its guaranteed ``hand`` floor
+    sums consistently with the card total. When the model is unfed it
+    stays None and the tracker point estimate is used (no regression)."""
+    if not CAPTURE_EARLY.exists() or not CAPTURE_MIDGAME.exists():
+        pytest.skip("live captures not present")
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.events import ProduceEvent, StealEvent
+    from catanbot.live import ColorMap
+    from catanbot.live_game import LiveGame
+    from catanbot.tracker import Tracker
+
+    game = LiveGame()
+    for path in (CAPTURE_EARLY, CAPTURE_MIDGAME):
+        for payload in _iter_payloads(path):
+            game.feed(payload)
+    assert game.opp_model is not None
+
+    sess = game.session
+    # Two opponents: drive the model so one (victim) holds a known mix and
+    # the other (thief) robs them with the type hidden, then set the
+    # authoritative counts to match. The reconcile should then trust the
+    # model and emit a probability split on the thief's row.
+    opp_cids = [
+        cid for cid in sess.player_names
+        if cid != sess.self_color_id
+        and game.color_map.has(sess.player_names[cid])]
+    if len(opp_cids) < 2:
+        pytest.skip("need two named opponents in the capture")
+    victim_cid, thief_cid = opp_cids[0], opp_cids[1]
+    victim, thief = sess.player_names[victim_cid], sess.player_names[thief_cid]
+    cm = game.color_map
+
+    game.opp_model.apply(
+        ProduceEvent(player=victim, resources={"WOOD": 2, "BRICK": 1}), cm)
+    game.opp_model.apply(
+        StealEvent(thief=thief, victim=victim, resource=None), cm)
+    # Victim now shows 2 cards, thief 1; zero every other opp so totals are
+    # internally consistent for the reconcile.
+    for cid in sess.hand_card_counts:
+        sess.hand_card_counts[cid] = 0
+    sess.hand_card_counts[victim_cid] = 2
+    sess.hand_card_counts[thief_cid] = 1
+
+    st: dict = {
+        "seq": 0, "game": game,
+        "ws_count": 0, "log_count": 0,
+        "last_roll": None,
+        "robber_pending": False, "robber_snapshot": None,
+        "display_colors": {},
+        "pm_tracker": Tracker(), "pm_color_map": ColorMap(),
+    }
+    snap = _build_advisor_snapshot(st)
+    thief_row = next(o for o in snap["opps"] if o["username"] == thief)
+    assert thief_row["hand_probs"] is not None
+    # The stolen card was wood (2/3) or brick (1/3); the thief's row should
+    # show a fractional probability of holding each, never a false certainty.
+    wood = thief_row["hand_probs"]["WOOD"]
+    assert 0.0 < wood["p1"] < 1.0
+    # Guaranteed floor never exceeds the real card count.
+    assert sum(thief_row["hand"].values()) <= thief_row["cards"]
+
+
 def test_compute_roll_yield_sums_settlements_and_cities():
     """Place one RED settlement on a numbered tile, pick that tile's
     number, and assert the yield shows +1 of that resource. Upgrade to

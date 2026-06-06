@@ -158,6 +158,14 @@ class OppHandModel:
         self.totals: dict[str, int] = {}      # last authoritative sizes
         self._desync_streak = 0
         self.drift = 0                          # impossible-event counter
+        # Narrative events folded in so far. Zero means the model has only
+        # ever seen the WS anchor (no public game log), so its breakdown is
+        # no better than a guess and callers should not trust it.
+        self.events_applied = 0
+        # True when the last reconcile found at least one hypothesis that
+        # matched every opponent's authoritative count, i.e. the particle
+        # set is genuinely consistent rather than reseeded or mid-desync.
+        self._last_match = False
         # Part 3 analytics fed off the same stream.
         self.steal_matrix: dict[tuple[str, str], int] = {}
 
@@ -183,6 +191,12 @@ class OppHandModel:
         (same object the tracker uses). Events naming the bank or an
         unseated player resolve to ``None`` and are skipped on that side.
         """
+        if isinstance(
+            event,
+            (ProduceEvent, BuildEvent, DevCardBuyEvent, DevCardPlayEvent,
+             DiscardEvent, MonopolyStealEvent, StealEvent, TradeCommitEvent),
+        ):
+            self.events_applied += 1
         if isinstance(event, ProduceEvent):
             self._produce(self._color(color_map, event.player), event.resources)
         elif isinstance(event, BuildEvent):
@@ -342,6 +356,7 @@ class OppHandModel:
         if totals is not None:
             self.totals = {c.upper(): int(n) for c, n in totals.items()}
         if not self.totals:
+            self._last_match = False
             self._enforce_deck_cap()
             self._compact()
             return
@@ -359,8 +374,11 @@ class OppHandModel:
         if matching:
             self.particles = matching
             self._desync_streak = 0
+            self._last_match = True
             self._compact()
             return
+
+        self._last_match = False
 
         # Nothing matches the authoritative totals. Could be a one-frame
         # lag between a log line and the WS size update, or a genuine
@@ -526,6 +544,13 @@ class OppHandModel:
         if total <= 0:
             return {r: 0.0 for r in RESOURCES}
         return {r: exp[r] / total for r in RESOURCES}
+
+    def is_synced(self) -> bool:
+        """True when the model has folded in real game-log events and its
+        particles currently match colonist's authoritative card counts.
+        Callers should only trust the per-resource breakdown when this is
+        True; otherwise it is no better than the tracker point estimate."""
+        return self.events_applied > 0 and self._last_match
 
     def hand_total(self, color: str) -> int:
         color = color.upper()

@@ -25,8 +25,9 @@ from catanbot.colonist_diff import (
     LiveSession, LiveSessionError, events_from_frame_payload,
 )
 from catanbot.colonist_map import build_catanatron_map_from_colonist
-from catanbot.events import BuildEvent
+from catanbot.events import BankSyncEvent, BuildEvent, HandSyncEvent
 from catanbot.live import ColorMap, DispatchResult, apply_event
+from catanbot.opp_inference import OppHandModel
 from catanbot.tracker import Tracker, TrackerError
 
 # Standard Catan build costs. WS diffs don't carry the resource deltas
@@ -192,6 +193,10 @@ class LiveGame:
     # 2 settlements and 2 roads each are free (setup phase); everything
     # else is a paid build and gets cost-debited in ``_debit_build``.
     build_counts: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Probabilistic opponent-hand model. Booted alongside the tracker on
+    # GameStart; fed the DOM game-log narrative from the /log handler and
+    # anchored to the WS self-hand + bank + authoritative card counts.
+    opp_model: OppHandModel | None = None
 
     @property
     def started(self) -> bool:
@@ -236,6 +241,16 @@ class LiveGame:
         for color_id in sorted(self.session.player_names):
             username = self.session.player_names[color_id]
             self.color_map.get(username)
+        # Boot the probabilistic opponent-hand model with the seated
+        # colors and which one is us, so it knows whose hand is exact.
+        self_color = None
+        self_cid = self.session.self_color_id
+        if self_cid is not None:
+            self_name = self.session.player_names.get(self_cid)
+            if self_name and self.color_map.has(self_name):
+                self_color = self.color_map.get(self_name)
+        self.opp_model = OppHandModel(
+            list(self.color_map.as_dict().values()), self_color=self_color)
         self._replay_pre_existing_buildings()
 
     def _replay_pre_existing_buildings(self) -> None:
@@ -459,6 +474,18 @@ class LiveGame:
             if (result.status == "applied"
                     and isinstance(result.event, BuildEvent)):
                 self._debit_build(result.event)
+        # Anchor the opponent-hand model with the authoritative WS data:
+        # our own exact hand and the resource bank. The DOM /log handler
+        # feeds the public narrative (produce/build/steal/trade/...); the
+        # model is reconciled against per-player card sizes at read time.
+        if self.opp_model is not None:
+            for ev in events:
+                if isinstance(ev, HandSyncEvent):
+                    color = self._color_for_username(ev.player)
+                    if color is not None:
+                        self.opp_model.set_self_hand(color, ev.resources)
+                elif isinstance(ev, BankSyncEvent):
+                    self.opp_model.set_bank(ev.resources)
         # Snap played-knight counts to colonist's authoritative
         # mechanicKnightState.knightsPlayed. A self knight play fires a
         # DevCardPlayEvent from BOTH the DOM-log parser and the WS
@@ -568,6 +595,14 @@ class LiveGame:
                 self.tracker.take(color, amount, resource)
             except TrackerError:
                 pass
+
+    def _color_for_username(self, username: str | None) -> str | None:
+        if not username or self.color_map is None:
+            return None
+        try:
+            return self.color_map.get(username)
+        except Exception:  # noqa: BLE001 — unseated / over-full table
+            return None
 
     def _is_self_color(self, color: str) -> bool:
         if self.session is None or self.session.self_color_id is None:
