@@ -200,6 +200,29 @@ def _compute_robber_snapshot(
             pass
     except Exception:  # noqa: BLE001
         vp_override = {}
+    # Per-victim steal expectation from the probabilistic hand model: the
+    # chance a single steal off each opponent yields each resource (their
+    # hand composition). Lets the victim picker prefer the player most
+    # likely to hand us a resource we actually need, instead of treating
+    # every card in a hand as equally useful. Only when the model is in
+    # sync with the authoritative counts; otherwise the picker falls back
+    # to the card-count heuristic below.
+    steal_ev_by_color: dict[str, dict[str, float]] = {}
+    p_need_by_color: dict[str, float] = {}
+    model = getattr(game, "opp_model", None)
+    needed_set = {r.upper() for r in (needed_resources or [])}
+    if model is not None:
+        try:
+            if model.is_synced():
+                for opp_color in reverse:
+                    ev = model.steal_expectation(opp_color)
+                    steal_ev_by_color[opp_color] = ev
+                    if needed_set:
+                        p_need_by_color[opp_color] = sum(
+                            ev.get(r, 0.0) for r in needed_set)
+        except Exception:  # noqa: BLE001
+            steal_ev_by_color = {}
+            p_need_by_color = {}
     try:
         scores = score_robber_targets(
             game.tracker.game, color,
@@ -227,7 +250,11 @@ def _compute_robber_snapshot(
             pips = s.victims.get(vcolor, 0)
             vp_weight = 3.0 if vp >= close_vp else (
                 1.8 if vp >= mid_vp else 1.0)
-            return cards * vp_weight + pips * 0.3
+            # Expected chance this steal lands a resource we need (0..1),
+            # nudged just under a card's worth so it breaks ties between
+            # similarly-stocked victims without overriding card count / VP.
+            need_ev = p_need_by_color.get(vcolor, 0.0)
+            return cards * vp_weight + pips * 0.3 + need_ev * 1.5
         suggested_color: str | None = None
         if s.victims:
             # Prefer a victim with >=1 card; all-empty-hands falls back to
@@ -266,6 +293,15 @@ def _compute_robber_snapshot(
                     "vp": s.victim_vp.get(c, 0),
                     "cards": s.opponent_hand_size.get(c, 0),
                     "suggested": (c == suggested_color),
+                    # Expected steal yield by resource (probabilities sum
+                    # to ~1 across resources); None when the model is not
+                    # in sync. p_need is the chance of a needed resource.
+                    "steal_ev": (
+                        {r: round(v, 3)
+                         for r, v in steal_ev_by_color[c].items()}
+                        if c in steal_ev_by_color else None),
+                    "p_need": (round(p_need_by_color[c], 3)
+                               if c in p_need_by_color else None),
                 }
                 for c, pips in sorted(
                     s.victims.items(), key=lambda kv: -kv[1])

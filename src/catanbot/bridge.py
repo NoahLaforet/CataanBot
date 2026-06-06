@@ -2210,6 +2210,25 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 # per-resource accounting inside the guard also covers the
                 # bank-count off-by-one (self holding the only in-play copy).
                 opp_hands_for_recs: dict[str, dict[str, int]] = {}
+                # Prefer the probabilistic model's guaranteed minimums +
+                # genuine unknown mass over the tracker point estimate, so
+                # the trade supply guard reasons about what an opponent is
+                # actually known to hold vs what is merely uncertain. Reads
+                # only when the model is in sync; tracker is the fallback.
+                _opp_model = getattr(game, "opp_model", None)
+                if _opp_model is not None:
+                    try:
+                        _tb: dict[str, int] = {}
+                        for _ocid, _ocnt in sess.hand_card_counts.items():
+                            if _ocid == sess.self_color_id:
+                                continue
+                            _ou = sess.player_names.get(_ocid)
+                            if not _ou:
+                                continue
+                            _tb[game.color_map.get(_ou).name] = int(_ocnt)
+                        _opp_model.reconcile(_tb)
+                    except Exception:  # noqa: BLE001
+                        _opp_model = None
                 try:
                     for _ocid in sess.hand_card_counts:
                         if _ocid == sess.self_color_id:
@@ -2220,9 +2239,22 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                         _ce = game.color_map.get(_ouser)
                         if _ce is None:
                             continue
-                        opp_hands_for_recs[_ce.name] = {
-                            r: int(n) for r, n
-                            in dict(game.tracker.hand(_ce)).items()}
+                        if (_opp_model is not None
+                                and _opp_model.is_synced()
+                                and _opp_model.hand_total(_ce.name)
+                                == int(sess.hand_card_counts[_ocid])):
+                            _bel = _opp_model.beliefs(_ce.name)
+                            _floor = {r: _bel[r].minimum for r in _bel}
+                            _unknown = max(
+                                0,
+                                int(sess.hand_card_counts[_ocid])
+                                - sum(_floor.values()))
+                            _floor["unknown"] = _unknown
+                            opp_hands_for_recs[_ce.name] = _floor
+                        else:
+                            opp_hands_for_recs[_ce.name] = {
+                                r: int(n) for r, n
+                                in dict(game.tracker.hand(_ce)).items()}
                 except Exception:  # noqa: BLE001
                     opp_hands_for_recs = {}
                 full_recs = recommend_actions(
