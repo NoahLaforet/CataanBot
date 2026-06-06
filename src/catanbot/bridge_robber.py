@@ -207,6 +207,22 @@ def _compute_robber_snapshot(
     # every card in a hand as equally useful. Only when the model is in
     # sync with the authoritative counts; otherwise the picker falls back
     # to the card-count heuristic below.
+    # Hidden-VP suspicion per color: a player sitting on unplayed dev
+    # cards may be one secret victory point from winning, so their true
+    # standing is higher than their public VP. Nudges the victim picker
+    # toward denying a likely-hidden leader. Same estimate as the opp row.
+    dev_susp_by_color: dict[str, float] = {}
+    try:
+        for _cid, _user in (sess.player_names or {}).items():
+            try:
+                _c = game.color_map.get(_user)
+            except Exception:  # noqa: BLE001
+                continue
+            _held = int(sess.dev_card_counts.get(_cid, 0))
+            dev_susp_by_color[_c] = (
+                round(1.0 - (0.72 ** _held), 3) if _held > 0 else 0.0)
+    except Exception:  # noqa: BLE001
+        dev_susp_by_color = {}
     steal_ev_by_color: dict[str, dict[str, float]] = {}
     p_need_by_color: dict[str, float] = {}
     model = getattr(game, "opp_model", None)
@@ -254,7 +270,11 @@ def _compute_robber_snapshot(
             # nudged just under a card's worth so it breaks ties between
             # similarly-stocked victims without overriding card count / VP.
             need_ev = p_need_by_color.get(vcolor, 0.0)
-            return cards * vp_weight + pips * 0.3 + need_ev * 1.5
+            # Hidden-VP suspicion (0..1): deny a player who might secretly
+            # be near the win. Weighted like a fraction of a VP step.
+            dev_susp = dev_susp_by_color.get(vcolor, 0.0)
+            return (cards * vp_weight + pips * 0.3
+                    + need_ev * 1.5 + dev_susp * 1.2)
         suggested_color: str | None = None
         if s.victims:
             # Prefer a victim with >=1 card; all-empty-hands falls back to
@@ -302,6 +322,8 @@ def _compute_robber_snapshot(
                         if c in steal_ev_by_color else None),
                     "p_need": (round(p_need_by_color[c], 3)
                                if c in p_need_by_color else None),
+                    # Chance this victim hides at least one VP card.
+                    "dev_vp_suspicion": dev_susp_by_color.get(c, 0.0),
                 }
                 for c, pips in sorted(
                     s.victims.items(), key=lambda kv: -kv[1])

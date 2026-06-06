@@ -565,6 +565,12 @@
     opacity: 0.55;
     font-weight: 500;
   }
+  /* Steal pressure: an opponent who keeps robbing you. Tinted toward the
+     danger color so it reads as a threat in the muted tag strip. */
+  .opp .steal-vs {
+    color: var(--neg, #e57373);
+    font-weight: 600;
+  }
   /* Untracked = at least one hidden steal/discard moved cards we
      couldn't attribute. Italicize the breakdown so Noah reads it
      as a "best guess" rather than ground truth. The total card

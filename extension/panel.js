@@ -5508,11 +5508,20 @@
                     : '';
                 // Dev-card tag: uniform grey at low VP, amber/bold
                 // when the dev-stash could plausibly be hiding VPs
-                // that push them to the win threshold.
+                // that push them to the win threshold. The hidden-VP
+                // suspicion probability rides along as a hover detail,
+                // and shows inline once it crosses 50%.
+                const devSusp = o.dev_vp_suspicion || 0;
+                const suspPct = Math.round(devSusp * 100);
+                const suspTitle = devSusp > 0
+                    ? ` title="${suspPct}% chance of a hidden victory-point card"`
+                    : '';
+                const suspInline = (o.dev_stash_risk && devSusp >= 0.5)
+                    ? ` ${suspPct}%` : '';
                 const devTag = (o.dev_cards || 0) > 0
                     ? (o.dev_stash_risk
-                        ? ` · <span class="dev-stash">${o.dev_cards}dev🔒</span>`
-                        : ` · ${o.dev_cards}dev`)
+                        ? ` · <span class="dev-stash"${suspTitle}>${o.dev_cards}dev🔒${suspInline}</span>`
+                        : ` · <span${suspTitle}>${o.dev_cards}dev</span>`)
                     : '';
                 // Played-knights counter — silent at 0, flags at 2+
                 // (one away from largest army) so the overlay colors
@@ -5609,9 +5618,28 @@
                 const vpHtml = `<span class="${vpCls}">${o.vp}`
                     + '<span class="lbl">VP</span></span>';
                 // Strip the leading " · " each conditional tag carries
+                // Steal pressure from the who-robbed-whom matrix: surface
+                // how many times this opponent has robbed us. The threat
+                // direction is the useful one; full matrix is in the snap.
+                let stealTag = '';
+                if (snap.steal_matrix && snap.self && snap.self.color) {
+                    let theyRob = 0;
+                    for (const s of snap.steal_matrix) {
+                        if (s.thief === o.color
+                                && s.victim === snap.self.color) {
+                            theyRob = s.count;
+                            break;
+                        }
+                    }
+                    if (theyRob > 0) {
+                        stealTag = ` · <span class="steal-vs" `
+                            + `title="has robbed you ${theyRob} time(s)">`
+                            + `robbed you ${theyRob}x</span>`;
+                    }
+                }
                 // and rejoin with a single separator. Prevents a stray
                 // leading dot when the first applicable tag is missing.
-                const mutedTags = [devTag, kpTag, prodTag, opPortTag]
+                const mutedTags = [devTag, kpTag, prodTag, opPortTag, stealTag]
                     .map(t => t.replace(/^ · /, ''))
                     .filter(Boolean)
                     .join(' · ');
