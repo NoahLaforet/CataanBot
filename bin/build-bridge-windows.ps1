@@ -110,12 +110,14 @@ Write-Ok "PyInstaller present"
 $PyiArgs = @(
     '--noconfirm', '--clean',
     '--name', 'catanbot-bridge',
-    '--onefile', '--console',
+    '--onefile', '--windowed',
     '--icon', 'bin/catanbot.ico',
     '--paths', 'src',
     '--collect-submodules', 'catanbot',
     '--collect-submodules', 'catanatron',
     '--collect-all', 'uvicorn',
+    '--collect-all', 'pystray',
+    '--add-data', 'extension/icons/icon-128.png;catanbot_assets',
     '--hidden-import', 'uvicorn.logging',
     '--hidden-import', 'uvicorn.loops.auto',
     '--hidden-import', 'uvicorn.loops.asyncio',
@@ -125,7 +127,7 @@ $PyiArgs = @(
     '--hidden-import', 'uvicorn.protocols.websockets.websockets_impl',
     '--hidden-import', 'uvicorn.protocols.websockets.wsproto_impl',
     '--hidden-import', 'uvicorn.lifespan.on',
-    'bin/bridge_entry.py'
+    'bin/win_tray_entry.py'
 )
 Write-Step "Building dist/catanbot-bridge.exe (PyInstaller, this takes a minute)"
 # PyInstaller logs progress to stderr; under Windows PowerShell 5.1 with

@@ -33,15 +33,16 @@ jobs:
       - name: Install package + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[bridge]" pyinstaller
+          pip install -e ".[bridge,wintray]" pyinstaller
 
-      - name: Build the bridge exe
+      - name: Build the tray exe
         run: >
           python -m PyInstaller --noconfirm --clean
-          --name catanbot-bridge --onefile --console
+          --name catanbot-bridge --onefile --windowed
           --icon bin/catanbot.ico --paths src
           --collect-submodules catanbot --collect-submodules catanatron
-          --collect-all uvicorn
+          --collect-all uvicorn --collect-all pystray
+          --add-data "extension/icons/icon-128.png;catanbot_assets"
           --hidden-import uvicorn.logging
           --hidden-import uvicorn.loops.auto
           --hidden-import uvicorn.loops.asyncio
@@ -51,7 +52,7 @@ jobs:
           --hidden-import uvicorn.protocols.websockets.websockets_impl
           --hidden-import uvicorn.protocols.websockets.wsproto_impl
           --hidden-import uvicorn.lifespan.on
-          bin/bridge_entry.py
+          bin/win_tray_entry.py
 
       - name: Name it CatanBot.exe
         run: Copy-Item dist/catanbot-bridge.exe dist/CatanBot.exe

@@ -39,6 +39,11 @@ tray = [
     # resolves to nothing and bin/catanbot stays the launch path.
     "rumps>=0.4; sys_platform == 'darwin'",
 ]
+wintray = [
+    # Windows system-tray app (bin/win_tray_entry.py + catanbot.tray.win_app).
+    # pystray draws the notification-area icon; Pillow (a base dep) loads it.
+    "pystray>=0.19; sys_platform == 'win32'",
+]
 
 [project.scripts]
 catanbot = "catanbot.cli:main"
