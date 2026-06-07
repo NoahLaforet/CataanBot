@@ -975,6 +975,39 @@
   }
   .dev-deck .dev-num { font-weight: 700; }
 
+  /* Who-robbed-whom steal matrix. Same host chrome as the dev-deck
+     strip; rows are one thief→victim pair, busiest first. Bigger text,
+     few words per the HUD house style. */
+  .steals-host {
+    margin: var(--s-3) 0 var(--s-2);
+  }
+  .steals-host.hidden { display: none; }
+  .steals-host .steals-h {
+    font-size: calc(11px * var(--font-scale));
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-label);
+    margin: 0 0 var(--s-2);
+  }
+  .steals {
+    display: flex; flex-direction: column; gap: var(--s-2);
+  }
+  .steals .steal-row {
+    display: flex; align-items: baseline; gap: 6px;
+    font-size: calc(14px * var(--font-scale));
+    line-height: 1.2;
+  }
+  .steals .steal-thief,
+  .steals .steal-victim { font-weight: 700; }
+  .steals .steal-arrow { color: var(--fg-dim); }
+  .steals .steal-count {
+    margin-left: auto;
+    color: var(--fg-mute);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
   .yield-sum {
     color: var(--fg-mute);
     font-size: calc(13px * var(--font-scale));
@@ -3430,14 +3463,16 @@ table.robber.robber-urgent {
 .hist-host .hist-h,
 .eval-host .eval-h,
 .mq-host .mq-h,
-.dev-deck-host .dev-deck-h {
+.dev-deck-host .dev-deck-h,
+.steals-host .steals-h {
   cursor: pointer;
   user-select: none;
 }
 .hist-host .hist-h::after,
 .eval-host .eval-h::after,
 .mq-host .mq-h::after,
-.dev-deck-host .dev-deck-h::after {
+.dev-deck-host .dev-deck-h::after,
+.steals-host .steals-h::after {
   content: " \25BE";
   opacity: 0.45;
   font-size: 9px;
@@ -3445,14 +3480,16 @@ table.robber.robber-urgent {
 .hist-host.stat-collapsed .hist-h::after,
 .eval-host.stat-collapsed .eval-h::after,
 .mq-host.stat-collapsed .mq-h::after,
-.dev-deck-host.stat-collapsed .dev-deck-h::after {
+.dev-deck-host.stat-collapsed .dev-deck-h::after,
+.steals-host.stat-collapsed .steals-h::after {
   content: " \25B8";
 }
 .hist-host.stat-collapsed .hist,
 .eval-host.stat-collapsed .eval-graph,
 .mq-host.stat-collapsed .mq-tally,
 .mq-host.stat-collapsed .mq-last,
-.dev-deck-host.stat-collapsed .dev-deck {
+.dev-deck-host.stat-collapsed .dev-deck,
+.steals-host.stat-collapsed .steals {
   display: none !important;
 }
 

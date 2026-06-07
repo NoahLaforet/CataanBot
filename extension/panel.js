@@ -3259,6 +3259,7 @@
             ['eval-host', '.eval-h', 'cataan-collapse-eval'],
             ['mq-host', '.mq-h', 'cataan-collapse-mq'],
             ['dev-deck-host', '.dev-deck-h', 'cataan-collapse-dev'],
+            ['steals-host', '.steals-h', 'cataan-collapse-steals'],
         ];
         for (const [hostId, headSel, storeKey] of _statPanels) {
             const host = document.getElementById(hostId);
@@ -3986,6 +3987,8 @@
         const mqLast = document.getElementById('mq-last');
         const devDeckHost = document.getElementById('dev-deck-host');
         const devDeck = document.getElementById('dev-deck');
+        const stealsHost = document.getElementById('steals-host');
+        const steals = document.getElementById('steals');
         // Pre-populate the 11 columns once. renderOverlay only mutates
         // bar heights + class flags from here on — the column DOM never
         // gets rebuilt, which is what lets CSS height transitions fire
@@ -4013,6 +4016,7 @@
             evalHost, evalGraph, evalLine, evalFill, evalDot, evalCur,
             mqHost, mqTally, mqLast,
             devDeckHost, devDeck,
+            stealsHost, steals,
             variantBadge,
             scanMapBtn,
         };
@@ -4379,6 +4383,7 @@
                 if (ui.evalHost) ui.evalHost.classList.add('hidden');
                 if (ui.mqHost) ui.mqHost.classList.add('hidden');
                 if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+                if (ui.stealsHost) ui.stealsHost.classList.add('hidden');
                 return;
             }
             const d = window.__catanbotDiag || {};
@@ -4423,6 +4428,7 @@
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
             if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            if (ui.stealsHost) ui.stealsHost.classList.add('hidden');
             return;
         }
         // Standalone "live without bridge" path: the snap is shaped
@@ -4445,6 +4451,7 @@
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
             if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            if (ui.stealsHost) ui.stealsHost.classList.add('hidden');
             return;
         }
         // Bridge-only mode + bridge unreachable: render the explicit
@@ -4487,6 +4494,7 @@
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
             if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            if (ui.stealsHost) ui.stealsHost.classList.add('hidden');
             return;
         }
         if (!snap.game_started) {
@@ -4496,6 +4504,7 @@
             if (ui.evalHost) ui.evalHost.classList.add('hidden');
             if (ui.mqHost) ui.mqHost.classList.add('hidden');
             if (ui.devDeckHost) ui.devDeckHost.classList.add('hidden');
+            if (ui.stealsHost) ui.stealsHost.classList.add('hidden');
             // Clear header pills too — they shouldn't persist across
             // a reset/new-game while the next game's settings load.
             ui.panel.dataset.variant = 'classic';
@@ -6035,6 +6044,7 @@
         renderEvalGraph(ui, snap);
         renderMoveQuality(ui, snap);
         renderDevDeckByType(ui, snap);
+        renderStealMatrix(ui, snap);
     }
 
     // Dev-deck remaining-by-type strip — base deck count minus
@@ -6075,6 +6085,47 @@
                 + '</span>');
         }
         ui.devDeck.innerHTML = cells.join('');
+    }
+
+    // Who-robbed-whom steal matrix. One row per thief/victim pair the
+    // opponent model has tallied, busiest first. Names are colored by the
+    // colonist UI css (falling back to the catanatron color hex) and run
+    // through anonName so streamer mode still hides usernames. Hidden
+    // until the bridge ships a non-empty snap.steal_matrix (no steal yet
+    // means no section). Lives at the bottom of the body strips.
+    function renderStealMatrix(ui, snap) {
+        if (!ui || !ui.stealsHost) return;
+        const rows = (snap && snap.steal_matrix) || null;
+        if (!rows || !rows.length) {
+            ui.stealsHost.classList.add('hidden');
+            return;
+        }
+        ui.stealsHost.classList.remove('hidden');
+        // Name fallback: username (anon'd in streamer mode) else the
+        // lowercased catanatron color so the row is never blank.
+        const nameFor = (user, color) => {
+            const u = anonName(user);
+            return u || String(color || '?').toLowerCase();
+        };
+        // Color fallback: colonist css when present, else the same hex
+        // map pillColor uses, else a neutral mute so text stays legible.
+        const colorFor = (css, color) =>
+            css || COLOR_HEX[color] || 'var(--fg-mute)';
+        const lines = [];
+        for (const r of rows) {
+            const tCol = colorFor(r.thief_css, r.thief);
+            const vCol = colorFor(r.victim_css, r.victim);
+            lines.push(
+                `<div class="steal-row">`
+                + `<span class="steal-thief" style="color:${escapeHtml(tCol)}">`
+                + `${escapeHtml(nameFor(r.thief_user, r.thief))}</span>`
+                + `<span class="steal-arrow">→</span>`
+                + `<span class="steal-victim" style="color:${escapeHtml(vCol)}">`
+                + `${escapeHtml(nameFor(r.victim_user, r.victim))}</span>`
+                + `<span class="steal-count">×${Number(r.count) || 0}</span>`
+                + `</div>`);
+        }
+        ui.steals.innerHTML = lines.join('');
     }
 
     // 36-roll baseline weights: number of dice combos that produce each
