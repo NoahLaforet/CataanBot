@@ -1013,6 +1013,7 @@ def recommend_actions(
     dev_deck_remaining: int | None = None,
     strategy_tag: str | None = None,
     strategy_phase: str | None = None,
+    pieces: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Rank what to do with the current hand.
 
@@ -1041,6 +1042,31 @@ def recommend_actions(
     c = color if isinstance(color, Color) else Color[str(color).upper()]
     m = game.state.board.map
     recs: list[dict[str, Any]] = []
+    # Remaining build pieces (base-game caps: 5 settlements, 4 cities, 15
+    # roads). Counted off the board because the live tracker builds via
+    # board.build_* and never decrements catanatron's Px_*_AVAILABLE pool
+    # keys, so those read stale. The bridge passes its already-computed
+    # snap["self"]["pieces"]; unit tests calling raw fall back to the
+    # board count here. A build/trade/plan for a piece type with none left
+    # (e.g. a 5th city) must never be recommended.
+    if pieces is not None:
+        settle_left = int(pieces.get("settle_left", 5))
+        city_left = int(pieces.get("city_left", 4))
+        road_left = int(pieces.get("road_left", 15))
+    else:
+        _board = game.state.board
+        _settles = _cities = 0
+        for _bcol, _bt in _board.buildings.values():
+            if _bcol != c:
+                continue
+            if _bt == "CITY":
+                _cities += 1
+            else:
+                _settles += 1
+        _road_edges = {frozenset(e) for e, rc in _board.roads.items() if rc == c}
+        settle_left = max(0, 5 - _settles)
+        city_left = max(0, 4 - _cities)
+        road_left = max(0, 15 - len(_road_edges))
     # Per-resource /roll baseline — drives the "fills your weakest" hint
     # in settle rationales. Computed once up front since it reads every
     # self building; cheap but not zero-cost.
@@ -1097,7 +1123,7 @@ def recommend_actions(
     # Sort by wheat-weighted production (Reddit finding #2) so a wheat
     # corner edges out an equal-pip non-wheat one; display the raw
     # production in the detail so cards-per-roll reads honest.
-    if _hand_can_afford(hand, _SETTLEMENT_COST):
+    if settle_left > 0 and _hand_can_afford(hand, _SETTLEMENT_COST):
         try:
             nodes = game.state.board.buildable_node_ids(
                 c, initial_build_phase=False)
@@ -1128,7 +1154,7 @@ def recommend_actions(
 
     # --- City upgrades ---------------------------------------------------
     # Any settlement I own, ranked by production (city doubles yield).
-    if _hand_can_afford(hand, _CITY_COST):
+    if city_left > 0 and _hand_can_afford(hand, _CITY_COST):
         for node_id, (bcol, btype) in game.state.board.buildings.items():
             if bcol != c or btype != "SETTLEMENT":
                 continue
@@ -1147,7 +1173,7 @@ def recommend_actions(
     # Each buildable edge scored by the best settlement spot its far end
     # opens up (ignoring distance-2 against the player's own building at
     # the near end — catanatron handles that for actual placement).
-    if _hand_can_afford(hand, _ROAD_COST):
+    if road_left > 0 and _hand_can_afford(hand, _ROAD_COST):
         try:
             edges = list(game.state.board.buildable_edges(c))
         except Exception:  # noqa: BLE001
@@ -1495,7 +1521,7 @@ def recommend_actions(
     # decide to hold rather than spend on whatever's affordable now.
     # e.g. road is affordable but a settlement is 1 Sheep away → the
     # overlay shows both and the user picks.
-    if not _hand_can_afford(hand, _SETTLEMENT_COST):
+    if settle_left > 0 and not _hand_can_afford(hand, _SETTLEMENT_COST):
         missing = _missing_for(hand, _SETTLEMENT_COST)
         if 0 < sum(missing.values()) <= _PLAN_MAX_MISSING:
             best = _best_settlement_spot()
@@ -1518,7 +1544,7 @@ def recommend_actions(
                     "rationale": _settle_rationale(
                         m, node, self_expected),
                 })
-    if not _hand_can_afford(hand, _CITY_COST):
+    if city_left > 0 and not _hand_can_afford(hand, _CITY_COST):
         missing = _missing_for(hand, _CITY_COST)
         if 0 < sum(missing.values()) <= _PLAN_MAX_MISSING:
             best = _best_owned_settlement()
@@ -1588,13 +1614,18 @@ def recommend_actions(
     # road with no target node produces a suggestion Noah can't act on.
     # Settlement / city / dev-card trades unlock concrete, high-value
     # moves, so those are the ones worth surfacing.
+    # Only surface a trade-to-unlock for a piece type the player can still
+    # build. Trading for a city when all 4 are already placed (or a 5th
+    # settlement) can never pay off; dev cards have no piece cap.
     _trade_targets = [
-        ("settlement", _SETTLEMENT_COST, _score_settlement,
-         _best_settlement_spot),
-        ("city",       _CITY_COST,       _score_city,
-         _best_owned_settlement),
-        ("dev_card",   _DEV_COST,        lambda _p: _DEV_CARD_SCORE,
-         None),
+        t for t, ok in (
+            (("settlement", _SETTLEMENT_COST, _score_settlement,
+              _best_settlement_spot), settle_left > 0),
+            (("city", _CITY_COST, _score_city,
+              _best_owned_settlement), city_left > 0),
+            (("dev_card", _DEV_COST, lambda _p: _DEV_CARD_SCORE,
+              None), True),
+        ) if ok
     ]
     for kind, cost, score_fn, target_fn in _trade_targets:
         if _hand_can_afford(hand, cost):

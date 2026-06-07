@@ -2339,7 +2339,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                     dev_deck_remaining=dev_deck_for_recs,
                     strategy_tag=strat_snap.get("active"),
                     strategy_phase=strat_snap.get("phase"),
-                    opp_hands=opp_hands_for_recs)
+                    opp_hands=opp_hands_for_recs,
+                    # Gate build/trade recs on remaining piece supply so a
+                    # 5th city (or settlement) is never recommended.
+                    pieces=(snap.get("self") or {}).get("pieces"))
             snap["recommendations"] = full_recs[:4]
             if full_recs:
                 st["last_recs_for_self"] = full_recs

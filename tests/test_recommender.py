@@ -2154,3 +2154,47 @@ def test_rebalance_trade_silent_when_only_leader_holds_resource():
                   and r.get("variant") == "rebalance"]
     assert not rebalances, (
         "shouldn't propose a trade to a close-to-winning leader")
+
+
+def _red_with_four_cities():
+    """RED has all 4 cities placed (city_left == 0) plus one lone
+    settlement, so a city upgrade has a target but no piece to build."""
+    from catanatron import Color, Game, RandomPlayer
+
+    g = Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                   Color.WHITE, Color.ORANGE)],
+        seed=1,
+    )
+    b = g.state.board
+    for n in (0, 2, 8, 11):
+        b.build_settlement(Color.RED, n, initial_build_phase=True)
+        b.build_city(Color.RED, n)
+    b.build_settlement(Color.RED, 13, initial_build_phase=True)
+    return g
+
+
+def test_no_city_rec_when_zero_city_pieces_left():
+    """With all 4 cities placed, an affordable city hand must not yield a
+    city rec (the recommender ran one in a real game: it kept suggesting
+    a city when none were left)."""
+    from catanbot.recommender import recommend_actions
+
+    g = _red_with_four_cities()
+    out = recommend_actions(g, "RED", {"WHEAT": 2, "ORE": 3}, top=10)
+    assert all(r.get("kind") != "city" for r in out), out
+
+
+def test_no_city_unlock_trade_or_plan_when_zero_city_pieces():
+    """One ore short of a city, with spare wheat to bank-trade: the
+    recording's "PORT/BANK 4 wheat -> 1 ore unlocks city" + "PLANNING
+    AHEAD CITY" entries must not appear when 0 city pieces remain."""
+    from catanbot.recommender import recommend_actions
+
+    g = _red_with_four_cities()
+    out = recommend_actions(
+        g, "RED", {"WHEAT": 6, "ORE": 2}, top=10,
+        bank_supply={"WOOD": 5, "BRICK": 5, "SHEEP": 5,
+                     "WHEAT": 5, "ORE": 5})
+    assert all(r.get("kind") != "city" for r in out), out
+    assert all(r.get("unlocks") != "city" for r in out), out
