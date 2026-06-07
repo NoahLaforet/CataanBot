@@ -4,6 +4,31 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## Unreleased
+
+Gameplay fixes caught on a real recording.
+
+- **Self knight count no longer doubles.** A single self knight play was
+  counted twice (DOM log + WS), so the count ran away (12, 14, 16) and
+  poisoned the Largest Army read. Snapped to colonist's authoritative
+  play history.
+- **No build rec when no pieces are left.** A city upgrade (and a
+  "trade to unlock a city" + "plan a city") kept getting recommended
+  after all 4 cities were placed. Every build/trade/plan now checks
+  remaining piece supply.
+- **An affordable city outranks a road.** The search reranker simulated
+  off a hand that under-counted ore/wheat, so an affordable city failed
+  to simulate and a cheaper road sorted above it.
+- **Robber ranking collapse/expand button works**, and the **robber
+  ranking no longer gets stuck** on screen after its turn ends.
+- **Pre-roll discard banner is clearer and less alarmist**: it names the
+  spend-down target and the kept count separately (no more "dump to 7
+  but you end at 8"), and stops screaming DANGER while you're winning big.
+- **Knight rec fixes**: it no longer vanishes in 1v1 when the lone
+  opponent is low-VP (Friendly Robber), and no longer claims "a strong
+  block is available" when the robber already sits on the opponent's
+  best tile.
+
 ## v0.47.0 (2026-06-06)
 
 Probabilistic opponent card tracking on the bridge.
