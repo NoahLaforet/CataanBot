@@ -1965,7 +1965,7 @@ def recommend_actions(
     # can't be simulated (propose_trade, soon-plans) or if the engine
     # state is malformed. See eval.py for the state evaluator.
     from catanbot.eval import search_rerank
-    search_rerank(game, c, recs)
+    search_rerank(game, c, recs, hand=hand)
 
     # Endgame urgency bias. Once self crosses close_to_win_vp() (10 VP
     # target → ≥ 8 VP, 12 VP target → ≥ 10 VP, etc — automatically

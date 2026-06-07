@@ -2198,3 +2198,47 @@ def test_no_city_unlock_trade_or_plan_when_zero_city_pieces():
                      "WHEAT": 5, "ORE": 5})
     assert all(r.get("kind") != "city" for r in out), out
     assert all(r.get("unlocks") != "city" for r in out), out
+
+
+def test_affordable_city_outranks_road():
+    """A city that the live hand affords must rank above a road. The
+    search reranker simulated off the tracker player_state, which can
+    under-count ore/wheat after steals, so the city failed to simulate
+    and fell below a cheaper road (the recording's road-over-city bug).
+    Forwarding the live hand into the sim fixes the ordering."""
+    from catanatron import ActionType, Color, Game, RandomPlayer
+    from catanatron.state import generate_playable_actions
+    from catanbot.recommender import recommend_actions
+
+    # Play a real game to a mid-game RED turn so the city upgrade lands on
+    # a genuinely strong settlement (not a throwaway fresh-board spot).
+    g = Game([RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                        Color.WHITE, Color.ORANGE)], seed=3)
+    steps = 0
+    while (g.state.is_initial_build_phase
+           or g.state.current_color() != Color.RED) and steps < 200:
+        g.play_tick()
+        steps += 1
+    if g.state.is_initial_build_phase or g.state.current_color() != Color.RED:
+        import pytest
+        pytest.skip("could not reach a RED mid-game turn")
+    for a in g.state.playable_actions:
+        if a.action_type == ActionType.ROLL:
+            g.execute(a)
+            break
+    idx = g.state.color_to_index[Color.RED]
+    if g.state.player_state[f"P{idx}_CITIES_AVAILABLE"] < 1:
+        import pytest
+        pytest.skip("no city piece remaining in this rollout")
+    # Tracker hand under-counts: wood+brick lets a road simulate, but only
+    # 1 ore / 1 wheat means a pre-fix city sim fails and gets demoted.
+    for r, n in {"WOOD": 1, "BRICK": 1, "SHEEP": 0,
+                 "WHEAT": 1, "ORE": 1}.items():
+        g.state.player_state[f"P{idx}_{r}_IN_HAND"] = n
+    g.state.playable_actions = generate_playable_actions(g.state)
+    # The live colonist-derived hand affords BOTH a city and a road.
+    live = {"WHEAT": 2, "ORE": 3, "WOOD": 1, "BRICK": 1}
+    recs = recommend_actions(g, "RED", live, top=10)
+    now = [r["kind"] for r in recs if r.get("when") == "now"]
+    assert "city" in now and "road" in now, now
+    assert now.index("city") < now.index("road"), now

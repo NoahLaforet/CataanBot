@@ -245,7 +245,13 @@ def _force_our_play_turn(state, c) -> None:
     state.playable_actions = generate_playable_actions(state)
 
 
-def search_rerank(game, my_color, recs: list[dict[str, Any]]) -> None:
+_RERANK_RESOURCES = ("WOOD", "BRICK", "SHEEP", "WHEAT", "ORE")
+
+
+def search_rerank(
+    game, my_color, recs: list[dict[str, Any]],
+    hand: dict[str, int] | None = None,
+) -> None:
     """Annotate each rec with ``search_delta`` and reorder in place.
 
     For each rec that maps to a simulatable catanatron action, copies
@@ -274,6 +280,19 @@ def search_rerank(game, my_color, recs: list[dict[str, Any]]) -> None:
         try:
             gc = game.copy()
             _force_our_play_turn(gc.state, c)
+            # Use the live (colonist-derived) hand the recommender saw, not
+            # the tracker's player_state hand, which can under-count ore /
+            # wheat after steals or inference drift. Without this, an
+            # affordable city failed to simulate (search_delta=None ->
+            # tail) while a cheaper road simulated (a real float -> top),
+            # so a road outranked a buildable city. (bug: road over city)
+            if hand is not None:
+                gidx = gc.state.color_to_index[c]
+                for r in _RERANK_RESOURCES:
+                    gc.state.player_state[f"P{gidx}_{r}_IN_HAND"] = int(
+                        hand.get(r, 0))
+                from catanatron.state import generate_playable_actions
+                gc.state.playable_actions = generate_playable_actions(gc.state)
             gc.execute(action)
             post = evaluate_state(gc, c)
             rec["search_delta"] = post - pre
