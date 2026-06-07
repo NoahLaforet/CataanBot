@@ -3381,10 +3381,14 @@
                     localStorage.setItem(
                         'cataan-robber-open', cur ? '0' : '1');
                 } catch (_) { /* localStorage may be blocked */ }
-                // Re-render won't fire until the next /advisor poll.
-                // Update the visible caret + tease text in-place so
-                // the click feels responsive — full table redraw
-                // arrives within ~1s anyway.
+                // Force a rebuild on the next poll so the table actually
+                // expands/collapses. Without this the row count never
+                // changes (the poll only re-renders on a seq change or
+                // this dirty flag), so the toggle did nothing. Same
+                // pattern every other panel toggle uses.
+                window.__catanbotRenderDirty = true;
+                // Update the visible caret + tease text in-place so the
+                // click feels responsive; the full redraw arrives <0.5s.
                 const newOpen = !cur;
                 robberTease.textContent = newOpen
                     ? '▾ collapse' : '· more ▸';
