@@ -1638,14 +1638,22 @@ def _compute_knight_hint(
     # 2/3/11/12 (pip <= 2) hurts so little it's not worth burning a
     # knight to clear unless we have 2+ knights stacked.
     robber_tile_pip = 0
+    # Opponent production the robber is ALREADY blocking on its current
+    # tile. This is the baseline a knight play must beat: if the robber
+    # already sits on the opponent's best tile, moving it can only land an
+    # equal-or-worse block, so the "strong block available" claim is false.
+    current_opp_block = 0
     if robber_tile is not None and robber_tile.number:
         from catanbot.advisor import PIP_DOTS_BY_NUMBER
         robber_tile_pip = PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
         robber_node_ids = set(robber_tile.nodes.values())
         for nid, (bcol, _bt) in board.buildings.items():
-            if bcol != my_enum or int(nid) not in robber_node_ids:
+            if int(nid) not in robber_node_ids:
                 continue
-            self_blocked_pips += PIP_DOTS_BY_NUMBER.get(robber_tile.number, 0)
+            if bcol == my_enum:
+                self_blocked_pips += robber_tile_pip
+            else:
+                current_opp_block += robber_tile_pip * (2 if _bt == "CITY" else 1)
 
     # Opp closing in on largest army? Two trigger paths:
     #   (a) played >= 2 AND vp >= largest_army_threat_vp — "they're
@@ -1671,11 +1679,34 @@ def _compute_knight_hint(
             largest_army_threat = True
             break
 
-    # Best robber target score (reuses the existing ranker).
+    # Best robber target score (reuses the existing ranker). Read it
+    # WITHOUT the Friendly Robber placement filter: that filter is about
+    # which tile colonist will let you place on, and in 1v1 it would drop
+    # the lone low-VP opponent from every tile and collapse the knight's
+    # block value, silently flipping the rec to HOLD. The displayed target
+    # pills (built separately in the snapshot) still honor the filter.
     top_targets = _compute_robber_snapshot(
-        game, display_colors=display_colors, top=1) or []
+        game, display_colors=display_colors, top=1,
+        ignore_friendly_robber=True) or []
     top_target = top_targets[0] if top_targets else None
     top_score = float(top_target["score"]) if top_target else 0.0
+    # Opponent production the best available MOVE would block, computed in
+    # the same pip-dots scale as current_opp_block (off the board), so the
+    # two are directly comparable. The snapshot's victim "pips" use a
+    # different internal scale, so recompute here from the target tile.
+    best_move_block = 0
+    if top_target and top_target.get("coord"):
+        from catanbot.advisor import PIP_DOTS_BY_NUMBER as _PIPS
+        try:
+            _ttile = m.land_tiles.get(tuple(top_target["coord"]))
+        except Exception:  # noqa: BLE001
+            _ttile = None
+        if _ttile is not None and _ttile.number:
+            _tpip = _PIPS.get(_ttile.number, 0)
+            _tnodes = set(_ttile.nodes.values())
+            for _nid, (_bcol, _bt) in board.buildings.items():
+                if int(_nid) in _tnodes and _bcol != my_enum:
+                    best_move_block += _tpip * (2 if _bt == "CITY" else 1)
 
     # Self's own progress toward Largest Army · needed for the
     # "you're close to LA" copy variant. Also figure out who currently
@@ -1763,6 +1794,15 @@ def _compute_knight_hint(
         else:
             reason = ("you're 1 knight from Largest Army · "
                       "play it to grab the +2 VP")
+    elif top_score >= 4.0 and best_move_block <= current_opp_block \
+            and current_opp_block > 0:
+        # The robber already sits on an equal-or-better block than the best
+        # available move (in 1v1 that means it is already on the opponent's
+        # best tile). Moving it cannot improve the block, so do not claim a
+        # strong block is available. (bug: knight said "strong block
+        # available" when the robber already had the strongest block.)
+        reason = ("robber's already on their best tile · "
+                  "holding the knight changes nothing")
     elif top_score >= 4.0:
         # Strong block is available — but with only 1 knight in early
         # game and no LA pressure, holding (concealment) usually beats

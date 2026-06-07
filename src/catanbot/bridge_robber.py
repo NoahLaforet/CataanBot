@@ -83,6 +83,7 @@ def _compute_robber_snapshot(
     game, display_colors: dict[str, str] | None = None, top: int = 5,
     imminent_color: str | None = None,
     needed_resources: list[str] | None = None,
+    ignore_friendly_robber: bool = False,
 ) -> list[dict[str, Any]] | None:
     """Snapshot the top-N robber rankings for the overlay.
 
@@ -130,8 +131,13 @@ def _compute_robber_snapshot(
     # opps can't gang-robber a leader's first build attempt).
     # House-rules can override via CATANBOT_FRIENDLY_ROBBER_PROTECTED_VP.
     from catanbot.config import get_friendly_robber_protected_vp
+    # ignore_friendly_robber: used by the knight-value read so the
+    # placement-legality filter can't zero out the block value of a knight
+    # in 1v1 (the lone low-VP opponent would otherwise vanish from every
+    # tile and collapse the rec). The displayed snapshot still filters.
     fr_min = (get_friendly_robber_protected_vp()
-              if sess.friendly_robber_active else None)
+              if sess.friendly_robber_active and not ignore_friendly_robber
+              else None)
     # Auto-detect imminent opp from game state when caller didn't
     # supply one — robber snapshot may be computed at any point
     # in the snap-build pipeline so we can't assume snap.threat is

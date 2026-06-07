@@ -584,3 +584,108 @@ def test_knight_hint_plays_on_weak_robber_tile_with_two_knights():
     hint = _compute_knight_hint(wrapper)
     assert hint is not None
     assert hint["should_play"] is True
+
+
+def _stub_1v1_opp_on_strong_tiles(friendly_robber=False, opp_vp=5):
+    """RED (self) vs BLUE (1v1). BLUE has settlements on the two
+    highest-pip numbered tiles. Self holds 2 knights. Returns
+    (wrapper, best_coord, second_coord)."""
+    from catanatron import Color, Game, RandomPlayer
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER
+    from catanbot.tracker import Tracker
+
+    g = Game([RandomPlayer(c) for c in (Color.RED, Color.BLUE)], seed=3)
+    state = g.state
+    ranked = sorted(
+        ((PIP_DOTS_BY_NUMBER.get(t.number, 0), coord, t)
+         for coord, t in state.board.map.land_tiles.items() if t.number),
+        key=lambda x: -x[0])
+    best, second = ranked[0], ranked[1]
+    used = set()
+    for _pip, _coord, tile in (best, second):
+        for nid in tile.nodes.values():
+            if nid not in used:
+                state.board.build_settlement(
+                    Color.BLUE, nid, initial_build_phase=True)
+                used.add(nid)
+                break
+    ridx = state.color_to_index[Color.RED]
+    bidx = state.color_to_index[Color.BLUE]
+    state.player_state[f"P{ridx}_KNIGHT_IN_HAND"] = 2
+    state.player_state[f"P{ridx}_VICTORY_POINTS"] = 9
+    state.player_state[f"P{bidx}_VICTORY_POINTS"] = opp_vp
+    for r in ("WHEAT", "ORE", "SHEEP"):
+        state.player_state[f"P{bidx}_{r}_IN_HAND"] = 2
+    tr = Tracker()
+    tr.game = g
+
+    class FakeSess:
+        self_color_id = 0
+        player_names = {0: "noah", 1: "opp"}
+        hand_card_counts = {0: 4, 1: 6}
+        dev_card_counts = {0: 2, 1: 0}
+        self_dev_bought_this_turn = []
+        friendly_robber_active = friendly_robber
+
+        def is_placeholder_username(self, u):
+            return False
+
+    class FakeColorMap:
+        _m = {"noah": "RED", "opp": "BLUE"}
+
+        def get(self, u):
+            return self._m.get(u)
+
+        def reverse(self, color):
+            return {"RED": "noah", "BLUE": "opp"}.get(color)
+
+    return (SimpleNamespace(tracker=tr, session=FakeSess(),
+                            color_map=FakeColorMap()),
+            best[1], second[1])
+
+
+def test_knight_hint_no_strong_block_when_robber_already_on_best_tile():
+    """1v1, robber already parked on the opponent's best tile. Moving it
+    can only land an equal-or-worse block, so the hint must NOT advertise
+    a strong block. (bug: knight claimed a strong block when it already
+    had the strongest one)."""
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER
+    from catanbot.bridge_hints import _compute_knight_hint
+
+    wrapper, _best, _second = _stub_1v1_opp_on_strong_tiles()
+    state = wrapper.tracker.game.state
+    board = state.board
+
+    def opp_block(coord):
+        t = board.map.land_tiles.get(coord)
+        if not t or not t.number:
+            return 0
+        pip = PIP_DOTS_BY_NUMBER.get(t.number, 0)
+        nodes = set(t.nodes.values())
+        return sum(pip * (2 if bt == "CITY" else 1)
+                   for nid, (bcol, bt) in board.buildings.items()
+                   if int(nid) in nodes and bcol.name != "RED")
+
+    # Park the robber on the tile that blocks the opponent MOST, so no
+    # move can improve the block - the exact "already on their best" case.
+    best_coord = max(board.map.land_tiles, key=opp_block)
+    assert opp_block(best_coord) > 0
+    board.robber_coordinate = best_coord
+    hint = _compute_knight_hint(wrapper)
+    assert hint is not None
+    assert "strong block" not in hint["reason"].lower(), hint["reason"]
+
+
+def test_knight_hint_not_suppressed_by_friendly_robber_in_1v1():
+    """1v1 with Friendly Robber on and the lone opponent at low VP: the
+    placement filter must not zero out the knight's block value and flip
+    the rec to 'no urgent reason · hold'. (bug: robber/knight rec missing
+    at low opponent VP)."""
+    from catanbot.bridge_hints import _compute_knight_hint
+
+    # Robber NOT on the best tile, so a strong block move genuinely exists.
+    wrapper, _best, _second = _stub_1v1_opp_on_strong_tiles(
+        friendly_robber=True, opp_vp=2)
+    hint = _compute_knight_hint(wrapper)
+    assert hint is not None
+    assert "no urgent reason" not in hint["reason"].lower(), hint["reason"]
