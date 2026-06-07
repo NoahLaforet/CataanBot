@@ -2839,6 +2839,28 @@ html, body, .panel {
   letter-spacing: 0.02em;
 }
 .no-bridge-frame .nb-btn:hover { filter: brightness(1.15); }
+/* Out-of-date bridge app banner: sits at the very top of the live HUD,
+   tinted toward the danger color, with one-click redownload links. */
+.bridge-outdated {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 var(--s-2, 8px);
+  padding: 7px 10px;
+  border-left: 3px solid var(--neg, #e57373);
+  background: rgba(229, 115, 115, 0.10);
+  border-radius: 4px;
+  font-size: calc(12px * var(--font-scale, 1));
+}
+.bridge-outdated .bo-ico { color: var(--neg, #e57373); }
+.bridge-outdated .bo-text { color: var(--fg, #e8edf4); flex: 1 1 auto; }
+.bridge-outdated .bo-links { display: inline-flex; gap: 10px; }
+.bridge-outdated .bo-links a {
+  color: var(--neg, #e57373);
+  font-weight: 700;
+  text-decoration: underline;
+}
 .nb-cta {
   margin: 4px auto 2px;
 }

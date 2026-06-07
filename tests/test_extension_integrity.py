@@ -91,9 +91,17 @@ def test_versions_are_in_sync():
     assert m2, "no version heading in CHANGELOG.md"
     changelog_v = m2.group(1)
 
-    assert manifest_v == pyproject_v == changelog_v, (
+    # The bridge reports catanbot.__version__ in its /advisor snapshot so
+    # the extension can flag an outdated bridge app, so it must match too.
+    m3 = re.search(r'__version__\s*=\s*"([^"]+)"',
+                   _read("src/catanbot/__init__.py"))
+    assert m3, "no __version__ in src/catanbot/__init__.py"
+    package_v = m3.group(1)
+
+    assert manifest_v == pyproject_v == changelog_v == package_v, (
         f"version desync: manifest={manifest_v}, "
-        f"pyproject={pyproject_v}, changelog={changelog_v}")
+        f"pyproject={pyproject_v}, changelog={changelog_v}, "
+        f"package={package_v}")
 
 
 def test_histogram_scale_excludes_seven():

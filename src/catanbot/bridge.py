@@ -53,6 +53,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from catanbot import __version__ as _CATANBOT_VERSION
 from catanbot.bridge_economy import (
     _compute_production,
     _owned_ports,
@@ -122,7 +123,7 @@ def _build_app(jsonl_path: Path | None = None,
     from catanbot.live_game import LiveGame
     from catanbot.tracker import Tracker
 
-    app = FastAPI(title="catanbot bridge", version="0.2")
+    app = FastAPI(title="catanbot bridge", version=_CATANBOT_VERSION)
 
     app.add_middleware(
         CORSMiddleware,
@@ -261,7 +262,7 @@ def _build_app(jsonl_path: Path | None = None,
         g = st["game"]
         return {
             "service": "catanbot bridge",
-            "version": "0.2",
+            "version": _CATANBOT_VERSION,
             "log_events": st["log_count"],
             "ws_frames": st["ws_count"],
             "ws_errors": st["ws_errors"],
@@ -1590,6 +1591,11 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "game_started": game.started,
         "ws_frames": st["ws_count"],
         "log_events": st["log_count"],
+        # The bridge app's version, so the extension can detect an
+        # outdated bridge (older than the extension expects) and prompt a
+        # redownload. The extension auto-updates via the store; the app
+        # does not, so this is how a behind app gets flagged.
+        "bridge_version": _CATANBOT_VERSION,
         # Surface the runtime VP target + discard limit on every snap
         # so the userscript can scale danger/watch thresholds without
         # a separate /config round-trip and without going stale when

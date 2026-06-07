@@ -139,6 +139,49 @@
             + '</div>';
     }
 
+    // Oldest bridge app version this extension is happy with. Bumped only
+    // when a release actually needs a newer bridge (the extension auto-
+    // updates via the store; the bridge app does not, so the two can
+    // drift). A connected bridge older than this - or one too old to even
+    // report its version - gets an "update your app" banner.
+    const MIN_BRIDGE_VERSION = '0.48.0';
+
+    // True when version string `a` is strictly older than `b` (numeric
+    // dotted compare, missing parts read as 0). Non-numeric / missing
+    // input is treated as "older" so an un-versioned bridge flags.
+    function _versionLt(a, b) {
+        const pa = String(a || '0').split('.').map((n) => parseInt(n, 10) || 0);
+        const pb = String(b || '0').split('.').map((n) => parseInt(n, 10) || 0);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+            const x = pa[i] || 0, y = pb[i] || 0;
+            if (x !== y) return x < y;
+        }
+        return false;
+    }
+
+    // Banner HTML when the connected bridge app is out of date, else ''.
+    // A bridge with no bridge_version field predates the field entirely,
+    // so it is treated as outdated. Reuses the same download links as the
+    // no-bridge CTA so a redownload is one click away.
+    function _outdatedBridgeHtml(snap) {
+        if (!snap || snap._source === 'no_bridge') return '';
+        const v = snap.bridge_version;
+        if (v && !_versionLt(v, MIN_BRIDGE_VERSION)) return '';
+        const macHref = BRIDGE_DOWNLOAD_URL;
+        const winHref = BRIDGE_DOWNLOAD_URL_WIN;
+        const have = v ? `you have ${escapeHtml(String(v))}` : 'your app';
+        return '<div class="bridge-outdated" role="alert">'
+            + '<span class="bo-ico">⚠</span>'
+            + `<span class="bo-text">Bridge app is out of date `
+            + `(${have}, latest ${escapeHtml(MIN_BRIDGE_VERSION)}). `
+            + `Redownload to get the latest fixes.</span>`
+            + '<span class="bo-links">'
+            + `<a href="${macHref}" target="_blank" rel="noopener" download>macOS</a>`
+            + `<a href="${winHref}" target="_blank" rel="noopener" download>Windows</a>`
+            + '</span>'
+            + '</div>';
+    }
+
     // Push-style refresh hook. Set by ``startAdvisorPoll`` to a function
     // that schedules a near-immediate /advisor poll. The /ws forwarder
     // calls this after each POST so the HUD updates within ~30ms of a
@@ -6071,7 +6114,10 @@
             }
             parts.push('</div>');
         }
-        ui.content.innerHTML = parts.join('');
+        // Prepend the out-of-date bridge banner (empty string when the
+        // bridge is current), so an old app is flagged at the top of the
+        // live HUD with a one-click redownload.
+        ui.content.innerHTML = _outdatedBridgeHtml(snap) + parts.join('');
         applyHudGroups(ui.content);
         renderHistogram(ui, snap);
         renderEvalGraph(ui, snap);
