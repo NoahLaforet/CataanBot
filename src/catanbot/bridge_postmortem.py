@@ -155,9 +155,19 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
         # keep the snapshot around so the overlay's robber panel
         # stays visible through the steal + rest of the turn. Cleared
         # on the next RollEvent (or instantly if an opponent rolls a
-        # new 7) in _track_overlay_state.
+        # new 7) in _track_overlay_state, or when the placement turn
+        # rotates / the game ends (eviction guard in the snap builder).
         st["robber_pending"] = False
         st["robber_snapshot_retry"] = False
+        # Anchor the review window so the snap builder can evict it even
+        # for a knight-played (DOM-driven) robber whose clearing roll is
+        # never observed. (bug: robber menu gets stuck)
+        st["robber_moved_at_rolls"] = int(st.get("total_rolls") or 0)
+        try:
+            st["robber_placed_turn_cid"] = (
+                st["game"].session.current_turn_color_id)
+        except Exception:  # noqa: BLE001
+            st["robber_placed_turn_cid"] = None
 
     if isinstance(event, GameOverEvent) and not st["pm_written"]:
         _write_postmortem(st, event)

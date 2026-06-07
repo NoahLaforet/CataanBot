@@ -373,3 +373,51 @@ def test_fog_hint_fires_on_volcano_board():
         for payload in _iter_payloads(CAPTURE_MIDGAME):
             cg.feed(payload)
         assert _build_advisor_snapshot(_make_st(cg))["fog_hint"] is None
+
+
+def test_placed_robber_snapshot_evicts_on_turn_rotation():
+    """The 'robber placed' review ranking must dismiss when the turn
+    rotates, even if no clearing RollEvent is ever observed (game end or
+    a dropped frame). Before the fix it stayed pinned and resurrected on
+    a later rotation back to self - the stuck-overlay bug."""
+    if not CAPTURE_MIDGAME.exists():
+        pytest.skip("capture not present")
+    from catanbot.bridge import _build_advisor_snapshot
+    from catanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_MIDGAME):
+        game.feed(payload)
+    st = _make_st(game)
+    sess = game.session
+    my_cid = sess.self_color_id
+    # The capture runs to game over; pretend we are mid-game so the
+    # game-over eviction branch doesn't fire (we are testing rotation).
+    sess.game_over_emitted = False
+
+    # Self placed the robber this turn: the placed window is open.
+    st["robber_pending"] = False
+    st["robber_snapshot"] = [{
+        "coord": [0, 0, 0], "resource": "ORE", "number": 8, "score": 5.0,
+        "suggested_victim": None, "victims": []}]
+    st["robber_moved_at_rolls"] = int(st.get("total_rolls") or 0)
+    st["robber_placed_turn_cid"] = my_cid
+
+    # Same turn, no roll since placement: the placed table still shows.
+    sess.current_turn_color_id = my_cid
+    snap = _build_advisor_snapshot(st)
+    assert snap["robber_reason"] == "placed"
+    assert snap["robber_targets"]
+
+    # Turn rotates to an opponent with NO new RollEvent: it must evict.
+    opp_cid = next(c for c in sess.player_names if c != my_cid)
+    sess.current_turn_color_id = opp_cid
+    snap2 = _build_advisor_snapshot(st)
+    assert snap2["robber_targets"] == []
+    assert snap2["robber_reason"] != "placed"
+
+    # Rotating back to self must NOT resurrect the stale ranking.
+    sess.current_turn_color_id = my_cid
+    snap3 = _build_advisor_snapshot(st)
+    assert snap3["robber_targets"] == []
+    assert snap3["robber_reason"] != "placed"

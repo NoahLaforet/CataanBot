@@ -1039,6 +1039,15 @@ def _track_overlay_state(st, results) -> None:
             # counter as "when did this sit-on-me start" without having
             # to check here whether the destination is a self tile.
             st["robber_moved_at_rolls"] = int(st.get("total_rolls") or 0)
+            # Anchor the "placed" review window to the turn it was placed
+            # on, so the snap builder can evict it when the turn rotates
+            # even if the clearing RollEvent is never observed (bug: the
+            # robber ranking got stuck on screen across later turns).
+            try:
+                st["robber_placed_turn_cid"] = (
+                    st["game"].session.current_turn_color_id)
+            except Exception:  # noqa: BLE001
+                st["robber_placed_turn_cid"] = None
         elif isinstance(r.event, BuildEvent):
             # Move-quality classification (HUD principle #7). Only
             # self-builds; only post-setup; only when we have a cached
@@ -1501,6 +1510,28 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
     render even before a game has booted — `self` is None until then."""
     game = st["game"]
     from catanbot import config
+
+    # Evict a stale "placed" robber-target snapshot. The review window is
+    # strictly "same turn as the placement, no roll since" - mirroring the
+    # standalone JS guard. Without this bound the snapshot only cleared on
+    # a later non-7 RollEvent, which can be missed (the game ends, or a
+    # frame is dropped), pinning the robber ranking on screen across the
+    # following turns. (bug: robber menu gets stuck)
+    if st.get("robber_snapshot") is not None and not st.get("robber_pending"):
+        _rsess = getattr(game, "session", None)
+        _moved = st.get("robber_moved_at_rolls")
+        _placed_turn = st.get("robber_placed_turn_cid")
+        _cur_turn = (getattr(_rsess, "current_turn_color_id", None)
+                     if _rsess is not None else None)
+        _rolled_since = (_moved is not None
+                         and int(st.get("total_rolls") or 0) > int(_moved))
+        _turn_rotated = (_placed_turn is not None and _cur_turn is not None
+                         and _cur_turn != _placed_turn)
+        _over = (bool(getattr(_rsess, "game_over_emitted", False))
+                 if _rsess is not None else False)
+        if _rolled_since or _turn_rotated or _over:
+            st["robber_snapshot"] = None
+            st["robber_placed_turn_cid"] = None
 
     # Late-retry the robber snapshot any time self owes a placement
     # but the snapshot is empty. Catches both the knight-play case
@@ -2112,6 +2143,10 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         snap["robber_targets"] = []
         if snap.get("robber_reason") == "placed":
             snap["robber_reason"] = None
+        # Permanently evict the underlying snapshot too, so a rotation
+        # back to self later does not resurrect this stale ranking.
+        st["robber_snapshot"] = None
+        st["robber_placed_turn_cid"] = None
     # Surface whose turn it is when not self's, so the panel can label
     # the off-turn ribbon. Falls back to a color string if the cid
     # isn't in player_names yet (very early-game race).
