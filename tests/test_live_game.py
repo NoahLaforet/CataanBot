@@ -760,6 +760,58 @@ def test_advisor_snapshot_dev_cards_e2e_from_colonist_diffs():
     assert snap["dev_cards_type_known"] is True
 
 
+def test_self_knight_play_counts_once_not_double():
+    """A single self knight play is emitted by BOTH the DOM-log parser
+    and the WS developmentCardsUsed diff, doubling PLAYED_KNIGHT (it ran
+    away to 12/14/16 in the recording). _sync_knight_counts must snap it
+    back to colonist's authoritative count, and Largest Army must only
+    land at 3 knights, never on a single play."""
+    if not CAPTURE_EARLY.exists():
+        pytest.skip("capture not present")
+    from catanatron import Color
+    from catanbot.colonist_diff import events_from_diff
+    from catanbot.events import DevCardPlayEvent
+    from catanbot.live import apply_event
+    from catanbot.live_game import LiveGame
+
+    game = LiveGame()
+    for payload in _iter_payloads(CAPTURE_EARLY):
+        game.feed(payload)
+        if game.started:
+            break
+    assert game.started
+    sess = game.session
+    self_cid = sess.self_color_id
+    self_user = sess.player_names[self_cid]
+    self_color = game.color_map.get(self_user)
+    idx = game.tracker.game.state.color_to_index[Color[self_color]]
+    kkey = f"P{idx}_PLAYED_KNIGHT"
+
+    def played():
+        return game.tracker.game.state.player_state[kkey]
+
+    def play_knight_doubled():
+        # WS path: developmentCardsUsed grows -> emits one play event.
+        used = [11] * (len(getattr(sess, "self_dev_used", []) or []) + 1)
+        diff = {"mechanicDevelopmentCardsState": {
+            "players": {str(self_cid): {"developmentCardsUsed": used}}}}
+        for ev in events_from_diff(sess, diff):
+            apply_event(game.tracker, game.color_map, ev)
+        # DOM-log path: the same play parsed again (the duplicate source).
+        apply_event(game.tracker, game.color_map,
+                    DevCardPlayEvent(player=self_user, card="knight"))
+        game._sync_knight_counts({})
+
+    play_knight_doubled()
+    assert played() == 1, "one real play must count once, not twice"
+    assert not game.tracker.game.state.player_state[f"P{idx}_HAS_ARMY"], \
+        "Largest Army must not be awarded on a single knight"
+
+    play_knight_doubled()
+    play_knight_doubled()
+    assert played() == 3, "three real plays count as exactly three"
+
+
 def test_advisor_snapshot_trim_preserves_partial_hand_knowledge():
     """When the tracker over-attributes (inferred > real), the snapshot
     must trim the excess off the largest bucket(s) instead of zeroing

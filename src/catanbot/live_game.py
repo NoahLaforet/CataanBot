@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from catanbot.colonist_diff import (
-    LiveSession, LiveSessionError, events_from_frame_payload,
+    _DEV_CARD_TYPE, LiveSession, LiveSessionError, events_from_frame_payload,
 )
 from catanbot.colonist_map import build_catanatron_map_from_colonist
 from catanbot.events import (
@@ -508,36 +508,39 @@ class LiveGame:
         return results
 
     def _sync_knight_counts(self, diff: dict[str, Any]) -> None:
-        """Overwrite each player's PLAYED_KNIGHT with colonist's
-        authoritative knightsPlayed (read from a top-level
-        mechanicKnightState and/or one nested under playerStates),
-        deduping the double-count from the dual DOM-log + WS knight-play
-        event sources."""
-        if (self.tracker is None or self.session is None
-                or not isinstance(diff, dict)):
+        """Snap SELF's PLAYED_KNIGHT to colonist's authoritative play
+        history so a single self knight play does not double-count.
+
+        A self knight play fires a DevCardPlayEvent from BOTH the DOM-log
+        parser and the WS ``developmentCardsUsed`` diff, so catanatron's
+        ``P{idx}_PLAYED_KNIGHT`` is bumped twice per real play and the
+        count runs away (12, 14, 16...). Colonist ships the viewer's full
+        typed play history in ``developmentCardsUsed``, which the diff
+        decoder latches onto ``session.self_dev_used``; the number of
+        KNIGHT entries there is the true count. Overwriting with it every
+        frame neutralizes the double-count regardless of which event
+        sources fired. Opponents are single-sourced (DOM-log only, no
+        ``developmentCardsUsed`` shipped for them) so they are untouched.
+        """
+        if self.tracker is None or self.session is None:
             return
-        per_cid: dict[str, int] = {}
-        top = diff.get("mechanicKnightState")
-        if isinstance(top, dict):
-            for cid_str, ps in top.items():
-                if isinstance(ps, dict) and ps.get("knightsPlayed") is not None:
-                    per_cid[str(cid_str)] = int(ps["knightsPlayed"])
-        pstates = diff.get("playerStates")
-        if isinstance(pstates, dict):
-            for cid_str, ps in pstates.items():
-                mk = (ps.get("mechanicKnightState")
-                      if isinstance(ps, dict) else None)
-                if isinstance(mk, dict) and mk.get("knightsPlayed") is not None:
-                    per_cid[str(cid_str)] = int(mk["knightsPlayed"])
-        for cid_str, count in per_cid.items():
-            try:
-                color = (self.color_map.get(
-                    self.session.player_for(int(cid_str)))
-                    if self.color_map else None)
-            except Exception:  # noqa: BLE001
-                color = None
-            if color is not None:
-                self.tracker.set_played_knights(color, count)
+        sess = self.session
+        if sess.self_color_id is None or self.color_map is None:
+            return
+        self_user = sess.player_names.get(sess.self_color_id)
+        if not self_user or not self.color_map.has(self_user):
+            return
+        used = getattr(sess, "self_dev_used", None)
+        if not isinstance(used, list):
+            return
+        knight_int = next(
+            (i for i, name in _DEV_CARD_TYPE.items() if name == "KNIGHT"), 11)
+        count = sum(1 for x in used if x == knight_int)
+        try:
+            self.tracker.set_played_knights(
+                self.color_map.get(self_user), count)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _resync_from_replay(self, body: dict[str, Any]) -> None:
         """Reapply just the hand state from a reconnect's full gameState.
