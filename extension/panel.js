@@ -3643,6 +3643,39 @@
             applyStreamer(streamerInput.checked);
         });
 
+        // In-page overlay - OPTIONAL, default OFF. When on, overlay.js
+        // (running on the colonist tab) draws a small draggable panel over
+        // the board with opponent hand reads + the top rec. The panel
+        // itself is unchanged; this toggle only flips a flag the content
+        // script reads. Mirror to localStorage (survives reloads) AND
+        // chrome.storage.local (the channel content.js / overlay.js read,
+        // same as streamer mode). Default-off means existing users see no
+        // change until they opt in.
+        const overlayInput = document.getElementById('overlay-on');
+        if (overlayInput) {
+            function applyOverlayToggle(on) {
+                try {
+                    localStorage.setItem(
+                        'catanbot.overlay', on ? '1' : '0');
+                } catch (_) {}
+                try {
+                    chrome.storage.local.set({ overlay: !!on });
+                } catch (_) {}
+            }
+            try {
+                const savedOverlay =
+                    localStorage.getItem('catanbot.overlay') === '1';
+                overlayInput.checked = savedOverlay;
+                // Don't write on init unless a value was already stored,
+                // keep first-run users at the default-off state with no
+                // storage side effects.
+                if (savedOverlay) applyOverlayToggle(true);
+            } catch (_) { overlayInput.checked = false; }
+            overlayInput.addEventListener('change', () => {
+                applyOverlayToggle(overlayInput.checked);
+            });
+        }
+
         // Advisor source mode — bridge / extension / auto. DEV-ONLY:
         // the selector row stays hidden (zero trace) for normal users,
         // who are always in BRIDGE mode. We only reveal and wire it
