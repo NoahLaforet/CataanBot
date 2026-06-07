@@ -4,9 +4,18 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
-## Unreleased
+## v0.48.0 (2026-06-07)
 
-Gameplay fixes caught on a real recording.
+New HUD views and a batch of gameplay fixes caught on a real recording.
+
+- **Steal-matrix panel.** A collapsible "STEALS" strip in the HUD shows
+  who has robbed whom, one "thief -> victim xN" row per pair, busiest
+  first, color-coded by player. Appears after the first steal.
+- **Optional in-page overlay.** A draggable, resizable, minimizable box
+  on the colonist board showing each opponent's "wood 2 +67%" hand read
+  and the top recommendation. Off by default behind a settings toggle.
+
+Gameplay fixes:
 
 - **Self knight count no longer doubles.** A single self knight play was
   counted twice (DOM log + WS), so the count ran away (12, 14, 16) and
