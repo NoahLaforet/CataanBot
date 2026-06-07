@@ -2886,10 +2886,15 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
                 opp_sizes.append(int(count))
         except Exception:  # noqa: BLE001
             opp_sizes = []
+        _sp_self_vp = (snap.get("self") or {}).get("vp")
+        _sp_opp_vps = [o.get("vp", 0) for o in (snap.get("opps") or [])
+                       if not o.get("is_placeholder")]
         snap["seven_prep"] = _compute_seven_prep_hint(
             hand, cards,
             roll_history=list(st.get("roll_history") or []),
             opp_hand_sizes=opp_sizes,
+            self_vp=_sp_self_vp,
+            opp_max_vp=max(_sp_opp_vps) if _sp_opp_vps else None,
         )
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] seven_prep failed: {e!r}", flush=True)

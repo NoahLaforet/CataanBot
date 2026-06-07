@@ -5859,10 +5859,39 @@ def test_seven_prep_hint_levels_and_threshold():
     assert danger is not None
     assert danger["level"] == "danger"
     assert danger["expected_discard"] == 5
-    # Banner copy includes the actual numbers so it reads as
-    # actionable not abstract.
-    assert "DUMP TO 7" in danger["message"]
-    assert "5 cards" in danger["message"]
+    # Banner copy names the pre-roll spend-down target (the discard limit)
+    # separately from what a 7 would actually take, so the numbers stay
+    # self-consistent.
+    assert "SPEND DOWN TO 7" in danger["message"]
+    assert danger["safe_target"] == 7
+    assert danger["would_keep"] == 5
+
+
+def test_seven_prep_dump_target_consistent_with_discard_math():
+    """On an odd hand the banner must not imply you end at the dump
+    target. 15 cards -> a 7 discards 7 and you KEEP 8; the pre-roll
+    target is the discard limit (7), not the end-state."""
+    from catanbot.bridge import _compute_seven_prep_hint
+
+    h = _compute_seven_prep_hint({"SHEEP": 5, "BRICK": 5, "WHEAT": 5}, 15)
+    assert h is not None
+    assert h["expected_discard"] == 7      # matches catanatron len//2
+    assert h["would_keep"] == 8            # 15 - 7, NOT 7
+    assert h["safe_target"] == 7
+    assert "keep 8" in h["message"]
+
+
+def test_seven_prep_softened_when_clearly_winning():
+    """A fat hand while clearly ahead should not throw the dominating
+    DANGER banner (it fired aggressively while winning big). With no VP
+    context the level is unchanged."""
+    from catanbot.bridge import _compute_seven_prep_hint
+
+    plain = _compute_seven_prep_hint({"ORE": 6, "WHEAT": 6}, 12)
+    assert plain["level"] == "danger"      # no VP info -> unchanged
+    led = _compute_seven_prep_hint(
+        {"ORE": 6, "WHEAT": 6}, 12, self_vp=9, opp_max_vp=4)
+    assert led["level"] == "warn"          # leading by 2+ caps the level
 
 
 def test_seven_prep_consider_tier_fires_when_seven_overdue():

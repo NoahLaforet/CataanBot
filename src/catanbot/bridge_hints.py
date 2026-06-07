@@ -120,6 +120,8 @@ def _compute_seven_prep_hint(
     hand: dict[str, int], cards: int,
     roll_history: list[dict[str, Any]] | None = None,
     opp_hand_sizes: list[int] | None = None,
+    self_vp: int | None = None,
+    opp_max_vp: int | None = None,
 ) -> dict[str, Any] | None:
     """Pre-roll warning: spend down before the next 7 hits.
 
@@ -166,20 +168,38 @@ def _compute_seven_prep_hint(
         level = "consider"
     else:
         return None
+    # Soften when comfortably ahead. A fat hand is normal late-game when
+    # you're stockpiling for the win; a DANGER banner dominating the HUD
+    # while you're clearly leading reads as noise. Keep the info, but cap
+    # at "warn" when self leads every opponent by 2+ VP. (bug: the dump
+    # flag fired aggressively even while winning big.)
+    if (level == "danger" and self_vp is not None
+            and opp_max_vp is not None and self_vp >= opp_max_vp + 2):
+        level = "warn"
     # Plan a hypothetical discard so the user sees what they'd lose
     # if a 7 hit RIGHT NOW. Same logic as the reactive discard_hint —
     # gives them a concrete handle on what's at stake.
     drops, _preserve = _compute_discard_plan(hand, expected_discard)
+    # Two distinct numbers the old copy conflated: the pre-roll target you
+    # spend DOWN to so a 7 forces no discard (the discard limit), and what
+    # a 7 would actually take now (half the hand, rounded down) leaving
+    # would_keep. On an odd hand "dump to 7" but "end at 8" looked wrong;
+    # state both explicitly. (bug: dump-to target inconsistent with math.)
+    safe_target = DISCARD_LIMIT
+    would_keep = cards - expected_discard
     if level == "consider":
-        msg = (f"7 overdue · consider trading down to {DISCARD_LIMIT} "
-               f"(would lose {expected_discard} cards)")
+        msg = (f"7 overdue · consider trading down to {safe_target} "
+               f"· a 7 now discards {expected_discard}, you'd keep "
+               f"{would_keep}")
     else:
-        msg = (f"DUMP TO {DISCARD_LIMIT} BEFORE YOU ROLL · "
-               f"a 7 right now costs you {expected_discard} cards")
+        msg = (f"SPEND DOWN TO {safe_target} BEFORE YOU ROLL · a 7 now "
+               f"discards {expected_discard}, you'd keep {would_keep}")
     return {
         "level": level,
         "cards": cards,
         "expected_discard": expected_discard,
+        "safe_target": safe_target,
+        "would_keep": would_keep,
         "would_drop": drops,
         "pressure": round(pressure, 2),
         "message": msg,
