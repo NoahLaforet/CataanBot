@@ -37,6 +37,22 @@ import sys
 from catanatron import Color, Game, Player, RandomPlayer
 from catanbot import eval as ce
 
+# 2026-06-07 re-validation (18-agent self-play search, this harness): 15
+# strategy-grounded directions, each a local search at 300 games vs the
+# champion + a weak-bot regression check. ZERO beat the champion. The two
+# that nicked above 300-game noise (vp_quad=3.5 -> 0.303, hand_over_cap=4 +
+# hand=1.25 -> 0.293) both regressed to the ~25% mirror baseline at 600
+# games (overfitting to noise), and vp_quad=3.5 also collapsed the
+# weighted-bot rate to 0.63. Directions tried and rejected: more/less prod,
+# vp_quad up/down, vp_linear up/down, largest-army push (knight+dev up),
+# longest-road de-bias and emphasis, dev-engine, hand discipline, and free
+# coordinate descent on two axes. Conclusion: the shipped EVAL_WEIGHTS are
+# already near-optimal on the classic board; the Reddit-derived ideas (LA
+# push, LR bias) don't move win rate as eval-weight changes (they may still
+# matter as recommender-UX surfacing, which is a separate layer). This
+# supersedes nothing in tune_eval.py — it's the stronger-opponent follow-up
+# that note called for, and it reaches the same verdict with tighter rigor.
+
 SEATS = 4
 COLORS = [Color.RED, Color.BLUE, Color.WHITE, Color.ORANGE]
 CHAMPION = dict(ce.EVAL_WEIGHTS)  # snapshot of the shipped defaults
