@@ -67,6 +67,36 @@ def test_override_isolated_from_global():
     assert EVAL_WEIGHTS == before
 
 
+def test_robber_aware_discounts_blocked_tile():
+    """With robber_aware on, a state where the robber sits on the player's
+    own tile must score LOWER than the blind eval (the blocked tile no longer
+    counts), and must be IDENTICAL to blind when the robber is on a tile the
+    player doesn't touch (e.g. the desert). This is the correctness contract
+    independent of any win-rate result."""
+    from catanatron import Color
+    from catanbot.eval import EVAL_WEIGHTS, evaluate_state
+
+    g = _fresh_game()
+    board = g.state.board
+    board.build_settlement(Color.RED, 0, initial_build_phase=True)
+    aware_w = {**EVAL_WEIGHTS, "robber_aware": 1.0}
+
+    # Blind eval ignores the robber entirely (default robber on desert).
+    blind = evaluate_state(g, "RED")
+    # Default-robber (desert, number=None) -> robber_aware changes nothing.
+    assert evaluate_state(g, "RED", weights=aware_w) == blind
+
+    # Find a numbered tile RED's node 0 sits on and park the robber there.
+    m = board.map
+    red_tile = next((coord for coord, t in m.land_tiles.items()
+                     if t.number is not None and 0 in t.nodes.values()), None)
+    assert red_tile is not None
+    board.robber_coordinate = red_tile
+    # Blind still ignores it; robber-aware must drop (production blocked).
+    assert evaluate_state(g, "RED") == blind
+    assert evaluate_state(g, "RED", weights=aware_w) < blind
+
+
 def test_harness_mirror_runs_and_is_fair():
     """A tiny mirror match (candidate == champion) must complete games and
     return a sane win rate. Not asserting ~25% here (too few games for a
