@@ -43,6 +43,10 @@ EVAL_WEIGHTS: dict[str, float] = {
     "knight": 1.5,        # per played knight (largest-army race)
     "road_past3": 1.0,    # per road segment beyond 3 (longest-road race)
     "gold_premium": 1.25, # wildcard multiplier on gold-hex yield (Volcano)
+    "robber_aware": 0.0,  # discount on the robber-blocked tile's production
+                          # (0 = shipped/blind; 1 = full, correct discount).
+                          # Off by default until the arena proves it; see
+                          # scripts/arena.py and the robber-awareness study.
 }
 
 # Dice-number → pip count (ways to roll it out of 36). Used to value the
@@ -141,6 +145,28 @@ def _player_score(state, board, m, color, w: dict[str, float] = EVAL_WEIGHTS) ->
                 if bcol == color and int(nid) in gold_nodes:
                     mult = 2.0 if btype == "CITY" else 1.0
                     prod += mult * gold_pips * w["gold_premium"]
+    # Robber awareness: the production sum above credits EVERY owned tile,
+    # but the tile under the robber yields nothing. The shipped eval is blind
+    # to this — when an opponent (a hunter especially) parks the robber on our
+    # best tile, the eval still scores us as if it produced, so the bot never
+    # learns to avoid robber-exposed lines or to value robbing the leader
+    # back. Subtract the robber-blocked tile's contribution. Symmetric:
+    # applied to every color, it makes the eval value the robber as both
+    # defense and offense. Gated by w["robber_aware"] (default 0.0 = the
+    # original behaviour) until measured; 1.0 = full, correct discount.
+    robber_aware = w.get("robber_aware", 0.0)
+    if robber_aware:
+        rc = getattr(board, "robber_coordinate", None)
+        rt = m.land_tiles.get(rc) if rc is not None else None
+        if rt is not None and rt.number is not None:
+            frac = _PIP_BY_NUMBER.get(int(rt.number), 0) / 36.0
+            if frac:
+                blocked = 0.0
+                for nid in rt.nodes.values():
+                    owner = board.buildings.get(nid)
+                    if owner and owner[0] == color:
+                        blocked += 2.0 if owner[1] == "CITY" else 1.0
+                prod -= robber_aware * frac * blocked
     score += prod * w["prod"]
 
     # Hand: capped value (each resource up to the discard line is worth

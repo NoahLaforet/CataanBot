@@ -38,6 +38,14 @@ import sys
 # `python scripts/arena.py` (script dir on path) or imported as a module.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Pin the hash seed so set-iteration order (hence greedy tie-breaks) is fixed
+# and arena results are reproducible AND comparable across separate processes
+# — essential when a workflow runs the blind champion and a candidate in
+# different processes and compares the numbers. Re-exec once if not pinned.
+if __name__ == "__main__" and os.environ.get("PYTHONHASHSEED") != "0":
+    os.environ["PYTHONHASHSEED"] = "0"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 from catanatron import Color, Game, RandomPlayer  # noqa: E402
 from catanbot import eval as ce  # noqa: E402
 from scripts.opponents import (  # noqa: E402
@@ -153,6 +161,10 @@ def main(argv) -> int:
                     help="anti-book off-book probability")
     ap.add_argument("--override", default="{}",
                     help="JSON EVAL_WEIGHTS overrides for the champion-under-test")
+    ap.add_argument("--compare", default=None,
+                    help="JSON override to A/B vs the blind champion on the "
+                         "SAME seeds in one process (prints baseline, "
+                         "candidate, and delta — the noise-free signal)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
@@ -160,6 +172,35 @@ def main(argv) -> int:
     seeds = _seeds(args.games, args.seed)
     maps = (["classic", "twirl", "volcano"] if args.map == "all"
             else [args.map])
+
+    if args.compare is not None:
+        cand = json.loads(args.compare)
+        rows = []
+        for mp in maps:
+            base = run_map(args.opponent, args.players, mp, {}, seeds,
+                           args.epsilon)
+            test = run_map(args.opponent, args.players, mp, cand, seeds,
+                           args.epsilon)
+            rows.append({"map": mp, "baseline": base, "candidate": test,
+                         "delta": test["winrate"] - base["winrate"]})
+        out = {"opponent": args.opponent, "players": args.players,
+               "compare": cand, "rows": rows}
+        if args.json:
+            print(json.dumps(out))
+            return 0
+        print(f"A/B vs {args.opponent} x{args.players - 1} ({args.players}p), "
+              f"blind champion vs {cand}, same {args.games} seeds:\n")
+        for row in rows:
+            b, t = row["baseline"], row["candidate"]
+            if b.get("skipped"):
+                print(f"  {row['map']:8s}  SKIPPED ({b['skipped']})")
+                continue
+            print(f"  {row['map']:8s}  blind {b['winrate']*100:5.1f}%  ->  "
+                  f"cand {t['winrate']*100:5.1f}%   "
+                  f"delta {row['delta']*100:+5.1f}  "
+                  f"(base {b['baseline']*100:.0f}, n={b['games']})")
+        return 0
+
     results = [run_map(args.opponent, args.players, mp, override, seeds,
                        args.epsilon) for mp in maps]
 
