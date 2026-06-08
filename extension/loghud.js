@@ -274,6 +274,11 @@
 #${ROOT_ID} .cbo-vp { font-weight: 800; font-size: 14px; color: #2f2415; }
 #${ROOT_ID} .cbo-self-meta { color: #6b5836; font-size: 11px; }
 #${ROOT_ID} .cbo-nextbuild { color: #6b5836; font-size: 12px; margin-top: 2px; }
+#${ROOT_ID} .cbo-h.cbo-urgent { color: #9c2d22; }
+#${ROOT_ID} .cbo-robber-row {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 13px; padding: 1px 0;
+}
 #${ROOT_ID} .cbo-foot {
     margin-top: 8px;
     padding: 5px 8px;
@@ -475,8 +480,36 @@
         return out;
     }
 
+    // Robber targets: the ranked tiles to rob, shown only when the decision
+    // is live (a 7 is pending or a knight is up). Top 3, each as tile +
+    // suggested-victim pills, compact.
+    function robberHtml(snap) {
+        const ts = snap.robber_targets || [];
+        const show = snap.robber_pending || snap.robber_reason === 'knight';
+        if (!show || !ts.length) return '';
+        const rows = [];
+        for (let i = 0; i < Math.min(3, ts.length); i += 1) {
+            const t = ts[i];
+            const tile = t.resource
+                ? `${iconFor(t.resource)}${t.number == null ? '' : t.number}`
+                : 'desert';
+            const victims = (t.victims || []).map((v) => {
+                const bg = v.color_css || COLOR_HEX[v.color] || '#888';
+                const star = v.suggested ? '★' : '';
+                const who = escapeHtml(String(v.username || v.color || '?')
+                    .slice(0, 1));
+                return `<span class="cbo-pill" style="background:${escapeHtml(bg)};`
+                    + `color:${contrastText(bg)}">${star}${who}</span>`;
+            }).join(' ');
+            rows.push(`<div class="cbo-robber-row"><b>${i + 1}.</b> ${tile} `
+                + `${victims}</div>`);
+        }
+        return '<div class="cbo-h cbo-urgent">robber targets</div>'
+            + rows.join('');
+    }
+
     // Build the HUD body HTML from an /advisor snapshot: top rec (gated like
-    // the side panel) + your card + opponent hand reads + a 1-line footer.
+    // the side panel) + robber targets + your card + opponent reads + footer.
     function renderBody(snap) {
         if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
         const out = [];
@@ -492,6 +525,8 @@
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">no recommendation</div>');
         }
+        const robberBlock = robberHtml(snap);
+        if (robberBlock) out.push(robberBlock);
         const selfBlock = selfHtml(snap);
         if (selfBlock) out.push(selfBlock);
         const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
@@ -556,12 +591,17 @@
                     match = p; best = p.username.length;
                 }
             }
-            let read = row.querySelector(':scope > .cbo-row-read');
+            // Insert the read as a SIBLING line right after the row (in the
+            // vertical stack), NOT as a child of the row — appending inside
+            // the row fought colonist's flex layout and misaligned it.
+            const next = row.nextElementSibling;
+            let read = (next && next.classList
+                && next.classList.contains('cbo-row-read')) ? next : null;
             if (!match) { if (read) read.remove(); continue; }
             if (!read) {
                 read = document.createElement('div');
                 read.className = 'cbo-row-read';
-                row.appendChild(read);
+                row.parentNode.insertBefore(read, row.nextSibling);
             }
             read.innerHTML = match._self
                 ? selfReadChips(match) : handReadHtml(match);
