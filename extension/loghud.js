@@ -380,7 +380,24 @@
 }
 #cbo-tip .cbo-chip { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 4px; }
 #cbo-tip .cbo-chip.cbo-maybe { opacity: 0.55; }
-#cbo-tip .cbo-sep { opacity: 0.5; margin: 0 2px; }`;
+#cbo-tip .cbo-sep { opacity: 0.5; margin: 0 2px; }
+/* Always-visible per-player read pinned to the side of each row. */
+.cbo-side-read {
+    position: fixed;
+    z-index: 2147483400;
+    display: flex; gap: 3px; align-items: center;
+    background: rgba(20, 22, 28, 0.92);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font: 600 11px/1.25 -apple-system, system-ui, sans-serif;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.cbo-side-read .cbo-chip { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 4px; }
+.cbo-side-read .cbo-chip.cbo-maybe { opacity: 0.55; }
+.cbo-side-read .cbo-sep { opacity: 0.5; margin: 0 1px; }`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -514,6 +531,7 @@
         document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
         if (notify && notify.parentElement) { notify.remove(); notify = null; }
         if (_tip && _tip.parentElement) { _tip.remove(); _tip = null; }
+        document.querySelectorAll('.cbo-side-read').forEach((e) => e.remove());
     }
 
     // Readable text color (black/white) for a pill background.
@@ -863,6 +881,38 @@
         });
     }
 
+    // Always-visible per-player reads "on the side": a compact read pinned
+    // just LEFT of each player row, in the blank gap (the rows themselves are
+    // too tight/clipped to inject into). Repositioned each poll since React
+    // can move the rows. Each row owns one read element (row._cboSide).
+    function injectSideReads(snap) {
+        const all = () => document.querySelectorAll('.cbo-side-read');
+        if (!enabled() || !snap) { all().forEach((e) => e.remove()); return; }
+        const cont = document.querySelector(
+            '[class*="gamePlayerInformationContainer"]');
+        if (!cont) { all().forEach((e) => e.remove()); return; }
+        const seen = new Set();
+        cont.querySelectorAll('[class*="playerRow"]').forEach((row) => {
+            const p = _playerForRow(row);
+            let el = row._cboSide;
+            if (!p) { if (el) { el.remove(); row._cboSide = null; } return; }
+            if (!el || !el.isConnected) {
+                el = document.createElement('div');
+                el.className = 'cbo-side-read';
+                (document.body || document.documentElement).appendChild(el);
+                row._cboSide = el;
+            }
+            el.innerHTML = p._self ? selfReadChips(p) : handReadHtml(p);
+            stampStreamer(el);
+            const r = row.getBoundingClientRect();
+            const w = el.getBoundingClientRect().width;
+            el.style.left = `${Math.round(r.left - w - 6)}px`;
+            el.style.top = `${Math.round(r.top + r.height / 2 - 11)}px`;
+            seen.add(el);
+        });
+        all().forEach((e) => { if (!seen.has(e)) e.remove(); });
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -888,7 +938,8 @@
             document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
             updateNotify(snap);   // contextual robber/discard alert
             _lastSnap = snap;
-            attachRowHovers();    // hover a player row -> their read
+            injectSideReads(snap);   // always-visible reads beside each player
+            attachRowHovers();    // hover a player row -> fuller read
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
         } else if (!_bridgeDown) {
