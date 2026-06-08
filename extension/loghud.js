@@ -36,6 +36,8 @@
 
     let root = null;   // HUD body element
     let tabs = null;   // tab-bar element
+    let _noContainer = 0;   // consecutive failed anchor finds
+    let _failsafe = false;  // floating-overlay fallback already tripped
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
     // matches the side panel exactly (same snapshot fields, same "wood 2
@@ -251,7 +253,21 @@
     white-space: nowrap;
 }
 #${ROOT_ID} .cbo-chip.cbo-maybe { opacity: 0.6; }
-#${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 11px; }`;
+#${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 11px; }
+#${ROOT_ID} .cbo-foot {
+    margin-top: 8px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+#${ROOT_ID} .cbo-foot.cbo-red { background: rgba(192, 57, 43, 0.14); color: #9c2d22; }
+#${ROOT_ID} .cbo-foot.cbo-amber { background: rgba(216, 134, 47, 0.16); color: #8a5618; }
+#${ROOT_ID} .cbo-foot.cbo-green { background: rgba(70, 164, 90, 0.16); color: #2f6b3f; }
+#${ROOT_ID}.cbo-u-red { box-shadow: inset 3px 0 0 0 #c0392b; }
+#${ROOT_ID}.cbo-u-amber { box-shadow: inset 3px 0 0 0 #d8862f; }
+#${ROOT_ID}.cbo-u-green { box-shadow: inset 3px 0 0 0 #46a45a; }
+#${ROOT_ID}.cbo-u-turn { box-shadow: inset 3px 0 0 0 #b8862f; }`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -341,8 +357,43 @@
         return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#111' : '#fff';
     }
 
+    function streamerOn() {
+        try { return localStorage.getItem('cataan.streamer') === '1'; }
+        catch (e) { return false; }
+    }
+    // One-line urgency footer: the single most pressing signal. Robber-on-you
+    // first (it's costing you now), then leader threat, then your own
+    // win-proximity. Threat names the leader, so it's suppressed in streamer
+    // mode to avoid leaking an opponent's username on stream.
+    function footerHtml(snap) {
+        const rb = snap.robber_block_hint;
+        if (rb && rb.reason) {
+            return `<div class="cbo-foot cbo-red">${escapeHtml(rb.reason)}</div>`;
+        }
+        if (snap.robber_on_me) {
+            return '<div class="cbo-foot cbo-red">Robber is on you.</div>';
+        }
+        if (!streamerOn() && snap.threat && snap.threat.message) {
+            return `<div class="cbo-foot cbo-amber">${escapeHtml(snap.threat.message)}</div>`;
+        }
+        if (snap.win_proximity && snap.win_proximity.message) {
+            return `<div class="cbo-foot cbo-green">${escapeHtml(snap.win_proximity.message)}</div>`;
+        }
+        return '';
+    }
+    // Urgency class for the card's left border accent.
+    function urgencyOf(snap) {
+        if (!snap) return '';
+        if ((snap.robber_block_hint && snap.robber_block_hint.reason)
+                || snap.robber_on_me) return 'cbo-u-red';
+        if (snap.threat && snap.threat.message) return 'cbo-u-amber';
+        if (snap.win_proximity && snap.win_proximity.message) return 'cbo-u-green';
+        if (snap.my_turn) return 'cbo-u-turn';
+        return '';
+    }
+
     // Build the HUD body HTML from an /advisor snapshot: top rec (gated like
-    // the side panel) + opponent hand reads. Curated essentials only.
+    // the side panel) + opponent hand reads + a 1-line urgency footer.
     function renderBody(snap) {
         if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
         const out = [];
@@ -370,6 +421,8 @@
                     + `<span class="cbo-reads">${handReadHtml(o)}</span></div>`);
             }
         }
+        const foot = footerHtml(snap);
+        if (foot) out.push(foot);
         if (!out.length) {
             return '<div class="cbo-placeholder">CatanBot HUD'
                 + ' — start a game to see recommendations.</div>';
@@ -385,6 +438,7 @@
             if (!resp.ok) throw new Error(`status ${resp.status}`);
             const snap = await resp.json();
             root.innerHTML = renderBody(snap);
+            root.className = urgencyOf(snap);   // left-border urgency accent
             stampStreamer(root);   // re-stamp the freshly rendered nodes
             _bridgeDown = false;
         } catch (e) {
@@ -397,6 +451,24 @@
         }
     }
 
+    // One-time toast (used by the fail-safe). Stamped so the streamer sweep
+    // ignores it; auto-removes.
+    function toast(msg) {
+        try {
+            const t = document.createElement('div');
+            t.textContent = msg;
+            t.style.cssText = 'position:fixed;bottom:16px;left:50%;'
+                + 'transform:translateX(-50%);z-index:2147483600;'
+                + 'background:rgba(20,22,28,0.95);color:#fff;'
+                + 'font:13px -apple-system,system-ui,sans-serif;padding:8px 14px;'
+                + 'border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.4);'
+                + 'pointer-events:none;max-width:80vw;text-align:center;';
+            t.dataset[STREAMER_FLAG] = 'hud';
+            (document.body || document.documentElement).appendChild(t);
+            setTimeout(() => { try { t.remove(); } catch (e) { /* gone */ } }, 6000);
+        } catch (e) { /* no body yet */ }
+    }
+
     // Called by content.js's observer + 500ms interval (via
     // window.__catanbot.ensureHudAttached) and by our own driver below.
     function ensureHudAttached() {
@@ -404,7 +476,24 @@
         const finder = window.__catanbot && window.__catanbot.findLogContainer;
         if (typeof finder !== 'function') return;
         const found = finder();
-        if (!found || !found.el) return;   // P5 adds the floating-overlay fail-safe
+        if (!found || !found.el) {
+            // Fail-safe: if the log container can't be located after ~10s
+            // (a colonist deploy rotted every selector tier), fall back to
+            // the floating overlay so advice never silently disappears.
+            _noContainer += 1;
+            if (_noContainer >= 15 && !_failsafe) {
+                _failsafe = true;
+                try { localStorage.setItem('catanbot.overlay', '1'); }
+                catch (e) { /* private mode */ }
+                console.warn(LOG_PREFIX, 'log container not found after retries;'
+                    + ' falling back to the floating overlay');
+                toast('CatanBot could not attach to the log; using the'
+                    + ' floating overlay instead.');
+            }
+            return;
+        }
+        _noContainer = 0;
+        _failsafe = false;
         const container = found.el;
 
         ensureStyle();
