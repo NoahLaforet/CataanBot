@@ -38,6 +38,7 @@
     let _noContainer = 0;   // consecutive failed anchor finds
     let _failsafe = false;  // floating-overlay fallback already tripped
     let _everConnected = false;  // a successful /advisor fetch has happened
+    let notify = null;      // contextual notification panel (robber/discard)
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
     // matches the side panel exactly (same snapshot fields, same "wood 2
@@ -268,6 +269,10 @@
 }
 #${ROOT_ID} .cbo-rec-tiles { font-weight: 700; }
 #${ROOT_ID} .cbo-rec-detail { color: #6b5836; font-weight: 500; }
+#${ROOT_ID} .cbo-fallback {
+    color: #6b5836; font-size: 12px; padding: 1px 0 2px 8px;
+    border-left: 2px solid rgba(90, 62, 28, 0.25); margin: 2px 0 0 2px;
+}
 #${ROOT_ID} .cbo-opp {
     display: flex;
     align-items: center;
@@ -331,7 +336,28 @@
     white-space: nowrap; color: #222;
 }
 .cbo-row-read .cbo-chip.cbo-maybe { opacity: 0.5; }
-.cbo-row-read .cbo-sep { color: #999; margin: 0 2px; font-weight: 700; }`;
+.cbo-row-read .cbo-sep { color: #999; margin: 0 2px; font-weight: 700; }
+/* Contextual notification panel: fixed in the blank left margin, unscoped. */
+#cbo-notify {
+    position: fixed;
+    left: 14px;
+    bottom: 150px;
+    z-index: 2147483600;
+    max-width: 220px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font: 600 13px/1.35 -apple-system, system-ui, sans-serif;
+    color: #fff;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.40);
+    pointer-events: none;
+}
+#cbo-notify .cbo-notify-tag {
+    display: block;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    opacity: 0.75; margin-bottom: 2px;
+}
+#cbo-notify.cbo-notify-red { background: #c0392b; }
+#cbo-notify.cbo-notify-amber { background: #c47f1a; }`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -463,6 +489,7 @@
         if (root && root.parentElement) root.remove();
         if (tabs && tabs.parentElement) tabs.remove();
         document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
+        if (notify && notify.parentElement) { notify.remove(); notify = null; }
     }
 
     // Readable text color (black/white) for a pill background.
@@ -608,8 +635,16 @@
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">recs off (variant board)</div>');
         } else if (showRecs && recs.length) {
-            out.push('<div class="cbo-h">next move</div>'
-                + `<div class="cbo-rec">${topRecHtml(recs[0])}</div>`);
+            let block = '<div class="cbo-h">next move</div>'
+                + `<div class="cbo-rec">${topRecHtml(recs[0])}</div>`;
+            // If the top pick is a trade, show the next-best as the
+            // "if they deny, do this instead" fallback (Noah's ask).
+            const k0 = recs[0].action === 'road' ? 'road' : recs[0].kind;
+            if ((k0 === 'trade' || k0 === 'propose_trade') && recs[1]) {
+                block += `<div class="cbo-fallback">if denied &rarr; `
+                    + `${topRecHtml(recs[1])}</div>`;
+            }
+            out.push(block);
         } else if (showRecs) {
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">no recommendation</div>');
@@ -698,6 +733,49 @@
         }
     }
 
+    // Contextual notification panel: a fixed CatanBot alert in the blank
+    // margin that pops for the urgent action of the moment (robber to place,
+    // cards to discard), driven by the snapshot. Our OWN panel, so it needs
+    // no recon of colonist's robber/discard UI and can't break their layout.
+    function ensureNotify() {
+        if (notify && notify.isConnected) return notify;
+        notify = document.createElement('div');
+        notify.id = 'cbo-notify';
+        notify.style.display = 'none';
+        stampStreamer(notify);
+        (document.body || document.documentElement).appendChild(notify);
+        return notify;
+    }
+    function notifyContent(snap) {
+        if (snap.robber_pending && (snap.robber_targets || []).length) {
+            const t = snap.robber_targets[0];
+            const tile = t.resource
+                ? `${iconFor(t.resource)}${t.number == null ? '' : t.number}`
+                : 'desert';
+            const v = (t.victims || []).find((x) => x.suggested)
+                || (t.victims || [])[0];
+            const who = v ? escapeHtml(String(v.username || v.color || '')) : '';
+            return { level: 'red',
+                html: `<b>ROBBER</b> &rarr; ${tile}`
+                    + `${who ? ` &middot; rob <b>${who}</b>` : ''}` };
+        }
+        if (snap.discard_hint) {
+            const d = snap.discard_hint;
+            const msg = d.reason || d.message || 'drop your lowest-value cards';
+            return { level: 'amber', html: `<b>DISCARD</b> &middot; ${escapeHtml(msg)}` };
+        }
+        return null;
+    }
+    function updateNotify(snap) {
+        const n = ensureNotify();
+        const c = snap && notifyContent(snap);
+        if (!c) { n.style.display = 'none'; return; }
+        n.className = `cbo-notify-${c.level}`;
+        n.innerHTML = `<span class="cbo-notify-tag">CatanBot</span>${c.html}`;
+        stampStreamer(n);
+        n.style.display = 'block';
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -721,6 +799,7 @@
             // live in a bot game). The opponent reads live cleanly in the
             // OPPONENTS section of the HUD instead. Clear any stragglers.
             document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
+            updateNotify(snap);   // contextual robber/discard alert
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
         } else if (!_bridgeDown) {
