@@ -267,8 +267,13 @@
     white-space: nowrap;
 }
 #${ROOT_ID} .cbo-chip.cbo-maybe { opacity: 0.55; }
+#${ROOT_ID} .cbo-chip.cbo-mono { box-shadow: inset 0 0 0 1.5px #c0392b; }
 #${ROOT_ID} .cbo-sep { color: #b3a07d; margin: 0 3px; font-weight: 700; }
 #${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 11px; }
+#${ROOT_ID} .cbo-self { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#${ROOT_ID} .cbo-vp { font-weight: 800; font-size: 14px; color: #2f2415; }
+#${ROOT_ID} .cbo-self-meta { color: #6b5836; font-size: 11px; }
+#${ROOT_ID} .cbo-nextbuild { color: #6b5836; font-size: 12px; margin-top: 2px; }
 #${ROOT_ID} .cbo-foot {
     margin-top: 8px;
     padding: 5px 8px;
@@ -282,7 +287,21 @@
 #${ROOT_ID}.cbo-u-red { box-shadow: inset 3px 0 0 0 #c0392b; }
 #${ROOT_ID}.cbo-u-amber { box-shadow: inset 3px 0 0 0 #d8862f; }
 #${ROOT_ID}.cbo-u-green { box-shadow: inset 3px 0 0 0 #46a45a; }
-#${ROOT_ID}.cbo-u-turn { box-shadow: inset 3px 0 0 0 #b8862f; }`;
+#${ROOT_ID}.cbo-u-turn { box-shadow: inset 3px 0 0 0 #b8862f; }
+/* Per-player read injected into colonist's OWN player rows: unscoped (these
+   live in colonist's DOM, not under #${ROOT_ID}). One thin line per player. */
+.cbo-row-read {
+    display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+    width: 100%; padding: 1px 6px 2px 6px; box-sizing: border-box;
+    font-size: 11px;
+    font-family: -apple-system, system-ui, sans-serif;
+}
+.cbo-row-read .cbo-chip {
+    background: rgba(0, 0, 0, 0.10); border-radius: 4px; padding: 0 4px;
+    white-space: nowrap; color: #222;
+}
+.cbo-row-read .cbo-chip.cbo-maybe { opacity: 0.5; }
+.cbo-row-read .cbo-sep { color: #999; margin: 0 2px; font-weight: 700; }`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -352,6 +371,7 @@
         for (const child of nativeChildren(cont)) child.style.display = '';
         if (root && root.parentElement) root.remove();
         if (tabs && tabs.parentElement) tabs.remove();
+        document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
     }
 
     // Readable text color (black/white) for a pill background.
@@ -415,8 +435,48 @@
         return '';
     }
 
+    // "You" card: VP, hand, cards/knights, nearest-build gap, monopoly risk.
+    // Compact mirror of panel.js's self card, sized to fit the column.
+    function selfHtml(snap) {
+        const me = snap.self;
+        if (!me) return '';
+        const bg = pillColor(me);
+        const meta = [`${me.cards || 0} cards`];
+        if ((me.knights_played || 0) > 0) meta.push(`${me.knights_played} kn`);
+        const monoRes = me.monopoly_risk ? me.monopoly_risk.resource : null;
+        const hand = Object.entries(me.hand || {})
+            .filter(([, n]) => n > 0)
+            .map(([r, n]) => `<span class="cbo-chip${r === monoRes
+                ? ' cbo-mono' : ''}">${iconFor(r)} ${n}</span>`)
+            .join('') || '<span class="cbo-maybe">empty</span>';
+        let out = '<div class="cbo-h">you</div>'
+            + '<div class="cbo-self">'
+            + `<span class="cbo-pill" style="background:${escapeHtml(bg)};`
+            + `color:${contrastText(bg)}">${escapeHtml(me.username || 'you')}</span>`
+            + `<span class="cbo-vp">${me.vp || 0} VP</span>`
+            + `<span class="cbo-self-meta">${meta.join(' · ')}</span></div>`
+            + `<div class="cbo-reads">${hand}</div>`;
+        const nb = me.next_build;
+        if (nb && nb.missing) {
+            const miss = Object.entries(nb.missing)
+                .filter(([, n]) => n > 0)
+                .map(([r, n]) => `${iconFor(r)}${n > 1 ? ` ${n}` : ''}`)
+                .join(' ');
+            if (miss) {
+                out += `<div class="cbo-nextbuild">${miss} from `
+                    + `${escapeHtml(nb.build || 'next build')}</div>`;
+            }
+        }
+        if (me.monopoly_risk) {
+            out += '<div class="cbo-foot cbo-red">monopoly risk: '
+                + `${me.monopoly_risk.count} ${iconFor(me.monopoly_risk.resource)}`
+                + ' exposed</div>';
+        }
+        return out;
+    }
+
     // Build the HUD body HTML from an /advisor snapshot: top rec (gated like
-    // the side panel) + opponent hand reads + a 1-line urgency footer.
+    // the side panel) + your card + opponent hand reads + a 1-line footer.
     function renderBody(snap) {
         if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
         const out = [];
@@ -432,6 +492,8 @@
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">no recommendation</div>');
         }
+        const selfBlock = selfHtml(snap);
+        if (selfBlock) out.push(selfBlock);
         const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
         if (opps.length) {
             out.push('<div class="cbo-h">opponents</div>');
@@ -453,6 +515,60 @@
         return out.join('');
     }
 
+    // Self hand as known chips (we see our own cards).
+    function selfReadChips(me) {
+        const h = Object.entries((me && me.hand) || {})
+            .filter(([, n]) => n > 0)
+            .map(([r, n]) => `<span class="cbo-chip">${iconFor(r)} ${n}</span>`)
+            .join('');
+        return h || '<span class="cbo-chip cbo-maybe">empty</span>';
+    }
+
+    // Inject CatanBot's read next to each player in colonist's OWN player
+    // panel (recon: gamePlayerInformationContainer > opponentsScrollContainer
+    // > playerRow-*, plus a sibling self playerRow-*). One compact read line
+    // per row, matched to a player by the name the row starts with. Re-runs
+    // each poll so it survives React wiping the rows; skips silently if the
+    // panel isn't present.
+    function injectPlayerReads(snap) {
+        const existing = document.querySelectorAll('.cbo-row-read');
+        if (!enabled() || !snap) { existing.forEach((e) => e.remove()); return; }
+        const cont = document.querySelector(
+            '[class*="gamePlayerInformationContainer"]');
+        if (!cont) { existing.forEach((e) => e.remove()); return; }
+        const rows = cont.querySelectorAll('[class*="playerRow-"]');
+        if (!rows.length) return;
+
+        const players = [];
+        if (snap.self && snap.self.username) {
+            players.push(Object.assign({ _self: true }, snap.self));
+        }
+        for (const o of (snap.opps || [])) {
+            if (o && !o.is_placeholder && o.username) players.push(o);
+        }
+
+        for (const row of rows) {
+            const txt = (row.textContent || '').trim();
+            let match = null;
+            let best = 0;
+            for (const p of players) {
+                if (txt.startsWith(p.username) && p.username.length > best) {
+                    match = p; best = p.username.length;
+                }
+            }
+            let read = row.querySelector(':scope > .cbo-row-read');
+            if (!match) { if (read) read.remove(); continue; }
+            if (!read) {
+                read = document.createElement('div');
+                read.className = 'cbo-row-read';
+                row.appendChild(read);
+            }
+            read.innerHTML = match._self
+                ? selfReadChips(match) : handReadHtml(match);
+            stampStreamer(read);
+        }
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -470,6 +586,7 @@
             root.innerHTML = renderBody(snap);
             root.className = urgencyOf(snap);   // left-border urgency accent
             stampStreamer(root);   // re-stamp the freshly rendered nodes
+            injectPlayerReads(snap);   // reads next to each colonist player
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
         } else if (!_bridgeDown) {
