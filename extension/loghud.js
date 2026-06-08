@@ -31,9 +31,95 @@
     const ROOT_ID = 'cbo-loghud';
     const TABS_ID = 'cbo-loghud-tabs';
     const STYLE_ID = 'cbo-loghud-style';
+    const BRIDGE_BASE = 'http://127.0.0.1:8765';
+    const POLL_MS = 1000;   // half the side panel cadence; HUD shows less
 
     let root = null;   // HUD body element
     let tabs = null;   // tab-bar element
+
+    // ---- Slim render helpers. Ported from overlay.js so the in-page read
+    // matches the side panel exactly (same snapshot fields, same "wood 2
+    // +67%" hand format). TODO: extract these + overlay.js's copies into a
+    // shared utility.js to kill the duplication once the HUD stabilizes. ----
+    const RES_EMOJI = {
+        WOOD: '\u{1F332}', BRICK: '\u{1F9F1}', SHEEP: '\u{1F411}',
+        WHEAT: '\u{1F33E}', ORE: '\u{1FAA8}',
+    };
+    const RES_ABBREV = {
+        WOOD: 'wd', BRICK: 'br', SHEEP: 'sh', WHEAT: 'wh', ORE: 'or',
+    };
+    const COLOR_HEX = {
+        RED: '#d24a43', BLUE: '#3b7dd8', WHITE: '#d8d8d8', ORANGE: '#e08a30',
+        GREEN: '#46a45a', BROWN: '#8a6240',
+    };
+    const KIND_LABEL = {
+        city: 'CITY', settlement: 'SETTLE', road: 'ROAD', dev_card: 'DEV',
+        buy_dev: 'DEV', knight: 'KNIGHT', trade: 'TRADE',
+        propose_trade: 'TRADE', discard: 'DISCARD',
+        opening_settlement: 'SETTLE',
+    };
+    function iconFor(res) {
+        return RES_EMOJI[res] || RES_ABBREV[res] || String(res || '?').slice(0, 2);
+    }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function pillColor(p) {
+        if (p && p.color_css) return p.color_css;
+        if (p && p.color) return COLOR_HEX[p.color] || '#888';
+        return '#888';
+    }
+    function tilesText(arr) {
+        return (arr || [])
+            .filter((t) => t && t[0] !== 'DESERT')
+            .map((t) => (t[1] == null ? iconFor(t[0]) : `${t[1]}${iconFor(t[0])}`))
+            .join(' ');
+    }
+    function topRecHtml(rec) {
+        if (!rec) return '';
+        const kind = (rec.action === 'road') ? 'road' : rec.kind;
+        const kindLabel = KIND_LABEL[kind] || String(kind || '').replace(/_/g, ' ');
+        const tiles = tilesText(rec.tiles);
+        const arrow = (rec.kind === 'road' && tiles) ? '→ ' : '';
+        const detail = rec.detail ? ` ${rec.detail}` : '';
+        const loc = tiles
+            ? ` <span class="cbo-rec-tiles">${arrow}${escapeHtml(tiles)}</span>` : '';
+        return `<span class="cbo-rec-kind">${escapeHtml(kindLabel)}</span>${loc}`
+            + `<span class="cbo-rec-detail">${escapeHtml(detail)}</span>`;
+    }
+    function handReadHtml(o) {
+        const parts = [];
+        const hp = o && o.hand_probs;
+        if (hp) {
+            for (const res of Object.keys(hp)) {
+                const b = hp[res] || {};
+                const mn = b.min || 0;
+                const more = b.more || 0;
+                const p1 = b.p1 || 0;
+                if (mn > 0) {
+                    const tail = more > 0.04
+                        ? ` <span class="cbo-prob">+${Math.round(more * 100)}%</span>` : '';
+                    parts.push(`<span class="cbo-chip">${iconFor(res)} ${mn}${tail}</span>`);
+                } else if (p1 > 0.04) {
+                    parts.push(`<span class="cbo-chip cbo-maybe">${iconFor(res)} `
+                        + `<span class="cbo-prob">${Math.round(p1 * 100)}%</span></span>`);
+                }
+            }
+        } else {
+            const hand = (o && o.hand) || {};
+            for (const res of Object.keys(hand)) {
+                if (hand[res] > 0) {
+                    parts.push(`<span class="cbo-chip">${iconFor(res)} ${hand[res]}</span>`);
+                }
+            }
+            if (o && (o.unknown || 0) > 0) {
+                parts.push(`<span class="cbo-chip">? ${o.unknown}</span>`);
+            }
+        }
+        return parts.join('');
+    }
 
     function enabled() {
         try { return localStorage.getItem(LS_ON) === '1'; }
@@ -120,7 +206,52 @@
     color: #8a7656;
     font-style: italic;
     padding: 6px 0;
-}`;
+}
+#${ROOT_ID} .cbo-rec {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2f2415;
+    padding: 2px 0 4px 0;
+}
+#${ROOT_ID} .cbo-rec-kind {
+    display: inline-block;
+    background: #b8862f;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+#${ROOT_ID} .cbo-rec-tiles { font-weight: 700; }
+#${ROOT_ID} .cbo-rec-detail { color: #6b5836; font-weight: 500; }
+#${ROOT_ID} .cbo-opp {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    flex-wrap: wrap;
+}
+#${ROOT_ID} .cbo-pill {
+    font-weight: 700;
+    font-size: 12px;
+    padding: 1px 7px;
+    border-radius: 9px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+#${ROOT_ID} .cbo-reads { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+#${ROOT_ID} .cbo-chip {
+    background: rgba(90, 62, 28, 0.10);
+    border-radius: 5px;
+    padding: 0 5px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+#${ROOT_ID} .cbo-chip.cbo-maybe { opacity: 0.6; }
+#${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 11px; }`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -184,6 +315,88 @@
         if (tabs && tabs.parentElement) tabs.remove();
     }
 
+    // Readable text color (black/white) for a pill background.
+    function contrastText(css) {
+        const c = String(css || '').trim();
+        let r;
+        let g;
+        let b;
+        let m = c.match(/^#([0-9a-f]{6})$/i);
+        if (m) {
+            r = parseInt(m[1].slice(0, 2), 16);
+            g = parseInt(m[1].slice(2, 4), 16);
+            b = parseInt(m[1].slice(4, 6), 16);
+        } else {
+            m = c.match(/^#([0-9a-f]{3})$/i);
+            if (m) {
+                r = parseInt(m[1][0] + m[1][0], 16);
+                g = parseInt(m[1][1] + m[1][1], 16);
+                b = parseInt(m[1][2] + m[1][2], 16);
+            } else {
+                m = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+                if (m) { r = +m[1]; g = +m[2]; b = +m[3]; }
+            }
+        }
+        if (r == null) return '#fff';
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#111' : '#fff';
+    }
+
+    // Build the HUD body HTML from an /advisor snapshot: top rec (gated like
+    // the side panel) + opponent hand reads. Curated essentials only.
+    function renderBody(snap) {
+        if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
+        const out = [];
+        const recs = snap.recommendations || [];
+        const showRecs = snap.my_turn || snap.setup_phase;
+        if (snap.variant_recs_disabled) {
+            out.push('<div class="cbo-h">next move</div>'
+                + '<div class="cbo-placeholder">recs off (variant board)</div>');
+        } else if (showRecs && recs.length) {
+            out.push('<div class="cbo-h">next move</div>'
+                + `<div class="cbo-rec">${topRecHtml(recs[0])}</div>`);
+        } else if (showRecs) {
+            out.push('<div class="cbo-h">next move</div>'
+                + '<div class="cbo-placeholder">no recommendation</div>');
+        }
+        const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
+        if (opps.length) {
+            out.push('<div class="cbo-h">opponents</div>');
+            for (const o of opps) {
+                const bg = pillColor(o);
+                const name = escapeHtml(o.username || o.color || '?');
+                out.push('<div class="cbo-opp">'
+                    + `<span class="cbo-pill" style="background:${escapeHtml(bg)};`
+                    + `color:${contrastText(bg)}">${name}</span>`
+                    + `<span class="cbo-reads">${handReadHtml(o)}</span></div>`);
+            }
+        }
+        if (!out.length) {
+            return '<div class="cbo-placeholder">CatanBot HUD'
+                + ' — start a game to see recommendations.</div>';
+        }
+        return out.join('');
+    }
+
+    let _bridgeDown = false;
+    async function fetchAndRender() {
+        if (!enabled() || !root) return;
+        try {
+            const resp = await fetch(`${BRIDGE_BASE}/advisor`, { method: 'GET' });
+            if (!resp.ok) throw new Error(`status ${resp.status}`);
+            const snap = await resp.json();
+            root.innerHTML = renderBody(snap);
+            stampStreamer(root);   // re-stamp the freshly rendered nodes
+            _bridgeDown = false;
+        } catch (e) {
+            if (!_bridgeDown) {
+                _bridgeDown = true;
+                root.innerHTML = '<div class="cbo-placeholder">bridge offline'
+                    + ' — start the CatanBot app.</div>';
+                stampStreamer(root);
+            }
+        }
+    }
+
     // Called by content.js's observer + 500ms interval (via
     // window.__catanbot.ensureHudAttached) and by our own driver below.
     function ensureHudAttached() {
@@ -218,6 +431,10 @@
     setInterval(() => {
         try { ensureHudAttached(); } catch (e) { /* keep trying */ }
     }, 700);
+    // Data poll: refresh the HUD body from /advisor (only when enabled).
+    setInterval(() => {
+        try { fetchAndRender(); } catch (e) { /* bridge hiccup */ }
+    }, POLL_MS);
 
     console.info(LOG_PREFIX, 'ready (enable with localStorage'
         + " 'catanbot.log_hud'='1')");
