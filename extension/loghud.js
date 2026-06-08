@@ -626,7 +626,12 @@
             root.innerHTML = renderBody(snap);
             root.className = urgencyOf(snap);   // left-border urgency accent
             stampStreamer(root);   // re-stamp the freshly rendered nodes
-            injectPlayerReads(snap);   // reads next to each colonist player
+            // In-row player reads are DISABLED: colonist wraps its player
+            // rows in a simplebar custom-scrollbar container that clips
+            // injected siblings and misaligns appended children (verified
+            // live in a bot game). The opponent reads live cleanly in the
+            // OPPONENTS section of the HUD instead. Clear any stragglers.
+            document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
         } else if (!_bridgeDown) {
