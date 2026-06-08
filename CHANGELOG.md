@@ -4,6 +4,26 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.50.0 (2026-06-08)
+
+The HUD moves into the page. No more side panel.
+
+- **In-page HUD.** CatanBot now lives in colonist's own log column instead of
+  a Chrome side panel. A `Log | CatanBot` tab bar takes over the beige log
+  feed: the CatanBot tab shows the recommendation, opponent hand reads, and a
+  one-line urgency footer (robber-on-you / leader threat / your win
+  proximity), styled to blend with colonist's native look; the Log tab flips
+  back to the game log. It reads the same bridge data the panel did, polled
+  once a second, and a left-border accent goes red/amber/green with urgency.
+- **Side panel retired to a fallback.** The in-page HUD is on by default; the
+  toolbar icon still opens the old full-view panel if you want it. Set
+  `localStorage 'catanbot.log_hud'='0'` to turn the in-page HUD off.
+- **Resilient by design.** It re-anchors itself after colonist's React
+  re-renders, never hides your log until it has actually connected to the
+  bridge, leaves the native log untouched in streamer mode, and if a colonist
+  deploy ever moves the log out from under it, it falls back to the floating
+  overlay so advice never disappears.
+
 ## v0.49.0 (2026-06-08)
 
 The bot now understands the robber, and reacts to being targeted.

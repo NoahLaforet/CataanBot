@@ -38,6 +38,7 @@
     let tabs = null;   // tab-bar element
     let _noContainer = 0;   // consecutive failed anchor finds
     let _failsafe = false;  // floating-overlay fallback already tripped
+    let _everConnected = false;  // a successful /advisor fetch has happened
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
     // matches the side panel exactly (same snapshot fields, same "wood 2
@@ -123,9 +124,12 @@
         return parts.join('');
     }
 
+    // Default ON: the in-page HUD is now the primary surface (the side panel
+    // is demoted to an icon-reachable fallback). Set 'catanbot.log_hud'='0'
+    // to turn the in-page HUD off and go back to the side panel only.
     function enabled() {
-        try { return localStorage.getItem(LS_ON) === '1'; }
-        catch (e) { return false; }
+        try { return localStorage.getItem(LS_ON) !== '0'; }
+        catch (e) { return true; }
     }
     function replaceMode() {
         try { return localStorage.getItem(LS_REPLACE) === '1'; }
@@ -316,7 +320,13 @@
         tabs.style.display = replace ? 'none' : 'flex';
         root.style.display = (tab === 'catanbot') ? 'block' : 'none';
         const log = cont && nativeLog(cont);
-        if (log) log.style.display = (tab === 'catanbot') ? 'none' : '';
+        // Only HIDE colonist's native log once we've actually connected to
+        // the bridge: a user without the app running keeps their log (the
+        // HUD shows additively until it has something to show).
+        if (log) {
+            log.style.display = (tab === 'catanbot' && _everConnected)
+                ? 'none' : '';
+        }
         tabs.querySelectorAll('.cbo-tab').forEach((b) => {
             b.classList.toggle('active', b.dataset.tab === tab);
         });
@@ -441,6 +451,7 @@
             root.className = urgencyOf(snap);   // left-border urgency accent
             stampStreamer(root);   // re-stamp the freshly rendered nodes
             _bridgeDown = false;
+            if (!_everConnected) { _everConnected = true; applyTab(); }
         } catch (e) {
             if (!_bridgeDown) {
                 _bridgeDown = true;
@@ -525,6 +536,6 @@
         try { fetchAndRender(); } catch (e) { /* bridge hiccup */ }
     }, POLL_MS);
 
-    console.info(LOG_PREFIX, 'ready (enable with localStorage'
-        + " 'catanbot.log_hud'='1')");
+    console.info(LOG_PREFIX, 'ready (on by default; disable with'
+        + " localStorage 'catanbot.log_hud'='0')");
 })();

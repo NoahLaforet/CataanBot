@@ -1,9 +1,14 @@
 # CatanBot — Chrome Extension
 
-The Chrome side-panel version of the CatanBot HUD. Same backend (the
-local Python bridge on `localhost:8765`); difference is purely UX:
-the HUD lives in Chrome's right-side panel instead of as an overlay
-on top of the colonist board.
+The CatanBot HUD for colonist.io, driven by the local Python bridge on
+`localhost:8765`. As of v0.50 the HUD lives **in the page**: it takes over
+colonist's own log column with a `Log | CatanBot` tab bar (the CatanBot tab
+shows the recommendation, opponent hand reads, and an urgency footer; the Log
+tab flips back to the game log), styled to blend with the native site. The
+old Chrome side panel is still there as a full-view fallback (click the
+toolbar icon), but you no longer need it. Set
+`localStorage 'catanbot.log_hud'='0'` on colonist.io to turn the in-page HUD
+off and use the side panel only.
 
 ## Install (Developer mode — for testing)
 
@@ -37,10 +42,10 @@ within ~24 hours.
 
 ## What it renders
 
-This side panel is now the full-featured, supported HUD. (The
-Tampermonkey userscript under `legacy/userscript/` is archived and
-frozen.) Everything the old userscript did renders here, all driven by
-the same local bridge:
+The side panel (toolbar icon) is the full-detail fallback view; the in-page
+HUD is the default day-to-day surface. (The Tampermonkey userscript under
+`legacy/userscript/` is archived and frozen.) Everything the old userscript
+did renders in the panel, all driven by the same local bridge:
 
 - Roll histogram (colonist's authoritative dice counts), eval
   sparkline, and a per-build move-quality strip.
