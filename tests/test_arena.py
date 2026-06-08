@@ -51,6 +51,17 @@ def test_robber_aware_beats_blind_vs_hunter():
     assert aware["winrate"] > blind["winrate"]
 
 
+def test_lookahead_depth2_completes_games():
+    """The depth-2 LookaheadPlayer must drive complete games via the arena
+    (it is a measured-but-unshipped tool; this keeps it from rotting)."""
+    from scripts.arena import run_map
+
+    r = run_map("champion", 2, "classic", {}, _seeds(8), 0.25, depth=2)
+    assert r["games"] == 8
+    assert r["crashes"] == 0
+    assert 0.0 <= r["winrate"] <= 1.0
+
+
 def test_hunter_aims_robber_at_target():
     """HunterPlayer must, among legal robber moves, pick one that blocks the
     target — never a tile irrelevant to the target when a relevant one is

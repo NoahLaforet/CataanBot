@@ -49,7 +49,7 @@ if __name__ == "__main__" and os.environ.get("PYTHONHASHSEED") != "0":
 from catanatron import Color, Game, RandomPlayer  # noqa: E402
 from catanbot import eval as ce  # noqa: E402
 from scripts.opponents import (  # noqa: E402
-    AntiBookPlayer, ChampionPlayer, HunterPlayer)
+    AntiBookPlayer, ChampionPlayer, HunterPlayer, LookaheadPlayer)
 from scripts.selfplay_smoke import _build_map_from_capture  # noqa: E402
 from scripts.tune_selfplay import _seeds, _wilson  # noqa: E402
 
@@ -111,7 +111,7 @@ def _fill_seats(kind, colors, champ_seat, epsilon, seed):
     return players
 
 
-def run_map(kind, players_n, map_label, override, seeds, epsilon):
+def run_map(kind, players_n, map_label, override, seeds, epsilon, depth=1):
     cap, vps = MAP_SPECS[map_label]
     colors = COLORS[:players_n]
     champ_w = dict(CHAMP)
@@ -124,7 +124,11 @@ def run_map(kind, players_n, map_label, override, seeds, epsilon):
         champ_seat = i % players_n
         champ_color = colors[champ_seat]
         table = _fill_seats(kind, colors, champ_seat, epsilon, s)
-        table[champ_seat] = ChampionPlayer(champ_color, weights=champ_w)
+        # depth>1 makes the champion-under-test a 2-ply LookaheadPlayer that
+        # accounts for the opponents' replies; depth 1 is the greedy champion.
+        table[champ_seat] = (
+            LookaheadPlayer(champ_color, weights=champ_w) if depth > 1
+            else ChampionPlayer(champ_color, weights=champ_w))
         cmap = None
         if cap is not None:
             cmap = _build_map_from_capture(cap)
@@ -159,6 +163,8 @@ def main(argv) -> int:
     ap.add_argument("--seed", type=int, default=20260607)
     ap.add_argument("--epsilon", type=float, default=0.25,
                     help="anti-book off-book probability")
+    ap.add_argument("--depth", type=int, default=1, choices=[1, 2],
+                    help="champion-under-test search depth (2 = lookahead)")
     ap.add_argument("--override", default="{}",
                     help="JSON EVAL_WEIGHTS overrides for the champion-under-test")
     ap.add_argument("--compare", default=None,
@@ -178,9 +184,9 @@ def main(argv) -> int:
         rows = []
         for mp in maps:
             base = run_map(args.opponent, args.players, mp, {}, seeds,
-                           args.epsilon)
+                           args.epsilon, depth=1)
             test = run_map(args.opponent, args.players, mp, cand, seeds,
-                           args.epsilon)
+                           args.epsilon, depth=args.depth)
             rows.append({"map": mp, "baseline": base, "candidate": test,
                          "delta": test["winrate"] - base["winrate"]})
         out = {"opponent": args.opponent, "players": args.players,
@@ -202,7 +208,7 @@ def main(argv) -> int:
         return 0
 
     results = [run_map(args.opponent, args.players, mp, override, seeds,
-                       args.epsilon) for mp in maps]
+                       args.epsilon, depth=args.depth) for mp in maps]
 
     out = {"opponent": args.opponent, "players": args.players,
            "override": override, "results": results}

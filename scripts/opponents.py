@@ -113,6 +113,73 @@ class ChampionPlayer(Player):
         return greedy_decide(game, self.color, playable_actions, self.weights)
 
 
+def _rollout_value(game, my_color, weights, ply_cap):
+    """Value of a post-move state once control next returns to ``my_color``:
+    play every intervening opponent turn with greedy 1-ply (each opponent
+    optimizing ITS OWN position, the realistic reply, not an adversarial
+    min), executing their rolls, then evaluate from my seat. If it is still
+    my turn (a mid-turn build), this returns immediately = plain 1-ply. The
+    difference shows up on the turn-ENDING move, where it foresees the
+    opponents' answer — exactly where 'react to the opponent' matters (e.g.
+    don't end the turn leaving your best tile open to the robber)."""
+    g = game
+    plies = 0
+    while g.winning_color() is None and plies < ply_cap:
+        cur = g.state.current_color()
+        if cur == my_color:
+            break
+        acts = g.state.playable_actions
+        if not acts:
+            break
+        a = greedy_decide(g, cur, acts, weights)
+        if a is None:
+            break
+        try:
+            g.execute(a)
+        except Exception:  # noqa: BLE001
+            break
+        plies += 1
+    return ce.evaluate_state(g, my_color, weights)
+
+
+class LookaheadPlayer(Player):
+    """Depth-2: pick the move whose state is best AFTER the opponents take
+    their greedy replies (via _rollout_value), instead of right after my own
+    move. The structural lever that makes the bot account for what the table
+    does next.
+
+    MEASURED 2026-06-08 (arena, 8 conditions, pinned seeds) and NOT shipped to
+    the live engine: it costs ~2.7x the 1-ply champion but does not earn it.
+    The cleanest read, the 1v1 champion head-to-head, went the wrong way
+    (-0.0375); the other 1v1 cases were washes; the positive 4p deltas
+    (+0.05..+0.12) were all inside the N~110 noise floor with overlapping CIs.
+    The robber-aware 1-ply champion already captured the structural win, so
+    this stays a self-play measurement tool, not the live recommender."""
+
+    def __init__(self, color, weights=None, ply_cap=16):
+        super().__init__(color)
+        self.weights = dict(ce.EVAL_WEIGHTS) if weights is None else weights
+        self.ply_cap = ply_cap
+
+    def decide(self, game, playable_actions):
+        pa = playable_actions
+        if not pa:
+            return None
+        if len(pa) == 1:
+            return pa[0]
+        best, best_v = None, float("-inf")
+        for a in pa:
+            g2 = game.copy()
+            try:
+                g2.execute(a)
+            except Exception:  # noqa: BLE001
+                continue
+            v = _rollout_value(g2, self.color, self.weights, self.ply_cap)
+            if v > best_v:
+                best_v, best = v, a
+        return best if best is not None else pa[0]
+
+
 class AntiBookPlayer(Player):
     """Champion most of the time; with prob ``epsilon`` plays the single
     legal move that most lowers the current leader's evaluation. Disruptive,
