@@ -39,6 +39,8 @@
     let _failsafe = false;  // floating-overlay fallback already tripped
     let _everConnected = false;  // a successful /advisor fetch has happened
     let notify = null;      // contextual notification panel (robber/discard)
+    let _lastSnap = null;   // most recent /advisor snapshot (for hover reads)
+    let _tip = null;        // hover tooltip for per-player reads
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
     // matches the side panel exactly (same snapshot fields, same "wood 2
@@ -357,7 +359,28 @@
     opacity: 0.75; margin-bottom: 2px;
 }
 #cbo-notify.cbo-notify-red { background: #c0392b; }
-#cbo-notify.cbo-notify-amber { background: #c47f1a; }`;
+#cbo-notify.cbo-notify-amber { background: #c47f1a; }
+/* Hover tooltip: a player's read beside their row. */
+#cbo-tip {
+    position: fixed;
+    z-index: 2147483600;
+    background: rgba(20, 22, 28, 0.96);
+    color: #fff;
+    padding: 5px 9px;
+    border-radius: 7px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    font: 600 12px/1.3 -apple-system, system-ui, sans-serif;
+    pointer-events: none;
+    white-space: nowrap;
+    display: flex; gap: 4px; align-items: center;
+}
+#cbo-tip .cbo-tip-tag {
+    font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+    opacity: 0.6; margin-right: 2px;
+}
+#cbo-tip .cbo-chip { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 4px; }
+#cbo-tip .cbo-chip.cbo-maybe { opacity: 0.55; }
+#cbo-tip .cbo-sep { opacity: 0.5; margin: 0 2px; }`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -490,6 +513,7 @@
         if (tabs && tabs.parentElement) tabs.remove();
         document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
         if (notify && notify.parentElement) { notify.remove(); notify = null; }
+        if (_tip && _tip.parentElement) { _tip.remove(); _tip = null; }
     }
 
     // Readable text color (black/white) for a pill background.
@@ -776,6 +800,69 @@
         n.style.display = 'block';
     }
 
+    // Per-player reads "next to each player" as a HOVER tooltip: colonist's
+    // player rows are too tight + horizontally clipped for a clean
+    // always-visible line (verified live), so instead, hovering a row pops
+    // that player's CatanBot read beside it. Non-destructive, fits, and works
+    // for opponents (inferred) and self (known). Reads from the cached snap.
+    function ensureTip() {
+        if (_tip && _tip.isConnected) return _tip;
+        _tip = document.createElement('div');
+        _tip.id = 'cbo-tip';
+        _tip.style.display = 'none';
+        stampStreamer(_tip);
+        (document.body || document.documentElement).appendChild(_tip);
+        return _tip;
+    }
+    function _playerForRow(row) {
+        if (!_lastSnap) return null;
+        const txt = (row.textContent || '').trim();
+        const players = [];
+        if (_lastSnap.self && _lastSnap.self.username) {
+            players.push(Object.assign({ _self: true }, _lastSnap.self));
+        }
+        for (const o of (_lastSnap.opps || [])) {
+            if (o && !o.is_placeholder && o.username) players.push(o);
+        }
+        let match = null;
+        let best = 0;
+        for (const p of players) {
+            if (txt.startsWith(p.username) && p.username.length > best) {
+                match = p; best = p.username.length;
+            }
+        }
+        return match;
+    }
+    function attachRowHovers() {
+        if (!enabled()) return;
+        const cont = document.querySelector(
+            '[class*="gamePlayerInformationContainer"]');
+        if (!cont) return;
+        cont.querySelectorAll('[class*="playerRow"]').forEach((row) => {
+            if (row.dataset.cboHover) return;
+            row.dataset.cboHover = '1';
+            row.addEventListener('mouseenter', () => {
+                const p = _playerForRow(row);
+                if (!p) return;
+                const tip = ensureTip();
+                tip.innerHTML = '<span class="cbo-tip-tag">read</span>'
+                    + (p._self ? selfReadChips(p) : handReadHtml(p));
+                stampStreamer(tip);
+                const r = row.getBoundingClientRect();
+                tip.style.display = 'block';
+                const tw = tip.getBoundingClientRect().width;
+                // prefer left of the row (over the blank gap); fall back below.
+                let left = r.left - tw - 8;
+                if (left < 4) left = r.left;
+                tip.style.left = `${Math.round(left)}px`;
+                tip.style.top = `${Math.round(r.top + 6)}px`;
+            });
+            row.addEventListener('mouseleave', () => {
+                if (_tip) _tip.style.display = 'none';
+            });
+        });
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -800,6 +887,8 @@
             // OPPONENTS section of the HUD instead. Clear any stragglers.
             document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
             updateNotify(snap);   // contextual robber/discard alert
+            _lastSnap = snap;
+            attachRowHovers();    // hover a player row -> their read
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
         } else if (!_bridgeDown) {
