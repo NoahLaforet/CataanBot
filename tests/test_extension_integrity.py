@@ -142,12 +142,22 @@ def test_inpage_hud_contract_is_wired():
     assert "catanbot.log_hud" in loghud
 
 
-def test_loghud_bridge_base_matches_overlay():
-    """loghud.js and overlay.js both fetch the local bridge; the base URL
-    must agree (a typo'd port would silently leave the in-page HUD blank)."""
-    base = "http://127.0.0.1:8765"
-    assert base in _read("extension/overlay.js")
-    assert base in _read("extension/loghud.js")
+def test_loghud_fetches_via_background_worker():
+    """loghud.js must NOT fetch the bridge directly: a content script's
+    http://127.0.0.1 request from the https colonist page is blocked in some
+    browsers (Comet: ERR_BLOCKED_BY_CLIENT). It routes through the background
+    service worker's 'get-advisor' handler, which has the host permission and
+    isn't page-blocked. Lock both ends of that contract."""
+    loghud = _read("extension/loghud.js")
+    background = _read("extension/background.js")
+    assert "get-advisor" in loghud, (
+        "loghud must request the snapshot via the 'get-advisor' message")
+    assert "chrome.runtime.sendMessage" in loghud
+    assert "get-advisor" in background, (
+        "background.js must handle the 'get-advisor' message and fetch "
+        "/advisor itself (the in-page fetch is blocked in Comet)")
+    assert "http://127.0.0.1:8765" not in loghud, (
+        "loghud must not fetch the bridge directly; route through background")
 
 
 def test_histogram_scale_excludes_seven():

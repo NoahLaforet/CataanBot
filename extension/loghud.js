@@ -31,7 +31,6 @@
     const ROOT_ID = 'cbo-loghud';
     const TABS_ID = 'cbo-loghud-tabs';
     const STYLE_ID = 'cbo-loghud-style';
-    const BRIDGE_BASE = 'http://127.0.0.1:8765';
     const POLL_MS = 1000;   // half the side panel cadence; HUD shows less
 
     let root = null;   // HUD body element
@@ -303,29 +302,32 @@
         stampStreamer(root);
     }
 
-    // The native colonist log inside the container (the virtualized list).
-    function nativeLog(container) {
-        return container.querySelector(
-            '[class^="virtualContainer-"], [class*=" virtualContainer-"]');
+    // colonist's native log content = every direct child of the container
+    // that isn't one of our injected nodes. CLASS-AGNOSTIC on purpose: the
+    // old virtualScroller-/virtualContainer- class hashes already rotted
+    // since the April recon, so we hide "everything that isn't ours" instead
+    // of matching a class that moves on every colonist deploy.
+    function nativeChildren(container) {
+        if (!container) return [];
+        return Array.from(container.children).filter(
+            (c) => c !== tabs && c !== root);
     }
 
     // Show/hide HUD body vs native log per the current tab + replace mode,
     // and reflect the active tab styling.
     function applyTab(container) {
         if (!root || !tabs) return;
-        const cont = container
-            || (root.parentElement || (tabs && tabs.parentElement));
+        const cont = container || root.parentElement || tabs.parentElement;
         const replace = replaceMode();
         const tab = replace ? 'catanbot' : currentTab();
         tabs.style.display = replace ? 'none' : 'flex';
         root.style.display = (tab === 'catanbot') ? 'block' : 'none';
-        const log = cont && nativeLog(cont);
-        // Only HIDE colonist's native log once we've actually connected to
-        // the bridge: a user without the app running keeps their log (the
-        // HUD shows additively until it has something to show).
-        if (log) {
-            log.style.display = (tab === 'catanbot' && _everConnected)
-                ? 'none' : '';
+        // Hide the native log only when the CatanBot tab is up AND we've
+        // connected — a user without the bridge keeps their log (the HUD
+        // shows additively until it has something real to show).
+        const hideNative = (tab === 'catanbot' && _everConnected);
+        for (const child of nativeChildren(cont)) {
+            child.style.display = hideNative ? 'none' : '';
         }
         tabs.querySelectorAll('.cbo-tab').forEach((b) => {
             b.classList.toggle('active', b.dataset.tab === tab);
@@ -333,10 +335,9 @@
     }
 
     function teardown() {
-        if (tabs && tabs.parentElement) {
-            const log = nativeLog(tabs.parentElement);
-            if (log) log.style.display = '';   // restore native log
-        }
+        const cont = (root && root.parentElement)
+            || (tabs && tabs.parentElement);
+        for (const child of nativeChildren(cont)) child.style.display = '';
         if (root && root.parentElement) root.remove();
         if (tabs && tabs.parentElement) tabs.remove();
     }
@@ -443,22 +444,27 @@
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
+        // Fetch via the background service worker, NOT a direct in-page fetch:
+        // a content script's http://127.0.0.1 request from the https colonist
+        // page is blocked in some browsers (Comet: ERR_BLOCKED_BY_CLIENT). The
+        // worker has the host permission and isn't page-blocked.
+        let snap = null;
         try {
-            const resp = await fetch(`${BRIDGE_BASE}/advisor`, { method: 'GET' });
-            if (!resp.ok) throw new Error(`status ${resp.status}`);
-            const snap = await resp.json();
+            const res = await chrome.runtime.sendMessage({ type: 'get-advisor' });
+            if (res && res.ok) snap = res.snap;
+        } catch (e) { /* worker asleep / extension reloading */ }
+
+        if (snap) {
             root.innerHTML = renderBody(snap);
             root.className = urgencyOf(snap);   // left-border urgency accent
             stampStreamer(root);   // re-stamp the freshly rendered nodes
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
-        } catch (e) {
-            if (!_bridgeDown) {
-                _bridgeDown = true;
-                root.innerHTML = '<div class="cbo-placeholder">bridge offline'
-                    + ' — start the CatanBot app.</div>';
-                stampStreamer(root);
-            }
+        } else if (!_bridgeDown) {
+            _bridgeDown = true;
+            root.innerHTML = '<div class="cbo-placeholder">bridge offline'
+                + ' — start the CatanBot app.</div>';
+            stampStreamer(root);
         }
     }
 
