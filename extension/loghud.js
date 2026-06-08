@@ -91,36 +91,47 @@
         return `<span class="cbo-rec-kind">${escapeHtml(kindLabel)}</span>${loc}`
             + `<span class="cbo-rec-detail">${escapeHtml(detail)}</span>`;
     }
+    // Hand read, clean version (per Noah): CONFIRMED cards first (icon +
+    // count, no percent), then a separator, then only the LIKELY-but-unsure
+    // resources as dim icons (no count, no percent). The raw "+49%" noise is
+    // gone; the unsure group is just "probably also holds these".
+    const LIKELY_CUTOFF = 0.45;   // P(at least one) above this = "likely"
     function handReadHtml(o) {
-        const parts = [];
+        const confirmed = [];
+        const likely = [];
         const hp = o && o.hand_probs;
         if (hp) {
-            for (const res of Object.keys(hp)) {
-                const b = hp[res] || {};
-                const mn = b.min || 0;
-                const more = b.more || 0;
-                const p1 = b.p1 || 0;
-                if (mn > 0) {
-                    const tail = more > 0.04
-                        ? ` <span class="cbo-prob">+${Math.round(more * 100)}%</span>` : '';
-                    parts.push(`<span class="cbo-chip">${iconFor(res)} ${mn}${tail}</span>`);
-                } else if (p1 > 0.04) {
-                    parts.push(`<span class="cbo-chip cbo-maybe">${iconFor(res)} `
-                        + `<span class="cbo-prob">${Math.round(p1 * 100)}%</span></span>`);
+            const entries = Object.keys(hp).map((res) => ({ res, ...hp[res] }));
+            for (const e of entries) {
+                if ((e.min || 0) > 0) {
+                    confirmed.push(
+                        `<span class="cbo-chip">${iconFor(e.res)} ${e.min}</span>`);
                 }
             }
+            entries
+                .filter((e) => (e.min || 0) === 0 && (e.p1 || 0) > LIKELY_CUTOFF)
+                .sort((a, b) => (b.p1 || 0) - (a.p1 || 0))
+                .forEach((e) => {
+                    likely.push(
+                        `<span class="cbo-chip cbo-maybe">${iconFor(e.res)}</span>`);
+                });
         } else {
             const hand = (o && o.hand) || {};
             for (const res of Object.keys(hand)) {
                 if (hand[res] > 0) {
-                    parts.push(`<span class="cbo-chip">${iconFor(res)} ${hand[res]}</span>`);
+                    confirmed.push(
+                        `<span class="cbo-chip">${iconFor(res)} ${hand[res]}</span>`);
                 }
             }
             if (o && (o.unknown || 0) > 0) {
-                parts.push(`<span class="cbo-chip">? ${o.unknown}</span>`);
+                likely.push(`<span class="cbo-chip cbo-maybe">? ${o.unknown}</span>`);
             }
         }
-        return parts.join('');
+        let html = confirmed.join('');
+        if (likely.length) {
+            html += '<span class="cbo-sep">|</span>' + likely.join('');
+        }
+        return html || '<span class="cbo-maybe">no read</span>';
     }
 
     // Default ON: the in-page HUD is now the primary surface (the side panel
@@ -255,7 +266,8 @@
     font-size: 12px;
     white-space: nowrap;
 }
-#${ROOT_ID} .cbo-chip.cbo-maybe { opacity: 0.6; }
+#${ROOT_ID} .cbo-chip.cbo-maybe { opacity: 0.55; }
+#${ROOT_ID} .cbo-sep { color: #b3a07d; margin: 0 3px; font-weight: 700; }
 #${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 11px; }
 #${ROOT_ID} .cbo-foot {
     margin-top: 8px;
