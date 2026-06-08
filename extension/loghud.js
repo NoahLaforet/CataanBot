@@ -381,7 +381,18 @@
 }
 #cbo-trade-badge.cbo-tb-accept { background: #2e8b57; }
 #cbo-trade-badge.cbo-tb-decline { background: #c0392b; }
-#cbo-trade-badge.cbo-tb-consider { background: #c47f1a; }
+#cbo-trade-badge.cbo-tb-consider { background: #3b7dd8; }
+/* Glow the recommended bottom build button (road/settle/city/dev). */
+.cbo-action-hl {
+    outline: 3px solid #46c463 !important;
+    outline-offset: 2px !important;
+    border-radius: 10px !important;
+    animation: cbo-actpulse 1.1s ease-in-out infinite alternate !important;
+}
+@keyframes cbo-actpulse {
+    from { box-shadow: 0 0 6px 2px rgba(70, 196, 99, 0.5); }
+    to { box-shadow: 0 0 16px 5px rgba(70, 196, 99, 0.95); }
+}
 /* Hover tooltip: a player's read beside their row. */
 #cbo-tip {
     position: fixed;
@@ -581,6 +592,8 @@
         document.querySelectorAll('.cbo-side-read').forEach((e) => e.remove());
         const tb = document.getElementById('cbo-trade-badge');
         if (tb) tb.remove();
+        document.querySelectorAll('.cbo-action-hl').forEach(
+            (el) => el.classList.remove('cbo-action-hl'));
     }
 
     // Readable text color (black/white) for a pill background.
@@ -1018,10 +1031,44 @@
             + (t.reason ? ` ${escapeHtml(t.reason)}` : '');
         stampStreamer(badge);
         const r = panel.getBoundingClientRect();
+        // Sit flush under the panel, left-aligned, so it reads as attached
+        // rather than floating loose over the board.
         badge.style.left = `${Math.round(r.left)}px`;
-        badge.style.top = `${Math.round(r.bottom + 4)}px`;
+        badge.style.top = `${Math.round(r.bottom + 1)}px`;
         badge.style.display = 'block';
         _tradeAnchored = true;
+    }
+
+    // Highlight the recommended bottom build button (road/settle/city/dev) so
+    // the advice lands where you act. Recon: colonist's bottom action bar is
+    // a row of .actionButton-* cards; road/settle/city carry a numeric piece
+    // count, dev sits just left of road. Glows the matching one on your turn.
+    function highlightActionButton(snap) {
+        document.querySelectorAll('.cbo-action-hl').forEach(
+            (el) => el.classList.remove('cbo-action-hl'));
+        if (!enabled() || !snap || !snap.my_turn || snap.setup_phase
+                || _paused()) return;
+        const recs = snap.recommendations || [];
+        if (!recs.length) return;
+        const kind = recs[0].action === 'road' ? 'road' : recs[0].kind;
+        const btns = Array.from(
+            document.querySelectorAll('[class*="actionButton-"]'))
+            .filter((b) => !/Container/.test(b.className.toString()))
+            .sort((a, b) => a.getBoundingClientRect().x
+                - b.getBoundingClientRect().x);
+        if (!btns.length) return;
+        // road/settle/city are the buttons carrying a piece-count badge.
+        const counted = btns.filter((b) => /\d/.test((b.textContent || '').trim()));
+        let target = null;
+        if (kind === 'road') target = counted[0];
+        else if (kind === 'settlement' || kind === 'opening_settlement') {
+            target = counted[1];
+        } else if (kind === 'city') target = counted[2];
+        else if (kind === 'dev_card' || kind === 'buy_dev') {
+            const i = btns.indexOf(counted[0]);
+            target = i > 0 ? btns[i - 1] : null;
+        }
+        if (target) target.classList.add('cbo-action-hl');
     }
 
     let _bridgeDown = false;
@@ -1048,6 +1095,7 @@
             // OPPONENTS section of the HUD instead. Clear any stragglers.
             document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
             injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
+            highlightActionButton(snap);   // glow the recommended build button
             updateNotify(snap);   // contextual robber/discard/trade-fallback alert
             _lastSnap = snap;
             injectSideReads(snap);   // always-visible reads beside each player
