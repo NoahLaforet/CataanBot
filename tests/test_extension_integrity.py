@@ -104,6 +104,52 @@ def test_versions_are_in_sync():
         f"package={package_v}")
 
 
+def test_inpage_hud_contract_is_wired():
+    """The in-page HUD (loghud.js) and content.js share one isolated world
+    via window.__catanbot: content.js owns the selector + re-anchor hooks,
+    loghud.js owns the renderer. This seam is easy to break in a later edit
+    (rename a hook on one side, forget the other), so lock it statically."""
+    manifest = json.loads(_read("extension/manifest.json"))
+    colonist = next(
+        e for e in manifest["content_scripts"]
+        if "content.js" in e.get("js", []))
+    assert colonist["js"][:3] == ["content.js", "overlay.js", "loghud.js"], (
+        "colonist content_scripts must load content.js, overlay.js, "
+        f"loghud.js in that order (one shared world); got {colonist['js']}")
+
+    content = _read("extension/content.js")
+    loghud = _read("extension/loghud.js")
+
+    # content.js owns + exposes the selectors and calls the re-anchor hook.
+    assert "function findLogContainer" in content
+    assert "window.__catanbot.findLogContainer" in content
+    assert "window.__catanbot.ensureHudAttached" in content, (
+        "content.js must call the HUD's ensureHudAttached re-anchor hook "
+        "from its observer/interval")
+
+    # loghud.js sets the hook and reads the selectors content.js exposes.
+    assert "window.__catanbot.ensureHudAttached" in loghud
+    assert "window.__catanbot.findLogContainer" in loghud
+
+    # both sides MUST agree on the streamer skip flag, or content.js's
+    # username sweep would rewrite the HUD's opponent name pills.
+    assert "'cataanonymized'" in content
+    assert "'cataanonymized'" in loghud, (
+        "loghud must stamp its nodes with content.js's streamer flag "
+        "'cataanonymized' so the username sweep skips them")
+
+    # opt-in, default off (it must not disrupt until enabled).
+    assert "catanbot.log_hud" in loghud
+
+
+def test_loghud_bridge_base_matches_overlay():
+    """loghud.js and overlay.js both fetch the local bridge; the base URL
+    must agree (a typo'd port would silently leave the in-page HUD blank)."""
+    base = "http://127.0.0.1:8765"
+    assert base in _read("extension/overlay.js")
+    assert base in _read("extension/loghud.js")
+
+
 def test_histogram_scale_excludes_seven():
     """Dice-stats regression. The roll histogram's bar-scaling max must
     exclude the 7 column. 7 is the single most probable total (6/36), so
