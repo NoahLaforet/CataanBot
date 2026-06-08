@@ -41,6 +41,7 @@
     let notify = null;      // contextual notification panel (robber/discard)
     let _lastSnap = null;   // most recent /advisor snapshot (for hover reads)
     let _tip = null;        // hover tooltip for per-player reads
+    let _tradeAnchored = false;  // trade badge is pinned to colonist's panel
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
     // matches the side panel exactly (same snapshot fields, same "wood 2
@@ -360,6 +361,27 @@
 }
 #cbo-notify.cbo-notify-red { background: #c0392b; }
 #cbo-notify.cbo-notify-amber { background: #c47f1a; }
+#cbo-notify.cbo-notify-green { background: #2e8b57; }
+#cbo-notify .cbo-notify-sub { font-weight: 500; opacity: 0.9; margin-top: 2px; font-size: 11px; }
+/* Trade verdict badge pinned to colonist's own trade panel. */
+#cbo-trade-badge {
+    position: fixed;
+    z-index: 2147483600;
+    padding: 4px 10px;
+    border-radius: 7px;
+    color: #fff;
+    font: 700 13px/1.3 -apple-system, system-ui, sans-serif;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    max-width: 280px;
+}
+#cbo-trade-badge .cbo-tb-tag {
+    font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+    opacity: 0.7; margin-right: 5px; font-weight: 600;
+}
+#cbo-trade-badge.cbo-tb-accept { background: #2e8b57; }
+#cbo-trade-badge.cbo-tb-decline { background: #c0392b; }
+#cbo-trade-badge.cbo-tb-consider { background: #c47f1a; }
 /* Hover tooltip: a player's read beside their row. */
 #cbo-tip {
     position: fixed;
@@ -381,6 +403,14 @@
 #cbo-tip .cbo-chip { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 4px; }
 #cbo-tip .cbo-chip.cbo-maybe { opacity: 0.55; }
 #cbo-tip .cbo-sep { opacity: 0.5; margin: 0 2px; }
+/* Hide colonist's native log off-screen (still dimensioned) when the CatanBot
+   tab is up, so its virtual scroller doesn't error on a display:none list. */
+.cbo-hidden-native {
+    position: absolute !important;
+    left: -99999px !important;
+    top: 0 !important;
+    visibility: hidden;
+}
 /* Always-visible per-player read pinned to the side of each row. */
 .cbo-side-read {
     position: fixed;
@@ -515,7 +545,11 @@
         // shows additively until it has something real to show).
         const hideNative = (tab === 'catanbot' && _everConnected);
         for (const child of nativeChildren(cont)) {
-            child.style.display = hideNative ? 'none' : '';
+            // Move the native log OFF-SCREEN (still dimensioned) rather than
+            // display:none — colonist's virtual scroller calls scrollToIndex
+            // on the log, and a display:none list has no dimensions, so it
+            // retries forever and floods the console with "Failed to scroll".
+            child.classList.toggle('cbo-hidden-native', hideNative);
         }
         tabs.querySelectorAll('.cbo-tab').forEach((b) => {
             b.classList.toggle('active', b.dataset.tab === tab);
@@ -525,13 +559,17 @@
     function teardown() {
         const cont = (root && root.parentElement)
             || (tabs && tabs.parentElement);
-        for (const child of nativeChildren(cont)) child.style.display = '';
+        for (const child of nativeChildren(cont)) {
+            child.classList.remove('cbo-hidden-native');
+        }
         if (root && root.parentElement) root.remove();
         if (tabs && tabs.parentElement) tabs.remove();
         document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
         if (notify && notify.parentElement) { notify.remove(); notify = null; }
         if (_tip && _tip.parentElement) { _tip.remove(); _tip = null; }
         document.querySelectorAll('.cbo-side-read').forEach((e) => e.remove());
+        const tb = document.getElementById('cbo-trade-badge');
+        if (tb) tb.remove();
     }
 
     // Readable text color (black/white) for a pill background.
@@ -789,6 +827,26 @@
         return notify;
     }
     function notifyContent(snap) {
+        if (snap.incoming_trade && !_tradeAnchored) {
+            const t = snap.incoming_trade;
+            const v = ['accept', 'decline', 'consider'].includes(t.verdict)
+                ? t.verdict : 'consider';
+            const lvl = v === 'accept' ? 'green'
+                : (v === 'decline' ? 'red' : 'amber');
+            const side = (pack) => Object.keys(pack || {})
+                .filter((r) => pack[r] > 0)
+                .map((r) => `${iconFor(r)}${pack[r]}`).join(' ') || '–';
+            let html = `<b>TRADE &middot; ${v.toUpperCase()}</b> &middot; `
+                + `get ${side(t.give)} for ${side(t.want)}`;
+            if (t.reason) {
+                html += `<div class="cbo-notify-sub">${escapeHtml(t.reason)}</div>`;
+            }
+            if (t.counter) {
+                html += '<div class="cbo-notify-sub">counter: ask '
+                    + `${side(t.counter.want)} for ${side(t.counter.give)}</div>`;
+            }
+            return { level: lvl, html };
+        }
         if (snap.robber_pending && (snap.robber_targets || []).length) {
             const t = snap.robber_targets[0];
             const tile = t.resource
@@ -913,6 +971,46 @@
         all().forEach((e) => { if (!seen.has(e)) e.remove(); });
     }
 
+    // Literal trade injection: pin a CatanBot verdict badge to colonist's own
+    // trade panel. Recon: the accept/decline icons are IMG .tradeResponseStatus-*
+    // and the collapse is IMG .showHideTradeIcon-*; walk up to the panel. Sets
+    // _tradeAnchored so the notification doesn't double up.
+    function injectTradeBadge(snap) {
+        _tradeAnchored = false;
+        const old = document.getElementById('cbo-trade-badge');
+        if (!enabled() || !snap || !snap.incoming_trade) {
+            if (old) old.remove(); return;
+        }
+        const icon = document.querySelector(
+            '[class*="showHideTradeIcon"], [class*="tradeResponseStatus"]');
+        if (!icon) { if (old) old.remove(); return; }
+        let panel = icon;
+        for (let i = 0; i < 6; i += 1) {
+            if (!panel.parentElement) break;
+            panel = panel.parentElement;
+            if (panel.getBoundingClientRect().width > 220) break;
+        }
+        let badge = old;
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.id = 'cbo-trade-badge';
+            (document.body || document.documentElement).appendChild(badge);
+        }
+        const t = snap.incoming_trade;
+        const v = ['accept', 'decline', 'consider'].includes(t.verdict)
+            ? t.verdict : 'consider';
+        badge.className = `cbo-tb-${v}`;
+        badge.innerHTML = '<span class="cbo-tb-tag">CatanBot</span>'
+            + `<b>${v.toUpperCase()}</b>`
+            + (t.reason ? ` ${escapeHtml(t.reason)}` : '');
+        stampStreamer(badge);
+        const r = panel.getBoundingClientRect();
+        badge.style.left = `${Math.round(r.left)}px`;
+        badge.style.top = `${Math.round(r.bottom + 4)}px`;
+        badge.style.display = 'block';
+        _tradeAnchored = true;
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -936,7 +1034,8 @@
             // live in a bot game). The opponent reads live cleanly in the
             // OPPONENTS section of the HUD instead. Clear any stragglers.
             document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
-            updateNotify(snap);   // contextual robber/discard alert
+            injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
+            updateNotify(snap);   // contextual robber/discard/trade-fallback alert
             _lastSnap = snap;
             injectSideReads(snap);   // always-visible reads beside each player
             attachRowHovers();    // hover a player row -> fuller read
