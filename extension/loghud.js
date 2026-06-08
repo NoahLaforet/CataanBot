@@ -446,6 +446,13 @@
         try { return localStorage.getItem('catanbot.paused') === '1'; }
         catch (e) { return false; }
     }
+    // Floating per-player reads beside the rows are OFF by default (they sit
+    // over the board); the OPPONENTS section + hover are the clean always-on
+    // reads. Toggle on for the on-board strips.
+    function _sideReadsOn() {
+        try { return localStorage.getItem('catanbot.loghud.sidereads') === '1'; }
+        catch (e) { return false; }
+    }
     function _toggleRow(label, get, set) {
         const row = document.createElement('label');
         row.className = 'cbo-set-row';
@@ -472,6 +479,10 @@
             try { localStorage.setItem(LS_REPLACE, v ? '1' : '0'); }
             catch (e) { /* private mode */ }
             applyTab();
+        }));
+        p.appendChild(_toggleRow('Reads on board', _sideReadsOn, (v) => {
+            try { localStorage.setItem('catanbot.loghud.sidereads', v ? '1' : '0'); }
+            catch (e) { /* private mode */ }
         }));
         stampStreamer(p);
         return p;
@@ -945,7 +956,9 @@
     // can move the rows. Each row owns one read element (row._cboSide).
     function injectSideReads(snap) {
         const all = () => document.querySelectorAll('.cbo-side-read');
-        if (!enabled() || !snap) { all().forEach((e) => e.remove()); return; }
+        if (!enabled() || !snap || !_sideReadsOn()) {
+            all().forEach((e) => e.remove()); return;
+        }
         const cont = document.querySelector(
             '[class*="gamePlayerInformationContainer"]');
         if (!cont) { all().forEach((e) => e.remove()); return; }
