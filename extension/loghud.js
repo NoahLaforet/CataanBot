@@ -178,7 +178,32 @@
     padding: 4px 6px 0 6px;
     font-family: inherit;
     box-sizing: border-box;
+    position: relative;
 }
+#${TABS_ID} .cbo-gear { margin-left: auto; padding: 5px 9px; }
+#${TABS_ID} .cbo-settings {
+    position: absolute;
+    top: 100%;
+    right: 6px;
+    z-index: 10;
+    background: #f3ead7;
+    border: 1px solid rgba(90, 62, 28, 0.30);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+    padding: 6px 8px;
+    min-width: 150px;
+}
+#${TABS_ID} .cbo-set-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 2px;
+    font-size: 12px;
+    color: #2f2415;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#${TABS_ID} .cbo-set-row input { margin: 0; cursor: pointer; }
 #${TABS_ID} .cbo-tab {
     appearance: none;
     border: none;
@@ -310,6 +335,52 @@
         (document.head || document.documentElement).appendChild(style);
     }
 
+    // --- In-page settings (gear in the tab bar) -----------------------------
+    // Streamer mode is read from localStorage (content.js keeps it synced) but
+    // WRITTEN via chrome.storage.local 'streamer' — content.js listens for that
+    // change and applies the DOM anonymization. Pause + replace are plain flags.
+    function _streamerOn() {
+        try { return localStorage.getItem('cataan.streamer') === '1'; }
+        catch (e) { return false; }
+    }
+    function _setStreamer(v) {
+        try { chrome.storage.local.set({ streamer: !!v }); } catch (e) { /* ctx */ }
+    }
+    function _paused() {
+        try { return localStorage.getItem('catanbot.paused') === '1'; }
+        catch (e) { return false; }
+    }
+    function _toggleRow(label, get, set) {
+        const row = document.createElement('label');
+        row.className = 'cbo-set-row';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!get();
+        cb.addEventListener('change', () => set(cb.checked));
+        const span = document.createElement('span');
+        span.textContent = label;
+        row.appendChild(cb);
+        row.appendChild(span);
+        return row;
+    }
+    function buildSettingsPanel() {
+        const p = document.createElement('div');
+        p.className = 'cbo-settings';
+        p.style.display = 'none';
+        p.appendChild(_toggleRow('Streamer mode', _streamerOn, _setStreamer));
+        p.appendChild(_toggleRow('Pause recs', _paused, (v) => {
+            try { localStorage.setItem('catanbot.paused', v ? '1' : '0'); }
+            catch (e) { /* private mode */ }
+        }));
+        p.appendChild(_toggleRow('Replace log', replaceMode, (v) => {
+            try { localStorage.setItem(LS_REPLACE, v ? '1' : '0'); }
+            catch (e) { /* private mode */ }
+            applyTab();
+        }));
+        stampStreamer(p);
+        return p;
+    }
+
     function buildNodes() {
         // Tab bar.
         tabs = document.createElement('div');
@@ -327,7 +398,22 @@
         tabs.appendChild(tLog);
         tabs.appendChild(tHud);
 
-        // HUD body (placeholder until P2 wires the /advisor render).
+        // Gear -> settings dropdown, pushed to the right.
+        const gear = document.createElement('button');
+        gear.className = 'cbo-tab cbo-gear';
+        gear.textContent = '⚙';
+        gear.title = 'CatanBot settings';
+        const panel = buildSettingsPanel();
+        gear.addEventListener('click', (e) => {
+            e.stopPropagation();
+            panel.style.display = panel.style.display === 'block'
+                ? 'none' : 'block';
+        });
+        document.addEventListener('click', () => { panel.style.display = 'none'; });
+        tabs.appendChild(gear);
+        tabs.appendChild(panel);
+
+        // HUD body (the /advisor render writes here each poll).
         root = document.createElement('div');
         root.id = ROOT_ID;
         root.dataset.cboLoghud = '1';
@@ -514,8 +600,11 @@
         if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
         const out = [];
         const recs = snap.recommendations || [];
-        const showRecs = snap.my_turn || snap.setup_phase;
-        if (snap.variant_recs_disabled) {
+        const showRecs = (snap.my_turn || snap.setup_phase) && !_paused();
+        if (_paused()) {
+            out.push('<div class="cbo-h">next move</div>'
+                + '<div class="cbo-placeholder">recs paused</div>');
+        } else if (snap.variant_recs_disabled) {
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">recs off (variant board)</div>');
         } else if (showRecs && recs.length) {
