@@ -4,6 +4,28 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.49.0 (2026-06-08)
+
+The bot now understands the robber, and reacts to being targeted.
+
+- **Robber-aware evaluation.** The engine used to score a tile under the
+  robber as if it still produced, so parking the robber on your best tile
+  was invisible to it. It now discounts the blocked tile (and values robbing
+  the leader back). Validated by self-play against opponents that hunt the
+  leader: it beats the old engine head-to-head, lifts 1v1 play against a
+  robber-hunter from below 50% back over it, and even edges up against
+  catanatron's own bots.
+- **No-knight robber alert.** When the robber sits on one of your tiles and
+  you have no knight to clear it, the HUD now shows a one-line alert with the
+  cost and what to do ("Robber on your ORE 8: -5/roll, no knight. Expand off
+  it or rob it back."). The knight hint still owns the case where you hold a
+  knight.
+
+Under the hood: a self-play arena with adversarial opponents (leader-hunters,
+off-book disruptors) at 1v1 and 4p across every map, which is how the above
+was measured. A 2-ply lookahead was built and measured but did not beat the
+robber-aware engine for its cost, so it stays a dev tool.
+
 ## v0.48.0 (2026-06-07)
 
 New HUD views and a batch of gameplay fixes caught on a real recording.
