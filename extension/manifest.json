@@ -27,7 +27,7 @@
     },
     {
       "matches": ["https://colonist.io/*"],
-      "js": ["content.js", "overlay.js"],
+      "js": ["content.js", "overlay.js", "loghud.js"],
       "run_at": "document_start",
       "all_frames": false
     }

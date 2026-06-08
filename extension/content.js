@@ -648,6 +648,8 @@
                     }
                 });
             }
+            // Re-anchor the in-page HUD if a React re-render detached it.
+            _ensureHud();
         });
         observer.observe(scroller, { childList: true, subtree: true });
 
@@ -659,6 +661,8 @@
         // the observer above.
         setInterval(() => {
             scroller.querySelectorAll(ENTRY_SELECTOR_FALLBACK).forEach(processEntry);
+            // Safety-net re-anchor for the in-page HUD (same cadence).
+            _ensureHud();
         }, 500);
     }
 
@@ -692,6 +696,75 @@
         }
         return null;
     }
+
+    // Find the beige LOG CONTAINER (div.container-...beige-...) that wraps
+    // the virtualized scroller. This is the stable anchor for the in-page
+    // HUD: the scroller recycles its child nodes, but the container is the
+    // panel box and survives. 3-tier ladder, same resilience pattern as
+    // findScroller (class hashes rot on every colonist deploy).
+    function findLogContainer() {
+        const exact = document.querySelector(
+            'div.container-Phl3P_ZR.beige-RdMs0LF_');
+        if (exact) return { el: exact, tier: 1 };
+        // Tier 2: both the "container-" and "beige-" prefixes present, in
+        // any hash. The pairing is distinctive enough to avoid false hits.
+        const prefix = document.querySelector(
+            '[class*="container-"][class*="beige-"]');
+        if (prefix) return { el: prefix, tier: 2 };
+        // Tier 3: structural — the container is the parent of the
+        // virtualContainer (itself the parent of the scroller). No class
+        // hashes involved, so this is the deploy-proof last resort.
+        const scroller = findScroller();
+        if (scroller) {
+            const vc = scroller.closest(
+                '[class^="virtualContainer-"], [class*=" virtualContainer-"]')
+                || scroller.parentElement;
+            const container = vc && vc.parentElement;
+            if (container) return { el: container, tier: 3 };
+        }
+        return null;
+    }
+
+    // Same-isolated-world bridge to the in-page HUD renderer (loghud.js):
+    // content.js owns the selectors, the HUD sets ensureHudAttached so
+    // content.js can re-anchor it after a React re-render wipes it.
+    window.__catanbot = window.__catanbot || {};
+    window.__catanbot.findScroller = findScroller;
+    window.__catanbot.findLogContainer = findLogContainer;
+
+    function _ensureHud() {
+        const fn = window.__catanbot && window.__catanbot.ensureHudAttached;
+        if (typeof fn === 'function') {
+            try { fn(); } catch (e) { /* HUD not ready / detached */ }
+        }
+    }
+
+    // DevTools probe: run window.__catanbotProbe() on a live colonist game
+    // to confirm which selector tier binds today + see a log sample, before
+    // building render on top of the anchor.
+    window.__catanbotProbe = function probe() {
+        const c = findLogContainer();
+        const s = findScroller();
+        const out = {
+            container_tier: c ? c.tier : null,
+            container_class: c ? c.el.className.slice(0, 120) : null,
+            scroller_class: s ? s.className.slice(0, 120) : null,
+            entry_count: 0,
+            log_sample: [],
+        };
+        if (s) {
+            const entries = s.querySelectorAll(ENTRY_SELECTOR_FALLBACK);
+            out.entry_count = entries.length;
+            for (let i = Math.max(0, entries.length - 5);
+                    i < entries.length; i += 1) {
+                out.log_sample.push(
+                    (entries[i].textContent || '')
+                        .replace(/\s+/g, ' ').trim().slice(0, 80));
+            }
+        }
+        console.info(LOG_PREFIX, 'PROBE', JSON.stringify(out, null, 2));
+        return out;
+    };
 
     function waitForScroller() {
         let tries = 0;
