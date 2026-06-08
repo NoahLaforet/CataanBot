@@ -5278,6 +5278,14 @@
                 + escapeHtml(kh.reason || '') + '</div>'
                 + '</div>');
         }
+        // No-knight companion to the knight hint: the robber is parked on
+        // your tile and you can't clear it this turn. One compact alert line
+        // (reason is self-contained: "Robber on your ORE 8: -5/roll, no
+        // knight. Expand off it or rob it back.").
+        if (snap.robber_block_hint && snap.robber_block_hint.reason) {
+            devBlocks.push('<div class="robber-block-hint">'
+                + escapeHtml(snap.robber_block_hint.reason) + '</div>');
+        }
         if (snap.monopoly_hint && snap.monopoly_hint.have > 0) {
             const mh = snap.monopoly_hint;
             const resLbl = iconFor(mh.resource);

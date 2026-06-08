@@ -566,6 +566,39 @@ def test_knight_hint_holds_on_weak_robber_tile_with_one_knight():
             or "hold" in hint["reason"].lower())
 
 
+def test_robber_block_hint_fires_only_without_a_knight():
+    """The no-knight robber alert: fires when the robber sits on one of
+    self's numbered tiles AND self has no playable knight, stays silent on
+    the desert (nothing blocked) and when a knight is in hand (the knight
+    hint owns that case)."""
+    from catanatron import Color
+    from catanbot.bridge_hints import _compute_robber_block_hint
+
+    wrapper = _stub_game_for_knight_hint(seed=1, settle_node=0)
+    state = wrapper.tracker.game.state
+    m = state.board.map
+    idx = state.color_to_index[Color.RED]
+    state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 0
+
+    # Default robber (desert / number None) blocks nothing -> no hint.
+    assert _compute_robber_block_hint(wrapper) is None
+
+    # Park the robber on a numbered tile RED's settlement touches.
+    red_tile = next(c for c, t in m.land_tiles.items()
+                    if t.number and getattr(t, "resource", None)
+                    and 0 in t.nodes.values())
+    state.board.robber_coordinate = red_tile
+
+    hint = _compute_robber_block_hint(wrapper)
+    assert hint is not None
+    assert hint["blocked_pips"] > 0
+    assert "no knight" in hint["reason"].lower()
+
+    # With a playable knight, the knight hint owns it -> silent here.
+    state.player_state[f"P{idx}_KNIGHT_IN_HAND"] = 1
+    assert _compute_robber_block_hint(wrapper) is None
+
+
 def test_knight_hint_plays_on_weak_robber_tile_with_two_knights():
     """Same setup but 2 knights in hand — the rule loosens, the bot
     can afford to play one for any block."""

@@ -87,6 +87,7 @@ from catanbot.bridge_hints import (
     _compute_game_plan,
     _compute_strategic_options,
     _compute_knight_hint,
+    _compute_robber_block_hint,
 )
 from catanbot.bridge_strategy import (
     _compute_longest_road_race,
@@ -1638,6 +1639,7 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
         "recommendations": [],
         "incoming_trade": None,
         "knight_hint": None,
+        "robber_block_hint": None,
         "monopoly_hint": None,
         "yop_hint": None,
         "rb_hint": None,
@@ -2782,6 +2784,13 @@ def _build_advisor_snapshot(st) -> dict[str, Any]:
             non_vp_held=cap)
     except Exception as e:  # noqa: BLE001
         print(f"[advisor] knight_hint failed: {e!r}", flush=True)
+    try:
+        # The no-knight companion: when the robber blocks your tile and the
+        # knight hint can't fire (no playable knight), surface the standing
+        # cost + a reaction. Mirrors the eval's new robber awareness.
+        snap["robber_block_hint"] = _compute_robber_block_hint(game)
+    except Exception as e:  # noqa: BLE001
+        print(f"[advisor] robber_block_hint failed: {e!r}", flush=True)
     # Robber-targets ranking is only surfaced when the player ACTUALLY
     # owes a placement (forced 7-roll, or just played a knight) — not
     # while merely holding the knight. Showing the ranking pre-play

@@ -1332,6 +1332,7 @@
   .threat, .win-prox, .robber-on-me, .winning-move,
   .lr-race, .la-race,
   .trade-offer, .knight-hint, .dev-hint, .discard-hint,
+  .robber-block-hint,
   .strategy-banner, .strategy-triggers {
     position: relative;
     padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
@@ -1861,6 +1862,13 @@
      right under the rec list for several versions, so the smaller
      base sizes were dead code. Consolidated to the full size. */
   .knight-hint { border-left-color: var(--accent); }
+  /* No-knight robber alert: the robber is costing you production right now
+     and you can't clear it this turn. Alert accent, one compact line. */
+  .robber-block-hint {
+    border-left-color: var(--alert);
+    color: var(--alert);
+    font-weight: 600;
+  }
   .knight-hint .kh-h {
     color: var(--accent);
     font-weight: 800;

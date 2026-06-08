@@ -1550,6 +1550,73 @@ def _compute_strategic_options(
     return options
 
 
+def _compute_robber_block_hint(game) -> dict[str, Any] | None:
+    """Surface what the robber is costing YOU when it sits on your tile and
+    you have no knight to clear it.
+
+    The eval now discounts robber-blocked production (eval.py robber_aware),
+    and the knight hint already says "play a knight to clear the robber" when
+    you hold one. The gap is the no-knight case: the robber parks on your best
+    tile and nothing tells you the standing cost or what to do. This fills it
+    with one compact, actionable line. Returns None when the robber is off
+    your tiles, blocks nothing, or you hold a playable knight (the knight hint
+    owns that case, so we don't double-surface).
+    """
+    from catanatron import Color
+
+    sess = game.session
+    if sess is None or sess.self_color_id is None:
+        return None
+    username = sess.player_names.get(sess.self_color_id)
+    if not username:
+        return None
+    try:
+        color = game.color_map.get(username)
+        my_enum = Color[color.upper()]
+    except Exception:  # noqa: BLE001
+        return None
+
+    state = game.tracker.game.state
+    board = state.board
+    robber = board.robber_coordinate
+    m = board.map
+    tile = m.land_tiles.get(robber) if robber else None
+    if tile is None or not tile.number or not getattr(tile, "resource", None):
+        return None
+
+    from catanbot.advisor import PIP_DOTS_BY_NUMBER
+    dots = PIP_DOTS_BY_NUMBER.get(tile.number, 0)
+    if dots <= 0:
+        return None
+
+    node_ids = set(tile.nodes.values())
+    blocked = 0
+    for nid, (bcol, bt) in board.buildings.items():
+        if int(nid) in node_ids and bcol == my_enum:
+            blocked += dots * (2 if bt == "CITY" else 1)
+    if blocked <= 0:
+        return None  # robber is not on our production
+
+    # A playable knight? The knight hint already covers that case; subtract
+    # knights bought this turn (Catan: can't play a dev card the turn bought).
+    idx = state.color_to_index.get(my_enum)
+    knights = int(state.player_state.get(f"P{idx}_KNIGHT_IN_HAND", 0)) \
+        if idx is not None else 0
+    bought = sum(1 for tid in (getattr(sess, "self_dev_bought_this_turn", [])
+                               or []) if int(tid) == 11)
+    if knights - bought > 0:
+        return None  # defer to the knight hint
+
+    resource = str(tile.resource).upper()
+    return {
+        "blocked_pips": blocked,
+        "resource": resource,
+        "number": int(tile.number),
+        "reason": (f"Robber on your {resource} {tile.number}: "
+                   f"-{blocked}/roll, no knight. Expand off it or rob it back."),
+    }
+
+
 def _compute_knight_hint(
     game, display_colors: dict[str, str] | None = None,
     playable_count: int = 0,
