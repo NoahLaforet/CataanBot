@@ -79,11 +79,13 @@ def test_robber_aware_discounts_blocked_tile():
     g = _fresh_game()
     board = g.state.board
     board.build_settlement(Color.RED, 0, initial_build_phase=True)
+    # Reference the term explicitly, not via the default (which now ships at
+    # 2.0): blind = robber_aware 0, aware = robber_aware 1.
+    blind_w = {**EVAL_WEIGHTS, "robber_aware": 0.0}
     aware_w = {**EVAL_WEIGHTS, "robber_aware": 1.0}
 
-    # Blind eval ignores the robber entirely (default robber on desert).
-    blind = evaluate_state(g, "RED")
-    # Default-robber (desert, number=None) -> robber_aware changes nothing.
+    blind = evaluate_state(g, "RED", weights=blind_w)
+    # Default robber sits on the desert (number=None) -> nothing to discount.
     assert evaluate_state(g, "RED", weights=aware_w) == blind
 
     # Find a numbered tile RED's node 0 sits on and park the robber there.
@@ -93,7 +95,7 @@ def test_robber_aware_discounts_blocked_tile():
     assert red_tile is not None
     board.robber_coordinate = red_tile
     # Blind still ignores it; robber-aware must drop (production blocked).
-    assert evaluate_state(g, "RED") == blind
+    assert evaluate_state(g, "RED", weights=blind_w) == blind
     assert evaluate_state(g, "RED", weights=aware_w) < blind
 
 

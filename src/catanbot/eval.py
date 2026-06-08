@@ -43,10 +43,17 @@ EVAL_WEIGHTS: dict[str, float] = {
     "knight": 1.5,        # per played knight (largest-army race)
     "road_past3": 1.0,    # per road segment beyond 3 (longest-road race)
     "gold_premium": 1.25, # wildcard multiplier on gold-hex yield (Volcano)
-    "robber_aware": 0.0,  # discount on the robber-blocked tile's production
-                          # (0 = shipped/blind; 1 = full, correct discount).
-                          # Off by default until the arena proves it; see
-                          # scripts/arena.py and the robber-awareness study.
+    "robber_aware": 2.0,  # discount on the robber-blocked tile's production.
+                          # 2026-06-08 arena study (scripts/arena.py): turning
+                          # this on beats three blind champions head-to-head
+                          # (0.302 > 0.25 mirror at 500 games), lifts 1v1 play
+                          # vs robber-hunters +0.096 (back over 50%) and the
+                          # mixed-4p table +0.110, and even nudges the weak-bot
+                          # rates UP (they use the robber too). C=2.0 is the
+                          # safe peak: bigger discounts (3.0) help adversaries
+                          # more but start denting vp-bot play; 1.5 is the
+                          # conservative fallback. 0.0 restores the old blind
+                          # behaviour.
 }
 
 # Dice-number → pip count (ways to roll it out of 36). Used to value the

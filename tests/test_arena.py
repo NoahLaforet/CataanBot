@@ -35,19 +35,20 @@ def test_mirror_1v1_is_fair():
     assert 0.30 <= r["winrate"] <= 0.70  # loose: 24 games, just not broken
 
 
-def test_hunter_drags_champion_below_mirror():
-    """A 1v1 hunter (every robber funnelled at the champion) must pull the
-    champion's win rate below the fair mirror. Compared IN-PROCESS on the
-    same seeds: absolute rates carry cross-process noise (set-iteration order
-    under hash randomization shifts greedy tie-breaks), but within one
-    process the hunter is strictly adversarial and must reduce the rate."""
+def test_robber_aware_beats_blind_vs_hunter():
+    """Against a 1v1 hunter, a robber-aware champion-under-test must win more
+    than a blind one on the same seeds. This is the whole point of the
+    robber_aware term: the blind eval scores a robbed tile as if it still
+    produced, so it never reacts to being hunted; the aware eval does.
+    Compared IN-PROCESS so the only difference is the override (absolute
+    rates carry cross-process hash noise, the delta does not)."""
     from scripts.arena import run_map
 
-    seeds = _seeds(36)
-    mirror = run_map("champion", 2, "classic", {}, seeds, 0.25)
-    hunter = run_map("hunter", 2, "classic", {}, seeds, 0.25)
-    assert hunter["crashes"] == 0 and mirror["crashes"] == 0
-    assert hunter["winrate"] < mirror["winrate"]
+    seeds = _seeds(80)
+    blind = run_map("hunter", 2, "classic", {"robber_aware": 0.0}, seeds, 0.25)
+    aware = run_map("hunter", 2, "classic", {"robber_aware": 2.0}, seeds, 0.25)
+    assert blind["crashes"] == 0 and aware["crashes"] == 0
+    assert aware["winrate"] > blind["winrate"]
 
 
 def test_hunter_aims_robber_at_target():
