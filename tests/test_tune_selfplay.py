@@ -1,0 +1,80 @@
+"""Per-call eval weights override + the head-to-head tuning harness.
+
+evaluate_state grew a ``weights`` parameter so a candidate weight-set and
+the champion can be scored inside the SAME game (what fixed-seed
+head-to-head tuning needs). These tests pin the two things that must hold:
+the override is behaviour-preserving when omitted (the shipped HUD path is
+untouched), and it genuinely re-weights when supplied. A tiny mirror run
+also smoke-tests scripts/tune_selfplay.py so the harness can't silently rot.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))  # make the `scripts` namespace importable
+
+
+def _fresh_game():
+    from catanatron import Color, Game, RandomPlayer
+
+    return Game(
+        [RandomPlayer(c) for c in (Color.RED, Color.BLUE,
+                                    Color.WHITE, Color.ORANGE)],
+        seed=3,
+    )
+
+
+def test_weights_none_matches_global_default():
+    """evaluate_state(..., weights=None) must equal scoring with the
+    module-global EVAL_WEIGHTS — the live HUD calls it with no weights and
+    its behaviour must be byte-for-byte unchanged by the refactor."""
+    from catanbot.eval import EVAL_WEIGHTS, evaluate_state
+
+    g = _fresh_game()
+    g.state.board.build_settlement(__import__("catanatron").Color.RED, 0,
+                                   initial_build_phase=True)
+    assert evaluate_state(g, "RED") == evaluate_state(g, "RED",
+                                                      weights=EVAL_WEIGHTS)
+
+
+def test_weights_override_reweights_score():
+    """Doubling vp_linear must raise the eval for a VP-leading player —
+    proof the override actually flows into _player_score and isn't ignored."""
+    from catanatron import Color
+    from catanbot.eval import EVAL_WEIGHTS, evaluate_state
+
+    g = _fresh_game()
+    idx = g.state.color_to_index[Color.RED]
+    g.state.player_state[f"P{idx}_VICTORY_POINTS"] = 3  # RED clearly ahead
+
+    base = evaluate_state(g, "RED")
+    hot = dict(EVAL_WEIGHTS)
+    hot["vp_linear"] = EVAL_WEIGHTS["vp_linear"] * 2
+    assert evaluate_state(g, "RED", weights=hot) > base
+
+
+def test_override_isolated_from_global():
+    """Passing an override must not mutate the module global — otherwise
+    one candidate's weights would leak into the next game."""
+    from catanbot.eval import EVAL_WEIGHTS, evaluate_state
+
+    before = dict(EVAL_WEIGHTS)
+    g = _fresh_game()
+    evaluate_state(g, "RED", weights={**EVAL_WEIGHTS, "prod": 999.0})
+    assert EVAL_WEIGHTS == before
+
+
+def test_harness_mirror_runs_and_is_fair():
+    """A tiny mirror match (candidate == champion) must complete games and
+    return a sane win rate. Not asserting ~25% here (too few games for a
+    tight CI); just that the harness runs end-to-end and reports structure."""
+    from scripts.tune_selfplay import head_to_head, _seeds
+
+    seeds = _seeds(8, master=20260607)
+    out = head_to_head({}, seeds)
+    assert out["games"] > 0
+    assert 0.0 <= out["winrate"] <= 1.0
+    assert out["ci_low"] <= out["winrate"] <= out["ci_high"]
