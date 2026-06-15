@@ -38,7 +38,6 @@
     let _noContainer = 0;   // consecutive failed anchor finds
     let _failsafe = false;  // floating-overlay fallback already tripped
     let _everConnected = false;  // a successful /advisor fetch has happened
-    let notify = null;      // contextual notification panel (robber/discard)
     let _lastSnap = null;   // most recent /advisor snapshot (for hover reads)
     let _tip = null;        // hover tooltip for per-player reads
     let _tradeAnchored = false;  // trade badge is pinned to colonist's panel
@@ -87,8 +86,15 @@
         if (!rec) return '';
         const kind = (rec.action === 'road') ? 'road' : rec.kind;
         const kindLabel = KIND_LABEL[kind] || String(kind || '').replace(/_/g, ' ');
-        const tiles = tilesText(rec.tiles);
-        const arrow = (rec.kind === 'road' && tiles) ? '→ ' : '';
+        // For an opening-road follow-up the rec is kind=opening_settlement,
+        // action=road: the SETTLEMENT is already down, so show the ROAD's own
+        // tiles (rec.road.edge_tiles) and a direction arrow, not rec.tiles
+        // (which is the settlement spot). Without this the in-page render
+        // dropped the opening road entirely.
+        const tiles = (rec.action === 'road' && rec.road && rec.road.edge_tiles)
+            ? tilesText(rec.road.edge_tiles)
+            : tilesText(rec.tiles);
+        const arrow = (kind === 'road' && tiles) ? '→ ' : '';
         const detail = rec.detail ? ` ${rec.detail}` : '';
         const loc = tiles
             ? ` <span class="cbo-rec-tiles">${arrow}${escapeHtml(tiles)}</span>` : '';
@@ -330,39 +336,18 @@
    live in colonist's DOM, not under #${ROOT_ID}). One thin line per player. */
 .cbo-row-read {
     display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
-    width: 100%; padding: 1px 6px 2px 6px; box-sizing: border-box;
-    font-size: 11px;
-    font-family: -apple-system, system-ui, sans-serif;
+    width: 100%; padding: 2px 8px 3px 8px; box-sizing: border-box;
+    margin: 0; box-shadow: inset 2px 0 0 0 rgba(70, 196, 99, 0.7);
+    background: rgba(18, 20, 26, 0.55);
+    color: #fff;
+    font: 600 11px/1.3 -apple-system, system-ui, sans-serif;
 }
 .cbo-row-read .cbo-chip {
-    background: rgba(0, 0, 0, 0.10); border-radius: 4px; padding: 0 4px;
-    white-space: nowrap; color: #222;
+    background: rgba(255, 255, 255, 0.14); border-radius: 4px; padding: 0 4px;
+    white-space: nowrap; color: #fff;
 }
 .cbo-row-read .cbo-chip.cbo-maybe { opacity: 0.5; }
-.cbo-row-read .cbo-sep { color: #999; margin: 0 2px; font-weight: 700; }
-/* Contextual notification panel: fixed in the blank left margin, unscoped. */
-#cbo-notify {
-    position: fixed;
-    left: 14px;
-    bottom: 150px;
-    z-index: 2147483600;
-    max-width: 220px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    font: 600 13px/1.35 -apple-system, system-ui, sans-serif;
-    color: #fff;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.40);
-    pointer-events: none;
-}
-#cbo-notify .cbo-notify-tag {
-    display: block;
-    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
-    opacity: 0.75; margin-bottom: 2px;
-}
-#cbo-notify.cbo-notify-red { background: #c0392b; }
-#cbo-notify.cbo-notify-amber { background: #c47f1a; }
-#cbo-notify.cbo-notify-green { background: #2e8b57; }
-#cbo-notify .cbo-notify-sub { font-weight: 500; opacity: 0.9; margin-top: 2px; font-size: 11px; }
+.cbo-row-read .cbo-sep { color: rgba(255, 255, 255, 0.5); margin: 0 2px; font-weight: 700; }
 /* Trade verdict badge pinned to colonist's own trade panel. */
 #cbo-trade-badge {
     position: fixed;
@@ -393,6 +378,37 @@
     from { box-shadow: 0 0 6px 2px rgba(70, 196, 99, 0.5); }
     to { box-shadow: 0 0 16px 5px rgba(70, 196, 99, 0.95); }
 }
+/* Knight (or dev) to play -> glow that card in the hand, red + a "!" badge. */
+.cbo-cue-knight {
+    position: relative !important;
+    outline: 3px solid #e0483e !important;
+    outline-offset: 2px !important;
+    border-radius: 8px !important;
+    animation: cbo-knightpulse 1s ease-in-out infinite alternate !important;
+}
+.cbo-cue-knight::after {
+    content: '!';
+    position: absolute; top: -8px; right: -8px;
+    width: 16px; height: 16px; line-height: 16px; text-align: center;
+    background: #e0483e; color: #fff; border-radius: 50%;
+    font: 700 12px/16px -apple-system, system-ui, sans-serif;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); z-index: 2147483600;
+}
+@keyframes cbo-knightpulse {
+    from { box-shadow: 0 0 5px 2px rgba(224, 72, 62, 0.5); }
+    to { box-shadow: 0 0 15px 5px rgba(224, 72, 62, 0.95); }
+}
+/* Cards to discard on a 7 -> amber glow on each card to drop. */
+.cbo-cue-dev {
+    outline: 3px solid #d8862f !important;
+    outline-offset: 2px !important;
+    border-radius: 8px !important;
+    animation: cbo-droppulse 1s ease-in-out infinite alternate !important;
+}
+@keyframes cbo-droppulse {
+    from { box-shadow: 0 0 5px 2px rgba(216, 134, 47, 0.5); }
+    to { box-shadow: 0 0 15px 5px rgba(216, 134, 47, 0.95); }
+}
 /* Hover tooltip: a player's read beside their row. */
 #cbo-tip {
     position: fixed;
@@ -422,23 +438,7 @@
     top: 0 !important;
     visibility: hidden;
 }
-/* Always-visible per-player read pinned to the side of each row. */
-.cbo-side-read {
-    position: fixed;
-    z-index: 2147483400;
-    display: flex; gap: 3px; align-items: center;
-    background: rgba(20, 22, 28, 0.92);
-    color: #fff;
-    padding: 2px 6px;
-    border-radius: 6px;
-    font: 600 11px/1.25 -apple-system, system-ui, sans-serif;
-    white-space: nowrap;
-    pointer-events: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-.cbo-side-read .cbo-chip { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 4px; }
-.cbo-side-read .cbo-chip.cbo-maybe { opacity: 0.55; }
-.cbo-side-read .cbo-sep { opacity: 0.5; margin: 0 1px; }`;
+`;
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -455,13 +455,6 @@
     }
     function _paused() {
         try { return localStorage.getItem('catanbot.paused') === '1'; }
-        catch (e) { return false; }
-    }
-    // Floating per-player reads beside the rows are OFF by default (they sit
-    // over the board); the OPPONENTS section + hover are the clean always-on
-    // reads. Toggle on for the on-board strips.
-    function _sideReadsOn() {
-        try { return localStorage.getItem('catanbot.loghud.sidereads') === '1'; }
         catch (e) { return false; }
     }
     function _toggleRow(label, get, set) {
@@ -490,10 +483,6 @@
             try { localStorage.setItem(LS_REPLACE, v ? '1' : '0'); }
             catch (e) { /* private mode */ }
             applyTab();
-        }));
-        p.appendChild(_toggleRow('Reads on board', _sideReadsOn, (v) => {
-            try { localStorage.setItem('catanbot.loghud.sidereads', v ? '1' : '0'); }
-            catch (e) { /* private mode */ }
         }));
         stampStreamer(p);
         return p;
@@ -587,13 +576,13 @@
         if (root && root.parentElement) root.remove();
         if (tabs && tabs.parentElement) tabs.remove();
         document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
-        if (notify && notify.parentElement) { notify.remove(); notify = null; }
         if (_tip && _tip.parentElement) { _tip.remove(); _tip = null; }
-        document.querySelectorAll('.cbo-side-read').forEach((e) => e.remove());
         const tb = document.getElementById('cbo-trade-badge');
         if (tb) tb.remove();
-        document.querySelectorAll('.cbo-action-hl').forEach(
-            (el) => el.classList.remove('cbo-action-hl'));
+        document.querySelectorAll(
+            '.cbo-action-hl, .cbo-cue-dev, .cbo-cue-knight').forEach(
+            (el) => el.classList.remove(
+                'cbo-action-hl', 'cbo-cue-dev', 'cbo-cue-knight'));
     }
 
     // Readable text color (black/white) for a pill background.
@@ -755,6 +744,14 @@
         }
         const robberBlock = robberHtml(snap);
         if (robberBlock) out.push(robberBlock);
+        // Discard guidance, re-homed into the HUD (was a floating panel). On a
+        // 7 the matching cards in your hand also glow (applyActionCues).
+        const dh = snap.discard_hint;
+        if (dh) {
+            out.push('<div class="cbo-foot cbo-amber">DISCARD &middot; '
+                + escapeHtml(dh.reason || dh.message
+                    || 'drop your lowest-value cards') + '</div>');
+        }
         const selfBlock = selfHtml(snap);
         if (selfBlock) out.push(selfBlock);
         const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
@@ -837,69 +834,6 @@
         }
     }
 
-    // Contextual notification panel: a fixed CatanBot alert in the blank
-    // margin that pops for the urgent action of the moment (robber to place,
-    // cards to discard), driven by the snapshot. Our OWN panel, so it needs
-    // no recon of colonist's robber/discard UI and can't break their layout.
-    function ensureNotify() {
-        if (notify && notify.isConnected) return notify;
-        notify = document.createElement('div');
-        notify.id = 'cbo-notify';
-        notify.style.display = 'none';
-        stampStreamer(notify);
-        (document.body || document.documentElement).appendChild(notify);
-        return notify;
-    }
-    function notifyContent(snap) {
-        if (snap.incoming_trade && !_tradeAnchored) {
-            const t = snap.incoming_trade;
-            const v = ['accept', 'decline', 'consider'].includes(t.verdict)
-                ? t.verdict : 'consider';
-            const lvl = v === 'accept' ? 'green'
-                : (v === 'decline' ? 'red' : 'amber');
-            const side = (pack) => Object.keys(pack || {})
-                .filter((r) => pack[r] > 0)
-                .map((r) => `${iconFor(r)}${pack[r]}`).join(' ') || '–';
-            let html = `<b>TRADE &middot; ${v.toUpperCase()}</b> &middot; `
-                + `get ${side(t.give)} for ${side(t.want)}`;
-            if (t.reason) {
-                html += `<div class="cbo-notify-sub">${escapeHtml(t.reason)}</div>`;
-            }
-            if (t.counter) {
-                html += '<div class="cbo-notify-sub">counter: ask '
-                    + `${side(t.counter.want)} for ${side(t.counter.give)}</div>`;
-            }
-            return { level: lvl, html };
-        }
-        if (snap.robber_pending && (snap.robber_targets || []).length) {
-            const t = snap.robber_targets[0];
-            const tile = t.resource
-                ? `${iconFor(t.resource)}${t.number == null ? '' : t.number}`
-                : 'desert';
-            const v = (t.victims || []).find((x) => x.suggested)
-                || (t.victims || [])[0];
-            const who = v ? escapeHtml(String(v.username || v.color || '')) : '';
-            return { level: 'red',
-                html: `<b>ROBBER</b> &rarr; ${tile}`
-                    + `${who ? ` &middot; rob <b>${who}</b>` : ''}` };
-        }
-        if (snap.discard_hint) {
-            const d = snap.discard_hint;
-            const msg = d.reason || d.message || 'drop your lowest-value cards';
-            return { level: 'amber', html: `<b>DISCARD</b> &middot; ${escapeHtml(msg)}` };
-        }
-        return null;
-    }
-    function updateNotify(snap) {
-        const n = ensureNotify();
-        const c = snap && notifyContent(snap);
-        if (!c) { n.style.display = 'none'; return; }
-        n.className = `cbo-notify-${c.level}`;
-        n.innerHTML = `<span class="cbo-notify-tag">CatanBot</span>${c.html}`;
-        stampStreamer(n);
-        n.style.display = 'block';
-    }
-
     // Per-player reads "next to each player" as a HOVER tooltip: colonist's
     // player rows are too tight + horizontally clipped for a clean
     // always-visible line (verified live), so instead, hovering a row pops
@@ -963,40 +897,6 @@
         });
     }
 
-    // Always-visible per-player reads "on the side": a compact read pinned
-    // just LEFT of each player row, in the blank gap (the rows themselves are
-    // too tight/clipped to inject into). Repositioned each poll since React
-    // can move the rows. Each row owns one read element (row._cboSide).
-    function injectSideReads(snap) {
-        const all = () => document.querySelectorAll('.cbo-side-read');
-        if (!enabled() || !snap || !_sideReadsOn()) {
-            all().forEach((e) => e.remove()); return;
-        }
-        const cont = document.querySelector(
-            '[class*="gamePlayerInformationContainer"]');
-        if (!cont) { all().forEach((e) => e.remove()); return; }
-        const seen = new Set();
-        cont.querySelectorAll('[class*="playerRow"]').forEach((row) => {
-            const p = _playerForRow(row);
-            let el = row._cboSide;
-            if (!p) { if (el) { el.remove(); row._cboSide = null; } return; }
-            if (!el || !el.isConnected) {
-                el = document.createElement('div');
-                el.className = 'cbo-side-read';
-                (document.body || document.documentElement).appendChild(el);
-                row._cboSide = el;
-            }
-            el.innerHTML = p._self ? selfReadChips(p) : handReadHtml(p);
-            stampStreamer(el);
-            const r = row.getBoundingClientRect();
-            const w = el.getBoundingClientRect().width;
-            el.style.left = `${Math.round(r.left - w - 6)}px`;
-            el.style.top = `${Math.round(r.top + r.height / 2 - 11)}px`;
-            seen.add(el);
-        });
-        all().forEach((e) => { if (!seen.has(e)) e.remove(); });
-    }
-
     // Literal trade injection: pin a CatanBot verdict badge to colonist's own
     // trade panel. Recon: the accept/decline icons are IMG .tradeResponseStatus-*
     // and the collapse is IMG .showHideTradeIcon-*; walk up to the panel. Sets
@@ -1039,15 +939,29 @@
         _tradeAnchored = true;
     }
 
-    // Highlight the recommended bottom build button (road/settle/city/dev) so
-    // the advice lands where you act. Recon: colonist's bottom action bar is
-    // a row of .actionButton-* cards; road/settle/city carry a numeric piece
-    // count, dev sits just left of road. Glows the matching one on your turn.
-    function highlightActionButton(snap) {
-        document.querySelectorAll('.cbo-action-hl').forEach(
-            (el) => el.classList.remove('cbo-action-hl'));
-        if (!enabled() || !snap || !snap.my_turn || snap.setup_phase
-                || _paused()) return;
+    // Unified action cues: light up the REAL colonist element you act on.
+    // One entry point, called each poll. Clears every prior cue first, then
+    // each sub-cue applies under its own guard (build bar on your turn, the
+    // central place button in setup, the knight card / discard cards when
+    // those moments fire). Cues anchor to colonist's own DOM, never a floater.
+    function applyActionCues(snap) {
+        document.querySelectorAll(
+            '.cbo-action-hl, .cbo-cue-dev, .cbo-cue-knight').forEach(
+            (el) => el.classList.remove(
+                'cbo-action-hl', 'cbo-cue-dev', 'cbo-cue-knight'));
+        if (!enabled() || !snap || _paused()) return;
+        highlightBuildButton(snap);
+        highlightCentralAction(snap);
+        highlightKnightCard(snap);
+        highlightDiscardCards(snap);
+    }
+
+    // Bottom build bar. Recon: colonist's action bar is a row of
+    // .actionButton-* cards; road/settle/city carry a numeric piece count,
+    // dev sits just left of road. Glows the matching one on your turn (not in
+    // setup: there the central "Place" button is the control, see below).
+    function highlightBuildButton(snap) {
+        if (!snap.my_turn || snap.setup_phase) return;
         const recs = snap.recommendations || [];
         if (!recs.length) return;
         const kind = recs[0].action === 'road' ? 'road' : recs[0].kind;
@@ -1071,6 +985,57 @@
         if (target) target.classList.add('cbo-action-hl');
     }
 
+    // Setup-phase placement: colonist's central status button reads "Place
+    // Settlement" / "Place Road" during the opening. Glow it so the cue lands
+    // on the actual control (the board itself is a WebGL canvas with no DOM
+    // node to glow). Only in setup + my turn, so it never grabs End Turn/Roll.
+    function highlightCentralAction(snap) {
+        if (!snap.my_turn || !snap.setup_phase) return;
+        const central = document.querySelector(
+            '[class*="actionButtonContainer"]');
+        if (central) central.classList.add('cbo-action-hl');
+    }
+
+    // Knight (or any dev) to play -> glow THAT card in the dev-card hand.
+    // Gated on a live recon of the dev-card hand element: findDevCard returns
+    // null until that selector is confirmed, so this is a safe no-op rather
+    // than glowing the wrong thing. CSS (.cbo-cue-knight) is ready.
+    function highlightKnightCard(snap) {
+        const kh = snap.knight_hint;
+        const knightRec = (snap.recommendations || []).some(
+            (r) => r && (r.kind === 'knight' || r.action === 'knight'));
+        if (!knightRec && !(kh && kh.should_play)) return;
+        const card = findDevCard('knight');
+        if (card) card.classList.add('cbo-cue-knight');
+    }
+
+    // Discard on a 7 -> glow the specific cards to drop. Gated on a live recon
+    // of the hand resource-card elements (findHandResourceCard); no-op until
+    // confirmed. The discard guidance text already shows in the HUD footer.
+    function highlightDiscardCards(snap) {
+        const d = snap.discard_hint;
+        if (!d) return;
+        const drop = d.cards || d.drop || d.resources || null;
+        if (!drop) return;
+        for (const res of Object.keys(drop)) {
+            if (!(drop[res] > 0)) continue;
+            const els = findHandResourceCards(res, drop[res]);
+            for (const el of els) el.classList.add('cbo-cue-dev');
+        }
+    }
+
+    // ---- Hand-element resolvers. Return null/[] until the colonist hand DOM
+    // is reconned live (the dev-card hand and the resource-card hand are not
+    // present during setup, so they need a mid-game capture). Wiring the cues
+    // through these stubs means the moment the selector is confirmed, the
+    // glow lights up with no other change. ----
+    function findDevCard(/* type */) {
+        return null;
+    }
+    function findHandResourceCards(/* res, count */) {
+        return [];
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -1088,17 +1053,13 @@
             root.innerHTML = renderBody(snap);
             root.className = urgencyOf(snap);   // left-border urgency accent
             stampStreamer(root);   // re-stamp the freshly rendered nodes
-            // In-row player reads are DISABLED: colonist wraps its player
-            // rows in a simplebar custom-scrollbar container that clips
-            // injected siblings and misaligns appended children (verified
-            // live in a bot game). The opponent reads live cleanly in the
-            // OPPONENTS section of the HUD instead. Clear any stragglers.
-            document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
             injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
-            highlightActionButton(snap);   // glow the recommended build button
-            updateNotify(snap);   // contextual robber/discard/trade-fallback alert
+            applyActionCues(snap);    // glow the real element to act on
             _lastSnap = snap;
-            injectSideReads(snap);   // always-visible reads beside each player
+            // Native opponent reads: one compact line injected under each
+            // colonist player row (sibling, in the scroll content). Confirmed
+            // visible live; runs AFTER _lastSnap so the hover fallback agrees.
+            injectPlayerReads(snap);
             attachRowHovers();    // hover a player row -> fuller read
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
