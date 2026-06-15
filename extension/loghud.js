@@ -328,6 +328,31 @@
 #${ROOT_ID} .cbo-foot.cbo-red { background: rgba(192, 57, 43, 0.14); color: #9c2d22; }
 #${ROOT_ID} .cbo-foot.cbo-amber { background: rgba(216, 134, 47, 0.16); color: #8a5618; }
 #${ROOT_ID} .cbo-foot.cbo-green { background: rgba(70, 164, 90, 0.16); color: #2f6b3f; }
+#${ROOT_ID} .cbo-foot.cbo-strong { font-weight: 800; letter-spacing: 0.01em; }
+/* Strategy banner: archetype headline + a dim rationale line. */
+#${ROOT_ID} .cbo-strat {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-size: 13px; font-weight: 700; margin-top: 2px;
+}
+#${ROOT_ID} .cbo-strat-phase {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    opacity: 0.6; font-weight: 600;
+}
+#${ROOT_ID} .cbo-strat-why {
+    flex-basis: 100%; font-size: 11px; font-weight: 500;
+    opacity: 0.75; margin-top: 1px;
+}
+/* Economy line: bank-low / dev-deck, a label with a value pill. */
+#${ROOT_ID} .cbo-eco {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; padding: 2px 0; gap: 8px;
+}
+#${ROOT_ID} .cbo-eco-v { font-weight: 700; }
+#${ROOT_ID} .cbo-eco.cbo-eco-low .cbo-eco-v { color: #9c2d22; }
+/* Dice tempo: one quiet line of anomalies. */
+#${ROOT_ID} .cbo-dice {
+    font-size: 12px; opacity: 0.85; padding: 2px 0;
+}
 #${ROOT_ID}.cbo-u-red { box-shadow: inset 3px 0 0 0 #c0392b; }
 #${ROOT_ID}.cbo-u-amber { box-shadow: inset 3px 0 0 0 #d8862f; }
 #${ROOT_ID}.cbo-u-green { box-shadow: inset 3px 0 0 0 #46a45a; }
@@ -714,11 +739,124 @@
             + rows.join('');
     }
 
+    // ---- Parity sections. Each mirrors a side-panel block, compact for the
+    // log column, and returns '' when its snapshot field is absent so the
+    // caller can push unconditionally. Field shapes match the bridge's
+    // _build_advisor_snapshot (strategy/race/bank/dev/dice/winning_move). ----
+    const STRAT_LABELS = {
+        OWS: 'Ore-Wheat-Sheep', LR_RUSH: 'Longest Road rush',
+        PORT_TRADE: 'Port trader', RB_CARVED_TILES: 'Road Builder',
+        BALANCED: 'Balanced',
+    };
+    const STRAT_ICONS = {
+        OWS: '🏛', LR_RUSH: '🛣', PORT_TRADE: '⛵',
+        RB_CARVED_TILES: '🛤', BALANCED: '⚖️',
+    };
+    // "You can win THIS turn" - highest-priority banner, press-the-button now.
+    function winningMoveHtml(snap) {
+        const w = snap.winning_move;
+        if (!w || !w.message) return '';
+        return `<div class="cbo-foot cbo-green cbo-strong">${escapeHtml(w.message)}</div>`;
+    }
+    // Strategy / board-affinity banner (snap.strategy from the selector).
+    function strategyHtml(snap) {
+        const st = snap.strategy;
+        if (!st) return '';
+        const ranking = Array.isArray(st.ranking) ? st.ranking : [];
+        const preview = !st.active && ranking.length;
+        if (!st.active && !preview) return '';
+        if (preview) {
+            const tease = ranking.slice(0, 3)
+                .map((r) => STRAT_LABELS[r.tag] || r.tag).join(' · ');
+            return '<div class="cbo-h">strategy</div>'
+                + '<div class="cbo-strat">🧭 board affinity'
+                + `<span class="cbo-strat-why">${escapeHtml(tease)}</span></div>`;
+        }
+        const tag = String(st.active);
+        const label = STRAT_LABELS[tag] || tag;
+        const icon = STRAT_ICONS[tag] || '🎯';
+        const phase = st.phase
+            ? ` <span class="cbo-strat-phase">${escapeHtml(st.phase)}</span>` : '';
+        const why = st.rationale
+            ? `<div class="cbo-strat-why">${escapeHtml(st.rationale)}</div>` : '';
+        return '<div class="cbo-h">strategy</div>'
+            + `<div class="cbo-strat">${icon} ${escapeHtml(label)}${phase}</div>${why}`;
+    }
+    // Longest-road + largest-army race banners (each ships a ready message).
+    function raceHtml(snap) {
+        const out = [];
+        const cls = (lvl) => (lvl === 'opp_threat' ? 'cbo-red'
+            : (lvl === 'self_push' ? 'cbo-green' : 'cbo-amber'));
+        for (const race of [snap.longest_road_race, snap.largest_army_race]) {
+            if (race && race.message) {
+                out.push(`<div class="cbo-foot ${cls(race.level)}">`
+                    + `${escapeHtml(race.message)}</div>`);
+            }
+        }
+        return out.join('');
+    }
+    // Bank supply (low resources) + dev-deck remaining (with knight scarcity).
+    function bankDevHtml(snap) {
+        const out = [];
+        const bank = snap.bank_supply;
+        if (bank && Array.isArray(bank.low) && bank.low.length) {
+            const chips = bank.low
+                .map((x) => `${iconFor(x.resource)} ${x.count}`).join('  ');
+            out.push('<div class="cbo-eco">bank low'
+                + `<span class="cbo-eco-v">${chips}</span></div>`);
+        }
+        const dd = snap.dev_deck;
+        if (dd && typeof dd.remaining === 'number') {
+            const kn = (dd.by_type && dd.by_type.KNIGHT)
+                ? dd.by_type.KNIGHT.remaining : null;
+            const knTxt = (kn != null) ? ` · ${kn} kn` : '';
+            const low = dd.low ? ' cbo-eco-low' : '';
+            out.push(`<div class="cbo-eco${low}">dev deck`
+                + `<span class="cbo-eco-v">${dd.remaining} left${knTxt}</span></div>`);
+        }
+        return out.join('');
+    }
+    // Dice tempo: hot numbers, a 7s cluster, a production drought, an engine
+    // gap. One compact line; silent when nothing is anomalous.
+    function tempoHtml(snap) {
+        const bits = [];
+        const hot = snap.hot_numbers;
+        if (Array.isArray(hot) && hot.length) {
+            bits.push('hot ' + hot.map((h) => h.number).join('/'));
+        }
+        if (snap.sevens_hot) bits.push(`${snap.sevens_hot.sevens}×7`);
+        if (snap.production_stall) {
+            bits.push(`${snap.production_stall.rolls_dry} dry`);
+        }
+        if (snap.engine_deficit) bits.push('engine gap');
+        if (!bits.length) return '';
+        return `<div class="cbo-dice">🎲 ${escapeHtml(bits.join(' · '))}</div>`;
+    }
+    // Knight-in-hand nudge (snap.knight_hint: {have, should_play, reason}).
+    function knightHintHtml(snap) {
+        const kh = snap.knight_hint;
+        if (!kh || !kh.should_play) return '';
+        const why = kh.reason ? ` · ${escapeHtml(kh.reason)}` : '';
+        return `<div class="cbo-foot cbo-amber">play a knight${why}</div>`;
+    }
+    // Post-game banner (snap.game_over: {winner, is_self, message}).
+    function gameOverHtml(snap) {
+        const g = snap.game_over;
+        if (!g || !g.message) return '';
+        const cls = g.is_self ? 'cbo-green cbo-strong' : 'cbo-amber';
+        return `<div class="cbo-foot ${cls}">${escapeHtml(g.message)}</div>`;
+    }
+
     // Build the HUD body HTML from an /advisor snapshot: top rec (gated like
     // the side panel) + robber targets + your card + opponent reads + footer.
     function renderBody(snap) {
         if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
         const out = [];
+        // Post-game first (it overrides everything), then "you can win now".
+        const goBlock = gameOverHtml(snap);
+        if (goBlock) out.push(goBlock);
+        const winBlock = winningMoveHtml(snap);
+        if (winBlock) out.push(winBlock);
         const recs = snap.recommendations || [];
         const showRecs = (snap.my_turn || snap.setup_phase) && !_paused();
         if (_paused()) {
@@ -742,6 +880,8 @@
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">no recommendation</div>');
         }
+        const stratBlock = strategyHtml(snap);
+        if (stratBlock) out.push(stratBlock);
         const robberBlock = robberHtml(snap);
         if (robberBlock) out.push(robberBlock);
         // Discard guidance, re-homed into the HUD (was a floating panel). On a
@@ -754,6 +894,8 @@
         }
         const selfBlock = selfHtml(snap);
         if (selfBlock) out.push(selfBlock);
+        const knightBlock = knightHintHtml(snap);
+        if (knightBlock) out.push(knightBlock);
         const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
         if (opps.length) {
             out.push('<div class="cbo-h">opponents</div>');
@@ -765,6 +907,13 @@
                     + `color:${contrastText(bg)}">${name}</span>`
                     + `<span class="cbo-reads">${handReadHtml(o)}</span></div>`);
             }
+        }
+        // Board-state cluster: LR/LA race, bank + dev deck, dice tempo. Each
+        // is silent unless its read is live, so the column stays quiet in a
+        // calm position and fills in when there's something to know.
+        const board = raceHtml(snap) + bankDevHtml(snap) + tempoHtml(snap);
+        if (board) {
+            out.push('<div class="cbo-h">board</div>' + board);
         }
         const foot = footerHtml(snap);
         if (foot) out.push(foot);
