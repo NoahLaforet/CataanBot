@@ -63,12 +63,22 @@ Tracked ones can be restored from GitHub `main` history on a healthy disk.
    dice histogram, affordable-only build glow, hex robber ring, dev-card glow,
    opponent reads on player rows, click-to-cycle recs, native trade badge.
 
+## Task 6 (release) - DRAFT staged for you
+A **draft** v0.51.0 release now exists on the repo (targets the recovery
+branch as the build source; drafts aren't public and don't touch "latest", so
+the download CTA still works). It has exact finish steps in its notes. To
+complete on a healthy machine after disk recovery:
+- Build/sign the Mac zip (`build-app.sh` + `sign_and_notarize.sh`, Team
+  3A9BRYYWX4) -> `gh release upload v0.51.0 CatanBot-macos.zip --clobber`.
+- Get `build-windows.yml` onto `main` (it's only on the recovery branch), then
+  publishing the release fires the Windows CI (or `gh workflow run`). It builds
+  the .exe on a GitHub Windows runner - no local build needed.
+- DON'T build the Mac app on THIS disk. Only publish once BOTH zips are on.
+
 ## Still needs you
-- **Board-overlay orientation** - live-verify on a 7/knight (clean game). Code
-  is in; flip `py` sign in `boardCoordToPixel` if the hexagon is mirrored.
-- **v0.51.0 release** - DON'T build on this disk. Cut it from your recovered
-  copy on a healthy machine (Mac sign+notarize w/ Team 3A9BRYYWX4; publishing
-  fires the Windows CI). Draft + steps were the plan.
+- **Board-overlay orientation** (lowest priority) - live-verify on a 7/knight
+  (clean game). Code is in; if the bright hexagon is mirrored top<->bottom,
+  flip the `py` sign in `boardCoordToPixel` (loghud.js). 2-second check.
 
 ## Source bridge
 A source bridge (v0.51.0, with the knight fix) was running from this disk; it
