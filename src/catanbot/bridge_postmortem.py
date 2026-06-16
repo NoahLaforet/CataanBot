@@ -111,10 +111,19 @@ def _feed_postmortem(st, payload: dict[str, Any]) -> None:
             and event.text.lower().startswith("friendly robber")):
         game.session.friendly_robber_active = True
 
-    if (isinstance(event, DevCardPlayEvent) and event.card == "knight"
+    # Knight OR an unrecognized dev play. colonist often logs a played knight
+    # as "X used [icon]" where the icon's alt text doesn't carry the word
+    # "knight", so the parser emits card="unknown" (see parser.py: "downstream
+    # can resolve from the next event => knight"). The robber pick is exactly
+    # that downstream moment, so treat unknown like knight here: arm the
+    # robber rec. If it turns out to be road-building / a non-knight, no robber
+    # move follows and the snapshot is evicted on the next roll / turn rotate.
+    if (isinstance(event, DevCardPlayEvent)
+            and event.card in ("knight", "unknown")
             and game is not None
             and _is_self_player(game, event.player)):
         st["robber_pending"] = True
+        st["robber_snapshot_retry_n"] = 0
         snap = _compute_robber_snapshot(
             game, display_colors=st.get("display_colors") or {})
         if snap:
