@@ -44,6 +44,8 @@
     let _tabState = '';     // last applyTab state string (skip redundant DOM work)
     const _cfgInputs = {};  // gear-menu number inputs, keyed by /config field
     let _settingsPanel = null;  // the gear dropdown (opened by the toolbar icon)
+    let _recIdx = 0;        // which recommendation is shown (click-to-cycle)
+    let _recSig = '';       // rec-set signature; resets _recIdx on a new turn
     let _tradeAnchored = false;  // trade badge is pinned to colonist's panel
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
@@ -296,6 +298,15 @@
 }
 #${ROOT_ID} .cbo-rec-tiles { font-weight: 700; }
 #${ROOT_ID} .cbo-rec-detail { color: #6b5836; font-weight: 500; }
+#${ROOT_ID} .cbo-rec-cyc {
+    cursor: pointer; border-radius: 6px; margin: 0 -4px; padding: 2px 4px 4px;
+    transition: background 0.12s;
+}
+#${ROOT_ID} .cbo-rec-cyc:hover { background: rgba(184, 134, 47, 0.14); }
+#${ROOT_ID} .cbo-rec-cyc-hint {
+    display: inline-block; margin-left: 7px; font-size: 10px; font-weight: 600;
+    color: #9c7b3a; vertical-align: middle; opacity: 0.85;
+}
 #${ROOT_ID} .cbo-fallback {
     color: #6b5836; font-size: 12px; padding: 1px 0 2px 8px;
     border-left: 2px solid rgba(90, 62, 28, 0.25); margin: 2px 0 0 2px;
@@ -642,6 +653,20 @@
         root.dataset.cboLoghud = '1';
         root.innerHTML = '<div class="cbo-placeholder">CatanBot HUD'
             + ' — start a game to see recommendations.</div>';
+        // Click-to-cycle the recommendation. Delegated on root (which persists
+        // across innerHTML rebuilds), so clicking the rec advances to the
+        // next-best and re-renders immediately.
+        root.addEventListener('click', (e) => {
+            if (!e.target.closest || !e.target.closest('.cbo-rec-cyc')) return;
+            const recs = (_lastSnap && _lastSnap.recommendations) || [];
+            if (recs.length <= 1) return;
+            _recIdx = (_recIdx + 1) % recs.length;
+            try {
+                root.innerHTML = renderBody(_lastSnap);
+                root.className = urgencyOf(_lastSnap);
+                stampStreamer(root);
+            } catch (err) { /* re-render hiccup */ }
+        });
 
         stampStreamer(tabs);
         stampStreamer(root);
@@ -1129,14 +1154,28 @@
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">recs off (variant board)</div>');
         } else if (showRecs && recs.length) {
+            // Click-to-cycle: clicking the rec advances to the next-best one.
+            // _recIdx persists across re-renders but resets when the rec set
+            // itself changes (a new turn / decision), tracked via _recSig.
+            const recSig = recs.map((r) => `${r.kind || ''}.${r.action || ''}`
+                + `.${JSON.stringify(r.tiles || (r.road && r.road.edge_tiles) || '')}`)
+                .join('|');
+            if (recSig !== _recSig) { _recSig = recSig; _recIdx = 0; }
+            const idx = Math.min(_recIdx, recs.length - 1);
+            const cyc = recs.length > 1
+                ? `<span class="cbo-rec-cyc-hint">${idx + 1}/${recs.length}`
+                    + ' &middot; click for next</span>' : '';
             let block = '<div class="cbo-h">next move</div>'
-                + `<div class="cbo-rec">${topRecHtml(recs[0])}</div>`;
-            // If the top pick is a trade, show the next-best as the
+                + `<div class="cbo-rec${recs.length > 1 ? ' cbo-rec-cyc' : ''}"`
+                + ` title="${recs.length > 1 ? 'click for the next-best option' : ''}">`
+                + `${topRecHtml(recs[idx])}${cyc}</div>`;
+            // If the shown pick is a trade, surface the next one as the
             // "if they deny, do this instead" fallback (Noah's ask).
-            const k0 = recs[0].action === 'road' ? 'road' : recs[0].kind;
-            if ((k0 === 'trade' || k0 === 'propose_trade') && recs[1]) {
+            const kc = recs[idx].action === 'road' ? 'road' : recs[idx].kind;
+            const nxt = recs[idx + 1] || recs[0];
+            if ((kc === 'trade' || kc === 'propose_trade') && nxt && nxt !== recs[idx]) {
                 block += `<div class="cbo-fallback">if denied &rarr; `
-                    + `${topRecHtml(recs[1])}</div>`;
+                    + `${topRecHtml(nxt)}</div>`;
             }
             out.push(block);
         } else if (showRecs) {
