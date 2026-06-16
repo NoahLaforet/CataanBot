@@ -120,10 +120,32 @@ function _frameLooksLikeState(frame) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-    // Open the side panel on action-icon click. Chrome's side-panel
-    // API requires this opt-in; without it the icon does nothing.
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+    // The in-page HUD is the primary surface now, so the toolbar icon no
+    // longer opens the side panel — it opens the in-page settings menu
+    // instead (see onClicked below). Explicitly turn the open-on-click
+    // behavior OFF so the action click fires our onClicked handler.
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
         .catch(err => console.warn('[catanbot] sidePanel setup:', err));
+});
+
+// Toolbar icon click -> open the in-page settings menu on the colonist tab,
+// rather than the old side panel. loghud.js listens for 'open-settings'. If
+// the active tab isn't colonist, focus an existing colonist tab if there is
+// one so the click still lands somewhere useful.
+chrome.action.onClicked.addListener(async (tab) => {
+    try {
+        if (tab && isColonistUrl(tab.url)) {
+            chrome.tabs.sendMessage(tab.id, { type: 'open-settings' })
+                .catch(() => {});
+            return;
+        }
+        const tabs = await chrome.tabs.query({ url: 'https://colonist.io/*' });
+        if (tabs && tabs.length) {
+            await chrome.tabs.update(tabs[0].id, { active: true });
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'open-settings' })
+                .catch(() => {});
+        }
+    } catch (e) { /* no colonist tab open; nothing to do */ }
 });
 
 // Toolbar badge — shows "ON" in green when the active tab is on
@@ -287,6 +309,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         postJson(`${BRIDGE_BASE}/feedback`, msg.payload);
         return false;
     }
+    if (msg.type === 'get-advisor') {
+        // The in-page HUD (loghud.js) can't fetch the bridge directly: a
+        // content script's http://127.0.0.1 request from the https colonist
+        // page is blocked in some browsers (Comet: ERR_BLOCKED_BY_CLIENT).
+        // The service worker runs in the extension context with the
+        // 127.0.0.1 host permission, so it fetches and hands back the snap.
+        (async () => {
+            try {
+                const resp = await fetch(`${BRIDGE_BASE}/advisor`,
+                    { method: 'GET' });
+                if (!resp.ok) {
+                    sendResponse({ ok: false, status: resp.status });
+                    return;
+                }
+                sendResponse({ ok: true, snap: await resp.json() });
+            } catch (e) {
+                sendResponse({ ok: false, error: String(e) });
+            }
+        })();
+        return true;  // keep the channel open for the async response
+    }
     if (msg.type === 'streamer-anon') {
         // Sync content.js's username→fantasy-name map to the bridge so
         // the side panel can read the same labels and stop diverging
@@ -330,6 +373,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.type === 'reset-bridge') {
         postJson(`${BRIDGE_BASE}/reset`, {})
+            .then(ok => sendResponse({ ok }));
+        return true;  // keep channel open for async response
+    }
+    if (msg.type === 'set-config') {
+        // In-page settings menu (loghud.js) writes VP target / discard limit
+        // to the bridge's /config. Same worker-proxy reason as get-advisor:
+        // the content script can't POST 127.0.0.1 from the https page.
+        postJson(`${BRIDGE_BASE}/config`, msg.payload || {})
             .then(ok => sendResponse({ ok }));
         return true;  // keep channel open for async response
     }
