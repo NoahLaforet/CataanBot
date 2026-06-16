@@ -43,6 +43,7 @@
     let _container = null;  // cached log container handle (fast re-anchor path)
     let _tabState = '';     // last applyTab state string (skip redundant DOM work)
     const _cfgInputs = {};  // gear-menu number inputs, keyed by /config field
+    let _settingsPanel = null;  // the gear dropdown (opened by the toolbar icon)
     let _tradeAnchored = false;  // trade badge is pinned to colonist's panel
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
@@ -591,6 +592,15 @@
         stampStreamer(p);
         return p;
     }
+    // Open the gear menu from the toolbar-icon click (background.js sends
+    // 'open-settings'). Make sure the HUD is on the CatanBot tab so the menu is
+    // actually visible, then drop the panel with live values filled in.
+    function openSettings() {
+        if (!_settingsPanel) return;
+        if (currentTab() !== 'catanbot' && !replaceMode()) setTab('catanbot');
+        refreshSettingsInputs();
+        _settingsPanel.style.display = 'block';
+    }
 
     function buildNodes() {
         // Tab bar.
@@ -615,6 +625,7 @@
         gear.textContent = '⚙';
         gear.title = 'CatanBot settings';
         const panel = buildSettingsPanel();
+        _settingsPanel = panel;
         gear.addEventListener('click', (e) => {
             e.stopPropagation();
             const opening = panel.style.display !== 'block';
@@ -1500,6 +1511,16 @@
     // container can exist independently, so we self-drive too).
     window.__catanbot = window.__catanbot || {};
     window.__catanbot.ensureHudAttached = ensureHudAttached;
+
+    // Toolbar-icon click (background.js) -> open the in-page settings menu.
+    try {
+        chrome.runtime.onMessage.addListener((msg) => {
+            if (msg && msg.type === 'open-settings') {
+                try { openSettings(); } catch (e) { /* not attached yet */ }
+            }
+            return false;
+        });
+    } catch (e) { /* no chrome.runtime in this context */ }
 
     try { ensureHudAttached(); } catch (e) { /* container not ready yet */ }
     // Re-cap the body height when the window resizes (the log box height tracks

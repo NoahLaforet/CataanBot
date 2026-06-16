@@ -120,10 +120,32 @@ function _frameLooksLikeState(frame) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-    // Open the side panel on action-icon click. Chrome's side-panel
-    // API requires this opt-in; without it the icon does nothing.
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+    // The in-page HUD is the primary surface now, so the toolbar icon no
+    // longer opens the side panel — it opens the in-page settings menu
+    // instead (see onClicked below). Explicitly turn the open-on-click
+    // behavior OFF so the action click fires our onClicked handler.
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
         .catch(err => console.warn('[catanbot] sidePanel setup:', err));
+});
+
+// Toolbar icon click -> open the in-page settings menu on the colonist tab,
+// rather than the old side panel. loghud.js listens for 'open-settings'. If
+// the active tab isn't colonist, focus an existing colonist tab if there is
+// one so the click still lands somewhere useful.
+chrome.action.onClicked.addListener(async (tab) => {
+    try {
+        if (tab && isColonistUrl(tab.url)) {
+            chrome.tabs.sendMessage(tab.id, { type: 'open-settings' })
+                .catch(() => {});
+            return;
+        }
+        const tabs = await chrome.tabs.query({ url: 'https://colonist.io/*' });
+        if (tabs && tabs.length) {
+            await chrome.tabs.update(tabs[0].id, { active: true });
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'open-settings' })
+                .catch(() => {});
+        }
+    } catch (e) { /* no colonist tab open; nothing to do */ }
 });
 
 // Toolbar badge — shows "ON" in green when the active tab is on
