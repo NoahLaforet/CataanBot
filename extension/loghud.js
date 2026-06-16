@@ -1502,7 +1502,7 @@
     // scales with the window. Calibrated live against a real game; it lands the
     // ring on the correct tile (slight off-center from colonist's 3D tilt is
     // fine — the HUD's ranked text read is the exact backup). ----
-    const BOARD_CALIB = { fx: 0.339, fy: 0.474, fdE: 0.0684, fdV: 0.0739 };
+    const BOARD_CALIB = { fx: 0.373, fy: 0.474, fdE: 0.0684, fdV: 0.0739 };
     function boardCoordToPixel(coord) {
         const canvas = document.getElementById('game-canvas');
         if (!canvas || !Array.isArray(coord) || coord.length < 3) return null;
