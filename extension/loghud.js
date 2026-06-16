@@ -445,30 +445,29 @@
 #cbo-board-overlay {
     position: fixed; inset: 0; pointer-events: none; z-index: 2147483500;
 }
-#cbo-board-overlay .cbo-bo-mark {
-    position: absolute; box-sizing: border-box;
-    border: 4px solid #46c463; border-radius: 50%;
-    box-shadow: 0 0 16px 4px rgba(70, 196, 99, 0.8),
-        inset 0 0 12px rgba(70, 196, 99, 0.45);
-    animation: cbo-bopulse 1.1s ease-in-out infinite alternate;
+/* A pointy-top hexagon traced around the recommended robber tile, glowing
+   green like the in-hand card cue (Noah's ask). The top pick pulses bright;
+   the 2nd/3rd picks are static + dim. */
+#cbo-board-overlay .cbo-bo-mark { position: absolute; overflow: visible; }
+#cbo-board-overlay .cbo-bo-hex {
+    fill: rgba(70, 196, 99, 0.12);
+    stroke: #46c463; stroke-width: 5; stroke-linejoin: round;
+    filter: drop-shadow(0 0 5px #46c463) drop-shadow(0 0 10px rgba(70, 196, 99, 0.7));
+    animation: cbo-bopulse 1.05s ease-in-out infinite alternate;
 }
-@keyframes cbo-bopulse { from { opacity: 0.55; } to { opacity: 1; } }
-#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank2 {
-    border-color: #e0a93f; border-width: 3px; opacity: 0.75;
-    box-shadow: 0 0 9px rgba(224, 169, 63, 0.6); animation: none;
+@keyframes cbo-bopulse {
+    from { opacity: 0.6; stroke-width: 4; }
+    to { opacity: 1; stroke-width: 6; }
 }
-#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank3 {
-    border-color: #c79a5c; border-width: 2px; opacity: 0.5;
-    box-shadow: none; animation: none;
+#cbo-board-overlay .cbo-bo-rank2 .cbo-bo-hex {
+    stroke: #e0a93f; stroke-width: 3; opacity: 0.7; animation: none;
+    fill: rgba(224, 169, 63, 0.08);
+    filter: drop-shadow(0 0 4px rgba(224, 169, 63, 0.6));
 }
-#cbo-board-overlay .cbo-bo-rank {
-    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
-    background: #2f6b3f; color: #fff; font: 800 11px/18px "Open Sans", sans-serif;
-    width: 18px; height: 18px; border-radius: 50%; text-align: center;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+#cbo-board-overlay .cbo-bo-rank3 .cbo-bo-hex {
+    stroke: #c79a5c; stroke-width: 2; opacity: 0.5; animation: none;
+    fill: none; filter: none;
 }
-#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank2 .cbo-bo-rank { background: #a8731f; }
-#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank3 .cbo-bo-rank { background: #7a6240; }
 /* Glow the recommended bottom build button (road/settle/city/dev). */
 .cbo-action-hl {
     outline: 3px solid #46c463 !important;
@@ -614,11 +613,6 @@
             try { localStorage.setItem('catanbot.paused', v ? '1' : '0'); }
             catch (e) { /* private mode */ }
         }).row);
-        p.appendChild(_toggleRow('HUD only (hide log tab)', replaceMode, (v) => {
-            try { localStorage.setItem(LS_REPLACE, v ? '1' : '0'); }
-            catch (e) { /* private mode */ }
-            applyTab();
-        }).row);
         p.appendChild(_sectionHeader('Advisor'));
         p.appendChild(_numberRow('VP target', 'vp_target', 3, 30));
         p.appendChild(_numberRow('Discard at', 'discard_limit', 5, 20));
@@ -710,8 +704,7 @@
     function applyTab(container) {
         if (!root || !tabs) return;
         const cont = container || root.parentElement || tabs.parentElement;
-        const replace = replaceMode();
-        const tab = replace ? 'catanbot' : currentTab();
+        const tab = currentTab();
         // Hide the native log only when the CatanBot tab is up AND we've
         // connected — a user without the bridge keeps their log (the HUD
         // shows additively until it has something real to show).
@@ -720,10 +713,13 @@
         // Skip all DOM writes when nothing that affects them changed. kids.length
         // is in the key so a freshly added native child still gets hidden. This
         // is what makes the hot re-anchor path nearly free.
-        const state = `${tab}|${replace}|${hideNative}|${kids.length}`;
+        const state = `${tab}|${hideNative}|${kids.length}`;
         if (cont === _container && state === _tabState) return;
         _tabState = state;
-        tabs.style.display = replace ? 'none' : 'flex';
+        // The tab bar (Log | CatanBot | gear) is ALWAYS shown — hiding it was a
+        // footgun that stranded the user with no way back to the log or
+        // settings. The old "HUD only" replace mode is retired.
+        tabs.style.display = 'flex';
         root.style.display = (tab === 'catanbot') ? 'block' : 'none';
         for (const child of kids) {
             // Move the native log OFF-SCREEN (still dimensioned) rather than
@@ -1446,12 +1442,16 @@
         for (let i = 0; i < Math.min(3, targets.length); i += 1) {
             const p = boardCoordToPixel(targets[i].coord);
             if (!p) continue;
-            const d = Math.round(p.size * 0.94);
+            // Pointy-top hexagon traced around the tile: width = hex flat-to-
+            // flat (~size), height taller by 2/sqrt(3). viewBox is a unit hex.
+            const w = Math.round(p.size * 1.02);
+            const h = Math.round(p.size * 1.18);
             const rankCls = i === 0 ? '' : (i === 1 ? ' cbo-bo-rank2' : ' cbo-bo-rank3');
-            marks.push(`<div class="cbo-bo-mark${rankCls}" style="left:`
-                + `${Math.round(p.x - d / 2)}px;top:${Math.round(p.y - d / 2)}px;`
-                + `width:${d}px;height:${d}px">`
-                + `<span class="cbo-bo-rank">${i + 1}</span></div>`);
+            marks.push(`<svg class="cbo-bo-mark${rankCls}" viewBox="0 0 100 116"`
+                + ` preserveAspectRatio="none" style="left:${Math.round(p.x - w / 2)}px;`
+                + `top:${Math.round(p.y - h / 2)}px;width:${w}px;height:${h}px">`
+                + '<polygon class="cbo-bo-hex" points="50,2 97,30 97,86 50,114 3,86 3,30"/>'
+                + '</svg>');
         }
         layer.innerHTML = marks.join('');
         stampStreamer(layer);
@@ -1501,6 +1501,26 @@
         highlightDiscardCards(snap);
     }
 
+    // Build costs, used to gate the button glow on what you can actually
+    // afford RIGHT NOW (the rec can be a multi-turn goal like "city, need 2
+    // wheat" — we shouldn't glow a button you can't click).
+    const BUILD_COST = {
+        road: { WOOD: 1, BRICK: 1 },
+        settlement: { WOOD: 1, BRICK: 1, SHEEP: 1, WHEAT: 1 },
+        city: { WHEAT: 2, ORE: 3 },
+        dev_card: { SHEEP: 1, WHEAT: 1, ORE: 1 },
+        buy_dev: { SHEEP: 1, WHEAT: 1, ORE: 1 },
+    };
+    function canAffordBuild(me, kind) {
+        const cost = BUILD_COST[kind];
+        if (!cost) return true;   // unknown kind -> don't suppress
+        const hand = (me && me.hand) || {};
+        for (const res of Object.keys(cost)) {
+            if ((hand[res] || 0) < cost[res]) return false;
+        }
+        return true;
+    }
+
     // Bottom build bar. Recon: colonist's action bar is a row of
     // .actionButton-* cards; road/settle/city carry a numeric piece count,
     // dev sits just left of road. Glows the matching one on your turn (not in
@@ -1510,6 +1530,9 @@
         const recs = snap.recommendations || [];
         if (!recs.length) return;
         const kind = recs[0].action === 'road' ? 'road' : recs[0].kind;
+        // Only glow a build you can pay for this turn — never light up a "city"
+        // button when the city is just the plan and you're short the resources.
+        if (!canAffordBuild(snap.self, kind)) return;
         const btns = Array.from(
             document.querySelectorAll('[class*="actionButton-"]'))
             .filter((b) => !/Container/.test(b.className.toString()))
