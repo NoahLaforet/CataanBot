@@ -4,6 +4,35 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.51.0 (2026-06-15)
+
+The in-page HUD gets native and fast, from a round of live play.
+
+- **Native-fast.** The HUD body only redraws when the snapshot it shows
+  actually changed (idle ticks are free), the log-container handle is cached so
+  re-anchoring is nearly free, action cues clear without a full-document sweep,
+  and the poll is adaptive (snappy on your turn, relaxed otherwise). No more lag.
+- **Fits the log box.** The HUD is capped to the panel height and scrolls inside
+  it instead of spilling past, with a clearer Log | CatanBot toggle.
+- **Opponent reads moved onto the players.** The inferred opponent hand now
+  renders right on colonist's own player rows (in the gutter under each hidden-
+  card count), so it lives where you're already looking; the opponents list left
+  the log column to free space.
+- **Board ring on the robber.** When the robber decision is live, a green ring is
+  drawn over the recommended tile (plus dimmer 2nd/3rd choices), computed
+  geometrically over colonist's WebGL board. The ranked text read stays as the
+  exact backup.
+- **Click the rec to cycle.** Clicking the next-move recommendation advances to
+  the next-best option.
+- **Native trade verdict.** The accept/decline/consider badge is restyled to
+  colonist's tan + game font with a thin colored edge, and it vanishes the
+  instant you act on the trade instead of lingering.
+- **Cleaner cues.** The opening-placement bottom-bar glow (which lit the whole
+  bar) is gone; opening placements will be cued on the board instead.
+- **Settings on the toolbar icon.** Clicking the extension icon now opens the
+  in-page settings menu (with a VP-target and discard-limit control) instead of
+  the retired side panel.
+
 ## v0.50.0 (2026-06-08)
 
 The HUD moves into the page. No more side panel.
