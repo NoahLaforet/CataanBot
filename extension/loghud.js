@@ -32,6 +32,19 @@
     const TABS_ID = 'cbo-loghud-tabs';
     const STYLE_ID = 'cbo-loghud-style';
 
+    // Bridge download links (the local app, served as GitHub release assets).
+    // /releases/latest never needs a per-version edit. Mirrors panel.js.
+    const DL_BASE = 'https://github.com/NoahLaforet/CatanBot/releases/latest/download/';
+    const DL_MAC = `${DL_BASE}CatanBot-macos.zip`;
+    const DL_WIN = `${DL_BASE}CatanBot-windows.zip`;
+    function _isWin() {
+        try {
+            const p = (navigator.userAgentData && navigator.userAgentData.platform)
+                || navigator.platform || '';
+            return /Win/i.test(p);
+        } catch (e) { return false; }
+    }
+
     let root = null;   // HUD body element
     let tabs = null;   // tab-bar element
     let _noContainer = 0;   // consecutive failed anchor finds
@@ -254,6 +267,20 @@
     font-style: italic;
     padding: 6px 0;
 }
+/* Bridge-offline download call-to-action (the local app isn't running). */
+#${ROOT_ID} .cbo-dl-msg { color: #6b5836; font-size: 12px; margin: 4px 0 7px; }
+#${ROOT_ID} .cbo-dl-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#${ROOT_ID} .cbo-dl-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #b8862f; color: #fff; font-weight: 700; font-size: 12px;
+    padding: 5px 11px; border-radius: 7px; text-decoration: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+#${ROOT_ID} .cbo-dl-btn:hover { background: #a5772a; }
+#${ROOT_ID} .cbo-dl-alt {
+    font-size: 11px; color: #9c7b3a; text-decoration: underline; cursor: pointer;
+}
+#${ROOT_ID} .cbo-dl-hint { font-size: 11px; color: #9a876a; margin-top: 6px; }
 #${ROOT_ID} .cbo-rec {
     font-size: 14px;
     font-weight: 600;
@@ -1730,6 +1757,29 @@
         }
     }
 
+    // Shown when the local bridge isn't reachable: a one-click download for
+    // the user's platform (the other platform a small link), since the toolbar
+    // icon no longer opens the side panel that used to host this CTA.
+    function bridgeOfflineHtml() {
+        const win = _isWin();
+        const primary = win
+            ? { href: DL_WIN, label: 'Download for Windows' }
+            : { href: DL_MAC, label: 'Download for macOS' };
+        const alt = win
+            ? { href: DL_MAC, label: 'macOS' }
+            : { href: DL_WIN, label: 'Windows' };
+        return '<div class="cbo-h">bridge offline</div>'
+            + '<div class="cbo-dl-msg">CatanBot needs its local app running'
+            + ' to give recommendations.</div>'
+            + '<div class="cbo-dl-row">'
+            + `<a class="cbo-dl-btn" href="${primary.href}" target="_blank"`
+            + ` rel="noopener">${primary.label}</a>`
+            + `<a class="cbo-dl-alt" href="${alt.href}" target="_blank"`
+            + ` rel="noopener">${alt.label}</a></div>`
+            + '<div class="cbo-dl-hint">Already installed? Just launch the'
+            + ' CatanBot app and this connects automatically.</div>';
+    }
+
     let _bridgeDown = false;
     async function fetchAndRender() {
         if (!enabled() || !root) return;
@@ -1768,8 +1818,7 @@
         } else if (!_bridgeDown) {
             _bridgeDown = true;
             _lastSig = null;
-            root.innerHTML = '<div class="cbo-placeholder">bridge offline'
-                + ' — start the CatanBot app.</div>';
+            root.innerHTML = bridgeOfflineHtml();
             stampStreamer(root);
         }
     }
