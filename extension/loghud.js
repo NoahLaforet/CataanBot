@@ -231,22 +231,24 @@
 }
 #${TABS_ID} .cbo-tab {
     appearance: none;
-    border: none;
-    background: rgba(90, 62, 28, 0.10);
-    color: #5a4a32;
+    border: 1px solid rgba(90, 62, 28, 0.18);
+    border-bottom: none;
+    background: rgba(90, 62, 28, 0.08);
+    color: #6b5836;
     font: inherit;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 13px;
     letter-spacing: 0.02em;
-    padding: 5px 12px;
+    padding: 5px 14px;
     border-radius: 7px 7px 0 0;
     cursor: pointer;
     line-height: 1.2;
 }
+#${TABS_ID} .cbo-tab:hover { background: rgba(90, 62, 28, 0.15); }
 #${TABS_ID} .cbo-tab.active {
-    background: rgba(90, 62, 28, 0.20);
+    background: rgba(184, 134, 47, 0.22);
     color: #2f2415;
-    box-shadow: inset 0 -2px 0 0 #b8862f;
+    box-shadow: inset 0 -3px 0 0 #b8862f;
 }
 #${ROOT_ID} {
     font-family: inherit;
@@ -1258,7 +1260,9 @@
         clearCues();
         if (!enabled() || !snap || _paused() || !cuesWanted(snap)) return;
         highlightBuildButton(snap);
-        highlightCentralAction(snap);
+        // No setup-phase bottom-bar glow: it lit the whole action container,
+        // which read as "highlight everything". Opening placements are cued on
+        // the board instead (see the board overlay), not on the bottom bar.
         highlightKnightCard(snap);
         highlightDiscardCards(snap);
     }
@@ -1290,17 +1294,6 @@
             target = i > 0 ? btns[i - 1] : null;
         }
         addCue(target, 'cbo-action-hl');
-    }
-
-    // Setup-phase placement: colonist's central status button reads "Place
-    // Settlement" / "Place Road" during the opening. Glow it so the cue lands
-    // on the actual control (the board itself is a WebGL canvas with no DOM
-    // node to glow). Only in setup + my turn, so it never grabs End Turn/Roll.
-    function highlightCentralAction(snap) {
-        if (!snap.my_turn || !snap.setup_phase) return;
-        const central = document.querySelector(
-            '[class*="actionButtonContainer"]');
-        addCue(central, 'cbo-action-hl');
     }
 
     // Knight (or any dev) to play -> glow THAT card in the dev-card hand.
@@ -1402,7 +1395,7 @@
             applyActionCues(snap);    // glow the real element to act on
             _lastSnap = snap;
             _bridgeDown = false;
-            if (!_everConnected) { _everConnected = true; applyTab(); }
+            if (!_everConnected) { _everConnected = true; applyTab(); sizeHudBody(); }
         } else if (!_bridgeDown) {
             _bridgeDown = true;
             _lastSig = null;
@@ -1428,6 +1421,24 @@
             (document.body || document.documentElement).appendChild(t);
             setTimeout(() => { try { t.remove(); } catch (e) { /* gone */ } }, 6000);
         } catch (e) { /* no body yet */ }
+    }
+
+    // Cap the HUD body to the log box and let it scroll inside, so a tall
+    // snapshot never spills past colonist's beige panel. Bounds to the lesser
+    // of the container's own height and the space down to the viewport bottom
+    // (the latter catches a container that auto-grows with our content). Only
+    // called on attach / connect / resize — never the per-tick hot path — since
+    // it reads layout; max-height is a cap so it needs no per-content recompute.
+    function sizeHudBody() {
+        if (!root || !_container || !_container.isConnected) return;
+        try {
+            const tabsH = (tabs && tabs.offsetHeight) || 28;
+            const contH = _container.clientHeight;
+            const rootTop = root.getBoundingClientRect().top;
+            let avail = window.innerHeight - rootTop - 8;
+            if (contH > tabsH + 60) avail = Math.min(avail, contH - tabsH - 2);
+            root.style.maxHeight = `${Math.max(140, Math.round(avail))}px`;
+        } catch (e) { /* detached mid-measure */ }
     }
 
     // Called by content.js's observer + 500ms interval (via
@@ -1481,6 +1492,7 @@
         }
         _container = container;
         applyTab(container);
+        sizeHudBody();
     }
 
     // Expose for content.js's re-anchor hook, and run our own lightweight
@@ -1490,6 +1502,13 @@
     window.__catanbot.ensureHudAttached = ensureHudAttached;
 
     try { ensureHudAttached(); } catch (e) { /* container not ready yet */ }
+    // Re-cap the body height when the window resizes (the log box height tracks
+    // the viewport). Debounced so a drag-resize doesn't thrash layout.
+    let _resizeTimer = null;
+    window.addEventListener('resize', () => {
+        if (_resizeTimer) return;
+        _resizeTimer = setTimeout(() => { _resizeTimer = null; sizeHudBody(); }, 150);
+    });
     // Re-anchor safety net. content.js already re-anchors on every log mutation
     // and on its own 500ms interval; with the fast path this is a cheap
     // isConnected check, so 1000ms here is plenty.
