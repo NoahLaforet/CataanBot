@@ -1418,7 +1418,11 @@
         const dV = BOARD_CALIB.fdV * r.width;
         const q = coord[0];
         const rr = coord[2];
-        return { x: cx + q * dE + rr * (dE / 2), y: cy + rr * dV, size: dE };
+        // py uses -rr: catanatron r grows toward colonist's NORTH (screen-up),
+        // per the bridge's coordinate notes (colonist +ay = SOUTH = down maps to
+        // r = -1). The horizontal shear keeps each row centered, so it isn't
+        // flipped. Pending a final confirm on a live robber (trivial to revert).
+        return { x: cx + q * dE + rr * (dE / 2), y: cy - rr * dV, size: dE };
     }
     // Draw a green ring over the recommended robber tile (and dimmer rings on
     // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
