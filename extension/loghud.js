@@ -1514,11 +1514,14 @@
         const dV = BOARD_CALIB.fdV * r.width;
         const q = coord[0];
         const rr = coord[2];
-        // py uses -rr: catanatron r grows toward colonist's NORTH (screen-up),
-        // per the bridge's coordinate notes (colonist +ay = SOUTH = down maps to
-        // r = -1). The horizontal shear keeps each row centered, so it isn't
-        // flipped. Pending a final confirm on a live robber (trivial to revert).
-        return { x: cx + q * dE + rr * (dE / 2), y: cy - rr * dV, size: dE };
+        // coord[2] is colonist's SOUTH axis: axial_to_cube(ax, ay) returns
+        // (ax, -ax-ay, ay), putting colonist_y in cube[2], and _HEX_NEIGHBOURS
+        // confirms the southward steps (SE/SW) carry cube[2] = +1. So rr grows
+        // DOWN the screen. py and the row shear both add +rr, matching the
+        // standard pointy-top axial->pixel layout (r grows downward). (Earlier
+        // -rr was an inverted read of the mapping; +rr is internally consistent
+        // with the shear and the coordinate definition.)
+        return { x: cx + q * dE + rr * (dE / 2), y: cy + rr * dV, size: dE };
     }
     // Draw a green ring over the recommended robber tile (and dimmer rings on
     // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
