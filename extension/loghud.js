@@ -47,6 +47,9 @@
     let _recIdx = 0;        // which recommendation is shown (click-to-cycle)
     let _recSig = '';       // rec-set signature; resets _recIdx on a new turn
     let _tradeAnchored = false;  // trade badge is pinned to colonist's panel
+    let _currentTradeKey = null;   // identity of the live incoming trade
+    let _tradeDismissedKey = null;  // trade the user already acted on (suppress)
+    let _tradeDismissWired = false;  // the dismiss click listener is installed
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
     // matches the side panel exactly (same snapshot fields, same "wood 2
@@ -408,25 +411,34 @@
 .cbo-prow .cbo-pr-maybe { opacity: 0.5; }
 .cbo-prow .cbo-pr-sep { opacity: 0.35; margin: 0 1px; font-weight: 400; }
 .cbo-prow .cbo-pr-none { opacity: 0.55; font-weight: 600; font-style: italic; }
-/* Trade verdict badge pinned to colonist's own trade panel. */
+/* Trade verdict badge pinned to colonist's own trade panel. Colonist-native:
+   tan/cream like their panels, dark text, game font, with a thin colored
+   left-edge as the only verdict accent (no loud red/green box). */
 #cbo-trade-badge {
     position: fixed;
     z-index: 2147483600;
-    padding: 4px 10px;
-    border-radius: 7px;
-    color: #fff;
-    font: 700 13px/1.3 -apple-system, system-ui, sans-serif;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    padding: 5px 11px 5px 9px;
+    border-radius: 8px;
+    color: #2b2620;
+    background: #ece2cc;
+    border: 1px solid rgba(120, 95, 55, 0.30);
+    border-left-width: 4px;
+    font: 700 13px/1.3 "Open Sans", -apple-system, system-ui, sans-serif;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22);
     pointer-events: none;
     max-width: 280px;
 }
 #cbo-trade-badge .cbo-tb-tag {
     font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
-    opacity: 0.7; margin-right: 5px; font-weight: 600;
+    color: #8a7350; margin-right: 5px; font-weight: 700;
 }
-#cbo-trade-badge.cbo-tb-accept { background: #2e8b57; }
-#cbo-trade-badge.cbo-tb-decline { background: #c0392b; }
-#cbo-trade-badge.cbo-tb-consider { background: #3b7dd8; }
+#cbo-trade-badge .cbo-tb-verdict { font-weight: 800; }
+#cbo-trade-badge.cbo-tb-accept { border-left-color: #2e8b57; }
+#cbo-trade-badge.cbo-tb-accept .cbo-tb-verdict { color: #1f6b40; }
+#cbo-trade-badge.cbo-tb-decline { border-left-color: #c0392b; }
+#cbo-trade-badge.cbo-tb-decline .cbo-tb-verdict { color: #a32b1e; }
+#cbo-trade-badge.cbo-tb-consider { border-left-color: #3b7dd8; }
+#cbo-trade-badge.cbo-tb-consider .cbo-tb-verdict { color: #2a5fa8; }
 /* Glow the recommended bottom build button (road/settle/city/dev). */
 .cbo-action-hl {
     outline: 3px solid #46c463 !important;
@@ -1290,8 +1302,19 @@
         _tradeAnchored = false;
         const old = document.getElementById('cbo-trade-badge');
         if (!enabled() || !snap || !snap.incoming_trade) {
-            if (old) old.remove(); return;
+            if (old) old.remove();
+            _currentTradeKey = null;
+            return;
         }
+        const t = snap.incoming_trade;
+        // Stable key for this offer so a dismiss (the user clicked
+        // accept/decline) suppresses the badge instantly without waiting for
+        // the bridge to clear incoming_trade a poll or two later.
+        let key;
+        try { key = JSON.stringify(t.give || t.offer || t.want || t); }
+        catch (e) { key = String(t.reason || ''); }
+        _currentTradeKey = key;
+        if (key === _tradeDismissedKey) { if (old) old.remove(); return; }
         const icon = document.querySelector(
             '[class*="showHideTradeIcon"], [class*="tradeResponseStatus"]');
         if (!icon) { if (old) old.remove(); return; }
@@ -1307,12 +1330,11 @@
             badge.id = 'cbo-trade-badge';
             (document.body || document.documentElement).appendChild(badge);
         }
-        const t = snap.incoming_trade;
         const v = ['accept', 'decline', 'consider'].includes(t.verdict)
             ? t.verdict : 'consider';
         badge.className = `cbo-tb-${v}`;
         badge.innerHTML = '<span class="cbo-tb-tag">CatanBot</span>'
-            + `<b>${v.toUpperCase()}</b>`
+            + `<span class="cbo-tb-verdict">${v.toUpperCase()}</span>`
             + (t.reason ? ` ${escapeHtml(t.reason)}` : '');
         stampStreamer(badge);
         const r = panel.getBoundingClientRect();
@@ -1322,6 +1344,26 @@
         badge.style.top = `${Math.round(r.bottom + 1)}px`;
         badge.style.display = 'block';
         _tradeAnchored = true;
+    }
+
+    // Instant dismiss: the moment the user acts on colonist's trade panel
+    // (accept / decline / counter / collapse), hide our verdict badge and
+    // suppress it for this offer, so it never lingers a beat after the click.
+    function wireTradeDismiss() {
+        if (_tradeDismissWired) return;
+        _tradeDismissWired = true;
+        document.addEventListener('click', (e) => {
+            const tb = document.getElementById('cbo-trade-badge');
+            if (!tb || tb.style.display === 'none') return;
+            if (e.target && e.target.closest && e.target.closest(
+                '[class*="tradeResponseStatus"], [class*="showHideTradeIcon"], '
+                + '[class*="tradeOffer"], [class*="tradeMovement"], '
+                + '[class*="tradePanel"], [class*="acceptButton"], '
+                + '[class*="declineButton"]')) {
+                _tradeDismissedKey = _currentTradeKey;
+                tb.style.display = 'none';
+            }
+        }, true);
     }
 
     // Clear every cue by walking the handles we recorded (NO full-document
@@ -1614,6 +1656,7 @@
     } catch (e) { /* no chrome.runtime in this context */ }
 
     try { ensureHudAttached(); } catch (e) { /* container not ready yet */ }
+    try { wireTradeDismiss(); } catch (e) { /* body not ready */ }
     // Re-cap the body height when the window resizes (the log box height tracks
     // the viewport). Debounced so a drag-resize doesn't thrash layout.
     let _resizeTimer = null;
