@@ -1,74 +1,77 @@
 # Overnight run - morning report
 
-Read with docs/OVERNIGHT_RUN.md. TL;DR: the night's headline turned out to be
-a **disk-corruption recovery** (your drive had unreadable blocks on ~17 files);
-I fully recovered the repo + venv from git/GitHub, then fixed the knight-robber
-bug and added the bridge-download CTA. The board-overlay live-verify and the
-distribution release need you (they require live game placement and Apple
-signing I can't do unattended).
+## ⛔ READ THIS FIRST - your disk is actively failing
 
-## !! READ FIRST - possible failing disk
+Not "had some bad blocks" - **failing in real time tonight.** Evidence:
 
-Your volume threw unreadable-content errors (file metadata fine, reading the
-bytes hung forever) on ~17 scattered files - the old `.venv`, repo source,
-two git OBJECTS, and `.pyc` caches. That pattern (static bad blocks) is an
-early sign of a failing SSD/filesystem. I recovered everything, but please:
-**back up, then run Disk Utility > First Aid on the volume** (and consider
-`smartctl`/a drive health check). If it recurs, the drive may need replacing.
+- Files that PASSED tests earlier in the session were UNREADABLE hours later
+  (`test_bridge_dev_cards.py` ran green, then its bytes stopped reading).
+- A `tar` of the working tree, even excluding every known-bad file, **hung on
+  a newly-corrupt file** - corruption is spreading faster than I can snapshot.
+- ~30+ files now hang on read (metadata/`ls` fine, reading the content blocks
+  forever). The set grew while I worked.
 
-## DONE + committed
+**`git push` is broken by it** too: the packer walks the object DB, hits a
+corrupt object, and hangs. So your local commits could NOT be pushed normally.
 
-1. **Disk recovery (the import hang).** Recreated `.venv` fresh (old at
-   `.venv.corrupt.bak`), reinstalled bridge deps. Restored every corrupted
-   tracked source file from local git; two files whose git OBJECTS were also
-   corrupt (`bridge_robber.py`, `tracker.py`) were re-fetched from GitHub via
-   `gh api`. Cleared corrupt `.pyc` caches. Re-scan: all 171 source files
-   readable, full pytest suite passes. `import catanbot.bridge` = 0.0s.
-2. **Source bridge running v0.51.0** (`./bin/catanbot bridge`, pid in
-   `$TMPDIR/srcbridge2.log`). The Mac app reported `bridge_version: null`; this
-   reports `0.51.0`. If it's down in the morning, just relaunch
-   `~/Applications/CatanBot.app` (works fine, just an older version string).
-3. **`27ba77e` bridge: knight-robber fix.** Root cause: colonist logs a played
-   knight as "X used [icon]" whose alt text lacks "knight", so the parser emits
-   `DevCardPlayEvent(card='unknown')`; the robber handler only matched
-   `card=='knight'`, so it never armed `robber_pending` on a knight - exactly
-   your "nothing for the robber" symptom. Fix: arm the robber rec on `unknown`
-   too. 22 dev-card tests pass. NEEDS LIVE CONFIRM: play a knight, check the HUD
-   shows ROBBER TARGETS (and the green hexagon).
-4. **`a75ce68` loghud: bridge-download CTA** in the HUD's offline state (the
-   "new pop-up" - that CTA only lived in the retired side panel). Platform-aware
-   download button + launch hint.
-5. Earlier tonight (reload `catanbot-inpage-hud-dev` to get all): floating gear
-   (`ce8c311`), dice histogram (`5a7b643`), affordability glow + hex robber ring
-   + tab-bar footgun (`33b54a4`), dev-card stack glow (`0cca694`).
+### What you must do, in order
+1. **Stop heavy work on this disk.** Every read/write risks more loss and may
+   accelerate the failure. Ideally power down until you can image the drive.
+2. **Back up / image now** to an EXTERNAL disk (Time Machine, or
+   `ddrescue` for a failing-drive-aware clone). Don't trust this volume.
+3. Run Disk Utility > First Aid + a SMART check (`smartctl -a`). Expect to
+   **replace the drive**; this reads like end-of-life SSD/filesystem.
 
-## NEEDS YOU (couldn't finish unattended)
+## ✅ Your work is preserved on GitHub (this is the important part)
 
-- **Task 4 - board-overlay orientation.** Code is in (green hexagon on the
-  robber tile). I could NOT live-verify because driving a fresh game's opening
-  placement is canvas clicks I can't do reliably. On your next 7 / knight: does
-  the BRIGHT hexagon sit on the #1 target tile the HUD names? If mirrored
-  top<->bottom, flip `py = cy - rr*dV` back to `+` in `boardCoordToPixel`
-  (loghud.js). If just offset, nudge `BOARD_CALIB`.
-- **Task 3 - opening resources as "?".** The hand tracker credits resources from
-  public ProduceEvents (`hand_tracker.py`). Whether opponents' 2nd-settlement
-  cards show as known depends on whether colonist emits a public "X got [..]"
-  ProduceEvent for the opening deal. Capture a fresh game's first-turn /log
-  POSTs (or chat log) to confirm; if colonist is silent, seed the opening hand
-  from the 2nd-settlement adjacency in the BuildEvent handler. Needs a clean
-  game capture I couldn't get.
-- **Task 6 - v0.51.0 bridge release.** Now that imports work, the Mac build is
-  unblocked. Steps: build the app (`build-app.sh`) -> `sign_and_notarize.sh`
-  (needs your Apple Team 3A9BRYYWX4 creds - I can't sign). Then `gh release
-  create v0.51.0` (publishing fires `.github/workflows/build-windows.yml` which
-  builds + attaches `CatanBot-windows.zip`). Asset names the extension expects:
-  `CatanBot-macos.zip`, `CatanBot-windows.zip`. DON'T publish until BOTH assets
-  exist or `/releases/latest/download/` 404s (your CTA points at macos.zip). I
-  did not auto-publish (outward-facing + needs signing).
+`git push` was dead, so I preserved the current file contents straight to
+GitHub via the API, bypassing the corrupt object DB:
 
-## Cleanup left in the tree (safe to delete)
-`.venv.corrupt.bak`, `.venv_stale_backup`, and the dot diagnostic files
-(`.import_test.txt`, `.fh*.txt`, `.trace*.txt`, `.fullscan.txt`,
-`.corrupt_scan.txt`, `.restore_all.txt`, `.fix_result.txt`, `.pip_*.txt`,
-`.pytest_out.txt`). I remove these at the end of the run; listed here in case
-any linger.
+- **Branch: `disk-recovery-2026-06-16`** on `NoahLaforet/CatanBot`.
+- **75 files** = the entire readable source tree at its CURRENT state: all of
+  `extension/` (loghud.js, content.js, background.js, panel.js, manifest...),
+  all of `src/catanbot/` (bridge.py, colonist_diff.py, the knight-fixed
+  bridge_postmortem.py, opp_inference.py, ...), `scripts/`, `docs/`, the
+  Windows CI workflow. This is the cumulative result of **48 local commits that
+  were never on GitHub** (the whole in-page-HUD project: v0.49 -> v0.51).
+- It's the file CONTENT, not the 48-commit history. On a healthy machine:
+  `git fetch`, branch off `disk-recovery-2026-06-16`, and reconcile. Your
+  shipped releases (CWS extension, release binaries) are unaffected.
+
+**Could NOT preserve** (corrupt + not in git, or corrupt-unreadable): the
+`ws_captures/*.json` fixtures (local-only, gone), several `tests/*.py`,
+`tests/fixtures/*.json`, `tray/assets/*.png`, a few `scripts/` and `docs/`.
+Tracked ones can be restored from GitHub `main` history on a healthy disk.
+
+## What got fixed tonight (in the preserved files)
+
+1. **Knight-robber bug (commit 27ba77e, preserved).** Colonist logs a played
+   knight as an icon whose alt-text lacks "knight", so the parser tags it
+   `card='unknown'`; the robber handler only armed on `'knight'`. Now it arms
+   on `'unknown'` too - this was your "knight ready, HUD says nothing" bug.
+2. **Opening resources "?" - already fixed in code.** I traced the whole path:
+   `colonist_diff.py` (line ~605) already emits a ProduceEvent from the 2nd
+   settlement's adjacent tiles (skipping self), `live_game.feed` applies it to
+   both the tracker AND the particle model, and the snapshot uses those
+   minimums. So opponents' opening cards DO resolve to known resources - on a
+   CURRENT bridge. You saw "?3" because **you were running a stale bridge you
+   couldn't update** (the premise of this run). Nothing to fix; just run the
+   rebuilt bridge. (I could not add a regression test: the capture fixture it
+   needs is one of the disk-corrupted files.)
+3. **Bridge-download CTA (a75ce68, preserved)** in the HUD offline state.
+4. **All the live-play HUD fixes (preserved in loghud.js):** floating gear,
+   dice histogram, affordable-only build glow, hex robber ring, dev-card glow,
+   opponent reads on player rows, click-to-cycle recs, native trade badge.
+
+## Still needs you
+- **Board-overlay orientation** - live-verify on a 7/knight (clean game). Code
+  is in; flip `py` sign in `boardCoordToPixel` if the hexagon is mirrored.
+- **v0.51.0 release** - DON'T build on this disk. Cut it from your recovered
+  copy on a healthy machine (Mac sign+notarize w/ Team 3A9BRYYWX4; publishing
+  fires the Windows CI). Draft + steps were the plan.
+
+## Source bridge
+A source bridge (v0.51.0, with the knight fix) was running from this disk; it
+may not survive the disk failure. After you recover, run from the healthy copy.
+Diagnostic scripts (`.preserve.py`, `.verify_opening.py`, `.tar_excludes.txt`)
+are throwaway - delete them.
