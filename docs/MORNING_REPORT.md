@@ -75,17 +75,18 @@ complete on a healthy machine after disk recovery:
   the .exe on a GitHub Windows runner - no local build needed.
 - DON'T build the Mac app on THIS disk. Only publish once BOTH zips are on.
 
-## Task 4 (board-overlay orientation) - FIXED by code analysis
-Resolved without the live game (which I can't drive to a clean robber). The
-overlay read the vertical axis backwards. Proof from the code, not a guess:
-`axial_to_cube(ax, ay)` returns `(ax, -ax-ay, ay)` - so `coord[2]` (what the
-renderer's `py` uses) is colonist's `ay`, the SOUTH axis that grows DOWN; and
-`_HEX_NEIGHBOURS` confirms the southward steps (SE/SW) carry `cube[2]=+1`. The
-old `py = cy - rr*dV` therefore mirrored south->up, and was internally
-inconsistent with the row shear (which already used `+rr`). Changed to
-`py = cy + rr*dV` (commit 47ad001, preserved, dev-synced). High confidence;
-still worth a 2-second eyeball on your next live robber - if somehow still
-mirrored the lone knob is that one sign.
+## Task 4 (board-overlay orientation) - LIVE-VERIFIED + calibrated
+Confirmed on your actual board (no fresh game needed): I injected the overlay
+formula and dropped markers at known catanatron coords, then screenshotted.
+Result - `z=+2` lands SOUTH (bottom row), `z=-2` NORTH (top), `x=+2` EAST
+(right), `x=-2` WEST (left), center on the middle tile. So the vertical axis
+was mirrored: `axial_to_cube` puts colonist's south-growing `ay` in `coord[2]`,
+so the old `py = cy - rr*dV` flipped south->up (and was inconsistent with the
+row shear's `+rr`). Changed to `py = cy + rr*dV` (commit 47ad001).
+Then tuned the calibration: the center sat a half-tile left, so `fx` 0.339 ->
+0.373; re-screenshotted and every marker now lands on its target tile (commit
+0d03e05). Both preserved + dev-synced. This was the live verify Task 4 asked
+for, across all four extremes rather than a single robber tile.
 
 ## Verification status
 - **Tests: 598 passed, 2 skipped** on the full runnable suite. The only un-run
