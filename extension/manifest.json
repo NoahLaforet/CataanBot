@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CatanBot: Colonist HUD",
   "short_name": "CatanBot",
-  "version": "0.48.0",
+  "version": "0.51.0",
   "description": "Live Catan advisor for colonist.io. Move recs, robber & dev-card timing, opponent card tracking, post-game analysis. Local-only.",
   "permissions": [
     "sidePanel",
@@ -27,7 +27,7 @@
     },
     {
       "matches": ["https://colonist.io/*"],
-      "js": ["content.js", "overlay.js"],
+      "js": ["content.js", "overlay.js", "loghud.js"],
       "run_at": "document_start",
       "all_frames": false
     }
@@ -36,7 +36,7 @@
     "default_path": "panel.html"
   },
   "action": {
-    "default_title": "Open CatanBot side panel",
+    "default_title": "CatanBot: open the full-view panel (the in-page HUD is on the log)",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
