@@ -1553,8 +1553,8 @@
     function cuesWanted(snap) {
         if (snap.my_turn) return true;        // build bar / setup place button
         if (snap.discard_hint) return true;   // cards to drop on a 7
-        const kh = snap.knight_hint;
-        if (kh && kh.should_play) return true;
+        if (['knight_hint', 'monopoly_hint', 'yop_hint', 'rb_hint']
+            .some((k) => snap[k] && snap[k].should_play)) return true;
         return (snap.recommendations || []).some(
             (r) => r && (r.kind === 'knight' || r.action === 'knight'));
     }
@@ -1626,17 +1626,18 @@
         addCue(target, 'cbo-action-hl');
     }
 
-    // Knight (or any dev) to play -> glow THAT card in the dev-card hand.
-    // Gated on a live recon of the dev-card hand element: findDevCard returns
-    // null until that selector is confirmed, so this is a safe no-op rather
-    // than glowing the wrong thing. CSS (.cbo-cue-knight) is ready.
+    // A dev card to play -> glow the dev-card stack (they're face-down, so we
+    // can't pick the exact type; the HUD text says which one). Fires when any
+    // dev hint says should_play or a dev-play rec is up.
     function highlightKnightCard(snap) {
-        const kh = snap.knight_hint;
-        const knightRec = (snap.recommendations || []).some(
-            (r) => r && (r.kind === 'knight' || r.action === 'knight'));
-        if (!knightRec && !(kh && kh.should_play)) return;
-        const card = findDevCard('knight');
-        addCue(card, 'cbo-cue-knight');
+        const wantsDev = ['knight_hint', 'monopoly_hint', 'yop_hint', 'rb_hint']
+            .some((k) => snap[k] && snap[k].should_play)
+            || (snap.recommendations || []).some((r) => r && (
+                r.kind === 'knight' || r.action === 'knight'
+                || r.kind === 'dev_card' || r.kind === 'monopoly'
+                || r.kind === 'year_of_plenty' || r.kind === 'road_building'));
+        if (!wantsDev) return;
+        addCue(findDevCard('dev'), 'cbo-cue-knight');
     }
 
     // Discard on a 7 -> glow the specific cards to drop. Gated on a live recon
@@ -1654,16 +1655,52 @@
         }
     }
 
-    // ---- Hand-element resolvers. Return null/[] until the colonist hand DOM
-    // is reconned live (the dev-card hand and the resource-card hand are not
-    // present during setup, so they need a mid-game capture). Wiring the cues
-    // through these stubs means the moment the selector is confirmed, the
-    // glow lights up with no other change. ----
+    // ---- Hand-element resolvers (reconned live in a real game). ----
+    // colonist shows your dev cards FACE-DOWN — every dev card in hand is the
+    // same card_devcardback image, so a knight is visually identical to a
+    // year-of-plenty until you click the stack. So we can't pick out the
+    // specific type; we glow the dev-card stack so you know to play a dev card
+    // there, and the HUD text says which one. Hotbar cards are .cardContainer-*
+    // with a .cardImage-* img; the dev stack's img is card_devcardback.
+    // Only the bottom-LEFT hotbar (your playable hand) — NOT the player panel
+    // on the right, whose rows also carry card_devcardback as a dev-count icon.
+    function _inHotbar(el, r) {
+        if (el.closest('[class*="gamePlayerInformationContainer"]')) return false;
+        return r.y > window.innerHeight * 0.78
+            && r.x < window.innerWidth * 0.5
+            && r.width >= 10 && r.width <= 160;
+    }
     function findDevCard(/* type */) {
+        const conts = document.querySelectorAll('[class*="cardContainer"]');
+        for (const el of conts) {
+            const r = el.getBoundingClientRect();
+            if (!_inHotbar(el, r)) continue;
+            const img = el.querySelector && el.querySelector('img');
+            if (img && /devcardback/.test(img.src || '')) return el;
+        }
         return null;
     }
-    function findHandResourceCards(/* res, count */) {
-        return [];
+    // Resource cards to drop on a 7. Hotbar resource cards are .cardContainer-*
+    // whose img is card_<resource> (lumber/brick/wool/grain/ore). Match the
+    // requested resource + count.
+    const _RES_IMG = {
+        WOOD: 'lumber', BRICK: 'brick', SHEEP: 'wool', WHEAT: 'grain', ORE: 'ore',
+    };
+    function findHandResourceCards(res, count) {
+        const key = _RES_IMG[res];
+        if (!key) return [];
+        const out = [];
+        const conts = document.querySelectorAll('[class*="cardContainer"]');
+        for (const el of conts) {
+            const r = el.getBoundingClientRect();
+            if (!_inHotbar(el, r)) continue;
+            const img = el.querySelector && el.querySelector('img');
+            if (img && new RegExp(`card_${key}`).test(img.src || '')) {
+                out.push(el);
+                if (out.length >= count) break;
+            }
+        }
+        return out;
     }
 
     // Signature of a snapshot, used to skip the expensive innerHTML rebuild on
