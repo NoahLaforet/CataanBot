@@ -31,15 +31,18 @@
     const ROOT_ID = 'cbo-loghud';
     const TABS_ID = 'cbo-loghud-tabs';
     const STYLE_ID = 'cbo-loghud-style';
-    const POLL_MS = 1000;   // half the side panel cadence; HUD shows less
 
     let root = null;   // HUD body element
     let tabs = null;   // tab-bar element
     let _noContainer = 0;   // consecutive failed anchor finds
     let _failsafe = false;  // floating-overlay fallback already tripped
     let _everConnected = false;  // a successful /advisor fetch has happened
-    let _lastSnap = null;   // most recent /advisor snapshot (for hover reads)
-    let _tip = null;        // hover tooltip for per-player reads
+    let _lastSnap = null;   // most recent /advisor snapshot (drives adaptive poll)
+    let _lastSig = null;    // signature of the last rendered snapshot (skip re-render)
+    let _cuedEls = [];      // colonist elements we've glowed (clear without a sweep)
+    let _container = null;  // cached log container handle (fast re-anchor path)
+    let _tabState = '';     // last applyTab state string (skip redundant DOM work)
+    const _cfgInputs = {};  // gear-menu number inputs, keyed by /config field
     let _tradeAnchored = false;  // trade badge is pinned to colonist's panel
 
     // ---- Slim render helpers. Ported from overlay.js so the in-page read
@@ -203,6 +206,12 @@
     padding: 6px 8px;
     min-width: 150px;
 }
+#${TABS_ID} .cbo-set-h {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #8a7656; font-weight: 700; margin: 6px 2px 2px;
+    border-bottom: 1px solid rgba(90, 62, 28, 0.15); padding-bottom: 2px;
+}
+#${TABS_ID} .cbo-set-h:first-child { margin-top: 0; }
 #${TABS_ID} .cbo-set-row {
     display: flex;
     align-items: center;
@@ -214,6 +223,12 @@
     white-space: nowrap;
 }
 #${TABS_ID} .cbo-set-row input { margin: 0; cursor: pointer; }
+#${TABS_ID} .cbo-set-row.cbo-num { justify-content: space-between; cursor: default; }
+#${TABS_ID} .cbo-set-row.cbo-num input {
+    width: 46px; text-align: center; font: inherit; font-size: 12px; cursor: text;
+    border: 1px solid rgba(90, 62, 28, 0.30); border-radius: 4px; padding: 1px 3px;
+    background: #fff; color: #2f2415;
+}
 #${TABS_ID} .cbo-tab {
     appearance: none;
     border: none;
@@ -353,26 +368,52 @@
 #${ROOT_ID} .cbo-dice {
     font-size: 12px; opacity: 0.85; padding: 2px 0;
 }
+/* Game plan: near-term VP goal. Kind pill + tiles + a dim summary line. */
+#${ROOT_ID} .cbo-plan {
+    font-size: 13px; font-weight: 600; color: #2f2415; padding: 2px 0 1px 0;
+}
+#${ROOT_ID} .cbo-plan-sum { color: #6b5836; font-weight: 500; font-size: 12px; }
+#${ROOT_ID} .cbo-plan.cbo-ready .cbo-rec-kind { background: #46a45a; }
+/* Strategic options: long-game VP-swing plays, one row each. */
+#${ROOT_ID} .cbo-opt {
+    display: flex; align-items: baseline; gap: 6px; padding: 1px 0; font-size: 12px;
+}
+#${ROOT_ID} .cbo-opt-vp {
+    flex: 0 0 auto; font-weight: 800; font-size: 11px; color: #2f6b3f;
+    background: rgba(70, 164, 90, 0.15); border-radius: 4px; padding: 0 5px;
+}
+#${ROOT_ID} .cbo-opt-label { font-weight: 700; color: #2f2415; }
+#${ROOT_ID} .cbo-opt-detail { color: #6b5836; }
+/* Dev-card cluster: a verdict pill + the play, one row per held dev card. */
+#${ROOT_ID} .cbo-dev {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-size: 12px; padding: 2px 0;
+}
+#${ROOT_ID} .cbo-verdict {
+    flex: 0 0 auto; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+    padding: 1px 6px; border-radius: 4px; color: #fff;
+}
+#${ROOT_ID} .cbo-verdict.cbo-v-play { background: #46a45a; }
+#${ROOT_ID} .cbo-verdict.cbo-v-hold { background: #9a8a6a; }
+#${ROOT_ID} .cbo-verdict.cbo-v-place { background: #3b7dd8; }
+#${ROOT_ID} .cbo-dev-what { color: #2f2415; font-weight: 600; }
+#${ROOT_ID} .cbo-dev-why { color: #6b5836; font-weight: 500; flex-basis: 100%; }
+#${ROOT_ID} .cbo-dev-name {
+    color: #9c7b3a; font-weight: 700; text-transform: lowercase; font-size: 11px;
+}
+/* Round / phase + standings status strip (quiet, sits at the foot). */
+#${ROOT_ID} .cbo-prog {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-size: 11px; color: #8a7656; margin-top: 6px;
+    padding-top: 4px; border-top: 1px solid rgba(90, 62, 28, 0.15);
+}
+#${ROOT_ID} .cbo-prog-phase { text-transform: uppercase; letter-spacing: 0.04em; }
+#${ROOT_ID} .cbo-prog-lead { color: #6b5836; font-weight: 600; }
+#${ROOT_ID} .cbo-prog-lead.cbo-self-lead { color: #2f6b3f; }
 #${ROOT_ID}.cbo-u-red { box-shadow: inset 3px 0 0 0 #c0392b; }
 #${ROOT_ID}.cbo-u-amber { box-shadow: inset 3px 0 0 0 #d8862f; }
 #${ROOT_ID}.cbo-u-green { box-shadow: inset 3px 0 0 0 #46a45a; }
 #${ROOT_ID}.cbo-u-turn { box-shadow: inset 3px 0 0 0 #b8862f; }
-/* Per-player read injected into colonist's OWN player rows: unscoped (these
-   live in colonist's DOM, not under #${ROOT_ID}). One thin line per player. */
-.cbo-row-read {
-    display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
-    width: 100%; padding: 2px 8px 3px 8px; box-sizing: border-box;
-    margin: 0; box-shadow: inset 2px 0 0 0 rgba(70, 196, 99, 0.7);
-    background: rgba(18, 20, 26, 0.55);
-    color: #fff;
-    font: 600 11px/1.3 -apple-system, system-ui, sans-serif;
-}
-.cbo-row-read .cbo-chip {
-    background: rgba(255, 255, 255, 0.14); border-radius: 4px; padding: 0 4px;
-    white-space: nowrap; color: #fff;
-}
-.cbo-row-read .cbo-chip.cbo-maybe { opacity: 0.5; }
-.cbo-row-read .cbo-sep { color: rgba(255, 255, 255, 0.5); margin: 0 2px; font-weight: 700; }
 /* Trade verdict badge pinned to colonist's own trade panel. */
 #cbo-trade-badge {
     position: fixed;
@@ -434,27 +475,6 @@
     from { box-shadow: 0 0 5px 2px rgba(216, 134, 47, 0.5); }
     to { box-shadow: 0 0 15px 5px rgba(216, 134, 47, 0.95); }
 }
-/* Hover tooltip: a player's read beside their row. */
-#cbo-tip {
-    position: fixed;
-    z-index: 2147483600;
-    background: rgba(20, 22, 28, 0.96);
-    color: #fff;
-    padding: 5px 9px;
-    border-radius: 7px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    font: 600 12px/1.3 -apple-system, system-ui, sans-serif;
-    pointer-events: none;
-    white-space: nowrap;
-    display: flex; gap: 4px; align-items: center;
-}
-#cbo-tip .cbo-tip-tag {
-    font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
-    opacity: 0.6; margin-right: 2px;
-}
-#cbo-tip .cbo-chip { background: rgba(255,255,255,0.12); border-radius: 4px; padding: 0 4px; }
-#cbo-tip .cbo-chip.cbo-maybe { opacity: 0.55; }
-#cbo-tip .cbo-sep { opacity: 0.5; margin: 0 2px; }
 /* Hide colonist's native log off-screen (still dimensioned) when the CatanBot
    tab is up, so its virtual scroller doesn't error on a display:none list. */
 .cbo-hidden-native {
@@ -493,22 +513,79 @@
         span.textContent = label;
         row.appendChild(cb);
         row.appendChild(span);
+        return { row, input: cb };
+    }
+    function _sectionHeader(label) {
+        const h = document.createElement('div');
+        h.className = 'cbo-set-h';
+        h.textContent = label;
+        return h;
+    }
+    // A numeric setting written to the bridge's /config via the worker. Bounds
+    // are clamped client-side; the bridge re-validates. The input is registered
+    // so it can be refreshed from the live snapshot when the menu opens.
+    function _numberRow(label, key, min, max) {
+        const row = document.createElement('div');
+        row.className = 'cbo-set-row cbo-num';
+        const span = document.createElement('span');
+        span.textContent = label;
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = String(min);
+        inp.max = String(max);
+        const commit = () => {
+            let v = parseInt(inp.value, 10);
+            if (!Number.isFinite(v)) return;
+            v = Math.max(min, Math.min(max, v));
+            inp.value = String(v);
+            try {
+                chrome.runtime.sendMessage(
+                    { type: 'set-config', payload: { [key]: v } });
+            } catch (e) { /* worker asleep / extension reloading */ }
+        };
+        inp.addEventListener('change', commit);
+        inp.addEventListener('keydown', (e) => {
+            e.stopPropagation();   // don't let colonist hotkeys eat the digits
+            if (e.key === 'Enter') { inp.blur(); }
+        });
+        row.appendChild(span);
+        row.appendChild(inp);
+        _cfgInputs[key] = inp;
         return row;
+    }
+    // Pull the current VP target / discard limit out of the live snapshot so
+    // the inputs show the truth (not a stale default) when the menu opens.
+    function refreshSettingsInputs() {
+        const s = _lastSnap;
+        if (!s) return;
+        if (_cfgInputs.vp_target && document.activeElement !== _cfgInputs.vp_target
+                && s.vp_target != null) {
+            _cfgInputs.vp_target.value = String(s.vp_target);
+        }
+        if (_cfgInputs.discard_limit
+                && document.activeElement !== _cfgInputs.discard_limit
+                && s.discard_limit != null) {
+            _cfgInputs.discard_limit.value = String(s.discard_limit);
+        }
     }
     function buildSettingsPanel() {
         const p = document.createElement('div');
         p.className = 'cbo-settings';
         p.style.display = 'none';
-        p.appendChild(_toggleRow('Streamer mode', _streamerOn, _setStreamer));
+        p.appendChild(_sectionHeader('Display'));
+        p.appendChild(_toggleRow('Streamer mode', _streamerOn, _setStreamer).row);
         p.appendChild(_toggleRow('Pause recs', _paused, (v) => {
             try { localStorage.setItem('catanbot.paused', v ? '1' : '0'); }
             catch (e) { /* private mode */ }
-        }));
-        p.appendChild(_toggleRow('Replace log', replaceMode, (v) => {
+        }).row);
+        p.appendChild(_toggleRow('HUD only (hide log tab)', replaceMode, (v) => {
             try { localStorage.setItem(LS_REPLACE, v ? '1' : '0'); }
             catch (e) { /* private mode */ }
             applyTab();
-        }));
+        }).row);
+        p.appendChild(_sectionHeader('Advisor'));
+        p.appendChild(_numberRow('VP target', 'vp_target', 3, 30));
+        p.appendChild(_numberRow('Discard at', 'discard_limit', 5, 20));
         stampStreamer(p);
         return p;
     }
@@ -538,8 +615,9 @@
         const panel = buildSettingsPanel();
         gear.addEventListener('click', (e) => {
             e.stopPropagation();
-            panel.style.display = panel.style.display === 'block'
-                ? 'none' : 'block';
+            const opening = panel.style.display !== 'block';
+            if (opening) refreshSettingsInputs();   // show live VP/discard values
+            panel.style.display = opening ? 'block' : 'none';
         });
         document.addEventListener('click', () => { panel.style.display = 'none'; });
         tabs.appendChild(gear);
@@ -574,13 +652,20 @@
         const cont = container || root.parentElement || tabs.parentElement;
         const replace = replaceMode();
         const tab = replace ? 'catanbot' : currentTab();
-        tabs.style.display = replace ? 'none' : 'flex';
-        root.style.display = (tab === 'catanbot') ? 'block' : 'none';
         // Hide the native log only when the CatanBot tab is up AND we've
         // connected — a user without the bridge keeps their log (the HUD
         // shows additively until it has something real to show).
         const hideNative = (tab === 'catanbot' && _everConnected);
-        for (const child of nativeChildren(cont)) {
+        const kids = nativeChildren(cont);
+        // Skip all DOM writes when nothing that affects them changed. kids.length
+        // is in the key so a freshly added native child still gets hidden. This
+        // is what makes the hot re-anchor path nearly free.
+        const state = `${tab}|${replace}|${hideNative}|${kids.length}`;
+        if (cont === _container && state === _tabState) return;
+        _tabState = state;
+        tabs.style.display = replace ? 'none' : 'flex';
+        root.style.display = (tab === 'catanbot') ? 'block' : 'none';
+        for (const child of kids) {
             // Move the native log OFF-SCREEN (still dimensioned) rather than
             // display:none — colonist's virtual scroller calls scrollToIndex
             // on the log, and a display:none list has no dimensions, so it
@@ -600,14 +685,11 @@
         }
         if (root && root.parentElement) root.remove();
         if (tabs && tabs.parentElement) tabs.remove();
-        document.querySelectorAll('.cbo-row-read').forEach((e) => e.remove());
-        if (_tip && _tip.parentElement) { _tip.remove(); _tip = null; }
         const tb = document.getElementById('cbo-trade-badge');
         if (tb) tb.remove();
-        document.querySelectorAll(
-            '.cbo-action-hl, .cbo-cue-dev, .cbo-cue-knight').forEach(
-            (el) => el.classList.remove(
-                'cbo-action-hl', 'cbo-cue-dev', 'cbo-cue-knight'));
+        clearCues();
+        _container = null;
+        _tabState = '';
     }
 
     // Readable text color (black/white) for a pill background.
@@ -828,7 +910,8 @@
         if (snap.production_stall) {
             bits.push(`${snap.production_stall.rolls_dry} dry`);
         }
-        if (snap.engine_deficit) bits.push('engine gap');
+        // engine_deficit gets its own full per-roll line (engineDeficitHtml),
+        // so it's intentionally not duplicated as a bare bit here.
         if (!bits.length) return '';
         return `<div class="cbo-dice">🎲 ${escapeHtml(bits.join(' · '))}</div>`;
     }
@@ -846,17 +929,184 @@
         const cls = g.is_self ? 'cbo-green cbo-strong' : 'cbo-amber';
         return `<div class="cbo-foot ${cls}">${escapeHtml(g.message)}</div>`;
     }
+    // Missing chips from a {res: count} dict (shared by plan / milestone).
+    function missingChips(missing) {
+        return Object.entries(missing || {})
+            .filter(([, n]) => n > 0)
+            .map(([r, n]) => `${iconFor(r)}${n > 1 ? ` ${n}` : ''}`)
+            .join(' ');
+    }
+    // 3rd-settlement milestone (snap.milestone): the single biggest early-game
+    // predictor, so it gets a prominent banner. Compact: headline + what's left.
+    function milestoneHtml(snap) {
+        const m = snap.milestone;
+        if (!m || !m.headline) return '';
+        const miss = missingChips(m.missing);
+        const tail = miss ? ` &middot; need ${miss}` : ' &middot; ready';
+        const cls = miss ? 'cbo-amber' : 'cbo-green cbo-strong';
+        return `<div class="cbo-foot ${cls}">\u{1F3E0} ${escapeHtml(m.headline)}`
+            + `${tail}</div>`;
+    }
+    // Game plan (snap.game_plan): the near-term VP goal. Kind pill + goal tiles
+    // + the bridge's own summary line ('ready to city' / '2 short, need ...').
+    function gamePlanHtml(snap) {
+        const gp = snap.game_plan;
+        if (!gp || !gp.summary) return '';
+        const ready = !gp.missing || Object.keys(gp.missing).length === 0;
+        const label = gp.goal_kind === 'city' ? 'CITY' : 'SETTLE';
+        const tiles = tilesText(gp.goal_tiles);
+        const loc = tiles ? ` <span class="cbo-rec-tiles">${escapeHtml(tiles)}</span>` : '';
+        const hops = (gp.roads_needed > 0) ? ` <span class="cbo-plan-sum">`
+            + `${gp.roads_needed} road${gp.roads_needed > 1 ? 's' : ''}</span>` : '';
+        return '<div class="cbo-h">plan</div>'
+            + `<div class="cbo-plan${ready ? ' cbo-ready' : ''}">`
+            + `<span class="cbo-rec-kind">${label}</span>${loc}${hops}</div>`
+            + `<div class="cbo-plan-sum">${escapeHtml(gp.summary)}</div>`;
+    }
+    // Strategic options (snap.strategic_options): long-game VP-swing plays the
+    // flat affordable-now rec list misses (LR push, LA defend/snipe, dev dive).
+    function strategicOptionsHtml(snap) {
+        const opts = snap.strategic_options;
+        if (!Array.isArray(opts) || !opts.length) return '';
+        const rows = opts.slice(0, 3).map((o) => {
+            const vp = (o.vp_swing != null) ? `+${o.vp_swing}VP` : '';
+            return '<div class="cbo-opt">'
+                + (vp ? `<span class="cbo-opt-vp">${escapeHtml(vp)}</span>` : '')
+                + `<span class="cbo-opt-label">${escapeHtml(o.label || o.kind || '')}</span>`
+                + (o.detail ? `<span class="cbo-opt-detail">${escapeHtml(o.detail)}</span>` : '')
+                + '</div>';
+        }).join('');
+        return '<div class="cbo-h">long game</div>' + rows;
+    }
+    // Dev-card cluster (monopoly_hint / yop_hint / rb_hint): a PLAY/HOLD/PLACE
+    // verdict + the concrete play for each dev card you actually hold. Silent
+    // when you hold none. Mirrors the side panel's dev block, compacted.
+    function devClusterHtml(snap) {
+        const rows = [];
+        const verdict = (play, place) => {
+            if (place) return '<span class="cbo-verdict cbo-v-place">PLACE</span>';
+            return play
+                ? '<span class="cbo-verdict cbo-v-play">PLAY</span>'
+                : '<span class="cbo-verdict cbo-v-hold">HOLD</span>';
+        };
+        const mh = snap.monopoly_hint;
+        if (mh && mh.have > 0) {
+            const tgt = mh.resource ? `${iconFor(mh.resource)}` : '';
+            const unlock = mh.unlock ? ` &middot; ${escapeHtml(mh.unlock)}` : '';
+            rows.push('<div class="cbo-dev">' + verdict(mh.should_play)
+                + '<span class="cbo-dev-name">mono</span>'
+                + `<span class="cbo-dev-what">grab ${tgt} ~${mh.est_steal || 0}`
+                + `${unlock}</span></div>`);
+        }
+        const yh = snap.yop_hint;
+        if (yh && yh.have > 0) {
+            const pair = (yh.pair || []).map(iconFor).join(' + ');
+            const unlock = yh.unlock ? ` &middot; ${escapeHtml(yh.unlock)}` : '';
+            rows.push('<div class="cbo-dev">' + verdict(yh.should_play)
+                + '<span class="cbo-dev-name">plenty</span>'
+                + `<span class="cbo-dev-what">take ${pair}${unlock}</span></div>`);
+        }
+        const rh = snap.rb_hint;
+        if (rh && (rh.have > 0 || rh.free_roads_pending > 0)) {
+            const placing = (rh.have <= 0 && rh.free_roads_pending > 0);
+            const pl = rh.placement;
+            const toward = pl && pl.toward_tiles ? tilesText(pl.toward_tiles) : '';
+            const what = placing
+                ? `lay road${toward ? ` &rarr; ${escapeHtml(toward)}` : ''}`
+                : `2 free roads${toward ? ` &rarr; ${escapeHtml(toward)}` : ''}`;
+            rows.push('<div class="cbo-dev">' + verdict(rh.should_play, placing)
+                + '<span class="cbo-dev-name">road bld</span>'
+                + `<span class="cbo-dev-what">${what}</span></div>`);
+        }
+        if (!rows.length) return '';
+        return '<div class="cbo-h">dev cards</div>' + rows.join('');
+    }
+    // Proactive 7-prep warning (snap.seven_prep): spend down BEFORE the 7 lands.
+    // Suppressed once a real discard is live so it doesn't double with discard.
+    function sevenPrepHtml(snap) {
+        const sp = snap.seven_prep;
+        if (!sp || !sp.message || snap.discard_hint) return '';
+        const drop = missingChips(sp.would_drop);
+        const lose = drop ? ` &middot; lose ${drop}` : '';
+        const cls = sp.level === 'danger' ? 'cbo-red' : 'cbo-amber';
+        return `<div class="cbo-foot ${cls}">⚠ ${escapeHtml(sp.message)}`
+            + `${lose}</div>`;
+    }
+    // Yield summary (snap.yield_summary): actual vs expected cards over a roll
+    // window. Flags 'behind' when you're well under expectation (drought/robber).
+    function yieldSummaryHtml(snap) {
+        const y = snap.yield_summary;
+        if (!y || !(y.window > 0)) return '';
+        const exp = (typeof y.expected === 'number') ? y.expected : 0;
+        const behind = (exp - y.got) > 0.3 * exp && exp > 1.0;
+        const blk = (y.blocked > 0) ? ` &middot; ${y.blocked} blk` : '';
+        return `<div class="cbo-eco${behind ? ' cbo-eco-low' : ''}">yield`
+            + `<span class="cbo-eco-v">${y.got}/${exp.toFixed(1)} `
+            + `(${y.window}r)${blk}</span></div>`;
+    }
+    // Engine deficit (snap.engine_deficit): the full per-roll comparison the
+    // tempo line only hinted at. Leader name omitted -> streamer-safe.
+    function engineDeficitHtml(snap) {
+        const e = snap.engine_deficit;
+        if (!e) return '';
+        const ratio = (typeof e.ratio === 'number') ? `${e.ratio.toFixed(1)}x` : '';
+        return '<div class="cbo-eco cbo-eco-low">engine gap'
+            + `<span class="cbo-eco-v">${e.self_per_roll}/roll vs `
+            + `${e.leader_per_roll}${ratio ? ` (${ratio})` : ''}</span></div>`;
+    }
+    // Round / phase + standings status strip. Quiet, sits at the foot. Leader
+    // name suppressed in streamer mode (gap still shown).
+    function progressHtml(snap) {
+        const gp = snap.game_progress;
+        if (!gp) return '';
+        const phase = gp.phase
+            ? `<span class="cbo-prog-phase">${escapeHtml(gp.phase)}</span>` : '';
+        const round = (gp.round != null) ? `round ${gp.round}` : '';
+        let lead = '';
+        const st = snap.standings;
+        if (st && st.leader && (st.self_vp >= 3 || st.leader.vp >= 3)) {
+            if (st.self_is_leader) {
+                lead = `<span class="cbo-prog-lead cbo-self-lead">you `
+                    + `${st.self_vp} (lead)</span>`;
+            } else {
+                const who = streamerOn()
+                    ? 'leader' : escapeHtml(st.leader.username || 'leader');
+                lead = `<span class="cbo-prog-lead">${who} ${st.leader.vp}`
+                    + ` &middot; you ${st.self_vp} (-${st.gap_to_leader})</span>`;
+            }
+        }
+        if (!round && !phase && !lead) return '';
+        return `<div class="cbo-prog">${round} ${phase}${lead}</div>`;
+    }
+    // Variant-board advisor lines (gold pick / fog) + a variant tag. These keys
+    // come straight from the bridge; the side panel only shows a variant badge,
+    // so this is in-page-only value for volcano / black-forest / scanned maps.
+    function variantHtml(snap) {
+        const out = [];
+        const g = snap.gold_pick;
+        if (g && g.resource) {
+            const tw = g.toward ? ` &middot; ${escapeHtml(g.toward)}` : '';
+            out.push('<div class="cbo-eco">gold pick'
+                + `<span class="cbo-eco-v">${iconFor(g.resource)}${tw}</span></div>`);
+        }
+        const f = snap.fog_hint;
+        if (f && f.message) {
+            out.push(`<div class="cbo-dice">\u{1F32B} ${escapeHtml(f.message)}</div>`);
+        }
+        return out.join('');
+    }
 
     // Build the HUD body HTML from an /advisor snapshot: top rec (gated like
     // the side panel) + robber targets + your card + opponent reads + footer.
     function renderBody(snap) {
         if (!snap) return '<div class="cbo-placeholder">connecting…</div>';
         const out = [];
-        // Post-game first (it overrides everything), then "you can win now".
-        const goBlock = gameOverHtml(snap);
-        if (goBlock) out.push(goBlock);
-        const winBlock = winningMoveHtml(snap);
-        if (winBlock) out.push(winBlock);
+        const push = (html) => { if (html) out.push(html); };
+        // Post-game first (it overrides everything), then "you can win now",
+        // then the single biggest early signal (the 3rd-settlement milestone).
+        push(gameOverHtml(snap));
+        push(winningMoveHtml(snap));
+        push(milestoneHtml(snap));
         const recs = snap.recommendations || [];
         const showRecs = (snap.my_turn || snap.setup_phase) && !_paused();
         if (_paused()) {
@@ -880,22 +1130,25 @@
             out.push('<div class="cbo-h">next move</div>'
                 + '<div class="cbo-placeholder">no recommendation</div>');
         }
-        const stratBlock = strategyHtml(snap);
-        if (stratBlock) out.push(stratBlock);
-        const robberBlock = robberHtml(snap);
-        if (robberBlock) out.push(robberBlock);
+        // Near-term goal frame + strategy archetype + long-game swing plays.
+        push(gamePlanHtml(snap));
+        push(strategyHtml(snap));
+        push(strategicOptionsHtml(snap));
+        push(robberHtml(snap));
         // Discard guidance, re-homed into the HUD (was a floating panel). On a
-        // 7 the matching cards in your hand also glow (applyActionCues).
+        // 7 the matching cards in your hand also glow (applyActionCues). The
+        // proactive seven_prep warning self-suppresses once a discard is live.
         const dh = snap.discard_hint;
         if (dh) {
             out.push('<div class="cbo-foot cbo-amber">DISCARD &middot; '
                 + escapeHtml(dh.reason || dh.message
                     || 'drop your lowest-value cards') + '</div>');
         }
-        const selfBlock = selfHtml(snap);
-        if (selfBlock) out.push(selfBlock);
-        const knightBlock = knightHintHtml(snap);
-        if (knightBlock) out.push(knightBlock);
+        push(sevenPrepHtml(snap));
+        // Dev-card plays (verdict per held card), then your card, knight nudge.
+        push(devClusterHtml(snap));
+        push(selfHtml(snap));
+        push(knightHintHtml(snap));
         const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
         if (opps.length) {
             out.push('<div class="cbo-h">opponents</div>');
@@ -908,142 +1161,22 @@
                     + `<span class="cbo-reads">${handReadHtml(o)}</span></div>`);
             }
         }
-        // Board-state cluster: LR/LA race, bank + dev deck, dice tempo. Each
-        // is silent unless its read is live, so the column stays quiet in a
-        // calm position and fills in when there's something to know.
-        const board = raceHtml(snap) + bankDevHtml(snap) + tempoHtml(snap);
+        // Board-state cluster: LR/LA race, bank + dev deck, yield vs expected,
+        // engine gap, dice tempo, variant (gold/fog). Each is silent unless its
+        // read is live, so the column stays quiet in a calm position.
+        const board = raceHtml(snap) + bankDevHtml(snap) + yieldSummaryHtml(snap)
+            + engineDeficitHtml(snap) + tempoHtml(snap) + variantHtml(snap);
         if (board) {
             out.push('<div class="cbo-h">board</div>' + board);
         }
-        const foot = footerHtml(snap);
-        if (foot) out.push(foot);
+        push(footerHtml(snap));
+        // Quiet round / phase / standings status strip at the very foot.
+        push(progressHtml(snap));
         if (!out.length) {
             return '<div class="cbo-placeholder">CatanBot HUD'
                 + ' — start a game to see recommendations.</div>';
         }
         return out.join('');
-    }
-
-    // Self hand as known chips (we see our own cards).
-    function selfReadChips(me) {
-        const h = Object.entries((me && me.hand) || {})
-            .filter(([, n]) => n > 0)
-            .map(([r, n]) => `<span class="cbo-chip">${iconFor(r)} ${n}</span>`)
-            .join('');
-        return h || '<span class="cbo-chip cbo-maybe">empty</span>';
-    }
-
-    // Inject CatanBot's read next to each player in colonist's OWN player
-    // panel (recon: gamePlayerInformationContainer > opponentsScrollContainer
-    // > playerRow-*, plus a sibling self playerRow-*). One compact read line
-    // per row, matched to a player by the name the row starts with. Re-runs
-    // each poll so it survives React wiping the rows; skips silently if the
-    // panel isn't present.
-    function injectPlayerReads(snap) {
-        const existing = document.querySelectorAll('.cbo-row-read');
-        if (!enabled() || !snap) { existing.forEach((e) => e.remove()); return; }
-        const cont = document.querySelector(
-            '[class*="gamePlayerInformationContainer"]');
-        if (!cont) { existing.forEach((e) => e.remove()); return; }
-        const rows = cont.querySelectorAll('[class*="playerRow-"]');
-        if (!rows.length) return;
-
-        const players = [];
-        if (snap.self && snap.self.username) {
-            players.push(Object.assign({ _self: true }, snap.self));
-        }
-        for (const o of (snap.opps || [])) {
-            if (o && !o.is_placeholder && o.username) players.push(o);
-        }
-
-        for (const row of rows) {
-            const txt = (row.textContent || '').trim();
-            let match = null;
-            let best = 0;
-            for (const p of players) {
-                if (txt.startsWith(p.username) && p.username.length > best) {
-                    match = p; best = p.username.length;
-                }
-            }
-            // Insert the read as a SIBLING line right after the row (in the
-            // vertical stack), NOT as a child of the row — appending inside
-            // the row fought colonist's flex layout and misaligned it.
-            const next = row.nextElementSibling;
-            let read = (next && next.classList
-                && next.classList.contains('cbo-row-read')) ? next : null;
-            if (!match) { if (read) read.remove(); continue; }
-            if (!read) {
-                read = document.createElement('div');
-                read.className = 'cbo-row-read';
-                row.parentNode.insertBefore(read, row.nextSibling);
-            }
-            read.innerHTML = match._self
-                ? selfReadChips(match) : handReadHtml(match);
-            stampStreamer(read);
-        }
-    }
-
-    // Per-player reads "next to each player" as a HOVER tooltip: colonist's
-    // player rows are too tight + horizontally clipped for a clean
-    // always-visible line (verified live), so instead, hovering a row pops
-    // that player's CatanBot read beside it. Non-destructive, fits, and works
-    // for opponents (inferred) and self (known). Reads from the cached snap.
-    function ensureTip() {
-        if (_tip && _tip.isConnected) return _tip;
-        _tip = document.createElement('div');
-        _tip.id = 'cbo-tip';
-        _tip.style.display = 'none';
-        stampStreamer(_tip);
-        (document.body || document.documentElement).appendChild(_tip);
-        return _tip;
-    }
-    function _playerForRow(row) {
-        if (!_lastSnap) return null;
-        const txt = (row.textContent || '').trim();
-        const players = [];
-        if (_lastSnap.self && _lastSnap.self.username) {
-            players.push(Object.assign({ _self: true }, _lastSnap.self));
-        }
-        for (const o of (_lastSnap.opps || [])) {
-            if (o && !o.is_placeholder && o.username) players.push(o);
-        }
-        let match = null;
-        let best = 0;
-        for (const p of players) {
-            if (txt.startsWith(p.username) && p.username.length > best) {
-                match = p; best = p.username.length;
-            }
-        }
-        return match;
-    }
-    function attachRowHovers() {
-        if (!enabled()) return;
-        const cont = document.querySelector(
-            '[class*="gamePlayerInformationContainer"]');
-        if (!cont) return;
-        cont.querySelectorAll('[class*="playerRow"]').forEach((row) => {
-            if (row.dataset.cboHover) return;
-            row.dataset.cboHover = '1';
-            row.addEventListener('mouseenter', () => {
-                const p = _playerForRow(row);
-                if (!p) return;
-                const tip = ensureTip();
-                tip.innerHTML = '<span class="cbo-tip-tag">read</span>'
-                    + (p._self ? selfReadChips(p) : handReadHtml(p));
-                stampStreamer(tip);
-                const r = row.getBoundingClientRect();
-                tip.style.display = 'block';
-                const tw = tip.getBoundingClientRect().width;
-                // prefer left of the row (over the blank gap); fall back below.
-                let left = r.left - tw - 8;
-                if (left < 4) left = r.left;
-                tip.style.left = `${Math.round(left)}px`;
-                tip.style.top = `${Math.round(r.top + 6)}px`;
-            });
-            row.addEventListener('mouseleave', () => {
-                if (_tip) _tip.style.display = 'none';
-            });
-        });
     }
 
     // Literal trade injection: pin a CatanBot verdict badge to colonist's own
@@ -1088,17 +1221,42 @@
         _tradeAnchored = true;
     }
 
+    // Clear every cue by walking the handles we recorded (NO full-document
+    // querySelectorAll) so an idle tick costs nothing. A glowed element that
+    // React already removed from the DOM just no-ops on classList.remove.
+    function clearCues() {
+        for (const el of _cuedEls) {
+            try {
+                el.classList.remove(
+                    'cbo-action-hl', 'cbo-cue-dev', 'cbo-cue-knight');
+            } catch (e) { /* element gone */ }
+        }
+        _cuedEls = [];
+    }
+    function addCue(el, cls) {
+        if (!el) return;
+        el.classList.add(cls);
+        _cuedEls.push(el);
+    }
+    // Would any cue fire for this snapshot? Cheap, field-only check so we can
+    // skip the DOM sweeps entirely on the many ticks with nothing to cue
+    // (opponent turns, pre-roll, etc.).
+    function cuesWanted(snap) {
+        if (snap.my_turn) return true;        // build bar / setup place button
+        if (snap.discard_hint) return true;   // cards to drop on a 7
+        const kh = snap.knight_hint;
+        if (kh && kh.should_play) return true;
+        return (snap.recommendations || []).some(
+            (r) => r && (r.kind === 'knight' || r.action === 'knight'));
+    }
+
     // Unified action cues: light up the REAL colonist element you act on.
-    // One entry point, called each poll. Clears every prior cue first, then
-    // each sub-cue applies under its own guard (build bar on your turn, the
-    // central place button in setup, the knight card / discard cards when
-    // those moments fire). Cues anchor to colonist's own DOM, never a floater.
+    // One entry point, called each poll. Clears prior cues via the tracked
+    // handles, bails fast when nothing needs a cue, then each sub-cue applies
+    // under its own guard. Cues anchor to colonist's own DOM, never a floater.
     function applyActionCues(snap) {
-        document.querySelectorAll(
-            '.cbo-action-hl, .cbo-cue-dev, .cbo-cue-knight').forEach(
-            (el) => el.classList.remove(
-                'cbo-action-hl', 'cbo-cue-dev', 'cbo-cue-knight'));
-        if (!enabled() || !snap || _paused()) return;
+        clearCues();
+        if (!enabled() || !snap || _paused() || !cuesWanted(snap)) return;
         highlightBuildButton(snap);
         highlightCentralAction(snap);
         highlightKnightCard(snap);
@@ -1131,7 +1289,7 @@
             const i = btns.indexOf(counted[0]);
             target = i > 0 ? btns[i - 1] : null;
         }
-        if (target) target.classList.add('cbo-action-hl');
+        addCue(target, 'cbo-action-hl');
     }
 
     // Setup-phase placement: colonist's central status button reads "Place
@@ -1142,7 +1300,7 @@
         if (!snap.my_turn || !snap.setup_phase) return;
         const central = document.querySelector(
             '[class*="actionButtonContainer"]');
-        if (central) central.classList.add('cbo-action-hl');
+        addCue(central, 'cbo-action-hl');
     }
 
     // Knight (or any dev) to play -> glow THAT card in the dev-card hand.
@@ -1155,7 +1313,7 @@
             (r) => r && (r.kind === 'knight' || r.action === 'knight'));
         if (!knightRec && !(kh && kh.should_play)) return;
         const card = findDevCard('knight');
-        if (card) card.classList.add('cbo-cue-knight');
+        addCue(card, 'cbo-cue-knight');
     }
 
     // Discard on a 7 -> glow the specific cards to drop. Gated on a live recon
@@ -1169,7 +1327,7 @@
         for (const res of Object.keys(drop)) {
             if (!(drop[res] > 0)) continue;
             const els = findHandResourceCards(res, drop[res]);
-            for (const el of els) el.classList.add('cbo-cue-dev');
+            for (const el of els) addCue(el, 'cbo-cue-dev');
         }
     }
 
@@ -1183,6 +1341,33 @@
     }
     function findHandResourceCards(/* res, count */) {
         return [];
+    }
+
+    // Signature of a snapshot, used to skip the expensive innerHTML rebuild on
+    // ticks where nothing the HUD shows actually changed (the common case on an
+    // opponent's turn). The bridge stamps every snapshot with a monotonic `seq`
+    // that ticks on EVERY ingest frame (so it changes when nothing rendered
+    // changed) — plus `ws_frames`/`log_events` counters and big history/stats
+    // blobs the HUD never renders. All of those are stripped here so the
+    // compare reflects only what the HUD actually shows. This is strictly more
+    // correct than diffing on `seq`: it also catches time-based eviction
+    // (robber-snapshot staleness, trade expiry) that leaves `seq` unchanged.
+    // Any failure returns a unique value so we always re-render rather than
+    // risk a stale UI.
+    const SIG_SKIP = new Set([
+        'seq', 'ws_frames', 'log_events', 'total_rolls', 'bridge_version',
+        'roll_history', 'move_history', 'eval_history', 'steal_matrix',
+        'dice_expected', 'roll_histogram', 'latest_postmortem',
+    ]);
+    let _sigErr = 0;
+    function snapSignature(snap) {
+        try {
+            return JSON.stringify(
+                snap, (k, v) => (SIG_SKIP.has(k) ? undefined : v));
+        } catch (e) {
+            _sigErr += 1;
+            return `__err${_sigErr}`;
+        }
     }
 
     let _bridgeDown = false;
@@ -1199,21 +1384,28 @@
         } catch (e) { /* worker asleep / extension reloading */ }
 
         if (snap) {
-            root.innerHTML = renderBody(snap);
-            root.className = urgencyOf(snap);   // left-border urgency accent
-            stampStreamer(root);   // re-stamp the freshly rendered nodes
+            // Only rebuild the HUD body when the snapshot the HUD renders
+            // actually changed. The body is our own DOM (React never touches
+            // it), so a skipped tick keeps the exact same nodes — no churn.
+            const sig = snapSignature(snap);
+            if (sig !== _lastSig) {
+                root.innerHTML = renderBody(snap);
+                root.className = urgencyOf(snap);   // left-border urgency accent
+                stampStreamer(root);   // re-stamp the freshly rendered nodes
+                _lastSig = sig;
+            }
+            // These anchor to colonist's volatile DOM and self-gate cheaply, so
+            // they run every tick (re-asserting the glow if React wiped it, and
+            // repositioning the trade badge) even when the body render is
+            // skipped. Both no-op fast when their trigger isn't live.
             injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
             applyActionCues(snap);    // glow the real element to act on
             _lastSnap = snap;
-            // Native opponent reads: one compact line injected under each
-            // colonist player row (sibling, in the scroll content). Confirmed
-            // visible live; runs AFTER _lastSnap so the hover fallback agrees.
-            injectPlayerReads(snap);
-            attachRowHovers();    // hover a player row -> fuller read
             _bridgeDown = false;
             if (!_everConnected) { _everConnected = true; applyTab(); }
         } else if (!_bridgeDown) {
             _bridgeDown = true;
+            _lastSig = null;
             root.innerHTML = '<div class="cbo-placeholder">bridge offline'
                 + ' — start the CatanBot app.</div>';
             stampStreamer(root);
@@ -1242,6 +1434,17 @@
     // window.__catanbot.ensureHudAttached) and by our own driver below.
     function ensureHudAttached() {
         if (!enabled()) { teardown(); return; }
+        // Fast path: we're still anchored where we put it. Skip the container
+        // search (a querySelector over class-prefix selectors) and the
+        // re-insert entirely; just keep the tab/native-hide state fresh, which
+        // is itself a no-op when nothing changed. This is the hot path: it runs
+        // on every colonist log mutation plus two safety-net intervals.
+        if (root && tabs && _container && _container.isConnected
+                && root.parentElement === _container
+                && tabs.parentElement === _container) {
+            applyTab(_container);
+            return;
+        }
         const finder = window.__catanbot && window.__catanbot.findLogContainer;
         if (typeof finder !== 'function') return;
         const found = finder();
@@ -1276,6 +1479,7 @@
         if (root.parentElement !== container) {
             container.insertBefore(root, tabs.nextSibling);
         }
+        _container = container;
         applyTab(container);
     }
 
@@ -1286,13 +1490,34 @@
     window.__catanbot.ensureHudAttached = ensureHudAttached;
 
     try { ensureHudAttached(); } catch (e) { /* container not ready yet */ }
+    // Re-anchor safety net. content.js already re-anchors on every log mutation
+    // and on its own 500ms interval; with the fast path this is a cheap
+    // isConnected check, so 1000ms here is plenty.
     setInterval(() => {
         try { ensureHudAttached(); } catch (e) { /* keep trying */ }
-    }, 700);
-    // Data poll: refresh the HUD body from /advisor (only when enabled).
-    setInterval(() => {
-        try { fetchAndRender(); } catch (e) { /* bridge hiccup */ }
-    }, POLL_MS);
+    }, 1000);
+
+    // Adaptive data poll: snappy when it's your move or a decision is live,
+    // relaxed on opponents' turns. Self-scheduling so the cadence tracks the
+    // last snapshot. Idle ticks are cheap now (the body render is skipped when
+    // the snapshot is unchanged), so the slower idle rate only trims the
+    // worker round-trips, never responsiveness when it matters.
+    const POLL_ACTIVE = 450;
+    const POLL_IDLE = 1100;
+    function pollDelay() {
+        const s = _lastSnap;
+        if (!s) return POLL_ACTIVE;   // stay responsive until first connect
+        if (s.my_turn || s.setup_phase || s.robber_pending
+                || s.incoming_trade || s.discard_hint) return POLL_ACTIVE;
+        return POLL_IDLE;
+    }
+    function pollLoop() {
+        Promise.resolve()
+            .then(fetchAndRender)
+            .catch(() => { /* bridge hiccup */ })
+            .then(() => { setTimeout(pollLoop, pollDelay()); });
+    }
+    pollLoop();
 
     console.info(LOG_PREFIX, 'ready (on by default; disable with'
         + " localStorage 'catanbot.log_hud'='0')");

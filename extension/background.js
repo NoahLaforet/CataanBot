@@ -354,5 +354,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             .then(ok => sendResponse({ ok }));
         return true;  // keep channel open for async response
     }
+    if (msg.type === 'set-config') {
+        // In-page settings menu (loghud.js) writes VP target / discard limit
+        // to the bridge's /config. Same worker-proxy reason as get-advisor:
+        // the content script can't POST 127.0.0.1 from the https page.
+        postJson(`${BRIDGE_BASE}/config`, msg.payload || {})
+            .then(ok => sendResponse({ ok }));
+        return true;  // keep channel open for async response
+    }
     return false;
 });
