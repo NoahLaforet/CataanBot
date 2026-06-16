@@ -358,6 +358,31 @@
 #${ROOT_ID} .cbo-dice {
     font-size: 12px; opacity: 0.85; padding: 2px 0;
 }
+/* Dice-roll histogram: a mini bar per number 2..12 with a dashed expected
+   baseline and the last roll picked out green. Compact, native browns. */
+#${ROOT_ID} .cbo-dice-hist {
+    display: flex; align-items: flex-end; gap: 2px; height: 48px; padding: 3px 0 0;
+}
+#${ROOT_ID} .cbo-dice-col {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+}
+#${ROOT_ID} .cbo-dice-barwrap {
+    position: relative; width: 100%; height: 38px;
+    display: flex; align-items: flex-end;
+}
+#${ROOT_ID} .cbo-dice-bar {
+    width: 100%; background: #b8862f; border-radius: 2px 2px 0 0; min-height: 1px;
+}
+#${ROOT_ID} .cbo-dice-col.cbo-dice-7 .cbo-dice-bar { background: #c0392b; }
+#${ROOT_ID} .cbo-dice-col.cbo-dice-last .cbo-dice-bar { background: #46a45a; }
+#${ROOT_ID} .cbo-dice-exp {
+    position: absolute; left: -1px; right: -1px; height: 0;
+    border-top: 1px dashed rgba(90, 62, 28, 0.55);
+}
+#${ROOT_ID} .cbo-dice-n {
+    font-size: 9px; color: #6b5836; line-height: 1.5; font-weight: 600;
+}
+#${ROOT_ID} .cbo-dice-col.cbo-dice-last .cbo-dice-n { color: #2f6b3f; font-weight: 800; }
 /* Game plan: near-term VP goal. Kind pill + tiles + a dim summary line. */
 #${ROOT_ID} .cbo-plan {
     font-size: 13px; font-weight: 600; color: #2f2415; padding: 2px 0 1px 0;
@@ -631,6 +656,11 @@
         p.appendChild(_toggleRow('Pause recs', _paused, (v) => {
             try { localStorage.setItem('catanbot.paused', v ? '1' : '0'); }
             catch (e) { /* private mode */ }
+        }).row);
+        p.appendChild(_toggleRow('Dice stats', _diceStatsOn, (v) => {
+            try { localStorage.setItem('catanbot.dice_stats', v ? '1' : '0'); }
+            catch (e) { /* private mode */ }
+            _lastSig = null;   // force a re-render so it appears/disappears now
         }).row);
         p.appendChild(_sectionHeader('Advisor'));
         p.appendChild(_numberRow('VP target', 'vp_target', 3, 30));
@@ -977,6 +1007,45 @@
         if (!bits.length) return '';
         return `<div class="cbo-dice">🎲 ${escapeHtml(bits.join(' · '))}</div>`;
     }
+    // Dice-roll histogram (snap.roll_histogram {2..12: count} + total_rolls).
+    // A mini bar per number, a dashed expected-frequency baseline, last roll in
+    // green, 7 in red. Behind the 'dice stats' toggle (default ON). Bars scale
+    // to the tallest non-7 count so a 7 spike doesn't flatten everything.
+    const DICE_WAYS = {
+        2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1,
+    };
+    function _diceStatsOn() {
+        try { return localStorage.getItem('catanbot.dice_stats') !== '0'; }
+        catch (e) { return true; }
+    }
+    function diceStatsHtml(snap) {
+        if (!_diceStatsOn()) return '';
+        const hist = snap.roll_histogram;
+        if (!hist) return '';
+        const get = (n) => (hist[n] || hist[String(n)] || 0);
+        const nums = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        const total = snap.total_rolls
+            || nums.reduce((a, n) => a + get(n), 0);
+        if (!total) return '';
+        const maxNon7 = Math.max(1, ...nums.filter((n) => n !== 7).map(get));
+        const last = snap.last_roll && snap.last_roll.total;
+        const cols = nums.map((n) => {
+            const c = get(n);
+            const h = Math.min(100, Math.round((c / maxNon7) * 100));
+            const expH = Math.min(100,
+                Math.round(((total * DICE_WAYS[n] / 36) / maxNon7) * 100));
+            const cls = (n === 7 ? ' cbo-dice-7' : '')
+                + (n === last ? ' cbo-dice-last' : '');
+            return `<div class="cbo-dice-col${cls}" title="${n}: ${c}">`
+                + '<div class="cbo-dice-barwrap">'
+                + `<div class="cbo-dice-exp" style="bottom:${expH}%"></div>`
+                + `<div class="cbo-dice-bar" style="height:${h}%"></div></div>`
+                + `<div class="cbo-dice-n">${n}</div></div>`;
+        }).join('');
+        return `<div class="cbo-h">dice (${total})</div>`
+            + `<div class="cbo-dice-hist">${cols}</div>`;
+    }
+
     // Knight-in-hand nudge (snap.knight_hint: {have, should_play, reason}).
     function knightHintHtml(snap) {
         const kh = snap.knight_hint;
@@ -1237,6 +1306,7 @@
             out.push('<div class="cbo-h">board</div>' + board);
         }
         push(footerHtml(snap));
+        push(diceStatsHtml(snap));
         // Quiet round / phase / standings status strip at the very foot.
         push(progressHtml(snap));
         if (!out.length) {
