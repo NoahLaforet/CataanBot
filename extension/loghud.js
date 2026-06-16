@@ -107,48 +107,10 @@
         return `<span class="cbo-rec-kind">${escapeHtml(kindLabel)}</span>${loc}`
             + `<span class="cbo-rec-detail">${escapeHtml(detail)}</span>`;
     }
-    // Hand read, clean version (per Noah): CONFIRMED cards first (icon +
-    // count, no percent), then a separator, then only the LIKELY-but-unsure
-    // resources as dim icons (no count, no percent). The raw "+49%" noise is
-    // gone; the unsure group is just "probably also holds these".
+    // Opponent reads use CONFIRMED cards first (icon + count), then a thin
+    // separator and the LIKELY-but-unsure resources as dim icons. Rendered onto
+    // colonist's own player rows by rowReadHtml; this cutoff is shared.
     const LIKELY_CUTOFF = 0.45;   // P(at least one) above this = "likely"
-    function handReadHtml(o) {
-        const confirmed = [];
-        const likely = [];
-        const hp = o && o.hand_probs;
-        if (hp) {
-            const entries = Object.keys(hp).map((res) => ({ res, ...hp[res] }));
-            for (const e of entries) {
-                if ((e.min || 0) > 0) {
-                    confirmed.push(
-                        `<span class="cbo-chip">${iconFor(e.res)} ${e.min}</span>`);
-                }
-            }
-            entries
-                .filter((e) => (e.min || 0) === 0 && (e.p1 || 0) > LIKELY_CUTOFF)
-                .sort((a, b) => (b.p1 || 0) - (a.p1 || 0))
-                .forEach((e) => {
-                    likely.push(
-                        `<span class="cbo-chip cbo-maybe">${iconFor(e.res)}</span>`);
-                });
-        } else {
-            const hand = (o && o.hand) || {};
-            for (const res of Object.keys(hand)) {
-                if (hand[res] > 0) {
-                    confirmed.push(
-                        `<span class="cbo-chip">${iconFor(res)} ${hand[res]}</span>`);
-                }
-            }
-            if (o && (o.unknown || 0) > 0) {
-                likely.push(`<span class="cbo-chip cbo-maybe">? ${o.unknown}</span>`);
-            }
-        }
-        let html = confirmed.join('');
-        if (likely.length) {
-            html += '<span class="cbo-sep">|</span>' + likely.join('');
-        }
-        return html || '<span class="cbo-maybe">no read</span>';
-    }
 
     // Default ON: the in-page HUD is now the primary surface (the side panel
     // is demoted to an icon-reachable fallback). Set 'catanbot.log_hud'='0'
@@ -428,6 +390,21 @@
 #${ROOT_ID}.cbo-u-amber { box-shadow: inset 3px 0 0 0 #d8862f; }
 #${ROOT_ID}.cbo-u-green { box-shadow: inset 3px 0 0 0 #46a45a; }
 #${ROOT_ID}.cbo-u-turn { box-shadow: inset 3px 0 0 0 #b8862f; }
+/* Opponent resource read injected onto colonist's OWN player rows (unscoped:
+   lives in colonist's DOM, not under #${ROOT_ID}). Matches colonist's white
+   Open Sans so it reads as part of the tracker row, pinned along the bottom. */
+.cbo-prow {
+    position: absolute; left: 90px; right: 165px; bottom: 2px;
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    font: 700 12px/1 "Open Sans", -apple-system, system-ui, sans-serif;
+    color: #fff; letter-spacing: 0.01em;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    pointer-events: none; white-space: nowrap; z-index: 5;
+}
+.cbo-prow .cbo-pr-chip { display: inline-flex; align-items: center; gap: 1px; }
+.cbo-prow .cbo-pr-maybe { opacity: 0.55; }
+.cbo-prow .cbo-pr-sep { opacity: 0.4; margin: 0 1px; font-weight: 400; }
+.cbo-prow .cbo-pr-none { opacity: 0.5; font-weight: 600; }
 /* Trade verdict badge pinned to colonist's own trade panel. */
 #cbo-trade-badge {
     position: fixed;
@@ -725,6 +702,7 @@
         if (tabs && tabs.parentElement) tabs.remove();
         const tb = document.getElementById('cbo-trade-badge');
         if (tb) tb.remove();
+        document.querySelectorAll('.cbo-prow').forEach((e) => e.remove());
         clearCues();
         _container = null;
         _tabState = '';
@@ -1201,18 +1179,9 @@
         push(devClusterHtml(snap));
         push(selfHtml(snap));
         push(knightHintHtml(snap));
-        const opps = (snap.opps || []).filter((o) => o && !o.is_placeholder);
-        if (opps.length) {
-            out.push('<div class="cbo-h">opponents</div>');
-            for (const o of opps) {
-                const bg = pillColor(o);
-                const name = escapeHtml(o.username || o.color || '?');
-                out.push('<div class="cbo-opp">'
-                    + `<span class="cbo-pill" style="background:${escapeHtml(bg)};`
-                    + `color:${contrastText(bg)}">${name}</span>`
-                    + `<span class="cbo-reads">${handReadHtml(o)}</span></div>`);
-            }
-        }
+        // Opponent reads are injected straight onto colonist's own player rows
+        // (injectPlayerReads), not listed here — that frees a big chunk of the
+        // log column and keeps the read where you're already looking.
         // Board-state cluster: LR/LA race, bank + dev deck, yield vs expected,
         // engine gap, dice tempo, variant (gold/fog). Each is silent unless its
         // read is live, so the column stays quiet in a calm position.
@@ -1229,6 +1198,85 @@
                 + ' — start a game to see recommendations.</div>';
         }
         return out.join('');
+    }
+
+    // Compact resource read for a colonist player row: confirmed cards as
+    // icon+count, then a thin separator and the likely-but-unsure resources as
+    // dim icons. Same model as the HUD's hand read, sized for the tracker row.
+    function rowReadHtml(o) {
+        const conf = [];
+        const likely = [];
+        const hp = o && o.hand_probs;
+        if (hp) {
+            for (const res of Object.keys(hp)) {
+                if ((hp[res].min || 0) > 0) {
+                    conf.push(`<span class="cbo-pr-chip">${iconFor(res)}${hp[res].min}</span>`);
+                }
+            }
+            Object.keys(hp)
+                .filter((r) => (hp[r].min || 0) === 0 && (hp[r].p1 || 0) > LIKELY_CUTOFF)
+                .sort((a, b) => (hp[b].p1 || 0) - (hp[a].p1 || 0))
+                .forEach((r) => likely.push(
+                    `<span class="cbo-pr-chip cbo-pr-maybe">${iconFor(r)}</span>`));
+        } else {
+            const hand = (o && o.hand) || {};
+            for (const res of Object.keys(hand)) {
+                if (hand[res] > 0) {
+                    conf.push(`<span class="cbo-pr-chip">${iconFor(res)}${hand[res]}</span>`);
+                }
+            }
+            if (o && (o.unknown || 0) > 0) {
+                likely.push(`<span class="cbo-pr-chip cbo-pr-maybe">?${o.unknown}</span>`);
+            }
+        }
+        let html = conf.join(' ');
+        if (likely.length) {
+            html += (conf.length ? '<span class="cbo-pr-sep">|</span>' : '')
+                + likely.join(' ');
+        }
+        return html || '<span class="cbo-pr-none">no cards</span>';
+    }
+
+    // Inject the inferred resource breakdown straight onto colonist's OWN
+    // opponent player rows (recon: gamePlayerInformationContainer >
+    // opponentPlayerRow > playerInformation), pinned along the bottom of each
+    // tracker panel so the read lives where Noah is already looking. Matched to
+    // a player by the name the row starts with, re-run each poll so it survives
+    // React wiping the row, silent when the panel isn't present.
+    function injectPlayerReads(snap) {
+        const wipe = () => document.querySelectorAll('.cbo-prow')
+            .forEach((e) => e.remove());
+        if (!enabled() || !snap) { wipe(); return; }
+        const cont = document.querySelector(
+            '[class*="gamePlayerInformationContainer"]');
+        if (!cont) { wipe(); return; }
+        const rows = cont.querySelectorAll('[class*="opponentPlayerRow"]');
+        if (!rows.length) { wipe(); return; }
+        const opps = (snap.opps || [])
+            .filter((o) => o && !o.is_placeholder && o.username);
+        for (const row of rows) {
+            const info = row.querySelector('[class*="playerInformation"]') || row;
+            const txt = (row.textContent || '').trim();
+            let match = null;
+            let best = 0;
+            for (const o of opps) {
+                if (txt.startsWith(o.username) && o.username.length > best) {
+                    match = o; best = o.username.length;
+                }
+            }
+            let read = info.querySelector(':scope > .cbo-prow');
+            if (!match) { if (read) read.remove(); continue; }
+            if (getComputedStyle(info).position === 'static') {
+                info.style.position = 'relative';
+            }
+            if (!read) {
+                read = document.createElement('div');
+                read.className = 'cbo-prow';
+                info.appendChild(read);
+            }
+            read.innerHTML = rowReadHtml(match);
+            stampStreamer(read);
+        }
     }
 
     // Literal trade injection: pin a CatanBot verdict badge to colonist's own
@@ -1442,6 +1490,7 @@
             // repositioning the trade badge) even when the body render is
             // skipped. Both no-op fast when their trigger isn't live.
             injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
+            injectPlayerReads(snap);  // resource read onto colonist's player rows
             applyActionCues(snap);    // glow the real element to act on
             _lastSnap = snap;
             _bridgeDown = false;
