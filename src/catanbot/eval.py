@@ -43,6 +43,17 @@ EVAL_WEIGHTS: dict[str, float] = {
     "knight": 1.5,        # per played knight (largest-army race)
     "road_past3": 1.0,    # per road segment beyond 3 (longest-road race)
     "gold_premium": 1.25, # wildcard multiplier on gold-hex yield (Volcano)
+    "robber_aware": 2.0,  # discount on the robber-blocked tile's production.
+                          # 2026-06-08 arena study (scripts/arena.py): turning
+                          # this on beats three blind champions head-to-head
+                          # (0.302 > 0.25 mirror at 500 games), lifts 1v1 play
+                          # vs robber-hunters +0.096 (back over 50%) and the
+                          # mixed-4p table +0.110, and even nudges the weak-bot
+                          # rates UP (they use the robber too). C=2.0 is the
+                          # safe peak: bigger discounts (3.0) help adversaries
+                          # more but start denting vp-bot play; 1.5 is the
+                          # conservative fallback. 0.0 restores the old blind
+                          # behaviour.
 }
 
 # Dice-number → pip count (ways to roll it out of 36). Used to value the
@@ -52,7 +63,7 @@ EVAL_WEIGHTS: dict[str, float] = {
 _PIP_BY_NUMBER = {2: 1, 12: 1, 3: 2, 11: 2, 4: 3, 10: 3, 5: 4, 9: 4, 6: 5, 8: 5}
 
 
-def evaluate_state(game, my_color) -> float:
+def evaluate_state(game, my_color, weights: dict[str, float] | None = None) -> float:
     """Overall state strength for ``my_color``, higher = better.
 
     Scale is relative: positive when we're ahead, negative when an
@@ -62,8 +73,16 @@ def evaluate_state(game, my_color) -> float:
     Linear combination of own-score minus the strongest opponent's
     score (weighted 0.8 so not every one-turn opponent gain is read as
     catastrophic). See ``_player_score`` for the component weights.
+
+    ``weights`` overrides the module-global ``EVAL_WEIGHTS`` for this
+    call only (defaults to it). This lets two weight-sets coexist in one
+    game — a candidate seat scored with its own weights while the rest
+    use the champion's — which is what fixed-seed head-to-head tuning
+    (scripts/tune_selfplay.py) needs. None preserves the shipped HUD
+    behaviour exactly.
     """
     from catanatron import Color
+    w = weights if weights is not None else EVAL_WEIGHTS
     c = my_color if isinstance(my_color, Color) else Color[str(my_color)]
     winner = game.winning_color()
     if winner == c:
@@ -75,9 +94,9 @@ def evaluate_state(game, my_color) -> float:
     board = state.board
     m = board.map
 
-    own = _player_score(state, board, m, c)
+    own = _player_score(state, board, m, c, w)
     opp_scores = [
-        _player_score(state, board, m, oc)
+        _player_score(state, board, m, oc, w)
         for oc in state.color_to_index
         if oc != c
     ]
@@ -85,7 +104,7 @@ def evaluate_state(game, my_color) -> float:
     return own - 0.8 * max_opp
 
 
-def _player_score(state, board, m, color) -> float:
+def _player_score(state, board, m, color, w: dict[str, float] = EVAL_WEIGHTS) -> float:
     """Component-weighted strength for one player. Weights are a hand
     tuning: VP dominates (direct progress to win), production is the
     second biggest (future VP), dev cards + hand + pieces round it out.
@@ -107,7 +126,7 @@ def _player_score(state, board, m, color) -> float:
     # Quadratic VP emphasis so the last few VPs matter disproportionately.
     # At vp=0: contribution 0. At vp=target: contribution 20*target^2.
     # Between those the closer to target, the more every VP is worth.
-    score = vp * EVAL_WEIGHTS["vp_linear"] + vp * vp * EVAL_WEIGHTS["vp_quad"]
+    score = vp * w["vp_linear"] + vp * vp * w["vp_quad"]
 
     # Total per-turn expected production (pips × building multiplier).
     # Sum over own buildings; city doubles pips.
@@ -132,8 +151,30 @@ def _player_score(state, board, m, color) -> float:
             for nid, (bcol, btype) in board.buildings.items():
                 if bcol == color and int(nid) in gold_nodes:
                     mult = 2.0 if btype == "CITY" else 1.0
-                    prod += mult * gold_pips * EVAL_WEIGHTS["gold_premium"]
-    score += prod * EVAL_WEIGHTS["prod"]
+                    prod += mult * gold_pips * w["gold_premium"]
+    # Robber awareness: the production sum above credits EVERY owned tile,
+    # but the tile under the robber yields nothing. The shipped eval is blind
+    # to this — when an opponent (a hunter especially) parks the robber on our
+    # best tile, the eval still scores us as if it produced, so the bot never
+    # learns to avoid robber-exposed lines or to value robbing the leader
+    # back. Subtract the robber-blocked tile's contribution. Symmetric:
+    # applied to every color, it makes the eval value the robber as both
+    # defense and offense. Gated by w["robber_aware"] (default 0.0 = the
+    # original behaviour) until measured; 1.0 = full, correct discount.
+    robber_aware = w.get("robber_aware", 0.0)
+    if robber_aware:
+        rc = getattr(board, "robber_coordinate", None)
+        rt = m.land_tiles.get(rc) if rc is not None else None
+        if rt is not None and rt.number is not None:
+            frac = _PIP_BY_NUMBER.get(int(rt.number), 0) / 36.0
+            if frac:
+                blocked = 0.0
+                for nid in rt.nodes.values():
+                    owner = board.buildings.get(nid)
+                    if owner and owner[0] == color:
+                        blocked += 2.0 if owner[1] == "CITY" else 1.0
+                prod -= robber_aware * frac * blocked
+    score += prod * w["prod"]
 
     # Hand: capped value (each resource up to the discard line is worth
     # a flat amount; beyond triggers the 7-roll discard penalty).
@@ -141,23 +182,23 @@ def _player_score(state, board, m, color) -> float:
         int(ps.get(f"P{idx}_{r}_IN_HAND", 0)) for r in _RESOURCES
     )
     cap = config.get_discard_limit()
-    score += min(hand_total, cap) * EVAL_WEIGHTS["hand"]
+    score += min(hand_total, cap) * w["hand"]
     if hand_total > cap:
         # Discard risk — each card above the limit is half-lost-value in
         # expectation (7-roll probability × half rounded down).
-        score -= (hand_total - cap) * EVAL_WEIGHTS["hand_over_cap"]
+        score -= (hand_total - cap) * w["hand_over_cap"]
 
     # Dev cards: playable dev cards are latent action potential. VP
     # cards already count via ``hidden_vp`` above (linear + quadratic).
     playable_dev = sum(
         int(ps.get(f"P{idx}_{kind}_IN_HAND", 0)) for kind in _DEV_PLAYABLE
     )
-    score += playable_dev * EVAL_WEIGHTS["dev"]
+    score += playable_dev * w["dev"]
 
     # Largest-army race: each played knight is worth half a VP in
     # expectation (3 knights unlock the +2 VP, but opponents can race).
     played_knights = int(ps.get(f"P{idx}_PLAYED_KNIGHT", 0))
-    score += played_knights * EVAL_WEIGHTS["knight"]
+    score += played_knights * w["knight"]
 
     # Longest-road race: once a player hits 5 road segments they're in
     # contention. Raw length past 4 is a proxy; the actual +2 VP for
@@ -165,7 +206,7 @@ def _player_score(state, board, m, color) -> float:
     # awards HAS_ROAD which feeds VICTORY_POINTS) so avoid double-count.
     road_len = int(ps.get(f"P{idx}_LONGEST_ROAD_LENGTH", 0))
     if road_len >= 4:
-        score += (road_len - 3) * EVAL_WEIGHTS["road_past3"]
+        score += (road_len - 3) * w["road_past3"]
 
     # Pieces in reserve — running out forces dead turns. Minor weight.
     settles_left = int(ps.get(f"P{idx}_SETTLEMENTS_AVAILABLE", 5))
