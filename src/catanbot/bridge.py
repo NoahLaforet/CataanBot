@@ -887,7 +887,7 @@ def _track_overlay_state(st, results) -> None:
       top-N robber target ranking so the overlay can surface it inline.
     """
     from catanbot.events import (
-        BuildEvent, RobberMoveEvent, RollEvent,
+        BuildEvent, DevCardPlayEvent, RobberMoveEvent, RollEvent,
         TradeCloseEvent, TradeCommitEvent, TradeOfferEvent,
     )
 
@@ -1029,6 +1029,29 @@ def _track_overlay_state(st, results) -> None:
                 # targets on the next poll if self still has a knight.
                 if not st.get("robber_pending"):
                     st["robber_snapshot"] = None
+        elif (isinstance(r.event, DevCardPlayEvent)
+              and r.event.card in ("knight", "unknown")
+              and _is_self_player(game, r.event.player)):
+            # Self played a knight -> same robber-placement decision as a
+            # self 7-roll, so arm the overlay identically. This live path
+            # previously had no DevCardPlayEvent branch at all, so a played
+            # knight incremented knights_played but never set robber_pending
+            # (the "knight ready, HUD shows nothing" bug). Colonist logs a
+            # played knight as an icon whose alt-text often lacks the word
+            # "knight", so the parser tags it 'unknown'; treat that as a
+            # knight here (the only self dev play that moves the robber).
+            st["robber_pending"] = True
+            st["robber_snapshot_retry_n"] = 0
+            snap_attempt = _compute_robber_snapshot(
+                game, display_colors=st["display_colors"])
+            st["robber_snapshot"] = snap_attempt
+            if not snap_attempt:
+                print(
+                    "[robber] empty snapshot on self knight play — will "
+                    "retry. current_robber="
+                    f"{game.tracker.game.state.board.robber_coordinate}",
+                    flush=True,
+                )
         elif isinstance(r.event, RobberMoveEvent):
             # Urgency ends the moment the robber lands, but keep the
             # snapshot visible so Noah can reflect on the placement
