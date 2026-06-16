@@ -394,17 +394,20 @@
    lives in colonist's DOM, not under #${ROOT_ID}). Matches colonist's white
    Open Sans so it reads as part of the tracker row, pinned along the bottom. */
 .cbo-prow {
-    position: absolute; left: 90px; right: 165px; bottom: 2px;
-    display: flex; gap: 4px; align-items: center; justify-content: center;
-    font: 700 12px/1 "Open Sans", -apple-system, system-ui, sans-serif;
-    color: #fff; letter-spacing: 0.01em;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-    pointer-events: none; white-space: nowrap; z-index: 5;
+    position: absolute; left: 84px; bottom: 3px;
+    display: inline-flex; gap: 5px; align-items: center;
+    font: 800 13px/1.1 "Open Sans", -apple-system, system-ui, sans-serif;
+    color: #2b2620; letter-spacing: 0.01em;
+    background: rgba(245, 240, 228, 0.88);
+    border: 1px solid rgba(120, 95, 55, 0.28);
+    border-radius: 7px; padding: 2px 7px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    pointer-events: none; white-space: nowrap; z-index: 6; max-width: 210px;
 }
 .cbo-prow .cbo-pr-chip { display: inline-flex; align-items: center; gap: 1px; }
-.cbo-prow .cbo-pr-maybe { opacity: 0.55; }
-.cbo-prow .cbo-pr-sep { opacity: 0.4; margin: 0 1px; font-weight: 400; }
-.cbo-prow .cbo-pr-none { opacity: 0.5; font-weight: 600; }
+.cbo-prow .cbo-pr-maybe { opacity: 0.5; }
+.cbo-prow .cbo-pr-sep { opacity: 0.35; margin: 0 1px; font-weight: 400; }
+.cbo-prow .cbo-pr-none { opacity: 0.55; font-weight: 600; font-style: italic; }
 /* Trade verdict badge pinned to colonist's own trade panel. */
 #cbo-trade-badge {
     position: fixed;
