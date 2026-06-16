@@ -439,6 +439,36 @@
 #cbo-trade-badge.cbo-tb-decline .cbo-tb-verdict { color: #a32b1e; }
 #cbo-trade-badge.cbo-tb-consider { border-left-color: #3b7dd8; }
 #cbo-trade-badge.cbo-tb-consider .cbo-tb-verdict { color: #2a5fa8; }
+/* Board overlay: a green ring drawn over the recommended robber tile (the
+   board is a WebGL canvas, so this is a positioned layer, not a DOM glow).
+   Tile pixel positions are computed geometrically from the canvas rect. */
+#cbo-board-overlay {
+    position: fixed; inset: 0; pointer-events: none; z-index: 2147483500;
+}
+#cbo-board-overlay .cbo-bo-mark {
+    position: absolute; box-sizing: border-box;
+    border: 4px solid #46c463; border-radius: 50%;
+    box-shadow: 0 0 16px 4px rgba(70, 196, 99, 0.8),
+        inset 0 0 12px rgba(70, 196, 99, 0.45);
+    animation: cbo-bopulse 1.1s ease-in-out infinite alternate;
+}
+@keyframes cbo-bopulse { from { opacity: 0.55; } to { opacity: 1; } }
+#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank2 {
+    border-color: #e0a93f; border-width: 3px; opacity: 0.75;
+    box-shadow: 0 0 9px rgba(224, 169, 63, 0.6); animation: none;
+}
+#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank3 {
+    border-color: #c79a5c; border-width: 2px; opacity: 0.5;
+    box-shadow: none; animation: none;
+}
+#cbo-board-overlay .cbo-bo-rank {
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: #2f6b3f; color: #fff; font: 800 11px/18px "Open Sans", sans-serif;
+    width: 18px; height: 18px; border-radius: 50%; text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank2 .cbo-bo-rank { background: #a8731f; }
+#cbo-board-overlay .cbo-bo-mark.cbo-bo-rank3 .cbo-bo-rank { background: #7a6240; }
 /* Glow the recommended bottom build button (road/settle/city/dev). */
 .cbo-action-hl {
     outline: 3px solid #46c463 !important;
@@ -717,6 +747,8 @@
         if (tabs && tabs.parentElement) tabs.remove();
         const tb = document.getElementById('cbo-trade-badge');
         if (tb) tb.remove();
+        const bo = document.getElementById('cbo-board-overlay');
+        if (bo) bo.remove();
         document.querySelectorAll('.cbo-prow').forEach((e) => e.remove());
         clearCues();
         _container = null;
@@ -1366,6 +1398,61 @@
         }, true);
     }
 
+    // ---- Board overlay. The board is a WebGL canvas (#game-canvas) with no
+    // DOM per tile, and colonist exposes no coordinates, so tile screen
+    // positions are computed geometrically from catanatron's cube coords
+    // (q = coord[0], r = coord[2]; EAST = +screen-x, pointy-top). The board
+    // center + hex size are stored as fractions of the canvas rect so the map
+    // scales with the window. Calibrated live against a real game; it lands the
+    // ring on the correct tile (slight off-center from colonist's 3D tilt is
+    // fine — the HUD's ranked text read is the exact backup). ----
+    const BOARD_CALIB = { fx: 0.339, fy: 0.474, fdE: 0.0684, fdV: 0.0739 };
+    function boardCoordToPixel(coord) {
+        const canvas = document.getElementById('game-canvas');
+        if (!canvas || !Array.isArray(coord) || coord.length < 3) return null;
+        const r = canvas.getBoundingClientRect();
+        if (!r.width || !r.height) return null;
+        const cx = r.left + BOARD_CALIB.fx * r.width;
+        const cy = r.top + BOARD_CALIB.fy * r.height;
+        const dE = BOARD_CALIB.fdE * r.width;
+        const dV = BOARD_CALIB.fdV * r.width;
+        const q = coord[0];
+        const rr = coord[2];
+        return { x: cx + q * dE + rr * (dE / 2), y: cy + rr * dV, size: dE };
+    }
+    // Draw a green ring over the recommended robber tile (and dimmer rings on
+    // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
+    // robberHtml's gating; silent otherwise. Re-runs each poll so the rings
+    // track a window resize and clear the instant the decision ends.
+    function updateBoardOverlay(snap) {
+        let layer = document.getElementById('cbo-board-overlay');
+        const show = enabled() && snap && !_paused()
+            && (snap.robber_pending || snap.robber_reason === 'knight');
+        const targets = (snap && snap.robber_targets) || [];
+        if (!show || !targets.length) {
+            if (layer) layer.innerHTML = '';
+            return;
+        }
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.id = 'cbo-board-overlay';
+            (document.body || document.documentElement).appendChild(layer);
+        }
+        const marks = [];
+        for (let i = 0; i < Math.min(3, targets.length); i += 1) {
+            const p = boardCoordToPixel(targets[i].coord);
+            if (!p) continue;
+            const d = Math.round(p.size * 0.94);
+            const rankCls = i === 0 ? '' : (i === 1 ? ' cbo-bo-rank2' : ' cbo-bo-rank3');
+            marks.push(`<div class="cbo-bo-mark${rankCls}" style="left:`
+                + `${Math.round(p.x - d / 2)}px;top:${Math.round(p.y - d / 2)}px;`
+                + `width:${d}px;height:${d}px">`
+                + `<span class="cbo-bo-rank">${i + 1}</span></div>`);
+        }
+        layer.innerHTML = marks.join('');
+        stampStreamer(layer);
+    }
+
     // Clear every cue by walking the handles we recorded (NO full-document
     // querySelectorAll) so an idle tick costs nothing. A glowed element that
     // React already removed from the DOM just no-ops on classList.remove.
@@ -1536,6 +1623,7 @@
             // skipped. Both no-op fast when their trigger isn't live.
             injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
             injectPlayerReads(snap);  // resource read onto colonist's player rows
+            updateBoardOverlay(snap); // green ring on the recommended robber tile
             applyActionCues(snap);    // glow the real element to act on
             _lastSnap = snap;
             _bridgeDown = false;
