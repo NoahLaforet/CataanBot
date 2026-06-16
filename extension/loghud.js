@@ -153,19 +153,30 @@
         // the container, lay our content in warm browns with hairline rules,
         // so it reads as part of the site rather than a foreign dark box.
         style.textContent = `
+/* Tiny floating gear, top-right corner of the log box. No row, no background —
+   it overlays the corner so it doesn't push the HUD content down (which had
+   shoved the body off the page). The Log/CatanBot view switch lives in its
+   menu now, not as a button row. */
 #${TABS_ID} {
+    position: absolute;
+    top: 1px;
+    right: 3px;
+    z-index: 20;
     display: flex;
     gap: 2px;
-    padding: 4px 6px 0 6px;
     font-family: inherit;
     box-sizing: border-box;
-    position: relative;
 }
-#${TABS_ID} .cbo-gear { margin-left: auto; padding: 5px 9px; }
+#${TABS_ID} .cbo-gear {
+    appearance: none; border: none; background: transparent;
+    color: #6b5836; font-size: 15px; line-height: 1;
+    padding: 1px 3px; cursor: pointer; opacity: 0.55;
+}
+#${TABS_ID} .cbo-gear:hover { opacity: 1; }
 #${TABS_ID} .cbo-settings {
     position: absolute;
     top: 100%;
-    right: 6px;
+    right: 0;
     z-index: 10;
     background: #f3ead7;
     border: 1px solid rgba(90, 62, 28, 0.30);
@@ -607,6 +618,14 @@
         const p = document.createElement('div');
         p.className = 'cbo-settings';
         p.style.display = 'none';
+        // Clicks inside the menu shouldn't bubble to the document handler that
+        // closes it, so you can flip several settings without it snapping shut.
+        p.addEventListener('click', (e) => e.stopPropagation());
+        p.appendChild(_sectionHeader('View'));
+        // The Log/CatanBot switch lives here now (replaces the button row).
+        p.appendChild(_toggleRow('Show game log',
+            () => currentTab() === 'log',
+            (v) => setTab(v ? 'log' : 'catanbot')).row);
         p.appendChild(_sectionHeader('Display'));
         p.appendChild(_toggleRow('Streamer mode', _streamerOn, _setStreamer).row);
         p.appendChild(_toggleRow('Pause recs', _paused, (v) => {
@@ -630,25 +649,13 @@
     }
 
     function buildNodes() {
-        // Tab bar.
+        // Just a tiny floating gear (no Log/CatanBot button row — it pushed the
+        // body down off the page). The view switch lives in the gear menu.
         tabs = document.createElement('div');
         tabs.id = TABS_ID;
-        const tLog = document.createElement('button');
-        tLog.className = 'cbo-tab';
-        tLog.dataset.tab = 'log';
-        tLog.textContent = 'Log';
-        tLog.addEventListener('click', () => setTab('log'));
-        const tHud = document.createElement('button');
-        tHud.className = 'cbo-tab';
-        tHud.dataset.tab = 'catanbot';
-        tHud.textContent = 'CatanBot';
-        tHud.addEventListener('click', () => setTab('catanbot'));
-        tabs.appendChild(tLog);
-        tabs.appendChild(tHud);
 
-        // Gear -> settings dropdown, pushed to the right.
         const gear = document.createElement('button');
-        gear.className = 'cbo-tab cbo-gear';
+        gear.className = 'cbo-gear';
         gear.textContent = '⚙';
         gear.title = 'CatanBot settings';
         const panel = buildSettingsPanel();
@@ -716,9 +723,8 @@
         const state = `${tab}|${hideNative}|${kids.length}`;
         if (cont === _container && state === _tabState) return;
         _tabState = state;
-        // The tab bar (Log | CatanBot | gear) is ALWAYS shown — hiding it was a
-        // footgun that stranded the user with no way back to the log or
-        // settings. The old "HUD only" replace mode is retired.
+        // The floating gear is always shown (no button row); only the body vs
+        // native log flips with the view, chosen from the gear menu.
         tabs.style.display = 'flex';
         root.style.display = (tab === 'catanbot') ? 'block' : 'none';
         for (const child of kids) {
@@ -728,9 +734,6 @@
             // retries forever and floods the console with "Failed to scroll".
             child.classList.toggle('cbo-hidden-native', hideNative);
         }
-        tabs.querySelectorAll('.cbo-tab').forEach((b) => {
-            b.classList.toggle('active', b.dataset.tab === tab);
-        });
     }
 
     function teardown() {
@@ -1748,6 +1751,11 @@
         }
         if (root.parentElement !== container) {
             container.insertBefore(root, tabs.nextSibling);
+        }
+        // Anchor the floating gear to the container (relative just establishes a
+        // positioning context; it doesn't change the box's flow or size).
+        if (getComputedStyle(container).position === 'static') {
+            container.style.position = 'relative';
         }
         _container = container;
         applyTab(container);
