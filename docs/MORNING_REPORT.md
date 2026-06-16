@@ -49,15 +49,15 @@ Tracked ones can be restored from GitHub `main` history on a healthy disk.
    knight as an icon whose alt-text lacks "knight", so the parser tags it
    `card='unknown'`; the robber handler only armed on `'knight'`. Now it arms
    on `'unknown'` too - this was your "knight ready, HUD says nothing" bug.
-2. **Opening resources "?" - already fixed in code.** I traced the whole path:
-   `colonist_diff.py` (line ~605) already emits a ProduceEvent from the 2nd
+2. **Opening resources "?" - confirmed correct + now tested.** Traced the whole
+   path: `colonist_diff.py` (~line 605) emits a ProduceEvent from the 2nd
    settlement's adjacent tiles (skipping self), `live_game.feed` applies it to
-   both the tracker AND the particle model, and the snapshot uses those
-   minimums. So opponents' opening cards DO resolve to known resources - on a
-   CURRENT bridge. You saw "?3" because **you were running a stale bridge you
-   couldn't update** (the premise of this run). Nothing to fix; just run the
-   rebuilt bridge. (I could not add a regression test: the capture fixture it
-   needs is one of the disk-corrupted files.)
+   the tracker AND the particle model, the snapshot reports the model minimums.
+   Verified end-to-end (capture-free, since the capture fixture is disk-corrupt):
+   an opponent's opening produce yields known minimums {sheep,wheat,ore}=1 ->
+   unknown=0 -> no "?". Added a permanent regression test
+   `tests/test_opening_credit.py` (2 tests, green, preserved). You saw "?3"
+   only because you were running a stale bridge you couldn't update.
 3. **Bridge-download CTA (a75ce68, preserved)** in the HUD offline state.
 4. **All the live-play HUD fixes (preserved in loghud.js):** floating gear,
    dice histogram, affordable-only build glow, hex robber ring, dev-card glow,
@@ -75,10 +75,26 @@ complete on a healthy machine after disk recovery:
   the .exe on a GitHub Windows runner - no local build needed.
 - DON'T build the Mac app on THIS disk. Only publish once BOTH zips are on.
 
-## Still needs you
-- **Board-overlay orientation** (lowest priority) - live-verify on a 7/knight
-  (clean game). Code is in; if the bright hexagon is mirrored top<->bottom,
-  flip the `py` sign in `boardCoordToPixel` (loghud.js). 2-second check.
+## Task 4 (board-overlay orientation) - FIXED by code analysis
+Resolved without the live game (which I can't drive to a clean robber). The
+overlay read the vertical axis backwards. Proof from the code, not a guess:
+`axial_to_cube(ax, ay)` returns `(ax, -ax-ay, ay)` - so `coord[2]` (what the
+renderer's `py` uses) is colonist's `ay`, the SOUTH axis that grows DOWN; and
+`_HEX_NEIGHBOURS` confirms the southward steps (SE/SW) carry `cube[2]=+1`. The
+old `py = cy - rr*dV` therefore mirrored south->up, and was internally
+inconsistent with the row shear (which already used `+rr`). Changed to
+`py = cy + rr*dV` (commit 47ad001, preserved, dev-synced). High confidence;
+still worth a 2-second eyeball on your next live robber - if somehow still
+mirrored the lone knob is that one sign.
+
+## Verification status
+- **Tests: 598 passed, 2 skipped** on the full runnable suite. The only un-run
+  files are the 9 that hang on disk-corrupted fixtures/sources (unrecoverable,
+  not caused by my changes): test_colonist_diff/map, test_gold_rush,
+  test_volcano, test_tray_process, test_parser, test_bridge_dev_cards,
+  test_dice_chart, test_colonist_proto.
+- **Dev folder** `~/Desktop/catanbot-inpage-hud-dev`: all 9 extension files
+  verified in sync.
 
 ## Source bridge
 A source bridge (v0.51.0, with the knight fix) was running from this disk; it
