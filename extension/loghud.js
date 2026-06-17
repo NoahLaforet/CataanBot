@@ -513,7 +513,7 @@
    the 2nd/3rd picks are static + dim. */
 #cbo-board-overlay .cbo-bo-mark { position: absolute; overflow: visible; }
 #cbo-board-overlay .cbo-bo-hex {
-    fill: rgba(70, 196, 99, 0.16);
+    fill: none;
     stroke: #3ddc6a; stroke-width: 6.5; stroke-linejoin: round;
     filter: drop-shadow(0 0 4px #3ddc6a) drop-shadow(0 0 10px rgba(70, 196, 99, 0.95));
     animation: cbo-bopulse 1.05s ease-in-out infinite alternate;
@@ -524,7 +524,7 @@
 }
 #cbo-board-overlay .cbo-bo-rank2 .cbo-bo-hex {
     stroke: #e0a93f; stroke-width: 5; opacity: 0.85; animation: none;
-    fill: rgba(224, 169, 63, 0.1);
+    fill: none;
     filter: drop-shadow(0 0 4px rgba(224, 169, 63, 0.7));
 }
 #cbo-board-overlay .cbo-bo-rank3 .cbo-bo-hex {
