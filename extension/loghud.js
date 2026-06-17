@@ -531,6 +531,14 @@
     stroke: #c79a5c; stroke-width: 4; opacity: 0.7; animation: none;
     fill: none; filter: drop-shadow(0 0 3px rgba(199, 154, 92, 0.5));
 }
+#cbo-board-overlay .cbo-bo-note {
+    position: absolute; transform: translateX(-50%);
+    background: rgba(40, 44, 52, 0.92); color: #e8e2d4;
+    font: 600 12px/1.3 'Open Sans', system-ui, sans-serif;
+    padding: 5px 11px; border-radius: 7px; white-space: nowrap;
+    border: 1px solid rgba(232, 226, 212, 0.25);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
 /* Glow the recommended bottom build button (road/settle/city/dev). */
 .cbo-action-hl {
     outline: 3px solid #46c463 !important;
@@ -1533,17 +1541,61 @@
             size: dE,
         };
     }
+    // Board markers are calibrated for colonist's DEFAULT zoom. Colonist draws
+    // the board in a WebGL canvas with an internal camera we can't read (it
+    // uploads the matrix via a UBO / data-texture, not uniformMatrix4fv -
+    // verified unreadable), so a fixed-position marker can't follow zoom/pan.
+    // Instead we COUNT net wheel ticks over the board: markers show only at the
+    // default zoom (net 0) and hide the instant you zoom, so a misaligned ring
+    // never shows - and they restore automatically when you scroll back. The
+    // HUD's text targets stay correct at any zoom.
+    let _zoomTicks = 0;
+    let _zoomWatchOn = false;
+    function ensureZoomWatch() {
+        if (_zoomWatchOn) return;
+        if (!document.getElementById('game-canvas')) return;  // retry next poll
+        window.addEventListener('wheel', (e) => {
+            const c = document.getElementById('game-canvas');
+            if (!c) return;
+            const r = c.getBoundingClientRect();
+            if (e.clientX >= r.left && e.clientX <= r.right
+                && e.clientY >= r.top && e.clientY <= r.bottom && e.deltaY) {
+                _zoomTicks += Math.sign(e.deltaY);
+            }
+        }, { passive: true, capture: true });
+        _zoomWatchOn = true;
+    }
+    function boardViewDefault() { return _zoomTicks === 0; }
     // Draw a green ring over the recommended robber tile (and dimmer rings on
     // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
     // robberHtml's gating; silent otherwise. Re-runs each poll so the rings
     // track a window resize and clear the instant the decision ends.
     function updateBoardOverlay(snap) {
+        ensureZoomWatch();
         let layer = document.getElementById('cbo-board-overlay');
         const show = enabled() && snap && !_paused()
             && (snap.robber_pending || snap.robber_reason === 'knight');
         const targets = (snap && snap.robber_targets) || [];
         if (!show || !targets.length) {
             if (layer) layer.innerHTML = '';
+            return;
+        }
+        if (!boardViewDefault()) {
+            // Zoom is off default - hide the (now-misaligned) rings and show a
+            // small note. Auto-restores when net wheel ticks return to 0.
+            if (!layer) {
+                layer = document.createElement('div');
+                layer.id = 'cbo-board-overlay';
+                (document.body || document.documentElement).appendChild(layer);
+            }
+            const cc = document.getElementById('game-canvas');
+            const cr = cc && cc.getBoundingClientRect();
+            const nx = cr ? Math.round(cr.left + cr.width * 0.30) : 180;
+            const ny = cr ? Math.round(cr.top + cr.height * 0.02) : 30;
+            layer.innerHTML = '<div class="cbo-bo-note" style="left:' + nx
+                + 'px;top:' + ny + 'px">board markers paused · zoom off '
+                + 'default (scroll back to restore) · targets in panel</div>';
+            stampStreamer(layer);
             return;
         }
         if (!layer) {
