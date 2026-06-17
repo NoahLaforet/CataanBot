@@ -513,7 +513,7 @@
    the 2nd/3rd picks are static + dim. */
 #cbo-board-overlay .cbo-bo-mark { position: absolute; overflow: visible; }
 #cbo-board-overlay .cbo-bo-hex {
-    fill: rgba(70, 196, 99, 0.16);
+    fill: none;
     stroke: #3ddc6a; stroke-width: 6.5; stroke-linejoin: round;
     filter: drop-shadow(0 0 4px #3ddc6a) drop-shadow(0 0 10px rgba(70, 196, 99, 0.95));
     animation: cbo-bopulse 1.05s ease-in-out infinite alternate;
@@ -524,7 +524,7 @@
 }
 #cbo-board-overlay .cbo-bo-rank2 .cbo-bo-hex {
     stroke: #e0a93f; stroke-width: 5; opacity: 0.85; animation: none;
-    fill: rgba(224, 169, 63, 0.1);
+    fill: none;
     filter: drop-shadow(0 0 4px rgba(224, 169, 63, 0.7));
 }
 #cbo-board-overlay .cbo-bo-rank3 .cbo-bo-hex {
@@ -1521,7 +1521,17 @@
         // standard pointy-top axial->pixel layout (r grows downward). (Earlier
         // -rr was an inverted read of the mapping; +rr is internally consistent
         // with the shear and the coordinate definition.)
-        return { x: cx + q * dE + rr * (dE / 2), y: cy + rr * dV, size: dE };
+        // Perspective term: colonist tilts the board back, so rows compress
+        // toward the top (north) and expand toward the bottom (south). A linear
+        // py overshoots both; multiplying by (1 + K*rr) pulls north rows (rr<0)
+        // down and pushes south rows (rr>0) further down. K=0.10 tuned live on a
+        // north robber tile (coord[2]=-2) - lands the hex on the named tile.
+        const PERSP_K = 0.10;
+        return {
+            x: cx + q * dE + rr * (dE / 2),
+            y: cy + rr * dV * (1 + PERSP_K * rr),
+            size: dE,
+        };
     }
     // Draw a green ring over the recommended robber tile (and dimmer rings on
     // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
