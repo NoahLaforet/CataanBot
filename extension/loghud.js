@@ -1521,7 +1521,17 @@
         // standard pointy-top axial->pixel layout (r grows downward). (Earlier
         // -rr was an inverted read of the mapping; +rr is internally consistent
         // with the shear and the coordinate definition.)
-        return { x: cx + q * dE + rr * (dE / 2), y: cy + rr * dV, size: dE };
+        // Perspective term: colonist tilts the board back, so rows compress
+        // toward the top (north) and expand toward the bottom (south). A linear
+        // py overshoots both; multiplying by (1 + K*rr) pulls north rows (rr<0)
+        // down and pushes south rows (rr>0) further down. K=0.10 tuned live on a
+        // north robber tile (coord[2]=-2) - lands the hex on the named tile.
+        const PERSP_K = 0.10;
+        return {
+            x: cx + q * dE + rr * (dE / 2),
+            y: cy + rr * dV * (1 + PERSP_K * rr),
+            size: dE,
+        };
     }
     // Draw a green ring over the recommended robber tile (and dimmer rings on
     // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
