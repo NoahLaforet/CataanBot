@@ -513,23 +513,23 @@
    the 2nd/3rd picks are static + dim. */
 #cbo-board-overlay .cbo-bo-mark { position: absolute; overflow: visible; }
 #cbo-board-overlay .cbo-bo-hex {
-    fill: rgba(70, 196, 99, 0.12);
-    stroke: #46c463; stroke-width: 5; stroke-linejoin: round;
-    filter: drop-shadow(0 0 5px #46c463) drop-shadow(0 0 10px rgba(70, 196, 99, 0.7));
+    fill: rgba(70, 196, 99, 0.16);
+    stroke: #3ddc6a; stroke-width: 6.5; stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px #3ddc6a) drop-shadow(0 0 10px rgba(70, 196, 99, 0.95));
     animation: cbo-bopulse 1.05s ease-in-out infinite alternate;
 }
 @keyframes cbo-bopulse {
-    from { opacity: 0.6; stroke-width: 4; }
-    to { opacity: 1; stroke-width: 6; }
+    from { opacity: 0.85; stroke-width: 6; }
+    to { opacity: 1; stroke-width: 7.5; }
 }
 #cbo-board-overlay .cbo-bo-rank2 .cbo-bo-hex {
-    stroke: #e0a93f; stroke-width: 3; opacity: 0.7; animation: none;
-    fill: rgba(224, 169, 63, 0.08);
-    filter: drop-shadow(0 0 4px rgba(224, 169, 63, 0.6));
+    stroke: #e0a93f; stroke-width: 5; opacity: 0.85; animation: none;
+    fill: rgba(224, 169, 63, 0.1);
+    filter: drop-shadow(0 0 4px rgba(224, 169, 63, 0.7));
 }
 #cbo-board-overlay .cbo-bo-rank3 .cbo-bo-hex {
-    stroke: #c79a5c; stroke-width: 2; opacity: 0.5; animation: none;
-    fill: none; filter: none;
+    stroke: #c79a5c; stroke-width: 4; opacity: 0.7; animation: none;
+    fill: none; filter: drop-shadow(0 0 3px rgba(199, 154, 92, 0.5));
 }
 /* Glow the recommended bottom build button (road/settle/city/dev). */
 .cbo-action-hl {
@@ -1152,7 +1152,7 @@
             const tgt = mh.resource ? `${iconFor(mh.resource)}` : '';
             const unlock = mh.unlock ? ` &middot; ${escapeHtml(mh.unlock)}` : '';
             rows.push('<div class="cbo-dev">' + verdict(mh.should_play)
-                + '<span class="cbo-dev-name">mono</span>'
+                + '<span class="cbo-dev-name">monopoly</span>'
                 + `<span class="cbo-dev-what">grab ${tgt} ~${mh.est_steal || 0}`
                 + `${unlock}</span></div>`);
         }
@@ -1161,7 +1161,7 @@
             const pair = (yh.pair || []).map(iconFor).join(' + ');
             const unlock = yh.unlock ? ` &middot; ${escapeHtml(yh.unlock)}` : '';
             rows.push('<div class="cbo-dev">' + verdict(yh.should_play)
-                + '<span class="cbo-dev-name">plenty</span>'
+                + '<span class="cbo-dev-name">year of plenty</span>'
                 + `<span class="cbo-dev-what">take ${pair}${unlock}</span></div>`);
         }
         const rh = snap.rb_hint;
@@ -1173,7 +1173,7 @@
                 ? `lay road${toward ? ` &rarr; ${escapeHtml(toward)}` : ''}`
                 : `2 free roads${toward ? ` &rarr; ${escapeHtml(toward)}` : ''}`;
             rows.push('<div class="cbo-dev">' + verdict(rh.should_play, placing)
-                + '<span class="cbo-dev-name">road bld</span>'
+                + '<span class="cbo-dev-name">road builder</span>'
                 + `<span class="cbo-dev-what">${what}</span></div>`);
         }
         if (!rows.length) return '';
@@ -1547,8 +1547,8 @@
             if (!p) continue;
             // Pointy-top hexagon traced around the tile: width = hex flat-to-
             // flat (~size), height taller by 2/sqrt(3). viewBox is a unit hex.
-            const w = Math.round(p.size * 1.02);
-            const h = Math.round(p.size * 1.18);
+            const w = Math.round(p.size * 1.30);
+            const h = Math.round(p.size * 1.50);
             const rankCls = i === 0 ? '' : (i === 1 ? ' cbo-bo-rank2' : ' cbo-bo-rank3');
             marks.push(`<svg class="cbo-bo-mark${rankCls}" viewBox="0 0 100 116"`
                 + ` preserveAspectRatio="none" style="left:${Math.round(p.x - w / 2)}px;`
