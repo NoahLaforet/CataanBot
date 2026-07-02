@@ -74,3 +74,4 @@ dev/hud/fixtures/
 # app-specific password. Real values live in .env (never committed); the
 # committed .env.example documents the keys.
 .env
+graphify-out/
