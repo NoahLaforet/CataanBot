@@ -156,6 +156,16 @@ drags starting near known pieces).
 - Multi-size layout fitting unblocked: the window was in macOS
   full-screen (resize_window silently ignored); cmd+ctrl+f exits it.
 
+2026-07-05 direction change (Noah's call): corner-precision placement
+markers are PARKED behind the gear toggle "Placement markers (beta)",
+default OFF (a663f7f). The fixed grid constants shift with both colonist
+layout updates AND window state (fitted at 1718x837, off again at
+1718x912 fullscreen) - corner markers need ~15px accuracy and only
+runtime self-calibration can hold that. The tile-sized robber ring stays
+ON (tolerates ~50px). Placement guidance stays in the HUD text. Do NOT
+spend more sessions tuning constants; the next board-marker work is the
+MutationObserver self-calibration study, or nothing.
+
 ### 3. Live verification runsheet (task 8)
 
 Bridge up, Noah reloads the unpacked extension once, bot game via
