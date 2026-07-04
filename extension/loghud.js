@@ -531,6 +531,24 @@
     stroke: #c79a5c; stroke-width: 4; opacity: 0.7; animation: none;
     fill: none; filter: drop-shadow(0 0 3px rgba(199, 154, 92, 0.5));
 }
+/* Placement markers: a pulsing circle on the recommended settlement/city
+   corner and a thick segment along the recommended road edge. Same green
+   "do this here" language as the build-button glow; the robber keeps the
+   hexagon shape so the two cues never read as one. */
+#cbo-board-overlay .cbo-bo-node {
+    fill: rgba(61, 220, 106, 0.16);
+    stroke: #3ddc6a; stroke-width: 6.5;
+    filter: drop-shadow(0 0 4px #3ddc6a) drop-shadow(0 0 10px rgba(70, 196, 99, 0.95));
+    animation: cbo-bopulse 1.05s ease-in-out infinite alternate;
+}
+#cbo-board-overlay .cbo-bo-node-inner {
+    fill: none; stroke: #3ddc6a; stroke-width: 3.5; opacity: 0.9;
+}
+#cbo-board-overlay .cbo-bo-road {
+    stroke: #3ddc6a; stroke-width: 9; stroke-linecap: round;
+    filter: drop-shadow(0 0 4px #3ddc6a) drop-shadow(0 0 9px rgba(70, 196, 99, 0.85));
+    animation: cbo-bopulse 1.05s ease-in-out infinite alternate;
+}
 #cbo-board-overlay .cbo-bo-note {
     position: absolute; transform: translateX(-50%);
     background: rgba(40, 44, 52, 0.92); color: #e8e2d4;
@@ -1566,17 +1584,93 @@
         _zoomWatchOn = true;
     }
     function boardViewDefault() { return _zoomTicks === 0; }
+    // Which placement (if any) gets marked on the board right now. Top rec
+    // only: a board full of rings is worse than none. Setup picks always
+    // mark (placements are free); midgame builds mark only when affordable
+    // this turn, the same gate as the build-button glow.
+    function placementMarks(snap) {
+        const rec = (snap.recommendations || [])[0];
+        if (!rec) return null;
+        const setup = !!snap.setup_phase;
+        if (!setup && !snap.my_turn) return null;
+        const kind = rec.action === 'road' ? 'road' : rec.kind;
+        if (!setup && !canAffordBuild(snap.self, kind)) return null;
+        const out = { pos: null, edge: null };
+        if (kind === 'road') {
+            const e = rec.board_edge || (rec.road && rec.road.board_edge);
+            if (e && e[0] && e[1]) out.edge = e;
+        } else if (kind === 'opening_settlement' || kind === 'settlement'
+                   || kind === 'city') {
+            if (rec.board_pos) {
+                out.pos = { coord: rec.board_pos, city: kind === 'city' };
+            }
+            // Opening pick: trace the paired road too, so the follow-up
+            // direction reads at a glance.
+            if (setup && rec.road && rec.road.board_edge) {
+                const e = rec.road.board_edge;
+                if (e && e[0] && e[1]) out.edge = e;
+            }
+        }
+        return (out.pos || out.edge) ? out : null;
+    }
+
+    // Pulsing circle on a node corner; a city adds an inner ring.
+    function nodeMarkSvg(pos) {
+        const p = boardCoordToPixel(pos.coord);
+        if (!p) return '';
+        const r = Math.round(p.size * 0.24);
+        const w = r * 2 + 18;
+        const c = w / 2;
+        const inner = pos.city
+            ? `<circle class="cbo-bo-node-inner" cx="${c}" cy="${c}"`
+              + ` r="${Math.max(4, r - 8)}"/>`
+            : '';
+        return `<svg class="cbo-bo-mark" style="left:${Math.round(p.x - c)}px;`
+            + `top:${Math.round(p.y - c)}px;width:${w}px;height:${w}px">`
+            + `<circle class="cbo-bo-node" cx="${c}" cy="${c}" r="${r}"/>`
+            + inner + '</svg>';
+    }
+
+    // Thick pulsing segment along the recommended road edge, inset a touch
+    // from the corners so it doesn't collide with a settlement circle.
+    function roadMarkSvg(edge) {
+        const a = boardCoordToPixel(edge[0]);
+        const b = boardCoordToPixel(edge[1]);
+        if (!a || !b) return '';
+        const t = 0.14;
+        const ax = a.x + (b.x - a.x) * t;
+        const ay = a.y + (b.y - a.y) * t;
+        const bx = b.x - (b.x - a.x) * t;
+        const by = b.y - (b.y - a.y) * t;
+        const pad = 14;
+        const left = Math.min(ax, bx) - pad;
+        const top = Math.min(ay, by) - pad;
+        const w = Math.abs(ax - bx) + pad * 2;
+        const h = Math.abs(ay - by) + pad * 2;
+        return `<svg class="cbo-bo-mark" style="left:${Math.round(left)}px;`
+            + `top:${Math.round(top)}px;width:${Math.round(w)}px;`
+            + `height:${Math.round(h)}px">`
+            + `<line class="cbo-bo-road" x1="${Math.round(ax - left)}"`
+            + ` y1="${Math.round(ay - top)}" x2="${Math.round(bx - left)}"`
+            + ` y2="${Math.round(by - top)}"/>`
+            + '</svg>';
+    }
+
     // Draw a green ring over the recommended robber tile (and dimmer rings on
-    // the 2nd/3rd choices) whenever the robber decision is live. Mirrors
-    // robberHtml's gating; silent otherwise. Re-runs each poll so the rings
-    // track a window resize and clear the instant the decision ends.
+    // the 2nd/3rd choices) whenever the robber decision is live, plus the
+    // placement marks (settlement circle / road segment) when the top rec
+    // carries board coords. Mirrors robberHtml's gating; silent otherwise.
+    // Re-runs each poll so the marks track a window resize and clear the
+    // instant the decision ends.
     function updateBoardOverlay(snap) {
         ensureZoomWatch();
         let layer = document.getElementById('cbo-board-overlay');
-        const show = enabled() && snap && !_paused()
+        const active = enabled() && snap && !_paused();
+        const robberOn = active
             && (snap.robber_pending || snap.robber_reason === 'knight');
-        const targets = (snap && snap.robber_targets) || [];
-        if (!show || !targets.length) {
+        const targets = (robberOn && snap.robber_targets) || [];
+        const place = active ? placementMarks(snap) : null;
+        if (!targets.length && !place) {
             if (layer) layer.innerHTML = '';
             return;
         }
@@ -1617,6 +1711,10 @@
                 + `top:${Math.round(p.y - h / 2)}px;width:${w}px;height:${h}px">`
                 + '<polygon class="cbo-bo-hex" points="50,2 97,30 97,86 50,114 3,86 3,30"/>'
                 + '</svg>');
+        }
+        if (place) {
+            if (place.edge) marks.push(roadMarkSvg(place.edge));
+            if (place.pos) marks.push(nodeMarkSvg(place.pos));
         }
         layer.innerHTML = marks.join('');
         stampStreamer(layer);
@@ -1875,7 +1973,7 @@
             // skipped. Both no-op fast when their trigger isn't live.
             injectTradeBadge(snap);   // verdict pinned to colonist's trade panel
             injectPlayerReads(snap);  // resource read onto colonist's player rows
-            updateBoardOverlay(snap); // green ring on the recommended robber tile
+            updateBoardOverlay(snap); // robber ring + placement marks on the board
             applyActionCues(snap);    // glow the real element to act on
             _lastSnap = snap;
             _bridgeDown = false;
