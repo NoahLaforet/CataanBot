@@ -1528,7 +1528,13 @@
     // scales with the window. Calibrated live against a real game; it lands the
     // ring on the correct tile (slight off-center from colonist's 3D tilt is
     // fine — the HUD's ranked text read is the exact backup). ----
-    const BOARD_CALIB = { fx: 0.373, fy: 0.474, fdE: 0.0684, fdV: 0.0739 };
+    // Recalibrated 2026-07-05 against colonist v311, probe-dot verified on a
+    // live board: v311's board redesign (2026-06-30) grew the tile pitch
+    // (fdE 0.0684 -> 0.0843) and FLATTENED the old 3D row tilt, so the
+    // perspective term is now zero. These constants rot when colonist
+    // reworks its layout - the durable fix is runtime self-calibration
+    // (see docs/INPAGE_HUD_V3.md stage 2 addendum).
+    const BOARD_CALIB = { fx: 0.3793, fy: 0.4752, fdE: 0.0843, fdV: 0.0726 };
     function boardCoordToPixel(coord) {
         const canvas = document.getElementById('game-canvas');
         if (!canvas || !Array.isArray(coord) || coord.length < 3) return null;
@@ -1547,12 +1553,12 @@
         // standard pointy-top axial->pixel layout (r grows downward). (Earlier
         // -rr was an inverted read of the mapping; +rr is internally consistent
         // with the shear and the coordinate definition.)
-        // Perspective term: colonist tilts the board back, so rows compress
-        // toward the top (north) and expand toward the bottom (south). A linear
-        // py overshoots both; multiplying by (1 + K*rr) pulls north rows (rr<0)
-        // down and pushes south rows (rr>0) further down. K=0.10 tuned live on a
-        // north robber tile (coord[2]=-2) - lands the hex on the named tile.
-        const PERSP_K = 0.10;
+        // Perspective term: colonist's pre-v311 renderer tilted the board
+        // (north rows compressed), needing K=0.10. v311 draws flat rows -
+        // measured spacing is uniform and matches regular pointy-top hexes
+        // (dV = dE * 1.5/sqrt(3)) - so K is now 0. Kept as a knob because
+        // colonist has changed this once already.
+        const PERSP_K = 0.0;
         return camApply({
             x: cx + q * dE + rr * (dE / 2),
             y: cy + rr * dV * (1 + PERSP_K * rr),
