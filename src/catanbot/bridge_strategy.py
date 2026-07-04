@@ -171,7 +171,7 @@ def _compute_longest_road_race(
             "opp_username": top_opp_name,
             "holder_username": holder_name,
             "message": (
-                f"LR · you {self_len} / "
+                f"longest road · you {self_len} / "
                 f"{top_opp_name} {opp_max} · {holder} holds"),
         }
     # Self pushing: we're on 4+, nobody else is close.
@@ -181,18 +181,18 @@ def _compute_longest_road_race(
             "self_len": self_len,
             "opp_len": opp_max,
             "opp_username": top_opp_name,
-            "message": f"1 road → LR ({self_len})",
+            "message": f"1 road → longest road ({self_len})",
         }
     # Opp threat: someone else is on 4+ and ahead of us.
     if opp_max >= 4 and opp_max >= self_len and not self_has:
         gap = opp_max - self_len
         if opp_holder:
             msg = (
-                f"{holder_name or top_opp_name} has LR"
+                f"{holder_name or top_opp_name} has longest road"
                 f" · {opp_max} (+{gap})"
             )
         else:
-            msg = f"{top_opp_name} 1 → LR ({opp_max})"
+            msg = f"{top_opp_name} 1 road → longest road ({opp_max})"
         return {
             "level": "opp_threat",
             "self_len": self_len,
@@ -609,7 +609,7 @@ def _compute_winning_move(
                 "confidence": "high",
                 "vp_after": vp + 2,
                 "detail": (f"play Knight ({knights_played+1}/"
-                           f"{la_threshold}) → LA (+2 VP)"),
+                           f"{la_threshold}) → largest army (+2 VP)"),
             })
 
     if not candidates:

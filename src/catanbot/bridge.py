@@ -3419,8 +3419,10 @@ def _event_oneliner(event: Any) -> str:
     if isinstance(event, DiscardEvent):
         return f"{event.player} discarded {_fmt_res(event.resources)}"
     if isinstance(event, RobberMoveEvent):
-        prob = f" (prob {event.prob})" if event.prob is not None else ""
-        return f"{event.player} moved robber → {event.tile_label}{prob}"
+        # prob is the tile's red dice number, so "wheat (8)" reads the way
+        # players actually name tiles; "prob 8" read as a probability.
+        num = f" ({event.prob})" if event.prob is not None else ""
+        return f"{event.player} moved robber → {event.tile_label}{num}"
     if isinstance(event, StealEvent):
         res = f" [{event.resource}]" if event.resource else ""
         return f"{event.thief} stole from {event.victim}{res}"
@@ -3448,8 +3450,8 @@ def _event_oneliner(event: Any) -> str:
         frm = f" (from {event.previous_holder})" if event.previous_holder else ""
         return f"{event.player} +{event.vp_delta} VP ({event.reason}){frm}"
     if isinstance(event, RollBlockedEvent):
-        prob = f" (prob {event.prob})" if event.prob is not None else ""
-        return f"robber blocks {event.tile_label}{prob} · no production"
+        num = f" ({event.prob})" if event.prob is not None else ""
+        return f"robber blocks {event.tile_label}{num} · no production"
     if isinstance(event, GameOverEvent):
         return f"GAME OVER · {event.winner} won"
     if isinstance(event, InfoEvent):

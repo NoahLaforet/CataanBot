@@ -993,12 +993,12 @@ def _compute_rb_hint(game, self_color: str,
     reason = "no clear swing yet"
     if not self_has and projected >= max(qualify, opp_max + 1):
         should = True
-        reason = (f"secures LR · "
+        reason = (f"secures longest road · "
                   f"{self_len}→{projected} vs {opp_max}")
     elif opp_has and opp_max >= qualify and projected >= opp_max:
         should = True
-        reason = (f"catches opp LR · "
-                  f"proj {projected} ≥ {opp_max}")
+        reason = (f"catches their longest road · "
+                  f"projected {projected} ≥ {opp_max}")
     elif roads_left <= 2:
         # Almost out of roads — card loses value the longer you hold it.
         should = True
@@ -1024,8 +1024,8 @@ def _compute_rb_hint(game, self_color: str,
             # hint stops reading "hold forever" with no guidance. Kept as
             # HOLD by default (RB is often best saved for a longest-road
             # swing); the placement names where you could expand now.
-            reason = (f"hold for LR · or play to open a settle spot "
-                      f"({placement['placement_reason']})")
+            reason = (f"hold for longest road · or play to open a "
+                      f"settle spot ({placement['placement_reason']})")
 
     out: dict[str, Any] = {
         "have": held,
@@ -1267,8 +1267,8 @@ def _short_tile_label(tiles: list[tuple[str, int]] | None) -> str:
         if not t or t[0] == "DESERT":
             continue
         res, num = t[0], t[1]
-        parts.append(f"{res.lower()[:3]}{num}" if num else res.lower()[:3])
-    return "+".join(parts) if parts else "?"
+        parts.append(f"{res.lower()} {num}" if num else res.lower())
+    return " + ".join(parts) if parts else "?"
 
 
 def _format_missing_short(missing: dict[str, int]) -> str:
@@ -1510,11 +1510,12 @@ def _compute_strategic_options(
         snipe = (opp_knights_max + 1 >= 3 and not opp_la_holder
                  and opp_knights_max == la_threshold - 1)
         if snipe:
-            label = "LA snipe"
-            detail = (f"opp 1 from LA · play {needed_plays} knight"
+            label = "army snipe"
+            detail = (f"opponent 1 from largest army · play "
+                      f"{needed_plays} knight"
                       f"{'s' if needed_plays > 1 else ''} to snipe")
         else:
-            label = "LA push"
+            label = "army push"
             detail = (f"play {needed_plays} knight"
                       f"{'s' if needed_plays > 1 else ''}"
                       + (" · denies opp" if opp_la_holder else ""))

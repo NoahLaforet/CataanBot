@@ -1847,7 +1847,7 @@ def test_winning_move_fires_knight_to_la_at_8_vp():
     assert wm["kind"] == "knight_to_la"
     assert wm["vp_after"] == 10
     assert wm["confidence"] == "high"
-    assert "LA" in wm["detail"]
+    assert "largest army" in wm["detail"]
 
 
 def test_winning_move_silent_when_knight_already_played_this_turn():
