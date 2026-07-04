@@ -97,39 +97,45 @@ Dead end confirmed and documented at loghud.js:1544: colonist uploads its
 camera via a UBO / data texture, NOT uniformMatrix4fv, so reading the WebGL
 matrix is out. The wheel-tick zoom-hide fallback is live today.
 
-Next approach: EMPIRICAL transform reconstruction, calibrated live.
-- Also fix a real hole found in recon: PAN is not watched at all. If colonist
-  supports drag-pan, markers stay visible and misaligned. At minimum, add
-  pointer-drag detection over the canvas to the hide gate; at best, fold pan
-  into the reconstruction below.
-- Live calibration protocol (claude-in-chrome on a bot game, no Noah needed
-  until an extension reload is required):
-  1. Baseline screenshot at default zoom; inject probe markers at known
-     tile coords (the board-calibration probe pattern from June).
-  2. Dispatch wheel ticks over the canvas; screenshot after 1/2/3 ticks;
-     measure a distinctive tile's pixel displacement. Derive per-tick scale
-     factor and the anchor (cursor-centered vs canvas-centered).
-  3. Drag the canvas (left_click_drag); measure whether the board pans and
-     whether it is 1:1 with the cursor.
-  4. Probe the clamp bounds (zoom far in/out; does scale saturate while
-     ticks keep counting?) and window-resize behavior (does colonist refit?).
-  5. Trackpad reality check: pinch arrives as ctrl+wheel with fractional
-     deltaY, momentum scroll as many small events. Decide continuous vs
-     stepped mapping from what colonist actually does.
-- Implementation shape: keep a running 2D similarity transform (scale s,
-  translate tx/ty) updated from wheel/drag events with the measured
-  constants; apply it at the end of `boardCoordToPixel`. On ANY
-  low-confidence event (suspected clamp, fractional pinch if colonist is
-  stepped, resize, tab visibility change) reset to the current zoom-hide
-  behavior rather than guess. A wrong marker is worse than none.
-- If calibration shows colonist's zoom is smoothed/inertial or anchor is
-  inconsistent, STOP and keep the improved hide gate (wheel + drag + resize);
-  document the findings in this file.
+MEASURED LIVE 2026-07-03 (bot game, colonist v311, synthetic-event probes).
+GATE F2 FIRED: the full findings + design options are in the Fable packet
+at `~/Desktop/catanbot-fable-packet.md` (local, not in the repo). Summary:
+- Plain wheel over the canvas does NOTHING. The current hide gate counts
+  plain-wheel ticks: spurious hides, and net-0 restore rarely happens.
+- Zoom = ctrl+wheel ONLY (Mac trackpad pinch). Synthetic WheelEvents are
+  accepted, so the extension can DRIVE the camera (resync primitive).
+- Scale is exact and deterministic: factor 1.828 per 400 units of
+  accumulated deltaY (k=0.00151/unit), delta-proportional (8x-50 == 4x-100),
+  perfectly invertible mid-range, uniform on both axes.
+- Drag-pan is EXACT 1:1 translation with the cursor (and it exists, so the
+  old markers were silently wrong after any pan: the recon hole confirmed).
+- Zoom anchor: cursor-dependent but NOT the cursor; fixed point lands
+  between cursor and board center (suspected viewport clamp on the camera
+  translation). This is the one unmodeled component.
+- Min-zoom CLAMP is deterministic and ABSORBS excess ticks (no debt), so
+  blind tick integration breaks at any clamp touch. Burst-out-to-clamp
+  reaches a known camera state from anywhere.
+- Page reload / reconnect re-fits the board deterministically. Canvas
+  resizes when banners toggle (837->878 seen); BOARD_CALIB fractions
+  already absorb pure resizes.
+- colonist drops the WS after ~3-4 min in a throttled background tab;
+  reconnect preserves an active game.
+Decision pending from the packet (options A-D). Implement whichever the
+packet's DECISION section says; do not pick without it.
 
 ### 3. Live verification runsheet (task 8)
 
 Bridge up, Noah reloads the unpacked extension once, bot game via
-claude-in-chrome (offline, full drive permission). Verify by screenshot:
+claude-in-chrome (offline, full drive permission). Already verified
+2026-07-03 on the OLD build (game text side): opening settle rec fires and
+re-ranks adaptively as opponents place, the road follow-up rec appears
+after settling with the right edge, the offline CTA toast fires on
+non-game pages, source bridge 0.51.0 serves /advisor (a stale 0.48 app
+bridge had been squatting on 8765 since June; killed). Remaining items
+below need the NEW build (Noah reloads the unpacked extension first).
+Watch the clock: colonist drops a backgrounded tab after ~3-4 min;
+reconnect right away, and prefer bot rooms (5h timers). Verify by
+screenshot:
 - Robber hexagon on a 7 and on a played knight (the 'unknown' card fix).
 - NEW settlement circle during setup; road line on the opening followup and
   on a midgame road rec.

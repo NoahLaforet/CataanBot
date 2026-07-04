@@ -1036,9 +1036,9 @@
         if (dd && typeof dd.remaining === 'number') {
             const kn = (dd.by_type && dd.by_type.KNIGHT)
                 ? dd.by_type.KNIGHT.remaining : null;
-            const knTxt = (kn != null) ? ` · ${kn} kn` : '';
+            const knTxt = (kn != null) ? ` · ${kn} knights` : '';
             const low = dd.low ? ' cbo-eco-low' : '';
-            out.push(`<div class="cbo-eco${low}">dev deck`
+            out.push(`<div class="cbo-eco${low}">development cards`
                 + `<span class="cbo-eco-v">${dd.remaining} left${knTxt}</span></div>`);
         }
         return out.join('');
