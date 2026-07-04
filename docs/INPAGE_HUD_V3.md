@@ -134,6 +134,28 @@ constant with the probe harness then too. Live-verify phase 1 with a
 piece-origin drag (colonist may suppress pan for those - if so, dirty on
 drags starting near known pieces).
 
+2026-07-05 addendum (phase 1 verified live, plus three discoveries):
+- Pan tracking was REMOVED after live verify caught markers detaching:
+  colonist clamps camera translation to a box and the default fit sits ON
+  the box corner, so drags sometimes apply 0% and sometimes 100% of the
+  pointer delta. Any board drag >5px now just dirties. The clamp box very
+  likely also explains the zoom-anchor offset; phase 2 measures it.
+- colonist v311 (2026-06-30) REDESIGNED the board layout: tile pitch grew
+  ~23% and the old 3D row tilt is gone. BOARD_CALIB recalibrated live
+  (602e11e), probe-dot verified. Constants ROT with colonist versions:
+  treat future "markers slightly off everywhere" as recalibration, not a
+  logic bug. Y fine-tune note: the gold node orbs are 3D spheres drawn
+  ABOVE the logical node point - calibrate y against placed piece BASES,
+  not orb centers.
+- Self-calibration lead (the durable fix): clicking a node spawned two
+  TRANSIENT anonymous SVG elements at board-ish positions (gone within
+  seconds). If any transient (placement ghost, VP popup chip) is DOM-
+  anchored to a known node, a MutationObserver yields runtime calibration
+  anchors that survive colonist redesigns, window shapes, and possibly
+  zoom. Study this FIRST in phase 2 - it may obsolete the clamp harness.
+- Multi-size layout fitting unblocked: the window was in macOS
+  full-screen (resize_window silently ignored); cmd+ctrl+f exits it.
+
 ### 3. Live verification runsheet (task 8)
 
 Bridge up, Noah reloads the unpacked extension once, bot game via
