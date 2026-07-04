@@ -626,6 +626,16 @@
         try { return localStorage.getItem('catanbot.paused') === '1'; }
         catch (e) { return false; }
     }
+    // Corner-precision placement markers (settle circle / road segment).
+    // Default OFF: colonist v311 proved the fixed grid constants rot with
+    // their layout updates, and a corner marker needs ~15px accuracy where
+    // the tile-sized robber ring tolerates ~50. Parked as a beta toggle
+    // until runtime self-calibration lands (INPAGE_HUD_V3.md, phase 2);
+    // placement guidance lives in the HUD text meanwhile.
+    function _placeMarkersOn() {
+        try { return localStorage.getItem('catanbot.place_markers') === '1'; }
+        catch (e) { return false; }
+    }
     function _toggleRow(label, get, set) {
         const row = document.createElement('label');
         row.className = 'cbo-set-row';
@@ -715,6 +725,12 @@
             catch (e) { /* private mode */ }
             _lastSig = null;   // force a re-render so it appears/disappears now
         }).row);
+        p.appendChild(_toggleRow('Placement markers (beta)', _placeMarkersOn,
+            (v) => {
+                try {
+                    localStorage.setItem('catanbot.place_markers', v ? '1' : '0');
+                } catch (e) { /* private mode */ }
+            }).row);
         p.appendChild(_sectionHeader('Advisor'));
         p.appendChild(_numberRow('VP target', 'vp_target', 3, 30));
         p.appendChild(_numberRow('Discard at', 'discard_limit', 5, 20));
@@ -1715,7 +1731,8 @@
         const robberOn = active
             && (snap.robber_pending || snap.robber_reason === 'knight');
         const targets = (robberOn && snap.robber_targets) || [];
-        const place = active ? placementMarks(snap) : null;
+        const place = (active && _placeMarkersOn())
+            ? placementMarks(snap) : null;
         if (!targets.length && !place) {
             if (layer) layer.innerHTML = '';
             return;
