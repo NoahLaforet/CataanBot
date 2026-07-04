@@ -120,8 +120,19 @@ at `~/Desktop/catanbot-fable-packet.md` (local, not in the repo). Summary:
   already absorb pure resizes.
 - colonist drops the WS after ~3-4 min in a throttled background tab;
   reconnect preserves an active game.
-Decision pending from the packet (options A-D). Implement whichever the
-packet's DECISION section says; do not pick without it.
+DECIDED (packet DECISION section, ratified 2026-07-04): Option B hybrid,
+phased. PHASE 1 SHIPPED: camera transform in loghud.js (camApply inside
+boardCoordToPixel), drag-pan tracked exactly 1:1, zoom gesture (ctrl+wheel
+over canvas) marks the camera dirty and hides markers with a "reload page
+to restore" note, plain wheel fully ignored, canvas replacement and
+resize-with-accumulated-pan dirty conservatively, robber-window drags
+dirty instead of guessing (a drag may be a piece move there). PHASE 2
+(zoom reconstruction + click-to-resync, one flag) is gated on three live
+preflight probes listed in the packet: min-clamp translation determinism,
+default-vs-min scale ratio, max-clamp value; re-fit the anchor offset
+constant with the probe harness then too. Live-verify phase 1 with a
+piece-origin drag (colonist may suppress pan for those - if so, dirty on
+drags starting near known pieces).
 
 ### 3. Live verification runsheet (task 8)
 
