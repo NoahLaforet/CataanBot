@@ -1559,23 +1559,24 @@
             size: dE,
         });
     }
-    // ---- Camera tracking (v3 phase 1, decision packet 2026-07-04). The
-    // camera itself is unreadable (UBO/data-texture), but its INPUTS were
-    // reverse-engineered live (docs/INPAGE_HUD_V3.md stage 2): drag-pan
-    // moves the board exactly 1:1 with the pointer, zoom is ctrl+wheel ONLY
-    // (trackpad pinch), and a plain wheel does nothing to the board at all.
-    // So pans are folded exactly into a running transform and markers stay
-    // glued through them. Zoom is NOT reconstructed yet (the anchor carries
-    // an unexplained offset and the clamps silently absorb ticks): a zoom
-    // gesture marks the camera DIRTY and markers hide - a wrong ring is
-    // worse than none. A page reload restores colonist's deterministic
-    // default fit, which is this transform's identity state. Phase 2 adds
-    // zoom reconstruction + click-to-resync once the clamp constants are
-    // verified live.
+    // ---- Camera tracking (v3 phase 1, decision packet 2026-07-04+05).
+    // The camera itself is unreadable (UBO/data-texture) and its INPUTS
+    // are only partly reconstructible, live-verified: zoom is ctrl+wheel
+    // ONLY (trackpad pinch) with clamped, cursor-ish anchoring; a plain
+    // wheel does nothing to the board at all; drag-pans SOMETIMES move
+    // the board 1:1 and sometimes not at all (a translation clamp box
+    // binds at the default fit, and drags near nodes double as placement
+    // clicks), so the applied pan never reliably equals the pointer
+    // delta. Phase 1 therefore trusts the camera only while it is
+    // UNTOUCHED since page load: any zoom gesture or board drag marks it
+    // dirty and the markers hide - a wrong ring is worse than none. A
+    // page reload restores colonist's deterministic default fit, which
+    // is this transform's identity state. Phase 2 (see the decision
+    // packet) reconstructs zoom+pan against the measured clamp box and
+    // adds a click-to-resync; camApply is its seam, identity until then.
     const _cam = { s: 1, tx: 0, ty: 0, dirty: false };
     let _camWatchOn = false;
-    let _camCanvas = null;       // identity-tracked; a replaced canvas = refit
-    let _camRobberLive = false;  // robber windows make canvas drags ambiguous
+    let _camCanvas = null;   // identity-tracked; a replaced canvas = refit
     function camApply(p) {
         return { x: _cam.tx + _cam.s * p.x, y: _cam.ty + _cam.s * p.y,
                  size: _cam.s * p.size };
@@ -1585,16 +1586,14 @@
         return _camCanvas && (e.target === _camCanvas
             || (_camCanvas.contains && _camCanvas.contains(e.target)));
     }
-    function ensureCamWatch(snap) {
+    function ensureCamWatch() {
         const canvas = document.getElementById('game-canvas');
         if (canvas && _camCanvas && canvas !== _camCanvas) {
-            // colonist rebuilt the game view (rejoin/refit): the transform
-            // no longer describes it. Reload is the reliable reset.
+            // colonist rebuilt the game view (rejoin/refit): the camera
+            // may no longer be at the default fit. Reload is the reset.
             _cam.dirty = true;
         }
         if (canvas) _camCanvas = canvas;
-        _camRobberLive = !!(snap
-            && (snap.robber_pending || snap.robber_reason === 'knight'));
         if (_camWatchOn || !canvas) return;
         _camWatchOn = true;
         // Zoom gesture (trackpad pinch / ctrl+wheel). Plain wheel does
@@ -1603,40 +1602,27 @@
         window.addEventListener('wheel', (e) => {
             if (e.ctrlKey && e.deltaY && _onCanvas(e)) _cam.dirty = true;
         }, { passive: true, capture: true });
-        // Drag-pan: exact 1:1 with the pointer. During a live robber
-        // decision a canvas drag may be colonist moving a piece rather
-        // than a pan - ambiguous, so it dirties instead of guessing.
-        let drag = null;
+        // Board drags: pan amount is unknowable (clamp box), so any real
+        // drag dirties. The 5px threshold keeps ordinary clicks (settle /
+        // road / robber picks all land within a pixel or two) trusted.
+        let down = null;
         window.addEventListener('pointerdown', (e) => {
-            if (e.button === 0 && _onCanvas(e)) {
-                drag = { x: e.clientX, y: e.clientY };
-            }
+            down = (e.button === 0 && _onCanvas(e))
+                ? { x: e.clientX, y: e.clientY } : null;
         }, { passive: true, capture: true });
         window.addEventListener('pointermove', (e) => {
-            if (!drag) return;
-            const dx = e.clientX - drag.x;
-            const dy = e.clientY - drag.y;
-            if (!dx && !dy) return;
-            if (_camRobberLive) { _cam.dirty = true; drag = null; return; }
-            _cam.tx += dx;
-            _cam.ty += dy;
-            drag = { x: e.clientX, y: e.clientY };
+            if (!down) return;
+            if (Math.abs(e.clientX - down.x) > 5
+                || Math.abs(e.clientY - down.y) > 5) {
+                _cam.dirty = true;
+                down = null;
+            }
         }, { passive: true, capture: true });
-        const endDrag = () => { drag = null; };
+        const endDrag = () => { down = null; };
         window.addEventListener('pointerup', endDrag,
             { passive: true, capture: true });
         window.addEventListener('pointercancel', endDrag,
             { passive: true, capture: true });
-        // A banner/ad toggle resizes the canvas and colonist refits the
-        // board inside it. The calibration fractions absorb that at
-        // identity, but any accumulated pan no longer applies.
-        if (window.ResizeObserver) {
-            let first = true;
-            new ResizeObserver(() => {
-                if (first) { first = false; return; }
-                if (_cam.tx || _cam.ty) _cam.dirty = true;
-            }).observe(canvas);
-        }
     }
     // Which placement (if any) gets marked on the board right now. Top rec
     // only: a board full of rings is worse than none. Setup picks always
@@ -1717,7 +1703,7 @@
     // Re-runs each poll so the marks track a window resize and clear the
     // instant the decision ends.
     function updateBoardOverlay(snap) {
-        ensureCamWatch(snap);
+        ensureCamWatch();
         let layer = document.getElementById('cbo-board-overlay');
         const active = enabled() && snap && !_paused();
         const robberOn = active
@@ -1741,8 +1727,8 @@
             const nx = cr ? Math.round(cr.left + cr.width * 0.30) : 180;
             const ny = cr ? Math.round(cr.top + cr.height * 0.02) : 30;
             layer.innerHTML = '<div class="cbo-bo-note" style="left:' + nx
-                + 'px;top:' + ny + 'px">board markers paused after zoom · '
-                + 'reload page to restore · picks stay in the panel</div>';
+                + 'px;top:' + ny + 'px">board markers paused after zoom/pan '
+                + '· reload page to restore · picks stay in the panel</div>';
             stampStreamer(layer);
             return;
         }
