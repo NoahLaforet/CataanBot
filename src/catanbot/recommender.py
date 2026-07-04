@@ -57,6 +57,76 @@ def _edge_tiles(m, a: int, b: int) -> list[tuple[str, int | None]]:
     return out
 
 
+# Node board positions. The in-page HUD maps cube coords to pixels with a
+# linear pointy-top layout (x = q*dE + r*dV/2 shear, y = r*dV; q = cube[0],
+# r = cube[2], south = +r, live-verified 2026-06-16). In that layout a hex
+# corner sits at a fixed fractional (q, r) offset from its tile center, one
+# per NodeRef direction. Averaging the adjacent tile centers gives the same
+# numbers on interior nodes but drifts half an edge on coastal nodes (only
+# two land tiles to average), so the offset form is used everywhere.
+_NODE_FRAC_OFFSET = {
+    "NORTH": (1 / 3, -2 / 3),
+    "NORTHEAST": (2 / 3, -1 / 3),
+    "SOUTHEAST": (1 / 3, 1 / 3),
+    "SOUTH": (-1 / 3, 2 / 3),
+    "SOUTHWEST": (-2 / 3, 1 / 3),
+    "NORTHWEST": (-1 / 3, -1 / 3),
+}
+
+
+def _node_board_pos(m, node_id: int) -> list[float] | None:
+    """Board position of a node as a fractional cube coord [q, s, r].
+
+    Finds one land tile touching the node and adds that corner's offset.
+    Exact for every node, coastal included. None when the node is unknown
+    (defensive: a missing position must never block a rec).
+    """
+    nid = int(node_id)
+    for coord, tile in m.land_tiles.items():
+        for ref, node in tile.nodes.items():
+            if int(node) != nid:
+                continue
+            off = _NODE_FRAC_OFFSET.get(getattr(ref, "name", str(ref)))
+            if off is None:
+                return None
+            q = coord[0] + off[0]
+            r = coord[2] + off[1]
+            return [round(q, 4), round(-q - r, 4), round(r, 4)]
+    return None
+
+
+def _attach_board_geometry(recs: list[dict[str, Any]], m) -> list[dict[str, Any]]:
+    """Stamp screen-drawable coords onto recs, in place.
+
+    ``board_pos`` on anything carrying a ``node_id`` (settle / city /
+    opening pick); ``board_edge`` (the two endpoint positions) on road
+    edges, both on kind=road recs and on the ``road`` sub-dict of opening
+    picks. The HUD feeds these straight to boardCoordToPixel, which is
+    linear in the coord, so fractional values need no special handling.
+    """
+    for rec in recs:
+        if not isinstance(rec, dict):
+            continue
+        try:
+            if rec.get("node_id") is not None and "board_pos" not in rec:
+                rec["board_pos"] = _node_board_pos(m, rec["node_id"])
+            edge = rec.get("edge")
+            if edge and len(edge) == 2 and "board_edge" not in rec:
+                a = _node_board_pos(m, edge[0])
+                b = _node_board_pos(m, edge[1])
+                rec["board_edge"] = [a, b] if a and b else None
+            road = rec.get("road")
+            if isinstance(road, dict):
+                redge = road.get("edge")
+                if redge and len(redge) == 2 and "board_edge" not in road:
+                    a = _node_board_pos(m, redge[0])
+                    b = _node_board_pos(m, redge[1])
+                    road["board_edge"] = [a, b] if a and b else None
+        except Exception:  # noqa: BLE001
+            continue
+    return recs
+
+
 def _score_settlement(prod: float) -> float:
     """Settlement 1-10 score. A ~0.83-prod corner (a pristine 6/8/10
     triangle) pins at 10; a 0.1-prod wasteland sits at ~2."""
@@ -335,7 +405,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
                 game=game, c=c, neighbors=neighbors,
                 scored_by_node=full_scored, m=m,
             ))
-        return recs
+        return _attach_board_geometry(recs, m)
 
     # --- Round 1: rank F, attach best paired N as plan.second ------------
     legal = legal_nodes_after_picks(game, placed)
@@ -414,7 +484,7 @@ def recommend_opening(game, color, *, top: int = 5) -> list[dict[str, Any]]:
             game=game, c=c, neighbors=neighbors,
             scored_by_node=full_scored, m=m,
         ))
-    return recs
+    return _attach_board_geometry(recs, m)
 
 
 def _opening_road_followup(*, game, c, neighbors, scored_by_node, m):
@@ -2138,7 +2208,7 @@ def recommend_actions(
     except Exception:  # noqa: BLE001
         pass
 
-    return recs[:top]
+    return _attach_board_geometry(recs[:top], m)
 
 
 def _fmt_trade_side(pack: dict[str, int]) -> str:
