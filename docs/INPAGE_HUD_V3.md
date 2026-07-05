@@ -156,6 +156,17 @@ drags starting near known pieces).
 - Multi-size layout fitting unblocked: the window was in macOS
   full-screen (resize_window silently ignored); cmd+ctrl+f exits it.
 
+2026-07-05 late: the MutationObserver self-calibration study ran on a
+fresh bot game and came back NEGATIVE: an observer armed BEFORE setup
+caught ZERO DOM additions near the board through a full bot placement
+(pieces, VP popups, node highlights are all canvas-drawn). The two
+anonymous SVGs seen on 07-04 could not be reproduced via MCP clicks and
+remain unexplained - do not build on them. Runtime self-calibration has
+no DOM anchor; if corner markers ever come back it is via the multi-size
+layout-rule fit (blocked: resize_window is unreliable even outside
+fullscreen; needs Noah manually resizing while a probe samples) or via
+reverse-engineering colonist's fit constants from its bundle source.
+
 2026-07-05 direction change (Noah's call): corner-precision placement
 markers are PARKED behind the gear toggle "Placement markers (beta)",
 default OFF (a663f7f). The fixed grid constants shift with both colonist
