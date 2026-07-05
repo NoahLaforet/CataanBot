@@ -182,7 +182,7 @@
 }
 #${TABS_ID} .cbo-gear {
     appearance: none; border: none; background: transparent;
-    color: #6b5836; font-size: 15px; line-height: 1;
+    color: #6b5836; font-size: 17px; line-height: 1;
     padding: 1px 3px; cursor: pointer; opacity: 0.55;
 }
 #${TABS_ID} .cbo-gear:hover { opacity: 1; }
@@ -199,7 +199,7 @@
     min-width: 150px;
 }
 #${TABS_ID} .cbo-set-h {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     color: #8a7656; font-weight: 700; margin: 6px 2px 2px;
     border-bottom: 1px solid rgba(90, 62, 28, 0.15); padding-bottom: 2px;
 }
@@ -209,7 +209,7 @@
     align-items: center;
     gap: 7px;
     padding: 3px 2px;
-    font-size: 12px;
+    font-size: 14px;
     color: #2f2415;
     cursor: pointer;
     white-space: nowrap;
@@ -217,7 +217,7 @@
 #${TABS_ID} .cbo-set-row input { margin: 0; cursor: pointer; }
 #${TABS_ID} .cbo-set-row.cbo-num { justify-content: space-between; cursor: default; }
 #${TABS_ID} .cbo-set-row.cbo-num input {
-    width: 46px; text-align: center; font: inherit; font-size: 12px; cursor: text;
+    width: 46px; text-align: center; font: inherit; font-size: 14px; cursor: text;
     border: 1px solid rgba(90, 62, 28, 0.30); border-radius: 4px; padding: 1px 3px;
     background: #fff; color: #2f2415;
 }
@@ -229,7 +229,7 @@
     color: #6b5836;
     font: inherit;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 15px;
     letter-spacing: 0.02em;
     padding: 5px 14px;
     border-radius: 7px 7px 0 0;
@@ -247,13 +247,13 @@
     color: #2f2415;
     padding: 8px 10px 10px 10px;
     box-sizing: border-box;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.35;
     overflow-y: auto;
 }
 #${ROOT_ID} .cbo-h {
     font-weight: 700;
-    font-size: 12px;
+    font-size: 14px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #6b5836;
@@ -268,21 +268,21 @@
     padding: 6px 0;
 }
 /* Bridge-offline download call-to-action (the local app isn't running). */
-#${ROOT_ID} .cbo-dl-msg { color: #6b5836; font-size: 12px; margin: 4px 0 7px; }
+#${ROOT_ID} .cbo-dl-msg { color: #6b5836; font-size: 14px; margin: 4px 0 7px; }
 #${ROOT_ID} .cbo-dl-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 #${ROOT_ID} .cbo-dl-btn {
     display: inline-flex; align-items: center; gap: 5px;
-    background: #b8862f; color: #fff; font-weight: 700; font-size: 12px;
+    background: #b8862f; color: #fff; font-weight: 700; font-size: 14px;
     padding: 5px 11px; border-radius: 7px; text-decoration: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 #${ROOT_ID} .cbo-dl-btn:hover { background: #a5772a; }
 #${ROOT_ID} .cbo-dl-alt {
-    font-size: 11px; color: #9c7b3a; text-decoration: underline; cursor: pointer;
+    font-size: 12.5px; color: #9c7b3a; text-decoration: underline; cursor: pointer;
 }
-#${ROOT_ID} .cbo-dl-hint { font-size: 11px; color: #9a876a; margin-top: 6px; }
+#${ROOT_ID} .cbo-dl-hint { font-size: 12.5px; color: #9a876a; margin-top: 6px; }
 #${ROOT_ID} .cbo-rec {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     color: #2f2415;
     padding: 2px 0 4px 0;
@@ -291,7 +291,7 @@
     display: inline-block;
     background: #b8862f;
     color: #fff;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.04em;
     padding: 1px 6px;
@@ -307,11 +307,11 @@
 }
 #${ROOT_ID} .cbo-rec-cyc:hover { background: rgba(184, 134, 47, 0.14); }
 #${ROOT_ID} .cbo-rec-cyc-hint {
-    display: inline-block; margin-left: 7px; font-size: 10px; font-weight: 600;
+    display: inline-block; margin-left: 7px; font-size: 11px; font-weight: 600;
     color: #9c7b3a; vertical-align: middle; opacity: 0.85;
 }
 #${ROOT_ID} .cbo-fallback {
-    color: #6b5836; font-size: 12px; padding: 1px 0 2px 8px;
+    color: #6b5836; font-size: 14px; padding: 1px 0 2px 8px;
     border-left: 2px solid rgba(90, 62, 28, 0.25); margin: 2px 0 0 2px;
 }
 #${ROOT_ID} .cbo-opp {
@@ -323,7 +323,7 @@
 }
 #${ROOT_ID} .cbo-pill {
     font-weight: 700;
-    font-size: 12px;
+    font-size: 14px;
     padding: 1px 7px;
     border-radius: 9px;
     white-space: nowrap;
@@ -334,27 +334,27 @@
     background: rgba(90, 62, 28, 0.10);
     border-radius: 5px;
     padding: 0 5px;
-    font-size: 12px;
+    font-size: 14px;
     white-space: nowrap;
 }
 #${ROOT_ID} .cbo-chip.cbo-maybe { opacity: 0.55; }
 #${ROOT_ID} .cbo-chip.cbo-mono { box-shadow: inset 0 0 0 1.5px #c0392b; }
 #${ROOT_ID} .cbo-sep { color: #b3a07d; margin: 0 3px; font-weight: 700; }
-#${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 11px; }
+#${ROOT_ID} .cbo-prob { color: #9c7b3a; font-size: 12.5px; }
 #${ROOT_ID} .cbo-self { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-#${ROOT_ID} .cbo-vp { font-weight: 800; font-size: 14px; color: #2f2415; }
-#${ROOT_ID} .cbo-self-meta { color: #6b5836; font-size: 11px; }
-#${ROOT_ID} .cbo-nextbuild { color: #6b5836; font-size: 12px; margin-top: 2px; }
+#${ROOT_ID} .cbo-vp { font-weight: 800; font-size: 16px; color: #2f2415; }
+#${ROOT_ID} .cbo-self-meta { color: #6b5836; font-size: 12.5px; }
+#${ROOT_ID} .cbo-nextbuild { color: #6b5836; font-size: 14px; margin-top: 2px; }
 #${ROOT_ID} .cbo-h.cbo-urgent { color: #9c2d22; }
 #${ROOT_ID} .cbo-robber-row {
     display: flex; align-items: center; gap: 5px;
-    font-size: 13px; padding: 1px 0;
+    font-size: 15px; padding: 1px 0;
 }
 #${ROOT_ID} .cbo-foot {
     margin-top: 8px;
     padding: 5px 8px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
 }
 #${ROOT_ID} .cbo-foot.cbo-red { background: rgba(192, 57, 43, 0.14); color: #9c2d22; }
@@ -364,26 +364,26 @@
 /* Strategy banner: archetype headline + a dim rationale line. */
 #${ROOT_ID} .cbo-strat {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    font-size: 13px; font-weight: 700; margin-top: 2px;
+    font-size: 15px; font-weight: 700; margin-top: 2px;
 }
 #${ROOT_ID} .cbo-strat-phase {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     opacity: 0.6; font-weight: 600;
 }
 #${ROOT_ID} .cbo-strat-why {
-    flex-basis: 100%; font-size: 11px; font-weight: 500;
+    flex-basis: 100%; font-size: 12.5px; font-weight: 500;
     opacity: 0.75; margin-top: 1px;
 }
 /* Economy line: bank-low / dev-deck, a label with a value pill. */
 #${ROOT_ID} .cbo-eco {
     display: flex; justify-content: space-between; align-items: center;
-    font-size: 12px; padding: 2px 0; gap: 8px;
+    font-size: 14px; padding: 2px 0; gap: 8px;
 }
 #${ROOT_ID} .cbo-eco-v { font-weight: 700; }
 #${ROOT_ID} .cbo-eco.cbo-eco-low .cbo-eco-v { color: #9c2d22; }
 /* Dice tempo: one quiet line of anomalies. */
 #${ROOT_ID} .cbo-dice {
-    font-size: 12px; opacity: 0.85; padding: 2px 0;
+    font-size: 14px; opacity: 0.85; padding: 2px 0;
 }
 /* Dice-roll histogram: a mini bar per number 2..12 with a dashed expected
    baseline and the last roll picked out green. Compact, native browns. */
@@ -412,16 +412,16 @@
 #${ROOT_ID} .cbo-dice-col.cbo-dice-last .cbo-dice-n { color: #2f6b3f; font-weight: 800; }
 /* Game plan: near-term VP goal. Kind pill + tiles + a dim summary line. */
 #${ROOT_ID} .cbo-plan {
-    font-size: 13px; font-weight: 600; color: #2f2415; padding: 2px 0 1px 0;
+    font-size: 15px; font-weight: 600; color: #2f2415; padding: 2px 0 1px 0;
 }
-#${ROOT_ID} .cbo-plan-sum { color: #6b5836; font-weight: 500; font-size: 12px; }
+#${ROOT_ID} .cbo-plan-sum { color: #6b5836; font-weight: 500; font-size: 14px; }
 #${ROOT_ID} .cbo-plan.cbo-ready .cbo-rec-kind { background: #46a45a; }
 /* Strategic options: long-game VP-swing plays, one row each. */
 #${ROOT_ID} .cbo-opt {
-    display: flex; align-items: baseline; gap: 6px; padding: 1px 0; font-size: 12px;
+    display: flex; align-items: baseline; gap: 6px; padding: 1px 0; font-size: 14px;
 }
 #${ROOT_ID} .cbo-opt-vp {
-    flex: 0 0 auto; font-weight: 800; font-size: 11px; color: #2f6b3f;
+    flex: 0 0 auto; font-weight: 800; font-size: 12.5px; color: #2f6b3f;
     background: rgba(70, 164, 90, 0.15); border-radius: 4px; padding: 0 5px;
 }
 #${ROOT_ID} .cbo-opt-label { font-weight: 700; color: #2f2415; }
@@ -429,10 +429,10 @@
 /* Dev-card cluster: a verdict pill + the play, one row per held dev card. */
 #${ROOT_ID} .cbo-dev {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    font-size: 12px; padding: 2px 0;
+    font-size: 14px; padding: 2px 0;
 }
 #${ROOT_ID} .cbo-verdict {
-    flex: 0 0 auto; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+    flex: 0 0 auto; font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
     padding: 1px 6px; border-radius: 4px; color: #fff;
 }
 #${ROOT_ID} .cbo-verdict.cbo-v-play { background: #46a45a; }
@@ -441,12 +441,12 @@
 #${ROOT_ID} .cbo-dev-what { color: #2f2415; font-weight: 600; }
 #${ROOT_ID} .cbo-dev-why { color: #6b5836; font-weight: 500; flex-basis: 100%; }
 #${ROOT_ID} .cbo-dev-name {
-    color: #9c7b3a; font-weight: 700; text-transform: lowercase; font-size: 11px;
+    color: #9c7b3a; font-weight: 700; text-transform: lowercase; font-size: 12.5px;
 }
 /* Round / phase + standings status strip (quiet, sits at the foot). */
 #${ROOT_ID} .cbo-prog {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    font-size: 11px; color: #8a7656; margin-top: 6px;
+    font-size: 12.5px; color: #8a7656; margin-top: 6px;
     padding-top: 4px; border-top: 1px solid rgba(90, 62, 28, 0.15);
 }
 #${ROOT_ID} .cbo-prog-phase { text-transform: uppercase; letter-spacing: 0.04em; }
@@ -462,7 +462,7 @@
 .cbo-prow {
     position: absolute; left: 84px; bottom: 3px;
     display: inline-flex; gap: 5px; align-items: center;
-    font: 800 13px/1.1 "Open Sans", -apple-system, system-ui, sans-serif;
+    font: 800 14px/1.1 "Open Sans", -apple-system, system-ui, sans-serif;
     color: #2b2620; letter-spacing: 0.01em;
     background: rgba(245, 240, 228, 0.88);
     border: 1px solid rgba(120, 95, 55, 0.28);
@@ -486,7 +486,7 @@
     background: #ece2cc;
     border: 1px solid rgba(120, 95, 55, 0.30);
     border-left-width: 4px;
-    font: 700 13px/1.3 "Open Sans", -apple-system, system-ui, sans-serif;
+    font: 700 15px/1.3 "Open Sans", -apple-system, system-ui, sans-serif;
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22);
     pointer-events: none;
     max-width: 280px;
@@ -552,7 +552,7 @@
 #cbo-board-overlay .cbo-bo-note {
     position: absolute; transform: translateX(-50%);
     background: rgba(40, 44, 52, 0.92); color: #e8e2d4;
-    font: 600 12px/1.3 'Open Sans', system-ui, sans-serif;
+    font: 600 14px/1.3 'Open Sans', system-ui, sans-serif;
     padding: 5px 11px; border-radius: 7px; white-space: nowrap;
     border: 1px solid rgba(232, 226, 212, 0.25);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
