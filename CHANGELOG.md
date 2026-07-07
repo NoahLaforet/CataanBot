@@ -4,6 +4,29 @@ Notable user-facing changes to the userscript and bridge. Internal
 refactors / test additions are in the git log; this captures what
 landed in each tagged release.
 
+## v0.52.0 (2026-07-07)
+
+Readability and on-board guidance, tightened from a round of live play.
+
+- **Bigger, clearer type.** The whole HUD panel steps up a couple of points so
+  it reads at a glance next to colonist's own UI, and it still scrolls inside
+  the log box rather than spilling past it.
+- **Plain words, no jargon.** "LR" and "LA" are now "longest road" and "largest
+  army" everywhere they show, dev-card counts read "development cards" and
+  "knights", and a robber log line that mislabelled a tile's dice number as a
+  probability now just names the number.
+- **Placement markers on the board (beta).** The recommended settlement gets a
+  pulsing circle and the recommended road a segment, drawn right on the board.
+  Off by default under a new "Placement markers (beta)" toggle in the gear menu
+  while the board-coordinate calibration is still firming up; the robber-tile
+  ring stays on.
+- **Board markers never lie.** Zooming or panning the board now pauses the
+  markers with a "reload to restore" note instead of leaving them stranded off
+  their tiles, and an ordinary scroll no longer hides them by mistake.
+- **Recalibrated for colonist's new board.** The tile grid was re-measured for
+  colonist's late-June board redesign, so the robber ring lands on the right
+  tile again.
+
 ## v0.51.0 (2026-06-15)
 
 The in-page HUD gets native and fast, from a round of live play.
