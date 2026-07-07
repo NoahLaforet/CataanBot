@@ -522,10 +522,10 @@ def _draw_vp_callout(draw, state, colors_seated, w: int, board_h: int,
         text = f"*  {leaders} WINS at {top} VP  *"
     elif top >= VP_TARGET - 1:
         bg = CALLOUT_ONE_AWAY_BG
-        text = f"!  {leaders} at {top} VP — one turn from winning  !"
+        text = f"!  {leaders} at {top} VP, one turn from winning  !"
     else:
         bg = CALLOUT_TWO_AWAY_BG
-        text = f"{leaders} at {top} VP — two from winning"
+        text = f"{leaders} at {top} VP, two from winning"
 
     # Thin banner pinned to the top edge of the legend strip.
     banner_h = int(legend_h * 0.32)

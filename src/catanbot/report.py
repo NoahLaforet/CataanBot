@@ -1042,7 +1042,7 @@ def _format_hand_dynamics(report: ReplayReport) -> list[str]:
 def _format_players_block(report: ReplayReport) -> list[str]:
     lines = ["Players:"]
     if not report.players:
-        lines.append("  (none — empty log)")
+        lines.append("  (none, empty log)")
         return lines
     for color, stats in _players_in_color_order(report.players):
         lines.append(f"  {color:<7} = {stats.username}")

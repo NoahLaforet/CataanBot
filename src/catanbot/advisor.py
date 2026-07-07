@@ -674,7 +674,7 @@ def format_robber_ranking(scores: list[RobberScore], my_color: str,
         "-" * len(header),
     ]
     if not scores:
-        lines.append("  (no legal targets — board has no land tiles off the robber?)")
+        lines.append("  (no legal targets, board has no land tiles off the robber?)")
         return "\n".join(lines)
     for i, r in enumerate(scores[:top], start=1):
         coord_str = f"({r.coord[0]},{r.coord[1]},{r.coord[2]})"
@@ -966,7 +966,7 @@ def format_second_settlement_ranking(
         "-" * len(header),
     ]
     if not scores:
-        lines.append("  (no legal nodes — check the first placement is on the board)")
+        lines.append("  (no legal nodes, check the first placement is on the board)")
         return "\n".join(lines)
     for i, s in enumerate(scores[:top], start=1):
         tiles_str = ", ".join(
