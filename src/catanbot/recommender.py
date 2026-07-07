@@ -1047,12 +1047,12 @@ def _road_rationale(state, color, self_len: int, has_lr: bool) -> str:
     )
     if not has_lr and next_len >= 5 and next_len > opp_max:
         if opp_holds:
-            return f"extends to {next_len} → FLIPS LR (+2 VP)"
-        return f"extends to {next_len} → claims LR (+2 VP)"
+            return f"extends to {next_len} → FLIPS longest road (+2 VP)"
+        return f"extends to {next_len} → claims longest road (+2 VP)"
     if not has_lr and next_len >= 5 and next_len == opp_max:
-        return f"extends to {next_len} · ties LR"
+        return f"extends to {next_len} · ties longest road"
     if has_lr and next_len > opp_max + 1:
-        return f"extends to {next_len}, pads LR"
+        return f"extends to {next_len}, pads longest road"
     if self_len >= 3:
         return f"extends {self_len}-chain to {next_len}"
     return ""

@@ -1445,7 +1445,7 @@ def _compute_strategic_options(
                     "setup · ready to grab")
             options.append({
                 "kind": "longest_road_push",
-                "label": "LR push",
+                "label": "longest road push",
                 "phase": phase_label,
                 "detail": (f"{verb} +{roads_needed} road"
                            f"{'s' if roads_needed > 1 else ''}"
@@ -1494,9 +1494,10 @@ def _compute_strategic_options(
     if self_has_la and opp_at_two_plus_played:
         options.append({
             "kind": "la_defend",
-            "label": "LA defend",
+            "label": "largest army defend",
             "detail": (
-                "buy dev cards · opp at 2+ knights threatens your LA"),
+                "buy dev cards · opponent at 2+ knights threatens your "
+                "largest army"),
             "vp_swing": 2,
             "pieces": 0,
         })
@@ -1510,12 +1511,12 @@ def _compute_strategic_options(
         snipe = (opp_knights_max + 1 >= 3 and not opp_la_holder
                  and opp_knights_max == la_threshold - 1)
         if snipe:
-            label = "army snipe"
+            label = "largest army snipe"
             detail = (f"opponent 1 from largest army · play "
                       f"{needed_plays} knight"
                       f"{'s' if needed_plays > 1 else ''} to snipe")
         else:
-            label = "army push"
+            label = "largest army push"
             detail = (f"play {needed_plays} knight"
                       f"{'s' if needed_plays > 1 else ''}"
                       + (" · denies opp" if opp_la_holder else ""))

@@ -1800,7 +1800,7 @@ def test_winning_move_fires_road_to_lr_at_8_vp():
     assert wm["kind"] == "road_to_lr"
     assert wm["vp"] == 8 and wm["vp_after"] == 10
     assert wm["confidence"] == "medium"
-    assert "LR" in wm["detail"]
+    assert "longest road" in wm["detail"]
 
 
 def test_winning_move_silent_when_already_holds_lr():

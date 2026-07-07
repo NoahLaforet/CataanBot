@@ -583,7 +583,7 @@ def _compute_winning_move(
                     "confidence": "medium",
                     "vp_after": vp + 2,
                     "detail": (f"+1 road on your {self_len}-chain → "
-                               "LR (+2 VP)"),
+                               "longest road (+2 VP)"),
                 })
 
     # +2 VP path: knight play that flips largest army.

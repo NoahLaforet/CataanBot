@@ -643,7 +643,7 @@ def _rationale_for(tag: str, prod: dict[str, float],
     if tag == "RB_CARVED_TILES":
         iso = _isolation_score(game, my_color, nodes)
         return (f"corridor carved out (~{int(iso*100)}% isolation) · "
-                f"hold roads, claim LR late")
+                f"hold roads, claim longest road late")
     distinct = sum(1 for v in prod.values() if v > 0.05)
     return f"balanced base ({distinct}/5 resources) · keep options open"
 
@@ -719,7 +719,7 @@ def _detect_dev_card_drawn(self_dev_just_bought: list[int] | None,
         if tid_i == 14:  # ROAD_BUILDING
             out.append(PivotTrigger(
                 name="road_builder_drawn",
-                detail="road-building drawn · LR rush now reachable",
+                detail="road-building drawn · longest-road rush now reachable",
                 override_tag="LR_RUSH",
             ))
         elif tid_i == 12:  # MONOPOLY
@@ -764,7 +764,7 @@ def _detect_opp_close(game: "Game", my_color) -> list[PivotTrigger]:
                 and vp >= la_threat_vp - 1):
             out.append(PivotTrigger(
                 name="opp_close_to_la",
-                detail=(f"opp on {played} knights · race to LA "
+                detail=(f"opponent on {played} knights · race to largest army "
                         f"or commit to denial"),
                 override_tag=None,
             ))
