@@ -774,7 +774,7 @@
         root.id = ROOT_ID;
         root.dataset.cboLoghud = '1';
         root.innerHTML = '<div class="cbo-placeholder">CatanBot HUD'
-            + ' — start a game to see recommendations.</div>';
+            + ': start a game to see recommendations.</div>';
         // Click-to-cycle the recommendation. Delegated on root (which persists
         // across innerHTML rebuilds), so clicking the rec advances to the
         // next-best and re-renders immediately.
@@ -1380,7 +1380,7 @@
         push(progressHtml(snap));
         if (!out.length) {
             return '<div class="cbo-placeholder">CatanBot HUD'
-                + ' — start a game to see recommendations.</div>';
+                + ': start a game to see recommendations.</div>';
         }
         return out.join('');
     }
